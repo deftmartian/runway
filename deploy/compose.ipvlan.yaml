@@ -1,0 +1,26 @@
+services:
+  app:
+    ports: !reset []
+    expose:
+      - '4100'
+    networks:
+      vlan:
+        ipv4_address: 192.168.${VLAN_TAG:?Set VLAN_TAG to the stack VLAN number}.10
+      runway-internal:
+    dns:
+      - ${DNS_SERVER:?Set DNS_SERVER to the stack VLAN resolver}
+
+  worker:
+    dns:
+      - ${DNS_SERVER:?Set DNS_SERVER to the stack VLAN resolver}
+
+networks:
+  vlan:
+    name: vlan${VLAN_TAG:?Set VLAN_TAG to the stack VLAN number}_runway
+    driver: ipvlan
+    driver_opts:
+      parent: ${VLAN_TRUNK_INTERFACE:?Set VLAN_TRUNK_INTERFACE to the host trunk interface}.${VLAN_TAG:?Set VLAN_TAG to the stack VLAN number}
+    ipam:
+      config:
+        - subnet: 192.168.${VLAN_TAG:?Set VLAN_TAG to the stack VLAN number}.0/24
+          gateway: 192.168.${VLAN_TAG:?Set VLAN_TAG to the stack VLAN number}.1

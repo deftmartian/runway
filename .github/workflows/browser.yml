@@ -1,0 +1,93 @@
+name: Browser
+
+# Keep the expensive functional and visual suites off documentation-only changes.
+on:
+  pull_request:
+    paths:
+      - src/**
+      - static/**
+      - drizzle/**
+      - tests/e2e/**
+      - tests/visual/**
+      - tests/support/**
+      - package.json
+      - pnpm-lock.yaml
+      - playwright.config.ts
+      - playwright.visual.config.ts
+      - svelte.config.js
+      - vite.config.ts
+      - scripts/run-browser-tests.mjs
+      - .github/workflows/browser.yml
+  push:
+    branches: [main, master]
+    tags: ['v*']
+    paths:
+      - src/**
+      - static/**
+      - drizzle/**
+      - tests/e2e/**
+      - tests/visual/**
+      - tests/support/**
+      - package.json
+      - pnpm-lock.yaml
+      - playwright.config.ts
+      - playwright.visual.config.ts
+      - svelte.config.js
+      - vite.config.ts
+      - scripts/run-browser-tests.mjs
+      - .github/workflows/browser.yml
+  workflow_dispatch:
+
+concurrency:
+  group: runway-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    container:
+      image: node@sha256:9022946fb57e6fb6a2503931470deba4b49db02bfc8f587f93007fd33ef54415 # 24.17.0-trixie-slim
+      options: --ipc=host
+    services:
+      db:
+        image: postgres:17.10-alpine3.24@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_USER: runway
+          POSTGRES_PASSWORD: runway_ci_database_password
+          POSTGRES_DB: runway_browser
+        options: >-
+          --health-cmd "pg_isready -U runway -d runway_browser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway_browser
+      RUNWAY_TEST_ALLOW_REMOTE_DATABASE: 'true'
+      RUNWAY_FIXED_DATE: '2026-05-15'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Install Chromium and snapshot fonts
+        run: |
+          corepack pnpm exec playwright install --with-deps chromium
+          apt-get install -y --no-install-recommends fonts-dejavu-core
+      - name: Functional browser suite
+        run: corepack pnpm test:e2e
+      - name: Production-layout visual suite
+        run: corepack pnpm test:visual
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-diagnostics
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

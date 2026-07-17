@@ -1,0 +1,26 @@
+services:
+  app:
+    image: ${RUNWAY_IMAGE:?Set RUNWAY_IMAGE to a tested runway image tag or digest}
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+      ORIGIN: ${ORIGIN:?Set ORIGIN to the public HTTPS origin}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN to the public HTTPS origin}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a high-entropy secret}
+
+  worker:
+    image: ${RUNWAY_IMAGE:?Set RUNWAY_IMAGE to a tested runway image tag or digest}
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+      ORIGIN: ${ORIGIN:?Set ORIGIN to the public HTTPS origin}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN to the public HTTPS origin}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a high-entropy secret}
+
+  migrate:
+    image: ${RUNWAY_IMAGE:?Set RUNWAY_IMAGE to a tested runway image tag or digest}
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a strong database password}
+    ports: !reset []

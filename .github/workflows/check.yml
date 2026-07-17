@@ -1,0 +1,36 @@
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: runway-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Production dependency advisory gate
+        run: corepack pnpm verify:dependencies
+      - name: Documentation and publication metadata
+        run: corepack pnpm verify:docs
+      - name: Static, unit, and production build checks
+        run: corepack pnpm verify
+      - name: Compose configuration
+        run: corepack pnpm verify:compose && corepack pnpm verify:compose:production

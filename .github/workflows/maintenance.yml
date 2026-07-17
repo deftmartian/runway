@@ -1,0 +1,43 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: runway-maintenance
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  advisory-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RUNWAY_IMAGE: ghcr.io/${{ github.repository }}:latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Refresh dependency advisories
+        run: corepack pnpm verify:dependencies
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refresh published image advisories
+        run: |
+          docker pull "${RUNWAY_IMAGE}"
+          node scripts/verify-image.mjs "${RUNWAY_IMAGE}"

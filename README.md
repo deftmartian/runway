@@ -1,0 +1,238 @@
+# runway
+
+[![Check](https://github.com/deftmartian/runway/actions/workflows/check.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/check.yml)
+[![Container](https://github.com/deftmartian/runway/actions/workflows/container.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/container.yml)
+[![GHCR](https://img.shields.io/badge/container-ghcr.io-1f758f.svg)](https://github.com/deftmartian/runway/pkgs/container/runway)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
+
+**runway is a self-hosted decision ledger for runners who want a conservative plan they can
+inspect, edit, and own.**
+
+It keeps the generated recommendation, the runner's current plan, and recorded work distinct. When
+training does not match the plan, runway shows the difference and offers explicit next-plan choices
+without changing future workouts on its own.
+
+## See It
+
+![The runway public home showing the plan trace and the next training decision](tests/visual/runway.visual.ts-snapshots/public-home-desktop-linux.png)
+
+### Calendar and next decision
+
+![The runway desktop calendar showing missed work, recovery, week load, and the next long run](tests/visual/runway.visual.ts-snapshots/calendar-desktop-linux.png)
+
+The calendar is the main operating surface: the week, recovery spacing, missed work, current risk,
+and next decision stay visible together.
+
+<details>
+<summary>Plan traces and exact stats</summary>
+
+![The runway stats view showing risk context and generated, current, and actual traces](tests/visual/runway.visual.ts-snapshots/stats-desktop-linux.png)
+
+Stats explain whether the current plan needs attention and pair the visual trace with exact values.
+
+</details>
+
+<details>
+<summary>Mobile activity inbox</summary>
+
+![The runway mobile activity inbox with linked and review-needed activities](tests/visual/runway.visual.ts-snapshots/import-records-mobile-linux.png)
+
+</details>
+
+These screenshots are also visual-regression fixtures, so they stay connected to tested product
+states.
+
+## What It Does
+
+| Area              | Behavior                                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Planning          | Builds an editable, conservative running plan from an established baseline, a foundation phase, or a short timed calibration. |
+| Calendar          | Shows generated recommendations, the current plan, recorded work, rest, recovery spacing, and week load.                      |
+| Workout editing   | Moves, changes, adds, removes, resets, and undoes future non-race workouts with a consequence preview.                        |
+| Activity review   | Accepts manual or GPX activity facts first, suggests possible matches, and leaves ambiguous records for the runner.           |
+| Decisions         | Offers keep, reduce, rest, repeat, or rebalance choices after material deviations; nothing applies until confirmed.           |
+| History and stats | Preserves plan phases, edits, feedback-driven changes, archived plans, exact values, and plan-versus-actual traces.           |
+| Ownership         | Runs as a private PWA with local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure.                  |
+
+### Planning paths
+
+- **Established baseline:** distance planning from a repeatable week of at least 3 km, two runs,
+  and a positive longest run.
+- **Foundation then goal:** the exact nine-week NHS Couch to 5K schedule before a confirmed
+  distance baseline and retained race goal.
+- **Foundation only:** the same foundation phase toward 30 minutes of continuous easy running.
+- **Calibration:** two identical easy run/walk sessions per week for two weeks, using time instead
+  of invented distance.
+
+## Run the Published Container
+
+Requirements: Docker Engine with Compose v2 and OpenSSL for generating local secrets.
+
+Start from the documented environment template:
+
+```sh
+cp .env.example .env
+openssl rand -hex 24
+openssl rand -hex 32
+```
+
+Put the first generated value in `POSTGRES_PASSWORD` and in the password segment of
+`APP_DATABASE_URL`. Put the second in `BETTER_AUTH_SECRET`. For a local evaluation, the minimum
+relevant `.env` values are:
+
+```dotenv
+RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.0.1"
+POSTGRES_PASSWORD="<first generated value>"
+APP_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
+BETTER_AUTH_SECRET="<second generated value>"
+ORIGIN="http://localhost:4100"
+PUBLIC_APP_ORIGIN="http://localhost:4100"
+ALLOW_LOCAL_SIGNUPS="true"
+```
+
+Then pull and start the same tested image for migrations, the web app, and the import worker:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.production.yaml pull
+docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
+docker compose -f compose.yaml -f deploy/compose.production.yaml ps
+```
+
+Open [http://localhost:4100](http://localhost:4100), create the intended account, then set
+`ALLOW_LOCAL_SIGNUPS="false"` and apply the change:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
+```
+
+The app port is loopback-only by default.
+
+For an update or rollback, change `RUNWAY_IMAGE` to a tested version, full `sha-*` tag, or digest;
+run `pull`; then run `up` again. Production deployments should use HTTPS, keep registration closed,
+back up PostgreSQL before updates, and pin an immutable image reference. The
+[deployment guide](docs/DEPLOYMENT.md) covers the full environment contract, reverse proxy, OIDC,
+SMTP, imports, backups, and health checks.
+
+## Development Quick Start
+
+Requirements: Node.js 24, pnpm through Corepack, and Docker with Compose.
+
+```sh
+corepack pnpm install
+cp .env.example .env
+corepack pnpm db:start
+corepack pnpm db:migrate
+corepack pnpm dev
+```
+
+Open [http://localhost:4100](http://localhost:4100). The development server binds to
+`0.0.0.0:4100`.
+
+To test from another device, set `ORIGIN` and `PUBLIC_APP_ORIGIN` to the address that device uses to
+reach the development machine. Set `SITE_URL` to that same address when running `verify:preview`.
+
+Real GPX, FIT, and TCX files are private training data. Keep local samples in `samples/` and never
+commit them.
+
+## Verification
+
+For the complete local release gate:
+
+```sh
+corepack pnpm verify:full
+```
+
+Focused commands are available for faster iteration:
+
+```sh
+corepack pnpm format:check
+corepack pnpm verify:docs
+corepack pnpm lint
+corepack pnpm check
+corepack pnpm test:unit
+corepack pnpm test:e2e
+corepack pnpm test:visual
+corepack pnpm verify:migrations
+corepack pnpm verify:compose
+corepack pnpm verify:compose:production
+corepack pnpm verify:dependencies
+corepack pnpm verify:image -- runway:local
+```
+
+Browser suites allocate an ephemeral PostgreSQL database and preview port, so functional and visual
+checks do not share account, rate-limit, or training state. Visual snapshot changes still require
+browser and diff inspection.
+
+To verify the built application, start the production preview in one terminal:
+
+```sh
+corepack pnpm build
+corepack pnpm preview
+```
+
+Then run the live checks from another terminal:
+
+```sh
+SITE_URL=http://localhost:4100 corepack pnpm verify:preview
+```
+
+## Deployment
+
+The tested image is published for AMD64 and ARM64 at:
+
+```text
+ghcr.io/deftmartian/runway:latest
+```
+
+Every published image also receives `sha-<full-commit-sha>`; release tags receive matching semantic
+version tags. Pin a full SHA tag or image digest in production so rollback does not depend on a
+moving tag.
+
+The production shape is PostgreSQL plus separate web, migration, and import-worker processes behind
+an HTTPS reverse proxy. Authentik OIDC, local username/password, 2FA, passkeys, SMTP password reset,
+Nextcloud GPX import, Caddy, and Cloudflare are documented but independently configurable.
+Standard Compose deployment uses a loopback-published app port; an optional overlay supports a
+dedicated `ipvlan` without making that private network layout a requirement for other installations.
+All three runway services use the same image; Compose never builds application containers.
+
+Modified network deployments must set `PUBLIC_SOURCE_URL` to the corresponding source tree. See the
+[deployment guide](docs/DEPLOYMENT.md) for the environment contract, Compose layout, key rotation,
+health checks, and PWA verification.
+
+## Documentation
+
+- [Product](docs/PRODUCT.md): product boundary, audience, value, planning paths, and non-goals.
+- [Design system](docs/DESIGN_SYSTEM.md): visual language, controls, interaction, copy, responsive
+  behavior, and visual testing.
+- [Architecture](docs/ARCHITECTURE.md): stack, routes, runtime shape, data ownership, training logic,
+  and imports.
+- [Security](docs/SECURITY.md): auth, privacy defaults, threat model, GPX handling, Nextcloud sync,
+  and audit expectations.
+- [Deployment](docs/DEPLOYMENT.md): production environment, Authentik, SMTP, Nextcloud, Caddy,
+  Cloudflare, and PWA checks.
+- [Training sources](docs/TRAINING_SOURCES.md): source-backed training claims and product limits.
+- [Contributing](CONTRIBUTING.md): setup, change discipline, privacy rules, and review expectations.
+
+## Current Boundaries
+
+- Watches and phone apps record the activity; runway plans, reviews, and explains consequences.
+- HTTP is suitable for local product review. Passkeys, OIDC redirects, secure cookies,
+  installability, and offline behavior need the real HTTPS origin.
+- Installed Chromium-family PWAs can receive GPX files from the operating-system share sheet or read
+  an explicitly approved Gadgetbridge Auto GPX export directory. New records enter review without
+  changing the plan automatically.
+- Password reset needs `MAIL_ENABLED=true` and SMTP configuration.
+- Nextcloud sync expects a password-protected public folder share and an exact-origin production
+  allowlist.
+- The current release stores aggregate GPX activity data. Route maps remain deferred until route
+  privacy controls exist.
+- Training guidance supports planning decisions; it is not medical advice or individualized
+  coaching.
+
+## License
+
+Copyright © 2026 runway contributors.
+
+runway is licensed under the [GNU Affero General Public License v3.0 only](LICENSE)
+(`AGPL-3.0-only`). Modified versions made available over a network must offer their corresponding
+source to users.
