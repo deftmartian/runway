@@ -1,4 +1,4 @@
-ALTER TABLE "athlete_profile" ADD COLUMN "route_data_mode" text DEFAULT 'discard' NOT NULL;
+ALTER TABLE "athlete_profile" ADD COLUMN "route_data_mode" text DEFAULT 'private' NOT NULL;
 --> statement-breakpoint
 ALTER TABLE "activity" ADD COLUMN "heart_rate_series" jsonb;
 --> statement-breakpoint

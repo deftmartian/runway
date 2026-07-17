@@ -119,7 +119,7 @@ export const athleteProfile = pgTable(
 		routeDataMode: text('route_data_mode')
 			.$type<'discard' | 'private'>()
 			.notNull()
-			.default('discard'),
+			.default('private'),
 		currentWeeklyDistanceMeters: integer('current_weekly_distance_meters').notNull().default(0),
 		currentRunsPerWeek: integer('current_runs_per_week').notNull().default(0),
 		longestRecentRunMeters: integer('longest_recent_run_meters').notNull().default(0),

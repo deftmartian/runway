@@ -246,6 +246,39 @@
 		</section>
 	{/if}
 
+	{#if hasHeartRateSample}
+		<section class="stats-section heart-rate" aria-labelledby="heart-rate-title">
+			<header class="section-heading">
+				<div>
+					<h2 id="heart-rate-title">Heart rate</h2>
+					<span>{heartRateSample.windowDays} days ending {heartRateSample.windowEnd}</span>
+				</div>
+				{#if heartRateSample.latest}
+					<strong>Latest max {heartRateSample.latest.maxHeartRate ?? 'unknown'} bpm</strong>
+				{/if}
+			</header>
+			<dl class="data-strip heart-rate-data">
+				<div>
+					<dt>Average heart rate</dt>
+					<dd>{averageHeartRate} bpm</dd>
+				</div>
+				<div>
+					<dt>Latest vs earliest</dt>
+					<dd>{heartRateTrendLabel}</dd>
+				</div>
+				<div>
+					<dt>Runs with HR</dt>
+					<dd>{heartRateSample.sampleCount}</dd>
+				</div>
+				<div>
+					<dt>High-zone time</dt>
+					<dd>{highZoneMinutes} min</dd>
+				</div>
+			</dl>
+			<p>Recorded context for comparing runs. Any plan change remains your decision.</p>
+		</section>
+	{/if}
+
 	{#if !data.active}
 		<section class="stats-section no-plan" aria-labelledby="no-active-plan-title">
 			<h2 id="no-active-plan-title">No active plan</h2>
@@ -283,38 +316,6 @@
 					<dd>{painFlags}</dd>
 				</div>
 			</dl>
-
-			{#if hasHeartRateSample}
-				<div class="heart-rate" aria-labelledby="heart-rate-title">
-					<header>
-						<h3 id="heart-rate-title">Heart rate</h3>
-						<span>{heartRateSample.windowDays} days ending {heartRateSample.windowEnd}</span>
-					</header>
-					<dl class="data-strip heart-rate-data">
-						<div>
-							<dt>Average heart rate</dt>
-							<dd>{averageHeartRate} bpm</dd>
-						</div>
-						<div>
-							<dt>Change</dt>
-							<dd>{heartRateTrendLabel}</dd>
-						</div>
-						<div>
-							<dt>Runs with HR</dt>
-							<dd>{heartRateSample.sampleCount}</dd>
-						</div>
-						<div>
-							<dt>High-zone time</dt>
-							<dd>{highZoneMinutes} min</dd>
-						</div>
-					</dl>
-					{#if heartRateSample.latest}
-						<p>
-							Latest max {heartRateSample.latest.maxHeartRate ?? 'unknown'} bpm. Descriptive only.
-						</p>
-					{/if}
-				</div>
-			{/if}
 
 			{#if weeksToDate.length > 0}
 				<div class="weekly-breakdown">
@@ -416,7 +417,6 @@
 	.stats-page-header h1,
 	.stats-page-header p,
 	.section-heading h2,
-	.heart-rate h3,
 	.weekly-breakdown h3,
 	.no-plan h2,
 	.no-plan p,
@@ -567,7 +567,6 @@
 		max-width: 650px;
 	}
 
-	.heart-rate h3,
 	.weekly-breakdown h3 {
 		font-size: 1rem;
 	}
@@ -604,18 +603,10 @@
 		line-height: 1.4;
 	}
 
-	.heart-rate,
 	.weekly-breakdown {
 		display: grid;
 		gap: 14px;
 		padding-top: 4px;
-	}
-
-	.heart-rate header {
-		display: flex;
-		gap: 16px;
-		align-items: baseline;
-		justify-content: space-between;
 	}
 
 	.heart-rate p {

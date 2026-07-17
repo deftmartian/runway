@@ -10,7 +10,7 @@ runway handles personal data that can be more sensitive than it first appears:
 - pace, heart rate, activity history, and schedule patterns can reveal fitness level and routine;
 - account credentials, reset tokens, 2FA factors, and passkeys need normal account-security rigor.
 
-Treat route and injury data as private by default.
+Treat route and injury data as user-owned and non-public by default.
 
 ## Reporting A Vulnerability
 
@@ -88,7 +88,8 @@ Default behavior should be private:
 - no public maps;
 - no route sharing by default;
 - no telemetry;
-- no external map tiles until the map privacy decision is explicit.
+- route traces remain inside the self-hosted database and authenticated UI;
+- no external map tiles.
 
 ## Audit Event Retention
 
@@ -114,10 +115,10 @@ Real GPX, FIT, and TCX samples must go in `samples/`, which is ignored by git.
 Importer behavior should:
 
 - avoid logging raw coordinates;
-- store original imports only when needed;
+- discard original GPX bytes after parsing;
+- retain only bounded route and heart-rate display series, with an explicit route-retention control;
 - make delete/export possible through authenticated settings controls;
 - scope duplicate-detection hashes to the user so they are not stable cross-user fingerprints;
-- defer route start/end redaction and map display until route privacy controls exist;
 - document whether elevation, heart rate, and timestamps are stored.
 
 An approved device-folder source is a browser-local capability, not a server path. Store its

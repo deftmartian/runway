@@ -2,9 +2,9 @@
 
 ## Product Feel
 
-runway is a private training instrument. It should feel quiet, exact, and useful under repeated daily use.
+runway is a self-hosted training instrument. It should feel clear, crafted, and useful under repeated daily use. Clean must not become sterile: measured colour, strong composition, and expressive data visuals should make the product pleasant to return to.
 
-The interface is not a generic admin dashboard, calendar skin, fitness social product, or motivational coach. Its visual identity comes from runway rails, centerlines, distance ticks, plan traces, tabular measurements, and visible decision history.
+The interface is not a generic admin dashboard, calendar skin, fitness social product, or motivational coach. Its visual identity comes from runway rails, centerlines, distance ticks, plan traces, route shapes, heart-rate traces, tabular measurements, and visible decision history. Data visualizations are the most expressive surfaces; surrounding controls stay quieter so the app feels polished rather than busy.
 
 ## Canvas And Geometry
 
@@ -62,6 +62,8 @@ Do not praise, shame, reassure, or make runway speak as a coach. Keep safety gui
 
 - **Runway mark** — inline SVG with parallel rails, inner edges, and a dashed centerline.
 - **Plan trace** — accessible SVG and exact table for generated, current, and actual work.
+- **Activity visuals** — local SVG route map with non-colour relative-speed treatments, plus an
+  accessible heart-rate trace, zone summary, and retained-sample table.
 - **State marker** — status pill with a visible symbol and text, never color alone.
 - **Measurement readout** — label plus tabular value/unit on a structural rail.
 - **Section rail** — flat section header/content layout for wide settings or records.
@@ -96,7 +98,7 @@ The calendar is the product center. It shows planned, edited, actual, missed, sk
 
 ### Activity inbox
 
-The page is an activity ledger first and import-source setup second. Every unresolved record has one obvious `Review` action. Inside review, linking, counting as extra, feedback, and deletion remain explicit separate decisions.
+The page is an activity ledger first and import-source setup second. Every unresolved record has one obvious `Review` action. An opened GPX record leads with the route and heart-rate story before linking, feedback, and deletion controls. The map and chart can carry richer colour and shape than the surrounding ledger while remaining readable without colour.
 
 ### Stats
 

@@ -2,7 +2,7 @@
 
 ## Boundary
 
-runway is a self-hosted planning, activity-review, and decision-ledger PWA. It does not record GPS live. Server code accepts goals, prescriptions, results, and imported activity aggregates, then presents conservative recommendations and explicit decisions.
+runway is a self-hosted planning, activity-review, and decision-ledger PWA. It does not record GPS live. Server code accepts goals, prescriptions, results, and imported activity data, then presents editable recommendations and explicit decisions.
 
 ## Stack
 
@@ -130,7 +130,17 @@ Local accounts, OIDC, TOTP/recovery codes, and passkeys are product requirements
 
 ## Import Architecture
 
-All GPX entry points use the same bounded parser and persist aggregates needed by the product: activity date/time, duration, distance, point count, and optional aggregate heart-rate/cadence/speed data. Raw bytes are discarded after validation. Raw coordinates and metadata are never logged.
+All GPX entry points use the same bounded parser and persist activity date/time, duration, distance,
+point count, optional heart-rate/cadence/speed aggregates, a heart-rate series of at most 600 points,
+and—when enabled—a route trace of at most 600 points. Route retention defaults to `private` for the
+self-hosted database and can be changed to `discard`; changing it to `discard` also clears existing
+route traces while leaving activity totals and heart-rate data intact. Raw GPX bytes are discarded
+after validation. Coordinates and metadata are never logged.
+
+Authenticated activity records render the retained route as a local SVG with relative-speed
+segments, start/finish markers, and no external tile request. Heart rate renders as an accessible
+elapsed-time chart, a zone-duration summary when zones were configured at import, and an exact
+retained-sample table. Aggregate Stats remain available when no plan is active.
 
 ### Manual and share target
 

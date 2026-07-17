@@ -19,7 +19,7 @@
 		if (pathname.startsWith('/login/forgot-password')) return 'Reset password · runway';
 		if (pathname.startsWith('/login/reset-password')) return 'Choose a new password · runway';
 		if (pathname.startsWith('/login')) return 'Sign in · runway';
-		return 'runway · conservative running plans';
+		return 'runway · running plans and activity review';
 	}
 </script>
 
@@ -27,7 +27,7 @@
 	<title>{documentTitle}</title>
 	<meta
 		name="description"
-		content="A self-hosted decision ledger for conservative running plans and plan-versus-actual review."
+		content="A self-hosted running planner and activity ledger for comparing recommendations, edits, and recorded work."
 	/>
 	<link rel="icon" href={favicon} />
 	<link rel="apple-touch-icon" sizes="180x180" href="/pwa/apple-touch-icon.png" />

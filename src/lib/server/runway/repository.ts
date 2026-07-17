@@ -3951,7 +3951,10 @@ export async function getHistory(
 				longestRunMeters: sql<number>`coalesce(max(${activity.distanceMeters}), 0)::int`,
 				painFlags: sql<number>`count(*) filter (where ${activity.pain})::int`,
 				hardFlags: sql<number>`count(*) filter (where ${activity.feltHard})::int`,
-				averageHeartRate: sql<number | null>`round(avg(${activity.averageHeartRate}))::int`
+				averageHeartRate: sql<number | null>`round(
+					(sum((${activity.averageHeartRate}::bigint * ${activity.durationSeconds})) filter (where ${activity.averageHeartRate} is not null and ${activity.durationSeconds} is not null))::numeric
+					/ nullif(sum(${activity.durationSeconds}) filter (where ${activity.averageHeartRate} is not null), 0)
+				)::int`
 			})
 			.from(activity)
 			.leftJoin(workout, and(eq(activity.workoutId, workout.id), eq(workout.userId, userId)))
@@ -4096,7 +4099,10 @@ async function getHeartRateSample(userId: string, today: string) {
 		db
 			.select({
 				sampleCount: sql<number>`count(*)::int`,
-				averageHeartRate: sql<number>`round(avg(${activity.averageHeartRate}))::int`,
+				averageHeartRate: sql<number>`round(
+					(sum((${activity.averageHeartRate}::bigint * ${activity.durationSeconds})) filter (where ${activity.durationSeconds} is not null))::numeric
+					/ nullif(sum(${activity.durationSeconds}), 0)
+				)::int`,
 				highZoneSeconds: sql<number>`coalesce(sum(coalesce((${activity.heartRateSummary} ->> 'highSeconds')::int, 0)), 0)::int`
 			})
 			.from(activity)

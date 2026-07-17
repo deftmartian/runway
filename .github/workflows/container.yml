@@ -169,7 +169,7 @@ jobs:
               target_commitish: context.sha,
               name: `runway ${tag.replace(/^v/, '')}`,
               body: [
-                'The initial public release of runway: a self-hosted decision ledger for conservative running plans.',
+                'The initial public release of runway: a self-hosted running planner and activity decision ledger.',
                 '',
                 '### Highlights',
                 '- Four truthful starting paths: established baseline, foundation then goal, foundation only, and timed calibration.',

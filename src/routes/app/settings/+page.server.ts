@@ -67,7 +67,7 @@ export const load: PageServerLoad = async (event) => {
 		},
 		profile: {
 			timeZone: profile?.timeZone ?? null,
-			routeDataMode: profile?.routeDataMode ?? 'discard',
+			routeDataMode: profile?.routeDataMode ?? 'private',
 			sexForEstimates,
 			ageYears: validAge,
 			heartRateSettingsSource: heartRateSettings?.source ?? 'not_configured',
@@ -126,7 +126,7 @@ export const actions: Actions = {
 			scope: 'privacy',
 			message:
 				routeDataMode === 'private'
-					? 'Private route maps enabled for future GPX imports.'
+					? 'Route maps enabled for future GPX imports.'
 					: `Route points will be discarded after import.${clearedMessage}`
 		};
 	},

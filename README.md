@@ -5,8 +5,8 @@
 [![GHCR](https://img.shields.io/badge/container-ghcr.io-1f758f.svg)](https://github.com/deftmartian/runway/pkgs/container/runway)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
-**runway is a self-hosted decision ledger for runners who want a conservative plan they can
-inspect, edit, and own.**
+**runway is a self-hosted running planner and activity ledger for runners who want to inspect,
+edit, and own the whole record.**
 
 It keeps the generated recommendation, the runner's current plan, and recorded work distinct. When
 training does not match the plan, runway shows the difference and offers explicit next-plan choices
@@ -44,15 +44,16 @@ states.
 
 ## What It Does
 
-| Area              | Behavior                                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Planning          | Builds an editable, conservative running plan from an established baseline, a foundation phase, or a short timed calibration. |
-| Calendar          | Shows generated recommendations, the current plan, recorded work, rest, recovery spacing, and week load.                      |
-| Workout editing   | Moves, changes, adds, removes, resets, and undoes future non-race workouts with a consequence preview.                        |
-| Activity review   | Accepts manual or GPX activity facts first, suggests possible matches, and leaves ambiguous records for the runner.           |
-| Decisions         | Offers keep, reduce, rest, repeat, or rebalance choices after material deviations; nothing applies until confirmed.           |
-| History and stats | Preserves plan phases, edits, feedback-driven changes, archived plans, exact values, and plan-versus-actual traces.           |
-| Ownership         | Runs as a private PWA with local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure.                  |
+| Area              | Behavior                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Planning          | Builds an editable running plan from an established baseline, a foundation phase, or a short timed calibration.     |
+| Calendar          | Shows generated recommendations, the current plan, recorded work, rest, recovery spacing, and week load.            |
+| Workout editing   | Moves, changes, adds, removes, resets, and undoes future non-race workouts with a consequence preview.              |
+| Activity review   | Accepts manual or GPX activity facts first, suggests possible matches, and leaves ambiguous records for the runner. |
+| Activity detail   | Shows a locally rendered route map coloured by relative speed and a heart-rate trace with exact retained samples.   |
+| Decisions         | Offers keep, reduce, rest, repeat, or rebalance choices after material deviations; nothing applies until confirmed. |
+| History and stats | Preserves plan phases, edits, feedback-driven changes, archived plans, exact values, and plan-versus-actual traces. |
+| Ownership         | Runs as a private PWA with local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure.        |
 
 ### Planning paths
 
@@ -131,8 +132,8 @@ Open [http://localhost:4100](http://localhost:4100). The development server bind
 To test from another device, set `ORIGIN` and `PUBLIC_APP_ORIGIN` to the address that device uses to
 reach the development machine. Set `SITE_URL` to that same address when running `verify:preview`.
 
-Real GPX, FIT, and TCX files are private training data. Keep local samples in `samples/` and never
-commit them.
+Real GPX files contain personal training data. Keep local samples in `samples/` and never commit
+them.
 
 ## Verification
 
@@ -224,8 +225,9 @@ health checks, and PWA verification.
 - Password reset needs `MAIL_ENABLED=true` and SMTP configuration.
 - Nextcloud sync expects a password-protected public folder share and an exact-origin production
   allowlist.
-- The current release stores aggregate GPX activity data. Route maps remain deferred until route
-  privacy controls exist.
+- GPX imports keep a bounded route trace and heart-rate series for authenticated activity detail.
+  Route retention can be disabled or cleared in Settings, original files are discarded after
+  parsing, and maps do not contact an external tile service.
 - Training guidance supports planning decisions; it is not medical advice or individualized
   coaching.
 

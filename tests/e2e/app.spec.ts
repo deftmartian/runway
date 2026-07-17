@@ -1610,12 +1610,45 @@ test('heart-rate imports stay descriptive while stats show the measured zones', 
 	await expect(
 		page.getByRole('checkbox', { name: 'Felt harder than expected' }).first()
 	).not.toBeChecked();
+	await expect(page.getByRole('heading', { name: 'Route map' })).toBeVisible();
+	await expect(page.locator('svg.route-map')).toBeVisible();
+	await expect(page.locator('svg.heart-chart')).toBeVisible();
 
 	await page.getByRole('link', { name: 'Stats' }).click();
 	await expect(page.getByText('Average heart rate', { exact: true })).toBeVisible();
 	await expect(page.getByText('170 bpm').first()).toBeVisible();
 	await expect(page.getByText('High-zone time', { exact: true })).toBeVisible();
-	await expect(page.getByText('Latest max 172 bpm. Descriptive only.')).toBeVisible();
+	await expect(page.getByText('Latest max 172 bpm', { exact: true })).toBeVisible();
+});
+
+test('heart-rate stats remain available without an active plan', async ({ page }) => {
+	await createAccount(page);
+	await page.goto('/app/settings');
+	await page.getByLabel('Training time zone').fill('America/Halifax');
+	await page.getByRole('button', { name: 'Save time zone' }).click();
+	await expect(page.getByText('Training time zone saved.')).toBeVisible();
+
+	await page.goto('/app/import');
+	await openImportSourceSetup(page);
+	await page.getByLabel('GPX file').setInputFiles({
+		name: 'unplanned-heart-rate.gpx',
+		mimeType: 'application/gpx+xml',
+		buffer: Buffer.from(`<?xml version="1.0"?>
+			<gpx><trk><trkseg>
+				<trkpt lat="45.0000" lon="-63.0000"><time>2026-05-14T12:00:00Z</time><extensions><hr>138</hr></extensions></trkpt>
+				<trkpt lat="45.0020" lon="-63.0010"><time>2026-05-14T12:10:00Z</time><extensions><hr>142</hr></extensions></trkpt>
+			</trkseg></trk></gpx>`)
+	});
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await page.getByText('Review', { exact: true }).click();
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Count as extra training' }).click();
+	await expect(page.getByText('Included in training load')).toBeVisible();
+
+	await page.getByRole('link', { name: 'Stats' }).click();
+	await expect(page.getByRole('heading', { name: 'No active plan' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Heart rate' })).toBeVisible();
+	await expect(page.getByText('140 bpm')).toBeVisible();
 });
 
 test('settings keeps training profile values visible after save', async ({ page }) => {
@@ -2386,7 +2419,7 @@ test('Nextcloud share sync backfills files, tracks revisions, and honors deletio
 
 		await page.goto('/app/settings');
 		page.once('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Delete imported route data' }).click();
+		await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
 		await expect(
 			page.getByText('Disconnected 1 import folder so it cannot sync the activity back.')
 		).toBeVisible();

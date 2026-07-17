@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import WorkoutFeedbackForm from '$lib/components/WorkoutFeedbackForm.svelte';
+	import ActivityVisuals from './ActivityVisuals.svelte';
 	import WorkoutEditor from './WorkoutEditor.svelte';
 	import { decisionLabel, presentConsequence } from '$lib/training/consequence-presentation';
 	import { formatPace } from '$lib/training/format';
@@ -571,6 +572,23 @@
 			</dd>
 		</div>
 	</dl>
+
+	{#if event.activity}
+		<ActivityVisuals
+			id={`calendar-${event.activity.id}`}
+			routeTrace={event.activity.routeTrace}
+			heartRateSeries={event.activity.heartRateSeries}
+			heartRateSummary={event.activity.heartRateSummary}
+			averageHeartRate={event.activity.averageHeartRate}
+			maxHeartRate={event.activity.maxHeartRate}
+			durationSeconds={event.activity.durationSeconds}
+		/>
+		{#if event.activity.source === 'gpx' && !event.activity.routeTrace}
+			<p class="muted activity-trace-note">
+				This import predates saved route traces. Future GPX imports can include the route map.
+			</p>
+		{/if}
+	{/if}
 
 	{#if timedSteps.length > 0}
 		<section class="interval-prescription" aria-labelledby={`intervals-${event.id}`}>

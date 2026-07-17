@@ -6,7 +6,7 @@ runway is a self-hosted decision ledger for self-coached runners.
 
 Its central loop is:
 
-1. Show a conservative recommendation.
+1. Show a clear recommendation.
 2. Let the runner change it.
 3. Record what actually happened.
 4. Explain the difference and its effect on the week.
@@ -18,7 +18,7 @@ The product earns its place by making the next training decision, its evidence, 
 
 runway is not a watch, GPS tracker, human coach, social network, medical authority, or advanced sports-science workstation. Watches and phone apps record activities; runway plans, accepts activity records, compares plan with actual work, and preserves the runner's decisions.
 
-Do not add maps before route-privacy controls exist. Do not infer diagnoses, treatment, or individualized medical advice. Pain and medical restrictions can change the recommended decision, but the runner remains in control and qualified medical guidance takes precedence.
+Route maps require authenticated ownership, explicit retention/deletion controls, and local rendering without third-party tile requests. Do not infer diagnoses, treatment, or individualized medical advice. Pain and medical restrictions can change the recommended decision, but the runner remains in control and qualified medical guidance takes precedence.
 
 ## Position
 
@@ -29,7 +29,7 @@ runway occupies a deliberately narrow space:
 - simpler and running-specific compared with expert multisport analysis tools;
 - focused on plan-versus-actual consequences rather than GPS recording, audio coaching, social motivation, or workout laboratories.
 
-The defensible niche is **editable conservative planning, explicit consequences, and private ownership of sensitive training data**.
+The defensible niche is **editable planning, explicit consequences, and self-hosted ownership of the complete training record**.
 
 ## Audience
 
@@ -96,8 +96,8 @@ The app recommends one option and previews its effect, but applies nothing until
 ## Product Surfaces
 
 1. `/app` — primary calendar, today/next/review readouts, weekly load, and persistent desktop day inspector or focused mobile sheet.
-2. `/app/import` — compact activity ledger first; import source setup second.
-3. `/app/stats` — accessible generated/current/actual traces with exact values and descriptive effort/heart-rate context.
+2. `/app/import` — compact activity ledger first; import source setup second; opened GPX records include route and heart-rate visuals.
+3. `/app/stats` — accessible generated/current/actual traces with exact values and descriptive effort/heart-rate context, with or without an active plan.
 4. `/app/history` — active and archived plan phases, user edits, feedback-driven changes, reversals, and results.
 5. `/app/settings` — flat profile, account security, appearance, import, export, and privacy controls with progressive disclosure.
 6. `/app/onboarding` — four focused steps: Goal, Starting point, Schedule, Review.
@@ -110,6 +110,10 @@ Route data, schedule patterns, pain/load-risk notes, pace and heart-rate history
 
 - Authenticated pages are private and are not stored by the service worker.
 - Raw GPX content and coordinates are not logged or committed.
+- A bounded route trace is retained by default for authenticated activity maps; the runner can
+  discard route points on future imports or clear retained traces without deleting activity totals.
+- Heart-rate time series are bounded and retained for activity charts. Original GPX bytes are
+  discarded after parsing, and route maps do not request external tiles.
 - Import credentials are sealed and exact-origin constrained.
 - Exports and destructive controls remain user-scoped and explicit.
 - Local device-folder access stays in the approving browser and is cleared at account handoff/sign-out.
@@ -123,4 +127,3 @@ Route data, schedule patterns, pain/load-risk notes, pace and heart-rate history
 - Paid data APIs.
 - Automatic plan mutation without explicit consent.
 - Pace-zone speedwork or medical interpretation without reviewed source-backed behavior.
-- Maps before route privacy and deletion controls are complete.

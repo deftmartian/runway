@@ -653,18 +653,18 @@
 				aria-busy={settingsActionPending === 'routeDataMode'}
 			>
 				<fieldset>
-					<legend>Private route maps</legend>
+					<legend>Route maps</legend>
 					<p class="section-note">
-						Route points can reveal home, work, and routines. Maps are rendered locally without
-						contacting an external tile service.
+						Route traces stay in your runway database. Maps render locally without contacting an
+						external tile service.
 					</p>
+					<label>
+						<input type="radio" name="routeDataMode" value="private" bind:group={routeDataMode} />
+						<span><strong>Keep the route trace</strong> for maps on future GPX imports.</span>
+					</label>
 					<label>
 						<input type="radio" name="routeDataMode" value="discard" bind:group={routeDataMode} />
 						<span><strong>Discard route points</strong> after calculating activity totals.</span>
-					</label>
-					<label>
-						<input type="radio" name="routeDataMode" value="private" bind:group={routeDataMode} />
-						<span><strong>Keep a private route trace</strong> for maps on future GPX imports.</span>
 					</label>
 				</fieldset>
 				<button disabled={settingsActionPending !== null}>

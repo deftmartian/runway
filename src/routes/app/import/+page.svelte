@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import StateMarker from '$lib/components/visual/StateMarker.svelte';
+	import ActivityVisuals from '$lib/components/training/ActivityVisuals.svelte';
 	import {
 		connectDeviceFolder,
 		disconnectDeviceFolder,
@@ -344,6 +345,24 @@
 							{!activity.workoutId && !activity.extraPlanImpactConfirmed ? 'Review' : 'Manage'}
 						</span>
 					</summary>
+
+					<div class="record-visuals">
+						<ActivityVisuals
+							id={`inbox-${activity.id}`}
+							routeTrace={activity.routeTrace}
+							heartRateSeries={activity.heartRateSeries}
+							heartRateSummary={activity.heartRateSummary}
+							averageHeartRate={activity.averageHeartRate}
+							maxHeartRate={activity.maxHeartRate}
+							durationSeconds={activity.durationSeconds}
+						/>
+						{#if activity.source === 'gpx' && !activity.routeTrace}
+							<p class="muted activity-trace-note">
+								This import predates saved route traces. Future GPX imports can include the route
+								map.
+							</p>
+						{/if}
+					</div>
 
 					<div class="record-decisions">
 						{#if !activity.workoutId}
@@ -893,6 +912,19 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		border-top: 1px solid var(--line);
 		background: color-mix(in oklab, var(--surface-strong), transparent 46%);
+	}
+
+	.record-visuals {
+		display: grid;
+		gap: 10px;
+		padding: 18px;
+		border-top: 1px solid var(--line);
+		background: color-mix(in oklab, var(--surface-strong), transparent 62%);
+	}
+
+	.activity-trace-note {
+		margin: 0;
+		font-size: 0.85rem;
 	}
 
 	.decision-group {
