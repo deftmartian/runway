@@ -12,6 +12,7 @@ import {
 	deleteActivityData,
 	getAthleteProfile,
 	updateAthleteTimeZone,
+	updateRouteDataMode,
 	updateTrainingProfile
 } from '$lib/server/runway/repository';
 import { defaultHeartRateSettings, zoneFloors } from '$lib/training/heart-rate';
@@ -66,6 +67,7 @@ export const load: PageServerLoad = async (event) => {
 		},
 		profile: {
 			timeZone: profile?.timeZone ?? null,
+			routeDataMode: profile?.routeDataMode ?? 'discard',
 			sexForEstimates,
 			ageYears: validAge,
 			heartRateSettingsSource: heartRateSettings?.source ?? 'not_configured',
@@ -108,6 +110,25 @@ export const actions: Actions = {
 		}
 		await updateTrainingProfile(event.locals.user.id, parsed.data);
 		return { scope: 'trainingProfile', message: 'Training profile saved.' };
+	},
+	updateRouteDataMode: async (event) => {
+		if (!event.locals.user) throw redirect(302, '/login');
+		const routeDataMode = formString(await event.request.formData(), 'routeDataMode');
+		if (routeDataMode !== 'discard' && routeDataMode !== 'private') {
+			return fail(400, { scope: 'privacy', message: 'Choose how route points are handled.' });
+		}
+		const result = await updateRouteDataMode(event.locals.user.id, routeDataMode);
+		const clearedMessage =
+			result.clearedRouteCount > 0
+				? ` Removed saved routes from ${result.clearedRouteCount} ${result.clearedRouteCount === 1 ? 'activity' : 'activities'}.`
+				: '';
+		return {
+			scope: 'privacy',
+			message:
+				routeDataMode === 'private'
+					? 'Private route maps enabled for future GPX imports.'
+					: `Route points will be discarded after import.${clearedMessage}`
+		};
 	},
 	enableTwoFactor: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
@@ -243,7 +264,7 @@ export const actions: Actions = {
 		} catch {
 			return fail(500, {
 				scope: 'privacy',
-				message: 'Imported route data could not be deleted. Try again.'
+				message: 'Imported GPX activities could not be deleted. Try again.'
 			});
 		}
 		const activityMessage =

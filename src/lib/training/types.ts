@@ -142,6 +142,31 @@ export type HeartRateActivitySummary = {
 	settingsSource: HeartRateSettings['source'];
 };
 
+export type HeartRateSeriesPoint = {
+	elapsedSeconds: number;
+	bpm: number;
+};
+
+export type HeartRateSeries = {
+	version: 1;
+	sourceSampleCount: number;
+	points: HeartRateSeriesPoint[];
+};
+
+export type ActivityRoutePoint = {
+	latitudeE6: number;
+	longitudeE6: number;
+	elapsedSeconds: number;
+	segmentIndex: number;
+	speedMetersPerSecond: number | null;
+};
+
+export type ActivityRouteTrace = {
+	version: 1;
+	sourcePointCount: number;
+	points: ActivityRoutePoint[];
+};
+
 type CommonTrainingIntake = {
 	priority: GoalPriority;
 	units: 'metric';
@@ -289,6 +314,13 @@ export type ParsedGpxActivity = {
 	averageCadence?: number | undefined;
 	averageSpeedMetersPerSecond?: number | undefined;
 	heartRateSamples?: { at: Date; bpm: number; segmentIndex: number }[] | undefined;
+	routePoints: {
+		latitude: number;
+		longitude: number;
+		at: Date;
+		segmentIndex: number;
+		speedMetersPerSecond: number | null;
+	}[];
 	hasElevation: boolean;
 	hasHeartRate: boolean;
 	hasCadence: boolean;

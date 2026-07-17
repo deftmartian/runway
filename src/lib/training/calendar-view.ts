@@ -1,6 +1,8 @@
 import type {
+	ActivityRouteTrace,
 	ConsequenceResult,
 	HeartRateActivitySummary,
+	HeartRateSeries,
 	RiskRating,
 	TimedIntervalStructure,
 	WorkoutStatus,
@@ -96,6 +98,8 @@ export type TrainingCalendarActivity = {
 	averageHeartRate: number | null;
 	maxHeartRate: number | null;
 	heartRateSummary: HeartRateActivitySummary | null;
+	heartRateSeries: HeartRateSeries | null;
+	routeTrace: ActivityRouteTrace | null;
 	averageCadence: number | null;
 	feltHard: boolean;
 	pain: boolean;
@@ -105,6 +109,7 @@ export type TrainingCalendarActivity = {
 		pointCount: number;
 		startEndRedacted: boolean;
 		hasElevation: boolean;
+		traceRetained?: boolean;
 	};
 	matchedWorkoutPurpose: string | null;
 	matchedWorkoutDate: string | null;

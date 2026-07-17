@@ -29,6 +29,7 @@
 	let passkeyPending = $state(false);
 	let settingsActionPending = $state<string | null>(null);
 	let timeZone = $state(initialProfile.timeZone ?? '');
+	let routeDataMode = $state<'discard' | 'private'>(initialProfile.routeDataMode);
 	let sexForEstimates = $state<SexForEstimates>(initialProfile.sexForEstimates);
 	let ageYears = $state(initialProfile.ageYears?.toString() ?? '');
 	let maxHeartRateBpm = $state<number | undefined>(initialProfile.maxHeartRateBpm ?? undefined);
@@ -177,7 +178,7 @@
 					await disconnectDeviceFolder(data.user.id);
 				} catch {
 					privacyClientMessage =
-						'Route data was not deleted because runway could not clear this browser’s folder access. Close other runway tabs and try again.';
+						'Imported GPX activities were not deleted because runway could not clear this browser’s folder access. Close other runway tabs and try again.';
 					settingsActionPending = null;
 					cancel();
 					return;
@@ -187,7 +188,7 @@
 				try {
 					if (result.type !== 'success' && key === 'deleteActivityData') {
 						privacyClientMessage =
-							'The folder was disconnected, but route data was not deleted. Try again, or reconnect the folder from Import.';
+							'The folder was disconnected, but imported GPX activities were not deleted. Try again, or reconnect the folder from Import.';
 					}
 					await update({
 						reset: result.type === 'success',
@@ -639,6 +640,39 @@
 			{#if scopedForm.scope === 'privacy' && scopedForm.message}
 				<p class="message" role="status" aria-live="polite">{scopedForm.message}</p>
 			{/if}
+			<form
+				class="route-privacy-form"
+				method="post"
+				action="?/updateRouteDataMode"
+				use:enhance={enhanceSettingsAction(
+					'routeDataMode',
+					routeDataMode === 'discard'
+						? 'Stop retaining route points and remove every saved route map? Activity totals and heart-rate data remain.'
+						: undefined
+				)}
+				aria-busy={settingsActionPending === 'routeDataMode'}
+			>
+				<fieldset>
+					<legend>Private route maps</legend>
+					<p class="section-note">
+						Route points can reveal home, work, and routines. Maps are rendered locally without
+						contacting an external tile service.
+					</p>
+					<label>
+						<input type="radio" name="routeDataMode" value="discard" bind:group={routeDataMode} />
+						<span><strong>Discard route points</strong> after calculating activity totals.</span>
+					</label>
+					<label>
+						<input type="radio" name="routeDataMode" value="private" bind:group={routeDataMode} />
+						<span><strong>Keep a private route trace</strong> for maps on future GPX imports.</span>
+					</label>
+				</fieldset>
+				<button disabled={settingsActionPending !== null}>
+					{settingsActionPending === 'routeDataMode'
+						? 'Saving route privacy…'
+						: 'Save route privacy'}
+				</button>
+			</form>
 			<div class="data-actions">
 				<a class="button" href={resolve('/app/settings/export.json')}>Export data</a>
 				<form
@@ -652,13 +686,13 @@
 				>
 					<button class="danger" disabled={settingsActionPending !== null}>
 						{settingsActionPending === 'deleteActivityData'
-							? 'Deleting imported route data…'
-							: 'Delete imported route data'}
+							? 'Deleting imported GPX activities…'
+							: 'Delete imported GPX activities'}
 					</button>
 				</form>
 			</div>
 			<p class="section-note">
-				Deleting imported route data also disconnects import folders and clears this browser’s
+				Deleting imported GPX activities also disconnects import folders and clears this browser’s
 				folder access. Manual runs remain in your history. Non-reversible file fingerprints remain
 				as deletion markers so the same private files are not silently imported again. This cannot
 				be undone.
@@ -932,6 +966,40 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 10px;
+	}
+
+	.route-privacy-form {
+		display: grid;
+		justify-items: start;
+		gap: 14px;
+		padding-bottom: 18px;
+		border-bottom: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+	}
+
+	.route-privacy-form fieldset {
+		display: grid;
+		gap: 12px;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.route-privacy-form legend {
+		margin-bottom: 8px;
+		font-weight: 700;
+	}
+
+	.route-privacy-form label {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		max-width: 68ch;
+		line-height: 1.45;
+	}
+
+	.route-privacy-form input {
+		flex: 0 0 auto;
+		margin-top: 0.2rem;
 	}
 
 	.data-actions form {

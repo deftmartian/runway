@@ -48,19 +48,21 @@ export function parseGpx(input: string | Buffer): ParsedGpxActivity {
 	if (points.length < 2) {
 		throw new Error('GPX file does not contain enough track points.');
 	}
+	const firstTime = parsePointTime(points[0]);
 
 	let distanceMeters = 0;
 	let maxHeartRate = 0;
 	const heartRateSamples: { at: Date; bpm: number; segmentIndex: number }[] = [];
 	const cadenceSamples: { at: Date; value: number; segmentIndex: number }[] = [];
 	const speedSamples: { at: Date; value: number; segmentIndex: number }[] = [];
+	const routePoints: ParsedGpxActivity['routePoints'] = [];
 	let hasElevation = false;
 	let previousTime: Date | undefined;
 
 	for (const record of pointRecords) {
 		const { point, segmentIndex } = record;
-		validateCoordinate(point.lat, 'latitude');
-		validateCoordinate(point.lon, 'longitude');
+		const latitude = validateCoordinate(point.lat, 'latitude');
+		const longitude = validateCoordinate(point.lon, 'longitude');
 		const currentTime = parsePointTime(point);
 		if (previousTime && currentTime.getTime() < previousTime.getTime()) {
 			throw new Error('GPX track point timestamps must be chronological.');
@@ -80,6 +82,13 @@ export function parseGpx(input: string | Buffer): ParsedGpxActivity {
 		if (metrics.speed !== undefined) {
 			speedSamples.push({ at: currentTime, value: metrics.speed, segmentIndex });
 		}
+		routePoints.push({
+			latitude,
+			longitude,
+			at: currentTime,
+			segmentIndex,
+			speedMetersPerSecond: metrics.speed ?? null
+		});
 	}
 	for (const segment of segments) {
 		for (let index = 1; index < segment.length; index += 1) {
@@ -89,7 +98,6 @@ export function parseGpx(input: string | Buffer): ParsedGpxActivity {
 		}
 	}
 
-	const firstTime = parsePointTime(points[0]);
 	const lastTime = parsePointTime(points.at(-1));
 	const durationSeconds = Math.max(
 		1,
@@ -107,6 +115,10 @@ export function parseGpx(input: string | Buffer): ParsedGpxActivity {
 		durationSeconds,
 		distanceMeters: Math.round(distanceMeters),
 		pointCount: points.length,
+		routePoints: routePoints.map((point, index) => ({
+			...point,
+			speedMetersPerSecond: point.speedMetersPerSecond ?? derivedSegmentSpeed(routePoints, index)
+		})),
 		hasElevation,
 		hasHeartRate: heartRateSamples.length > 0,
 		hasCadence: cadenceSamples.length > 0,
@@ -283,6 +295,23 @@ function collectPointMetrics(value: unknown): {
 		}
 	});
 	return metrics;
+}
+
+function derivedSegmentSpeed(
+	points: ParsedGpxActivity['routePoints'],
+	index: number
+): number | null {
+	const current = points[index];
+	const next = points[index + 1];
+	if (!current || !next || current.segmentIndex !== next.segmentIndex) return null;
+	const seconds = (next.at.getTime() - current.at.getTime()) / 1_000;
+	if (seconds <= 0) return null;
+	return (
+		haversineMeters(
+			{ lat: current.latitude, lon: current.longitude },
+			{ lat: next.latitude, lon: next.longitude }
+		) / seconds
+	);
 }
 
 function validateCoordinate(

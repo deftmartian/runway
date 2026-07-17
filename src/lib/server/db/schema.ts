@@ -16,8 +16,10 @@ import {
 	uuid
 } from 'drizzle-orm/pg-core';
 import type {
+	ActivityRouteTrace,
 	ConsequenceResult,
 	HeartRateActivitySummary,
+	HeartRateSeries,
 	HeartRateSettings,
 	PlanSummary,
 	TimedIntervalStructure,
@@ -114,6 +116,10 @@ export const athleteProfile = pgTable(
 		sexForEstimates: sexForEstimates('sex_for_estimates').notNull().default('not_specified'),
 		ageYears: integer('age_years'),
 		heartRateSettings: jsonb('heart_rate_settings').$type<HeartRateSettings>(),
+		routeDataMode: text('route_data_mode')
+			.$type<'discard' | 'private'>()
+			.notNull()
+			.default('discard'),
 		currentWeeklyDistanceMeters: integer('current_weekly_distance_meters').notNull().default(0),
 		currentRunsPerWeek: integer('current_runs_per_week').notNull().default(0),
 		longestRecentRunMeters: integer('longest_recent_run_meters').notNull().default(0),
@@ -158,6 +164,10 @@ export const athleteProfile = pgTable(
 		check(
 			'athlete_profile_import_generation_nonnegative',
 			sql`${table.activityImportGeneration} >= 0`
+		),
+		check(
+			'athlete_profile_route_data_mode_known',
+			sql`${table.routeDataMode} in ('discard', 'private')`
 		)
 	]
 );
@@ -415,6 +425,8 @@ export const activity = pgTable(
 		averageHeartRate: integer('average_heart_rate'),
 		maxHeartRate: integer('max_heart_rate'),
 		heartRateSummary: jsonb('heart_rate_summary').$type<HeartRateActivitySummary>(),
+		heartRateSeries: jsonb('heart_rate_series').$type<HeartRateSeries>(),
+		routeTrace: jsonb('route_trace').$type<ActivityRouteTrace>(),
 		averageCadence: integer('average_cadence'),
 		feltHard: boolean('felt_hard').notNull().default(false),
 		pain: boolean('pain').notNull().default(false),
@@ -427,6 +439,7 @@ export const activity = pgTable(
 				pointCount: number;
 				startEndRedacted: boolean;
 				hasElevation: boolean;
+				traceRetained?: boolean;
 			}>()
 			.notNull(),
 		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()

@@ -69,6 +69,8 @@ describe('presentCalendarEvent', () => {
 					averageHeartRate: null,
 					maxHeartRate: null,
 					heartRateSummary: null,
+					heartRateSeries: null,
+					routeTrace: null,
 					averageCadence: null,
 					feltHard: true,
 					pain: true,

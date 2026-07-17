@@ -148,6 +148,13 @@
       "when": 1784187000000,
       "tag": "0020_import_generation_barrier",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784260668587,
+      "tag": "0021_private_activity_traces",
+      "breakpoints": true
     }
   ]
 }

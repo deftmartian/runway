@@ -42,6 +42,7 @@ import {
 } from '$lib/training/date';
 import { calculateConsequence, withAppliedDecision } from '$lib/training/consequences';
 import { formatConsequenceAuditReason } from '$lib/training/consequence-presentation';
+import { buildActivityRouteTrace, buildHeartRateSeries } from '$lib/training/activity-trace';
 import { buildHeartRateSettings, summarizeHeartRateEffort } from '$lib/training/heart-rate';
 import { generatePlan } from '$lib/training/plan';
 import {
@@ -323,6 +324,41 @@ export async function updateAthleteTimeZone(userId: string, timeZone: string) {
 				set: { timeZone, updatedAt: new Date() }
 			});
 		return { timeZone };
+	});
+}
+
+export async function updateRouteDataMode(userId: string, routeDataMode: 'discard' | 'private') {
+	return db.transaction(async (tx) => {
+		await tx
+			.insert(athleteProfile)
+			.values({ userId, routeDataMode })
+			.onConflictDoUpdate({
+				target: athleteProfile.userId,
+				set: { routeDataMode, updatedAt: new Date() }
+			});
+
+		const cleared =
+			routeDataMode === 'discard'
+				? await tx
+						.update(activity)
+						.set({
+							routeTrace: null,
+							routeSummary: sql`jsonb_set(jsonb_set(${activity.routeSummary}, '{traceRetained}', 'false'::jsonb, true), '{startEndRedacted}', 'true'::jsonb, true)`
+						})
+						.where(and(eq(activity.userId, userId), isNotNull(activity.routeTrace)))
+						.returning({ id: activity.id })
+				: [];
+
+		await tx.insert(auditEvent).values({
+			userId,
+			eventType: 'profile.route_privacy_updated',
+			detail: {
+				routeDataMode,
+				clearedRouteCount: cleared.length
+			}
+		});
+
+		return { routeDataMode, clearedRouteCount: cleared.length };
 	});
 }
 
@@ -1199,6 +1235,8 @@ export async function getTrainingCalendar(userId: string, options?: { month?: st
 				averageHeartRate: activity.averageHeartRate,
 				maxHeartRate: activity.maxHeartRate,
 				heartRateSummary: activity.heartRateSummary,
+				heartRateSeries: activity.heartRateSeries,
+				routeTrace: activity.routeTrace,
 				averageCadence: activity.averageCadence,
 				feltHard: activity.feltHard,
 				pain: activity.pain,
@@ -1307,6 +1345,8 @@ export async function getTrainingCalendar(userId: string, options?: { month?: st
 			averageHeartRate: activity.averageHeartRate,
 			maxHeartRate: activity.maxHeartRate,
 			heartRateSummary: activity.heartRateSummary,
+			heartRateSeries: activity.heartRateSeries,
+			routeTrace: activity.routeTrace,
 			averageCadence: activity.averageCadence,
 			feltHard: activity.feltHard,
 			pain: activity.pain,
@@ -3344,6 +3384,8 @@ export async function linkActivityToWorkout(
 				distanceMeters: activity.distanceMeters,
 				durationSeconds: activity.durationSeconds,
 				heartRateSummary: activity.heartRateSummary,
+				heartRateSeries: activity.heartRateSeries,
+				routeTrace: activity.routeTrace,
 				feltHard: activity.feltHard,
 				pain: activity.pain,
 				extraPlanImpactConfirmed: activity.extraPlanImpactConfirmed
@@ -3824,6 +3866,8 @@ export async function getHistory(
 			averageHeartRate: activity.averageHeartRate,
 			maxHeartRate: activity.maxHeartRate,
 			heartRateSummary: activity.heartRateSummary,
+			heartRateSeries: activity.heartRateSeries,
+			routeTrace: activity.routeTrace,
 			averageCadence: activity.averageCadence,
 			feltHard: activity.feltHard,
 			pain: activity.pain,
@@ -4251,6 +4295,8 @@ export async function getActivityRecords(
 				averageHeartRate: activity.averageHeartRate,
 				maxHeartRate: activity.maxHeartRate,
 				heartRateSummary: activity.heartRateSummary,
+				heartRateSeries: activity.heartRateSeries,
+				routeTrace: activity.routeTrace,
 				feltHard: activity.feltHard,
 				pain: activity.pain,
 				extraPlanImpactConfirmed: activity.extraPlanImpactConfirmed,
@@ -4628,12 +4674,16 @@ export async function recordImportedActivity(
 
 		const [profile] = await tx
 			.select({
-				heartRateSettings: athleteProfile.heartRateSettings
+				heartRateSettings: athleteProfile.heartRateSettings,
+				routeDataMode: athleteProfile.routeDataMode
 			})
 			.from(athleteProfile)
 			.where(eq(athleteProfile.userId, userId))
 			.limit(1);
 		const heartRateSummary = summarizeHeartRateEffort(parsed, profile?.heartRateSettings);
+		const heartRateSeries = buildHeartRateSeries(parsed);
+		const routeTrace =
+			profile?.routeDataMode === 'private' ? buildActivityRouteTrace(parsed) : null;
 		// Zone occupancy is descriptive; it cannot stand in for the athlete's
 		// subjective report that a run felt hard.
 		const feltHardFromHeartRate = false;
@@ -4658,13 +4708,16 @@ export async function recordImportedActivity(
 					averageHeartRate: parsed.averageHeartRate,
 					maxHeartRate: parsed.maxHeartRate,
 					heartRateSummary,
+					heartRateSeries,
+					routeTrace,
 					feltHard: feltHardFromHeartRate,
 					pain: false,
 					averageCadence: parsed.averageCadence,
 					routeSummary: {
 						pointCount: parsed.pointCount,
-						startEndRedacted: true,
-						hasElevation: parsed.hasElevation
+						startEndRedacted: routeTrace === null,
+						hasElevation: parsed.hasElevation,
+						traceRetained: routeTrace !== null
 					}
 				})
 				.returning();
