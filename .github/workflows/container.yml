@@ -49,7 +49,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: runway-container-${{ github.ref }}
+  group: runway-container-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
@@ -95,6 +95,7 @@ jobs:
           tags: |
             type=raw,value=sha-${{ github.sha }}
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' || github.ref_name == github.event.repository.default_branch }}
+            type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - name: Build and publish image
@@ -143,12 +144,24 @@ jobs:
           script: |
             const tag = context.ref.replace('refs/tags/', '');
             const request = { ...context.repo, tag };
+            let existing;
             try {
-              await github.rest.repos.getReleaseByTag(request);
-              core.info(`Release ${tag} already exists.`);
-              return;
+              existing = await github.rest.repos.getReleaseByTag(request);
             } catch (error) {
               if (error.status !== 404) throw error;
+            }
+            if (existing) {
+              await github.rest.repos.updateRelease({
+                ...context.repo,
+                release_id: existing.data.id,
+                tag_name: tag,
+                target_commitish: context.sha,
+                name: existing.data.name,
+                body: existing.data.body,
+                make_latest: 'true'
+              });
+              core.info(`Release ${tag} updated.`);
+              return;
             }
             await github.rest.repos.createRelease({
               ...context.repo,

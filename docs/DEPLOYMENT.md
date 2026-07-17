@@ -339,10 +339,11 @@ rejection. A direct HTTP origin check intentionally cannot prove the TLS/HSTS bo
 
 Successful image-affecting changes on `main` publish a tested AMD64/ARM64 image to
 `ghcr.io/deftmartian/runway`. The publisher writes `latest` and `sha-<full-commit-sha>` tags; version
-tags also publish matching semantic-version tags. The image carries OCI source, revision, license,
-description, provenance, and SBOM metadata. Release tags run the browser gate again and advance
-`latest` only after the same container verification succeeds. The tag workflow creates the matching
-GitHub Release only after the image-backed production stack passes.
+tags also publish the exact release tag and normalized semantic-version tags. The image carries OCI
+source, revision, license, description, provenance, and SBOM metadata. Release tags run the browser
+gate again and advance `latest` only after the same container verification succeeds. The tag
+workflow creates or updates the matching GitHub Release only after the image-backed production stack
+passes.
 
 After the first successful publish, a repository owner must confirm that the linked `runway` package
 is public in [GitHub's package settings](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
