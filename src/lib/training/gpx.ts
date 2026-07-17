@@ -303,7 +303,7 @@ function derivedSegmentSpeed(
 ): number | null {
 	const current = points[index];
 	const next = points[index + 1];
-	if (!current || !next || current.segmentIndex !== next.segmentIndex) return null;
+	if (!current || next?.segmentIndex !== current.segmentIndex) return null;
 	const seconds = (next.at.getTime() - current.at.getTime()) / 1_000;
 	if (seconds <= 0) return null;
 	return (

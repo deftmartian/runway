@@ -64,7 +64,8 @@ test('native GPX shares require a session and remain review-only', async ({ page
 		extraPlanImpactConfirmed: false,
 		consequence: null,
 		pointCount: 2,
-		startEndRedacted: true
+		startEndRedacted: false,
+		traceRetained: true
 	});
 
 	const duplicate = await page.request.post('/app/import/share', {
@@ -312,6 +313,7 @@ async function getImportedRecord(userId: string) {
 				consequence: unknown;
 				pointCount: number;
 				startEndRedacted: boolean;
+				traceRetained: boolean;
 			}[]
 		>`
 			select
@@ -319,7 +321,8 @@ async function getImportedRecord(userId: string) {
 				a.extra_plan_impact_confirmed as "extraPlanImpactConfirmed",
 				a.consequence,
 				(a.route_summary ->> 'pointCount')::integer as "pointCount",
-				(a.route_summary ->> 'startEndRedacted')::boolean as "startEndRedacted"
+				(a.route_summary ->> 'startEndRedacted')::boolean as "startEndRedacted",
+				(a.route_summary ->> 'traceRetained')::boolean as "traceRetained"
 			from activity a
 			where a.user_id = ${userId} and a.source = 'gpx'
 			order by a.created_at desc

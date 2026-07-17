@@ -57,7 +57,7 @@
 	const routeSegments = $derived.by(() =>
 		routePlot.slice(0, -1).flatMap((point, index) => {
 			const next = routePlot[index + 1];
-			if (!next || point.segmentIndex !== next.segmentIndex) return [];
+			if (next?.segmentIndex !== point.segmentIndex) return [];
 			return [
 				{
 					id: `${index}-${point.elapsedSeconds}`,
