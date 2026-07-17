@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="text-scale" content="scale" />
+		<script nonce="%sveltekit.nonce%">
+			try {
+				const theme = localStorage.getItem('runway-theme');
+				if (theme === 'light' || theme === 'dark') {
+					document.documentElement.dataset.theme = theme;
+				}
+			} catch {
+				// Keep the system color scheme when browser storage is not available.
+			}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="tap">
+		<div id="svelte">%sveltekit.body%</div>
+	</body>
+</html>

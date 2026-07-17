@@ -1,0 +1,25 @@
+.env
+.env.*
+!.env.example
+
+.git/
+.svelte-kit*/
+.vite/
+build/
+.runway-live/
+artifacts/
+coverage/
+node_modules/
+playwright-report/
+test-results/
+tests/visual/*-snapshots/
+
+*.log
+.DS_Store
+
+# Real activity exports can expose home/work locations and health-adjacent data.
+samples/*
+!samples/README.md
+*.gpx
+*.fit
+*.tcx

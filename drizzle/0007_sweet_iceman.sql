@@ -1,0 +1,1 @@
+CREATE INDEX "import_source_enabled_checked_idx" ON "import_source" USING btree ("enabled","last_checked_at");

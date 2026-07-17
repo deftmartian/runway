@@ -1,0 +1,102 @@
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: runway-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNWAY_FIXED_DATE: '2026-05-15'
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Production dependency advisory gate
+        run: corepack pnpm verify:dependencies
+      - name: Documentation and publication metadata
+        run: corepack pnpm verify:docs
+      - name: Static, unit, and production build checks
+        run: corepack pnpm verify
+      - name: Compose configuration
+        run: corepack pnpm verify:compose && corepack pnpm verify:compose:production
+
+  browser:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: corepack pnpm exec playwright install --with-deps chromium
+      - name: Functional browser suite
+        run: corepack pnpm test:e2e
+      - name: Production-layout visual suite
+        run: corepack pnpm test:visual
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-diagnostics
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
+  release-gates:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      APP_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
+      POSTGRES_PASSWORD: runway_ci_database_password
+      BETTER_AUTH_SECRET: runway-ci-auth-secret-with-at-least-32-characters
+      ORIGIN: https://runway.example.test
+      PUBLIC_APP_ORIGIN: https://runway.example.test
+      RUNWAY_BUILD_ID: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Fresh empty-database migration
+        run: corepack pnpm verify:migrations
+      - name: PWA cross-build cache policy
+        run: corepack pnpm verify:pwa
+      - name: Build and start production containers
+        run: docker compose up -d --build --wait app worker
+      - name: Verify production runtime and PWA revision
+        run: SITE_URL=http://127.0.0.1:4100 corepack pnpm verify:preview
+      - name: Container diagnostics
+        if: failure()
+        run: docker compose ps && docker compose logs --no-color --tail=200 app worker migrate db
+      - name: Stop containers
+        if: always()
+        run: docker compose down --volumes

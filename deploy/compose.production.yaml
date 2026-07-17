@@ -1,0 +1,51 @@
+services:
+  app:
+    build:
+      args:
+        RUNWAY_BUILD_ID: ${RUNWAY_BUILD_ID:?Set RUNWAY_BUILD_ID to the image commit SHA}
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+      ORIGIN: ${ORIGIN:?Set ORIGIN to the public HTTPS origin}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN to the public HTTPS origin}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a high-entropy secret}
+    ports: !reset []
+    expose:
+      - '4100'
+    networks:
+      vlan:
+        ipv4_address: ${RUNWAY_IPV4_ADDRESS:?Set RUNWAY_IPV4_ADDRESS for the app container}
+      runway-internal:
+    dns:
+      - ${DNS_SERVER:?Set DNS_SERVER to the stack VLAN resolver}
+
+  worker:
+    build:
+      args:
+        RUNWAY_BUILD_ID: ${RUNWAY_BUILD_ID:?Set RUNWAY_BUILD_ID to the image commit SHA}
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+      ORIGIN: ${ORIGIN:?Set ORIGIN to the public HTTPS origin}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN to the public HTTPS origin}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a high-entropy secret}
+    dns:
+      - ${DNS_SERVER:?Set DNS_SERVER to the stack VLAN resolver}
+
+  migrate:
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a strong database password}
+    ports: !reset []
+
+networks:
+  vlan:
+    name: ${IPVLAN_NETWORK_NAME:-runway-edge}
+    driver: ipvlan
+    driver_opts:
+      parent: ${IPVLAN_PARENT:?Set IPVLAN_PARENT to the host interface or VLAN subinterface}
+    ipam:
+      config:
+        - subnet: ${IPVLAN_SUBNET:?Set IPVLAN_SUBNET in CIDR notation}
+          gateway: ${IPVLAN_GATEWAY:?Set IPVLAN_GATEWAY}

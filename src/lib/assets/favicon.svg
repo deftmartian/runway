@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>runway</title>
+  <rect width="128" height="128" rx="20" fill="#edf3f7"/>
+  <path d="M34 18 16 110M94 18l18 92" fill="none" stroke="#1d6f91" stroke-width="8"/>
+  <path d="M46 18 34 110M82 18l12 92" fill="none" stroke="#6a9aad" stroke-width="4"/>
+  <path d="M64 18v92" fill="none" stroke="#071018" stroke-width="5" stroke-dasharray="14 10"/>
+</svg>
