@@ -99,6 +99,10 @@ test('dark mode app state has visual coverage', async ({ page }) => {
 async function seedVisualAccount(page: Page, fixtureName: string) {
 	const email = `visual-${fixtureName}@example.test`;
 	await page.goto('/login');
+	await page
+		.getByRole('navigation', { name: 'Account access' })
+		.getByRole('button', { name: 'Create account' })
+		.click();
 	const signup = page.locator('#create-account');
 	await signup.getByLabel('Email').fill(email);
 	await signup.getByLabel('Password').fill(visualPassword);
@@ -182,6 +186,10 @@ async function makeFirstPlanWeekCurrent(email: string) {
 
 async function createImportRecords(page: Page) {
 	await page.getByText('Add import source', { exact: true }).click();
+	await page
+		.getByRole('group', { name: 'Choose an import source' })
+		.getByRole('button', { name: /^Upload GPX/ })
+		.click();
 	const firstSelect = page.locator('select[name="workoutId"]').first();
 	const selectedWorkoutId = await firstSelect.evaluate((select) => {
 		if (!(select instanceof HTMLSelectElement)) return '';
@@ -196,16 +204,21 @@ async function createImportRecords(page: Page) {
 		mimeType: 'application/gpx+xml',
 		buffer: gpxForDistance('2026-05-13', 3_100)
 	});
-	await page.getByRole('button', { name: 'Import' }).click();
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
 	await expect(page.getByText('Matched to the selected planned workout.')).toBeVisible();
 
+	await page.getByText('Add import source', { exact: true }).click();
+	await page
+		.getByRole('group', { name: 'Choose an import source' })
+		.getByRole('button', { name: /^Upload GPX/ })
+		.click();
 	await page.getByLabel('Leave in inbox for review').check();
 	await page.getByLabel('GPX file').setInputFiles({
 		name: 'visual-unlinked.gpx',
 		mimeType: 'application/gpx+xml',
 		buffer: gpxForDistance('2026-05-10', 10_000)
 	});
-	await page.getByRole('button', { name: 'Import' }).click();
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
 	await expect(page.getByText(/Added to the activity inbox\./)).toBeVisible();
 	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toBeVisible();
 }

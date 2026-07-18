@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "screenshots": [
+    {
+      "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
+      "sourceSha256": "a682506adb3b76f0473a4415a25b2f4a35b731b6452805c815ce5300685ee033",
+      "output": "static/pwa/screenshots/calendar-mobile.png",
+      "outputSha256": "947d7951a11a2c964e37c71d4a53bf7a664e0f63550e86c09644f7244759c862"
+    },
+    {
+      "source": "tests/visual/runway.visual.ts-snapshots/calendar-wide-linux.png",
+      "sourceSha256": "35dbc360a30d18634558c1fd264dc61368de1edbb033530d70bc929d7421d2f1",
+      "output": "static/pwa/screenshots/calendar-desktop.png",
+      "outputSha256": "339c61bc1e56710de1319ecde5aebad43af2b7c13452e5cb3c2a0011e0a354e1"
+    }
+  ]
+}
