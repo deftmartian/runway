@@ -1,12 +1,15 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 
-const siteUrl = process.env['SITE_URL'] ?? 'http://127.0.0.1:4100';
+const configuredSiteUrl = process.env['SITE_URL'];
+const siteUrl = configuredSiteUrl ?? `http://127.0.0.1:${await availablePort('127.0.0.1')}`;
 const publicUrl = new URL(siteUrl);
-await assertPortAvailable(
-	publicUrl.hostname,
-	Number(publicUrl.port || (publicUrl.protocol === 'https:' ? 443 : 80))
-);
+if (configuredSiteUrl) {
+	await assertPortAvailable(
+		publicUrl.hostname,
+		Number(publicUrl.port || (publicUrl.protocol === 'https:' ? 443 : 80))
+	);
+}
 const preview = spawn(process.execPath, ['scripts/run-preview.mjs'], {
 	env: {
 		...process.env,
@@ -85,6 +88,24 @@ function assertPortAvailable(host, port) {
 		});
 		server.listen(port, host, () => {
 			server.close((error) => (error ? reject(error) : resolve()));
+		});
+	});
+}
+
+function availablePort(host) {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.unref();
+		server.once('error', reject);
+		server.listen(0, host, () => {
+			const address = server.address();
+			if (!address || typeof address === 'string') {
+				server.close();
+				reject(new Error('Could not allocate a local preview verification port.'));
+				return;
+			}
+			const { port } = address;
+			server.close((error) => (error ? reject(error) : resolve(port)));
 		});
 	});
 }
