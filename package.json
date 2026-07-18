@@ -1,7 +1,7 @@
 {
 	"name": "runway",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "A self-hosted running planner and activity ledger for comparing recommendations, edits, and recorded work.",
 	"license": "AGPL-3.0-only",
 	"repository": {

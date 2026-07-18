@@ -11,7 +11,7 @@ RepoType: git
 Repo: https://REPLACE_GIT_URL
 
 Builds:
-  - versionName: 0.1.0-dev
+  - versionName: 0.1.0
     versionCode: 1
     commit: REPLACE_SOURCE_COMMIT
     subdir: android
