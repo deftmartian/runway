@@ -1,6 +1,11 @@
 services:
   app:
     image: ${RUNWAY_IMAGE:?Set RUNWAY_IMAGE to a tested runway image tag or digest}
+    # The standard production shape is reachable only from a reverse proxy on
+    # this host. Use compose.ipvlan.yaml when the proxy is on a dedicated VLAN;
+    # do not turn this into a public application listener.
+    ports: !override
+      - 127.0.0.1:${RUNWAY_PORT:-4100}:4100
     environment:
       DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
       ORIGIN: ${ORIGIN:?Set ORIGIN to the public HTTPS origin}

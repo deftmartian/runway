@@ -9,5 +9,6 @@ Android also retains read access to a user-approved Gadgetbridge GPX export fold
 bounded checks without broad storage, location, fitness, Play Services, or advertising permissions.
 You can share one GPX file to runway from another Android app.
 
-This developer preview does not upload native folder/share files yet. Scoped device pairing and the
-mobile import API must be completed before a public release.
+Native folder and share imports use a scoped device credential, stable request ids, bounded reads,
+content-based revision checks, and the same review inbox as browser imports. Folder access remains
+limited to the directory you choose, and imported activities never change the plan before review.

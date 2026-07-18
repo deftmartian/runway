@@ -5,6 +5,7 @@ import { purgeExpiredAuditEvents } from './audit-retention';
 import { syncNextcloudSource } from './import-sources';
 
 const workerIntervalMs = 5 * 60 * 1000;
+export const importWorkerUserConcurrency = 3;
 
 export type ImportWorkerStatus = {
 	started: boolean;
@@ -96,15 +97,59 @@ async function syncDueNextcloudSourcesOnce(): Promise<void> {
 		)
 		.limit(50);
 
-	let failedSources = 0;
-	for (const source of sources) {
-		try {
-			const result = await syncNextcloudSource(source.userId, source.id);
-			if (result.status === 'failed') failedSources += 1;
-		} catch {
-			failedSources += 1;
+	const failedByUser = await mapWithBoundedConcurrency(
+		groupImportSourcesByUser(sources),
+		importWorkerUserConcurrency,
+		async (userSources) => {
+			let failures = 0;
+			// One account owns one import-operation lease, so its sources remain
+			// ordered while unrelated accounts can make progress independently.
+			for (const source of userSources) {
+				try {
+					const result = await syncNextcloudSource(source.userId, source.id);
+					if (result.status === 'failed') failures += 1;
+				} catch {
+					failures += 1;
+				}
+			}
+			return failures;
 		}
-	}
+	);
+	const failedSources = failedByUser.reduce((sum, count) => sum + count, 0);
 	if (failedSources > 0)
 		throw new Error('One or more scheduled import sources could not be synced.');
+}
+
+export function groupImportSourcesByUser<T extends { userId: string }>(
+	sources: readonly T[]
+): T[][] {
+	const groups = new Map<string, T[]>();
+	for (const source of sources) {
+		const group = groups.get(source.userId) ?? [];
+		group.push(source);
+		groups.set(source.userId, group);
+	}
+	return [...groups.values()];
+}
+
+export async function mapWithBoundedConcurrency<T, R>(
+	items: readonly T[],
+	concurrency: number,
+	work: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+	if (!Number.isInteger(concurrency) || concurrency < 1) {
+		throw new Error('Worker concurrency must be a positive integer.');
+	}
+	const results = new Array<R>(items.length);
+	let nextIndex = 0;
+	async function worker(): Promise<void> {
+		while (nextIndex < items.length) {
+			const index = nextIndex;
+			nextIndex += 1;
+			const item = items[index] as T;
+			results[index] = await work(item, index);
+		}
+	}
+	await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+	return results;
 }

@@ -20,6 +20,13 @@ export type SettingsProfile = {
 	zone3FloorBpm: number | null;
 	zone4FloorBpm: number | null;
 	zone5FloorBpm: number | null;
+	injuryFlags: {
+		recentInjury: boolean;
+		currentPain: boolean;
+		recurringPain: boolean;
+		medicalRestriction: boolean;
+		notes: string;
+	};
 };
 
 export type SettingsUser = {

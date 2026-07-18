@@ -1,4 +1,6 @@
 import type {
+	ConsequenceMetric,
+	ConsequenceMetricDelta,
 	ConsequenceResult,
 	DeviationClassification,
 	PlanDecision,
@@ -18,15 +20,19 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 	assertFeedbackInvariants(input);
 	const comparison = comparePrescription(input);
 	const repeatedMiss = (input.recentMissedWorkouts ?? 0) > 0;
-	const weeklyDistanceDeltaMeters =
-		comparison.metric === 'distance' ? comparison.actualDifference : 0;
+	const weeklyLoadDelta = metricDelta(comparison.metric, comparison.actualDifference);
 
 	if (input.pain) {
 		return result({
 			kind: 'pain_reported',
 			...comparison,
-			weeklyDistanceDeltaMeters,
-			nextRunAdjustmentMeters: -Math.max(input.targetDistanceMeters, 1_000),
+			weeklyLoadDelta,
+			nextRunAdjustment: metricDelta(
+				comparison.metric,
+				comparison.metric === 'duration'
+					? -Math.max(input.targetDurationSeconds ?? 0, 300)
+					: -Math.max(input.targetDistanceMeters, 1_000)
+			),
 			risk: 'unsafe',
 			recommendedDecision: 'next_rest'
 		});
@@ -48,11 +54,13 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 		return result({
 			kind: 'load_spike',
 			...comparison,
-			weeklyDistanceDeltaMeters,
-			nextRunAdjustmentMeters:
-				comparison.metric === 'distance'
-					? -Math.max(1_000, Math.round(comparison.actualDifference * 0.5))
-					: 0,
+			weeklyLoadDelta,
+			nextRunAdjustment: metricDelta(
+				comparison.metric,
+				comparison.metric === 'duration'
+					? -Math.max(300, Math.round(comparison.actualDifference * 0.5))
+					: -Math.max(1_000, Math.round(comparison.actualDifference * 0.5))
+			),
 			risk,
 			recommendedDecision: crossesGuardrail ? 'reduce_next' : 'keep_plan'
 		});
@@ -64,17 +72,16 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 		return result({
 			kind: repeatedMiss ? 'repeated_shortfall' : 'shortfall',
 			...comparison,
-			weeklyDistanceDeltaMeters,
-			nextRunAdjustmentMeters:
-				comparison.metric === 'distance'
-					? -Math.max(
-							500,
-							Math.round(
-								Math.abs(comparison.actualDifference) *
-									(input.feltHard || repeatedMiss ? 0.35 : 0.25)
-							)
-						)
-					: 0,
+			weeklyLoadDelta,
+			nextRunAdjustment: metricDelta(
+				comparison.metric,
+				-Math.max(
+					comparison.metric === 'duration' ? 300 : 500,
+					Math.round(
+						Math.abs(comparison.actualDifference) * (input.feltHard || repeatedMiss ? 0.35 : 0.25)
+					)
+				)
+			),
 			risk: largeShortfall || input.feltHard || repeatedMiss ? 'moderate' : 'conservative',
 			recommendedDecision: input.feltHard || repeatedMiss ? 'repeat_prescription' : 'keep_plan'
 		});
@@ -88,11 +95,14 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 					? 'skip_reduce'
 					: 'skip_continue',
 			...comparison,
-			weeklyDistanceDeltaMeters,
-			nextRunAdjustmentMeters:
-				comparison.metric === 'distance'
-					? -Math.max(500, Math.round(input.targetDistanceMeters * (input.feltHard ? 0.3 : 0.2)))
-					: 0,
+			weeklyLoadDelta,
+			nextRunAdjustment: metricDelta(
+				comparison.metric,
+				-Math.max(
+					comparison.metric === 'duration' ? 300 : 500,
+					Math.round(comparison.target * (input.feltHard ? 0.3 : 0.2))
+				)
+			),
 			risk: input.feltHard || repeatedMiss ? 'moderate' : 'conservative',
 			recommendedDecision: repeatedMiss || input.feltHard ? 'repeat_prescription' : 'keep_plan'
 		});
@@ -102,11 +112,14 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 		return result({
 			kind: 'hard_effort',
 			...comparison,
-			weeklyDistanceDeltaMeters,
-			nextRunAdjustmentMeters:
-				comparison.metric === 'distance'
-					? -Math.max(Math.round(input.targetDistanceMeters * 0.15), 1_000)
-					: 0,
+			weeklyLoadDelta,
+			nextRunAdjustment: metricDelta(
+				comparison.metric,
+				-Math.max(
+					Math.round(comparison.target * 0.15),
+					comparison.metric === 'duration' ? 300 : 1_000
+				)
+			),
 			risk: 'moderate',
 			recommendedDecision: 'reduce_next'
 		});
@@ -115,8 +128,8 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 	return result({
 		kind: 'completed_as_planned',
 		...comparison,
-		weeklyDistanceDeltaMeters,
-		nextRunAdjustmentMeters: 0,
+		weeklyLoadDelta,
+		nextRunAdjustment: metricDelta(comparison.metric, 0),
 		risk: 'conservative',
 		recommendedDecision: 'keep_plan'
 	});
@@ -129,6 +142,67 @@ export function withAppliedDecision(
 	if (!consequence.options.includes(decision))
 		throw new Error('Decision is not available for this result.');
 	return { ...consequence, appliedDecision: decision };
+}
+
+export type ConsequenceDecisionTarget = {
+	targetDistanceMeters: number;
+	targetDurationSeconds: number | null;
+};
+
+export type ConsequenceDecisionEffect = {
+	metric: ConsequenceMetric;
+	previousTarget: number;
+	adjustment: number;
+	newTarget: number;
+};
+
+export function isConsequenceDecisionTargetCompatible(
+	consequence: ConsequenceResult,
+	target: ConsequenceDecisionTarget
+): boolean {
+	const metric: ConsequenceMetric =
+		(target.targetDurationSeconds ?? 0) > 0 ? 'duration' : 'distance';
+	return consequence.nextRunAdjustment?.metric === metric;
+}
+
+/**
+ * Calculates the exact target change used by both decision previews and persistence.
+ * A cross-metric candidate retains the existing conservative 15% fallback.
+ */
+export function calculateConsequenceDecisionEffect(input: {
+	consequence: ConsequenceResult;
+	decision: PlanDecision;
+	target: ConsequenceDecisionTarget;
+	shareCount?: number;
+}): ConsequenceDecisionEffect | null {
+	if (input.decision !== 'reduce_next' && input.decision !== 'rebalance_week') return null;
+	const metric: ConsequenceMetric =
+		(input.target.targetDurationSeconds ?? 0) > 0 ? 'duration' : 'distance';
+	const previousTarget =
+		metric === 'duration'
+			? (input.target.targetDurationSeconds ?? 0)
+			: input.target.targetDistanceMeters;
+	if (previousTarget <= 0) return null;
+
+	const matchingAdjustment =
+		input.consequence.nextRunAdjustment?.metric === metric
+			? Math.abs(input.consequence.nextRunAdjustment.value)
+			: 0;
+	const fallbackAdjustment =
+		metric === 'duration' ? Math.max(300, Math.round(previousTarget * 0.15)) : 500;
+	const totalReduction = matchingAdjustment || fallbackAdjustment;
+	const shareCount = Math.max(1, Math.floor(input.shareCount ?? 1));
+	const reduction =
+		input.decision === 'rebalance_week' ? Math.ceil(totalReduction / shareCount) : totalReduction;
+	const minimumTarget = metric === 'duration' ? 600 : 500;
+	const newTarget = Math.max(minimumTarget, previousTarget - reduction);
+
+	return {
+		metric,
+		previousTarget,
+		adjustment: newTarget - previousTarget,
+		newTarget
+	};
 }
 
 function comparePrescription(input: WorkoutFeedbackInput): {
@@ -190,7 +264,10 @@ function classifyDifference(
 }
 
 function result(
-	input: Omit<ConsequenceResult, 'options' | 'appliedDecision'> & {
+	input: Omit<
+		ConsequenceResult,
+		'options' | 'appliedDecision' | 'weeklyDistanceDeltaMeters' | 'nextRunAdjustmentMeters'
+	> & {
 		target: number;
 		actual: number;
 	}
@@ -200,8 +277,12 @@ function result(
 		deviation: input.deviation,
 		metric: input.metric,
 		actualDifference: input.actualDifference,
-		weeklyDistanceDeltaMeters: input.weeklyDistanceDeltaMeters,
-		nextRunAdjustmentMeters: input.nextRunAdjustmentMeters,
+		weeklyLoadDelta: input.weeklyLoadDelta,
+		nextRunAdjustment: input.nextRunAdjustment,
+		weeklyDistanceDeltaMeters:
+			input.weeklyLoadDelta?.metric === 'distance' ? input.weeklyLoadDelta.value : 0,
+		nextRunAdjustmentMeters:
+			input.nextRunAdjustment?.metric === 'distance' ? input.nextRunAdjustment.value : 0,
 		risk: input.risk,
 		recommendedDecision: input.recommendedDecision
 	};
@@ -213,6 +294,13 @@ function result(
 				: [...allMaterialOptions],
 		appliedDecision: null
 	};
+}
+
+function metricDelta(
+	metric: ConsequenceResult['metric'],
+	value: number
+): ConsequenceMetricDelta | null {
+	return metric === 'none' ? null : { metric, value };
 }
 
 function assertFeedbackInvariants(input: WorkoutFeedbackInput): void {

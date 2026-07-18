@@ -12,7 +12,9 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.Executors
@@ -34,9 +36,11 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private lateinit var changeFolderButton: Button
     private lateinit var disconnectButton: Button
     private lateinit var backgroundStatus: TextView
+    private lateinit var lastCheckStatus: TextView
     private lateinit var backgroundButton: Button
 
     private var backgroundEnabled = false
+    private val workRunningByName = mutableMapOf<String, Boolean>()
 
     private val chooseDirectory = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -49,6 +53,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 ReconciliationScheduler.enablePeriodic(this)
                 backgroundEnabled = true
                 folderStatus.setText(R.string.folder_connected_background)
+                lastCheckStatus.setText(R.string.last_check_queued)
             } else {
                 folderStatus.setText(R.string.folder_connected_pairing_needed)
             }
@@ -60,6 +65,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         if (
             Build.VERSION.SDK_INT >= 25 &&
             intent.action == RunwayLauncherActivity.ACTION_OPEN_FOLDER_SETTINGS
@@ -70,20 +76,34 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
         treeAccessStore = TreeAccessStore(this)
         credentialStore = AndroidCredentialStore(this)
+        if (credentialStore.load() == null) ReconciliationScheduler.cancelAll(this)
         setContentView(R.layout.activity_native_folder_settings)
+        EdgeToEdgeLayout.applySystemBarPadding(findViewById(R.id.folder_settings_scroll))
         bindViews()
         bindActions()
         refreshScreen()
         refreshBackgroundWorkState()
+        observeReconciliationWork()
+        refreshLastCheckStatus()
         verifyPairingStatus()
     }
 
     override fun onDestroy() {
-        executor.shutdownNow()
+        // A pairing code is single-use. Let an in-flight exchange reach credential persistence even
+        // when this Activity is recreated for rotation; UI delivery is still lifecycle-gated below.
+        executor.shutdown()
         super.onDestroy()
     }
 
     private fun bindViews() {
+        listOf(
+            R.id.screen_heading,
+            R.id.pairing_heading,
+            R.id.folder_heading,
+            R.id.background_heading,
+        ).forEach { headingId ->
+            ViewCompat.setAccessibilityHeading(findViewById<View>(headingId), true)
+        }
         setupStatus = findViewById(R.id.setup_status)
         setupIndicator = findViewById(R.id.setup_indicator)
         pairingStatus = findViewById(R.id.pairing_status)
@@ -100,6 +120,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         changeFolderButton = findViewById(R.id.change_folder)
         disconnectButton = findViewById(R.id.disconnect_folder)
         backgroundStatus = findViewById(R.id.background_status)
+        lastCheckStatus = findViewById(R.id.last_check_status)
         backgroundButton = findViewById(R.id.background_action)
     }
 
@@ -113,21 +134,22 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         forgetButton.setOnClickListener {
             credentialStore.load()?.let { credential ->
                 HandledImportStore(this).clearForDevice(credential.deviceId)
-                ScanProgressStore(this).reset(credential.deviceId)
             }
             credentialStore.clear()
-            ReconciliationScheduler.disablePeriodic(this)
+            ReconciliationScheduler.cancelAll(this)
+            ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
             backgroundEnabled = false
             pairingStatus.setText(R.string.pairing_disconnected)
             refreshScreen(keepPairingStatus = true)
+            refreshLastCheckStatus()
         }
         changeFolderButton.setOnClickListener { openDirectoryPicker() }
         disconnectButton.setOnClickListener {
             treeAccessStore.disconnect()
-            ReconciliationScheduler.disablePeriodic(this)
             backgroundEnabled = false
             folderStatus.setText(R.string.folder_disconnected)
             refreshScreen(keepFolderStatus = true)
+            refreshLastCheckStatus()
         }
         backgroundButton.setOnClickListener {
             if (!isReady()) {
@@ -158,6 +180,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             else -> {
                 ReconciliationScheduler.runOnce(this)
                 folderStatus.setText(R.string.check_queued)
+                lastCheckStatus.setText(R.string.last_check_queued)
             }
         }
     }
@@ -181,25 +204,29 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         primaryAction.isEnabled = false
         pairingStatus.setText(R.string.pairing_in_progress)
         executor.execute {
-            val result = RunwayApiClient().pair(code, label)
+            val completion = completePairing(
+                result = RunwayApiClient().pair(code, label),
+                saveCredential = credentialStore::save,
+            )
+            val automationStarted =
+                completion is PairingCompletion.Connected &&
+                    treeAccessStore.currentState() is TreeAccessState.Connected
+            if (automationStarted) {
+                ReconciliationScheduler.runOnce(this)
+                ReconciliationScheduler.enablePeriodic(this)
+            }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
-                when (result) {
-                    is PairingApiResult.Paired -> {
-                        if (credentialStore.save(result.credential)) {
-                            pairingCode.text.clear()
-                            pairingStatus.setText(R.string.pairing_connected)
-                            if (treeAccessStore.currentState() is TreeAccessState.Connected) {
-                                ReconciliationScheduler.runOnce(this)
-                                ReconciliationScheduler.enablePeriodic(this)
-                                backgroundEnabled = true
-                            }
-                        } else {
-                            pairingStatus.setText(R.string.pairing_store_failed)
-                        }
+                when (completion) {
+                    is PairingCompletion.Connected -> {
+                        pairingCode.text.clear()
+                        pairingStatus.setText(R.string.pairing_connected)
+                        backgroundEnabled = automationStarted
+                        if (automationStarted) lastCheckStatus.setText(R.string.last_check_queued)
                     }
-                    PairingApiResult.Invalid -> pairingStatus.setText(R.string.pairing_invalid)
-                    PairingApiResult.Retryable -> pairingStatus.setText(R.string.pairing_failed)
+                    PairingCompletion.Invalid -> pairingStatus.setText(R.string.pairing_invalid)
+                    PairingCompletion.Retryable -> pairingStatus.setText(R.string.pairing_failed)
+                    PairingCompletion.StorageFailed -> pairingStatus.setText(R.string.pairing_store_failed)
                 }
                 refreshScreen(keepPairingStatus = true)
             }
@@ -216,12 +243,15 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                     DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
                     DeviceStatusApiResult.Unauthorized -> {
                         HandledImportStore(this).clearForDevice(credential.deviceId)
-                        ScanProgressStore(this).reset(credential.deviceId)
                         credentialStore.clear()
-                        ReconciliationScheduler.disablePeriodic(this)
+                        ReconciliationScheduler.cancelAll(this)
+                        ReconciliationStatusStore(this).record(
+                            ReconciliationWorker.STATE_PAIRING_REQUIRED,
+                        )
                         backgroundEnabled = false
                         pairingStatus.setText(R.string.pairing_expired_or_revoked)
                         refreshScreen(keepPairingStatus = true)
+                        refreshLastCheckStatus()
                     }
                     DeviceStatusApiResult.Retryable -> {
                         pairingStatus.setText(R.string.pairing_status_unavailable)
@@ -249,6 +279,61 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 refreshAutomationState()
             }
         }
+    }
+
+    private fun observeReconciliationWork() {
+        listOf(
+            ReconciliationScheduler.ONE_TIME_WORK_NAME,
+            ReconciliationScheduler.PERIODIC_WORK_NAME,
+        ).forEach { workName ->
+            WorkManager.getInstance(this)
+                .getWorkInfosForUniqueWorkLiveData(workName)
+                .observe(this) { workInfos ->
+                    workRunningByName[workName] = workInfos.any { it.state == WorkInfo.State.RUNNING }
+                    refreshLastCheckStatus()
+                }
+        }
+    }
+
+    private fun refreshLastCheckStatus() {
+        if (workRunningByName.values.any { it }) {
+            lastCheckStatus.setText(R.string.last_check_running)
+            return
+        }
+
+        val record = ReconciliationStatusStore(this).load()
+        if (record == null) {
+            lastCheckStatus.setText(R.string.last_check_never)
+            return
+        }
+        var text = getString(
+            when (record.state) {
+                ReconciliationWorker.STATE_IMPORTED -> R.string.last_check_imported
+                ReconciliationWorker.STATE_DUPLICATE -> R.string.last_check_duplicate
+                ReconciliationWorker.STATE_QUARANTINED -> R.string.last_check_quarantined
+                ReconciliationWorker.STATE_NO_CANDIDATES -> R.string.last_check_empty
+                ReconciliationWorker.STATE_PAIRING_REQUIRED -> R.string.last_check_pairing_required
+                ReconciliationWorker.STATE_PERMISSION_REQUIRED -> R.string.last_check_permission_required
+                ReconciliationWorker.STATE_PROVIDER_ERROR -> R.string.last_check_provider_error
+                ReconciliationWorker.STATE_SCAN_LIMIT -> R.string.last_check_scan_limit
+                ReconciliationWorker.STATE_SETTLING -> R.string.last_check_settling
+                ReconciliationWorker.STATE_RETRYING -> R.string.last_check_retrying
+                ReconciliationWorker.STATE_STALE_CONNECTION -> R.string.last_check_stale
+                else -> R.string.last_check_unknown
+            },
+        )
+        if (record.backlog > 0) {
+            text = resources.getQuantityString(
+                R.plurals.last_check_backlog,
+                record.backlog,
+                text,
+                record.backlog,
+            )
+        }
+        if (record.scanTruncated && record.state != ReconciliationWorker.STATE_SCAN_LIMIT) {
+            text = getString(R.string.last_check_scan_limit_suffix, text)
+        }
+        lastCheckStatus.text = text
     }
 
     private fun refreshScreen(

@@ -54,7 +54,12 @@ test('a two-run established baseline can create a plan from two available days o
 	await page.getByLabel(/Established week/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
-	await goToOnboardingStep(page, 'Starting point');
+	await page.getByRole('button', { name: 'Continue' }).click();
+	const startingHeading = page.getByRole('heading', { name: 'Starting point' });
+	await expect(startingHeading).toBeVisible();
+	await expect
+		.poll(async () => (await startingHeading.boundingBox())?.y ?? -1)
+		.toBeGreaterThanOrEqual(60);
 	await expectNoHorizontalOverflow(page);
 	await page.getByLabel('Weekly distance (km)').fill('6');
 	await page.getByLabel('Runs per week').fill('2');
@@ -78,6 +83,51 @@ test('a two-run established baseline can create a plan from two available days o
 		distance: '5k',
 		phase: 'distance'
 	});
+});
+
+test('a two-day half-marathon plan requires an explicit concentration acknowledgement', async ({
+	page
+}) => {
+	const email = await createAccount(page);
+	await page.getByLabel(/Established week/).check();
+	await page.getByLabel('Race distance').selectOption('half');
+	await page.getByLabel('Target date').fill(addIsoDays(testDate, 30 * 7));
+	await goToOnboardingStep(page, 'Starting point');
+	await page.getByLabel('Weekly distance (km)').fill('24');
+	await page.getByLabel('Runs per week').fill('2');
+	await page.getByLabel('Longest recent run (km)').fill('14');
+	await page.getByLabel('Running experience').selectOption('returning');
+	await goToOnboardingStep(page, 'Schedule');
+	await setAvailability(page, ['Tue', 'Sat']);
+	await page.getByLabel('Training time zone').fill('America/Halifax');
+	await page.getByLabel('Preferred long-run day').selectOption('6');
+	await goToOnboardingStep(page, 'Review');
+
+	await expect(page.getByText('Two run days concentrate the weekly distance')).toBeVisible();
+	const directActionBody = await page
+		.locator('form[action="?/createPlan"]')
+		.evaluate(async (form) => {
+			const response = await fetch((form as HTMLFormElement).action, {
+				method: 'POST',
+				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
+				body: new FormData(form as HTMLFormElement)
+			});
+			return await response.text();
+		});
+	expect(directActionBody).toContain(
+		'Confirm the two-day concentration before creating this plan.'
+	);
+	await page.getByRole('button', { name: 'Create plan' }).click();
+	await expect(page).toHaveURL(/\/app\/onboarding/);
+	await expect(
+		page.getByText('Confirm the two-day concentration before creating this plan.')
+	).toBeVisible();
+
+	await page.getByLabel(/Use two run days anyway/).check();
+	await page.getByRole('button', { name: 'Create plan' }).click();
+	await expect(page).toHaveURL(/\/app$/);
+	const state = await getCurrentGoalPlanState(await getUserId(email));
+	expect(state).toMatchObject({ distance: 'half', phase: 'distance' });
 });
 
 test('foundation-first onboarding keeps the race goal and creates the exact timed phase', async ({
@@ -205,7 +255,8 @@ test('foundation-only onboarding works at a mobile viewport without inventing di
 	await expect(page).toHaveURL(/\/app$/);
 	await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll');
 
-	const state = await getCurrentGoalPlanState(await getUserId(email));
+	const userId = await getUserId(email);
+	const state = await getCurrentGoalPlanState(userId);
 	expect(state).toMatchObject({
 		goalKind: 'foundation',
 		goalState: 'active',
@@ -216,14 +267,24 @@ test('foundation-only onboarding works at a mobile viewport without inventing di
 		timedWorkoutCount: 27,
 		totalTargetDistanceMeters: 0
 	});
-	await expect(page.locator('.calendar-week-load').first()).toContainText('0 min done of 86 min');
-	await page
-		.getByRole('button', { name: /Foundation run\/walk/ })
-		.first()
-		.click();
-	await expect(page.getByRole('heading', { name: 'Run/walk instructions' })).toBeVisible();
-	await expect(page.getByText('Warm up · walk 5 min')).toBeVisible();
-	await page.getByRole('button', { name: 'Close training detail' }).click();
+	await makeFirstPlanWeekCurrent(userId);
+	await page.reload();
+	await page.getByRole('button', { name: /Review \d+ missed runs?/ }).click();
+	const panel = page.locator('#event-detail-panel');
+	await expect(panel.getByRole('heading', { name: 'Run/walk instructions' })).toBeVisible();
+	await expect(panel.getByText('Warm up · walk 5 min')).toBeVisible();
+	await panel.getByText('Record run', { exact: true }).click();
+	await expect(panel.getByLabel('Distance observed (km) Optional')).toBeVisible();
+	await expect(
+		panel.getByText(/does not turn this timed session into a distance target/)
+	).toBeVisible();
+	await panel.getByLabel('Result').selectOption('done');
+	await panel.getByLabel('Distance observed (km) Optional').fill('2.2');
+	await panel.getByRole('button', { name: /Save feedback/ }).click();
+	await expect(panel.getByRole('heading', { name: 'Saved result' })).toBeVisible();
+	await expect(panel.getByText('2.2 km', { exact: true })).toBeVisible();
+	await panel.getByRole('button', { name: 'Close training detail' }).click();
+	await expect(page.locator('.calendar-week-load').first()).toContainText('29 min done of 86 min');
 	await page.getByRole('link', { name: 'History' }).click();
 	await page.getByRole('link', { name: 'Plan record' }).click();
 	await expect(
@@ -303,7 +364,12 @@ test('onboarding rejects a distance ramp unsupported by the established baseline
 	await goToOnboardingStep(page, 'Review');
 	await page.getByRole('button', { name: 'Create plan' }).click();
 	await expect(page.getByText('This setup cannot produce a plan yet.')).toBeVisible();
-	await goToOnboardingStep(page, 'Goal');
+	await expect(page.getByRole('heading', { name: 'Goal' })).toBeVisible();
+	await expect(
+		page.getByText(
+			"This goal is outside runway's plan-generation limits. Choose a later date or a shorter distance."
+		)
+	).toBeVisible();
 	await expect(page.getByLabel('Race distance')).toHaveValue('marathon');
 	await expect(page.getByLabel('Target date')).toHaveValue(target.toISOString().slice(0, 10));
 });

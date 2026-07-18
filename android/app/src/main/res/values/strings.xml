@@ -16,7 +16,6 @@
     <string name="pairing_title">Account connection</string>
     <string name="pairing_intro">In runway, open Import and create a code for this phone.</string>
     <string name="pairing_code">Pairing code</string>
-    <string name="pairing_code_hint">Enter the code from runway</string>
     <string name="device_label">Device name</string>
     <string name="device_label_default">Android phone</string>
     <string name="pair_device">Connect account</string>
@@ -46,6 +45,26 @@
     <string name="background_setup_required">Connect the account and folder to turn on background checks.</string>
     <string name="background_enabled">Background checks enabled. Android schedules them inexactly.</string>
     <string name="background_disabled">Background checks disabled.</string>
+    <string name="last_check_never">No folder check has run yet.</string>
+    <string name="last_check_running">Checking the folder now…</string>
+    <string name="last_check_queued">Folder check queued.</string>
+    <string name="last_check_imported">Last check added a GPX to the inbox.</string>
+    <string name="last_check_duplicate">Last check skipped GPX content already seen.</string>
+    <string name="last_check_quarantined">Last check held a GPX for manual review.</string>
+    <string name="last_check_empty">Last check found nothing new.</string>
+    <string name="last_check_pairing_required">Checks stopped because the account connection is missing.</string>
+    <string name="last_check_permission_required">Checks stopped because folder access is missing.</string>
+    <string name="last_check_provider_error">The last check could not read this folder. Try Check now.</string>
+    <string name="last_check_scan_limit">This folder has more than 10,000 files. Choose a dedicated Gadgetbridge folder.</string>
+    <string name="last_check_settling">Waiting for the newest GPX to stop changing.</string>
+    <string name="last_check_retrying">The last check could not finish. Android will retry.</string>
+    <string name="last_check_stale">An old check stopped because the account or folder changed.</string>
+    <string name="last_check_unknown">The folder check finished.</string>
+    <plurals name="last_check_backlog">
+        <item quantity="one">%1$s One more is waiting.</item>
+        <item quantity="other">%1$s At least %2$d more are waiting.</item>
+    </plurals>
+    <string name="last_check_scan_limit_suffix">%1$s This folder is over the 10,000-file scan limit.</string>
     <string name="return_to_runway">Back to runway</string>
     <string name="open_runway">Open runway</string>
     <string name="share_title">Import GPX</string>

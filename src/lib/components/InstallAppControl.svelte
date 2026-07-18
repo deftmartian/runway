@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { installPromptState, installRunway } from '$lib/pwa/install-prompt';
+	import { serviceWorkerSetupMessage, serviceWorkerSetupState } from '$lib/pwa/lifecycle';
 
 	let { compact = false }: { compact?: boolean } = $props();
 	let installing = $state(false);
@@ -17,7 +18,7 @@
 </script>
 
 {#if compact}
-	{#if !$installPromptState.installed && $installPromptState.prompt}
+	{#if !$installPromptState.installed && $installPromptState.prompt && $serviceWorkerSetupState === 'ready'}
 		<button
 			type="button"
 			class="install-shortcut"
@@ -32,7 +33,13 @@
 	<section class="install-control" aria-label="Install runway">
 		<div>
 			<strong>Install runway</strong>
-			{#if $installPromptState.prompt}
+			{#if serviceWorkerSetupMessage($serviceWorkerSetupState)}
+				<p class="setup-problem" role="status">
+					{serviceWorkerSetupMessage($serviceWorkerSetupState)}
+				</p>
+			{:else if $serviceWorkerSetupState === 'development'}
+				<p>Installation is available from a production build or preview.</p>
+			{:else if $installPromptState.prompt}
 				<p>Open runway from the home screen or app launcher.</p>
 			{:else if $installPromptState.guidance === 'ios'}
 				<p>In Safari, tap Share, then Add to Home Screen.</p>
@@ -40,7 +47,7 @@
 				<p>Use the browser menu and choose Install app or Add to Home screen.</p>
 			{/if}
 		</div>
-		{#if $installPromptState.prompt}
+		{#if $installPromptState.prompt && $serviceWorkerSetupState === 'ready'}
 			<button type="button" class="primary" onclick={install} disabled={installing}>
 				{installing ? 'Installing…' : 'Install'}
 			</button>
@@ -68,6 +75,10 @@
 		color: var(--muted);
 		font-size: 0.93rem;
 		line-height: 1.5;
+	}
+
+	.install-control .setup-problem {
+		color: var(--danger);
 	}
 
 	.install-shortcut {

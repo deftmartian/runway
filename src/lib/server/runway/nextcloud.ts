@@ -48,6 +48,7 @@ const propfindBody = `<?xml version="1.0"?>
 const requestTimeoutMs = 15_000;
 const maxPropfindBytes = 1 * 1024 * 1024;
 const maxDownloadBytes = 10 * 1024 * 1024;
+export const maxNextcloudVisibleGpxFiles = 2_000;
 
 type NextcloudRequestErrorCode =
 	| 'authentication_rejected'
@@ -126,10 +127,20 @@ export async function listNextcloudGpxFiles(
 	if (responses.length === 0 || !hasShareRootCollection(opened, responses)) {
 		throw invalidWebDavResponse();
 	}
-	return responses
+	const files = responses
 		.map((record) => remoteFileFromResponse(opened, record))
 		.filter((file): file is NextcloudRemoteFile => Boolean(file))
 		.filter((file) => file.name.toLowerCase().endsWith('.gpx'));
+	return enforceNextcloudVisibleGpxLimit(files);
+}
+
+export function enforceNextcloudVisibleGpxLimit<T>(files: T[]): T[] {
+	if (files.length > maxNextcloudVisibleGpxFiles) {
+		throw new Error(
+			`Nextcloud folders can expose at most ${maxNextcloudVisibleGpxFiles} GPX files per sync.`
+		);
+	}
+	return files;
 }
 
 export async function downloadNextcloudFile(

@@ -14,6 +14,13 @@
 			<a class="button primary" href={resolve('/app/onboarding')}>Create plan</a>
 		</section>
 	{:else}
+		{#if data.calendar.activityOverflow.truncated}
+			<p class="message calendar-overflow" role="status">
+				This month has more than {data.calendar.activityOverflow.limit} recorded activities. The calendar
+				shows the newest {data.calendar.activityOverflow.limit}; older activities in this view are
+				omitted.
+			</p>
+		{/if}
 		<TrainingCalendar
 			calendar={data.calendar}
 			activityCandidates={data.activityCandidates}
@@ -21,6 +28,9 @@
 			{form}
 			hasActivePlan={Boolean(data.activePlan)}
 			targetDate={data.activePlan?.plan.targetDate ?? null}
+			defaultWeeklyIncreasePercent={data.activePlan?.plan.summary.kind === 'distance'
+				? data.activePlan.plan.summary.defaultWeeklyIncreasePercent
+				: null}
 		/>
 	{/if}
 </main>
@@ -53,5 +63,9 @@
 		max-width: 48ch;
 		color: var(--muted);
 		font-size: 1.05rem;
+	}
+
+	.calendar-overflow {
+		margin: 0;
 	}
 </style>

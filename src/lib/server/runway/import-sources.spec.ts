@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+	enforceImportSourceLimit,
+	importSourceLimitMessage,
+	maxImportSourcesPerUser,
 	normalizeNextcloudSourceInput,
 	selectNewestRemoteCandidate,
 	type KnownNextcloudSourceItem,
@@ -46,6 +49,20 @@ describe('normalizeNextcloudSourceInput', () => {
 		expect(() =>
 			normalizeNextcloudSourceInput({ ...base, sharePassword: 'x'.repeat(1_025) })
 		).toThrow(/password is too long/);
+	});
+});
+
+describe('import source product limit', () => {
+	test('allows updating an existing source but rejects an eleventh source clearly', () => {
+		expect(() => {
+			enforceImportSourceLimit(true, maxImportSourcesPerUser);
+		}).not.toThrow();
+		expect(() => {
+			enforceImportSourceLimit(false, maxImportSourcesPerUser - 1);
+		}).not.toThrow();
+		expect(() => {
+			enforceImportSourceLimit(false, maxImportSourcesPerUser);
+		}).toThrow(importSourceLimitMessage);
 	});
 });
 

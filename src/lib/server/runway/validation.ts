@@ -19,57 +19,114 @@ export const backupCodeSchema = z
 const optionalNumber = <T extends z.ZodType>(schema: T) =>
 	z.preprocess((value) => (value === '' || value === null ? undefined : value), schema.optional());
 
+const formCheckbox = z.preprocess(
+	(value) => value === true || value === 'true' || value === 'on',
+	z.boolean()
+);
+
+export const healthContextSchema = z.object({
+	recentInjury: formCheckbox.default(false),
+	currentPain: formCheckbox.default(false),
+	recurringPain: formCheckbox.default(false),
+	medicalRestriction: formCheckbox.default(false),
+	injuryNotes: z.string().trim().max(240).default('')
+});
+
+const goalKindSchema = z.enum(['race', 'foundation']);
+const startModeSchema = z.enum([
+	'established',
+	'foundation_to_goal',
+	'foundation_only',
+	'calibration'
+]);
+const raceDistanceSchema = z.enum(['5k', '10k', 'half', 'marathon']);
+const goalPrioritySchema = z.enum(['finish_healthy', 'consistency']);
+const experienceSchema = z.enum(['new', 'returning', 'comfortable']);
+const shortFormNumber = z.string().max(24);
+
+/**
+ * The canonical transport shape for the onboarding action. Numeric values stay
+ * as strings until start-mode-aware validation has decided whether they apply.
+ * This schema is deliberately the action boundary, not a second planner model.
+ */
 export const goalSetupSchema = z
 	.object({
-		raceDistance: z.enum(['5k', '10k', 'half', 'marathon']),
-		targetDate: z
-			.string()
-			.regex(/^\d{4}-\d{2}-\d{2}$/)
-			.refine((value) => isValidIsoDate(value), 'Choose a real calendar date.'),
-		priority: z.enum(['finish_healthy', 'consistency']).default('finish_healthy'),
-		currentWeeklyDistanceKm: z.coerce.number().min(0).max(250),
-		currentRunsPerWeek: z.coerce.number().int().min(2).max(5),
-		longestRecentRunKm: z.coerce.number().min(0).max(80),
-		experience: z.enum(['new', 'returning', 'comfortable']).default('returning'),
-		preferredLongRunDay: z.coerce.number().int().min(0).max(6),
-		availability: z.array(z.coerce.number().int().min(0).max(6)).min(2).max(7),
-		recentInjury: z.coerce.boolean().default(false),
-		currentPain: z.coerce.boolean().default(false),
-		recurringPain: z.coerce.boolean().default(false),
-		medicalRestriction: z.coerce.boolean().default(false),
-		injuryNotes: z.string().max(240).default('')
+		goalKind: goalKindSchema,
+		startMode: z.union([startModeSchema, z.literal('')]),
+		raceDistance: z.union([raceDistanceSchema, z.literal('')]),
+		targetDate: z.string().max(10),
+		priority: goalPrioritySchema,
+		currentWeeklyDistanceKm: shortFormNumber,
+		currentRunsPerWeek: shortFormNumber,
+		longestRecentRunKm: shortFormNumber,
+		experience: z.union([experienceSchema, z.literal('')]),
+		calibrationDurationMinutes: shortFormNumber,
+		availability: z.array(z.number().int().min(0).max(6)).max(7),
+		preferredLongRunDay: shortFormNumber,
+		timeZone: z.string().max(100),
+		recentInjury: z.boolean(),
+		currentPain: z.boolean(),
+		recurringPain: z.boolean(),
+		medicalRestriction: z.boolean(),
+		injuryNotes: z.string().max(240),
+		confirmConcentratedSchedule: z.boolean(),
+		confirmReplace: z.boolean()
 	})
 	.superRefine((value, context) => {
-		const uniqueDays = new Set(value.availability);
-		if (uniqueDays.size !== value.availability.length) {
+		if (new Set(value.availability).size !== value.availability.length) {
 			context.addIssue({
 				code: 'custom',
 				path: ['availability'],
 				message: 'Choose each available run day only once.'
 			});
 		}
-		if (!uniqueDays.has(value.preferredLongRunDay)) {
-			context.addIssue({
-				code: 'custom',
-				path: ['preferredLongRunDay'],
-				message: 'The preferred long-run day must be one of the available run days.'
-			});
-		}
-		const frequencyCap = Math.min(
-			value.currentRunsPerWeek,
-			value.experience === 'new' ? 3 : 5,
-			value.raceDistance === 'half' ? 4 : 5
-		);
-		const recoveryDay = (value.preferredLongRunDay + 1) % 7;
-		const schedulableDays = [...uniqueDays].filter((day) => day !== recoveryDay);
-		if (schedulableDays.length < frequencyCap) {
-			context.addIssue({
-				code: 'custom',
-				path: ['availability'],
-				message: 'Availability must leave a recovery day after the long run.'
-			});
-		}
 	});
+
+export type GoalSetupFormValues = z.infer<typeof goalSetupSchema>;
+export type GoalSetupFieldErrors = Partial<Record<keyof GoalSetupFormValues, string>>;
+
+export function parseGoalSetupForm(formData: FormData): {
+	values: GoalSetupFormValues;
+	fieldErrors: GoalSetupFieldErrors;
+} {
+	const raw = {
+		goalKind: singleFormValue(formData, 'goalKind'),
+		startMode: singleFormValue(formData, 'startMode'),
+		raceDistance: singleFormValue(formData, 'raceDistance'),
+		targetDate: singleFormValue(formData, 'targetDate'),
+		priority: singleFormValue(formData, 'priority'),
+		currentWeeklyDistanceKm: singleFormValue(formData, 'currentWeeklyDistanceKm'),
+		currentRunsPerWeek: singleFormValue(formData, 'currentRunsPerWeek'),
+		longestRecentRunKm: singleFormValue(formData, 'longestRecentRunKm'),
+		experience: singleFormValue(formData, 'experience'),
+		calibrationDurationMinutes: singleFormValue(formData, 'calibrationDurationMinutes'),
+		availability: formData
+			.getAll('availability')
+			.map((value) =>
+				typeof value === 'string' && /^[0-6]$/.test(value) ? Number(value) : Number.NaN
+			),
+		preferredLongRunDay: singleFormValue(formData, 'preferredLongRunDay'),
+		timeZone: singleFormValue(formData, 'timeZone'),
+		recentInjury: strictFormCheckbox(formData, 'recentInjury'),
+		currentPain: strictFormCheckbox(formData, 'currentPain'),
+		recurringPain: strictFormCheckbox(formData, 'recurringPain'),
+		medicalRestriction: strictFormCheckbox(formData, 'medicalRestriction'),
+		injuryNotes: singleFormValue(formData, 'injuryNotes'),
+		confirmConcentratedSchedule: strictFormCheckbox(formData, 'confirmConcentratedSchedule'),
+		confirmReplace: strictFormCheckbox(formData, 'confirmReplace')
+	};
+	const parsed = goalSetupSchema.safeParse(raw);
+	if (parsed.success) return { values: parsed.data, fieldErrors: {} };
+
+	const fieldErrors: GoalSetupFieldErrors = {};
+	for (const issue of parsed.error.issues) {
+		const field = issue.path[0];
+		if (typeof field !== 'string' || !(field in safeGoalSetupValues(raw))) continue;
+		const key = field as keyof GoalSetupFormValues;
+		fieldErrors[key] ??= goalSetupIssueMessage(key, issue.message);
+	}
+	return { values: safeGoalSetupValues(raw), fieldErrors };
+}
 
 export const heartRateProfileSchema = z
 	.object({
@@ -114,7 +171,7 @@ export const feedbackSchema = z
 	.object({
 		workoutId: z.uuid(),
 		status: z.enum(['done', 'skipped', 'shortened']),
-		completedDistanceKm: z.coerce.number().min(0).max(100).optional(),
+		completedDistanceKm: z.coerce.number().positive().max(100).optional(),
 		completedDurationMinutes: z.coerce.number().positive().max(600).optional(),
 		feltHard: z.coerce.boolean().default(false),
 		pain: z.coerce.boolean().default(false),
@@ -251,6 +308,93 @@ export function formDataToObject(
 export function formString(formData: FormData, key: string, fallback = ''): string {
 	const value = formData.get(key);
 	return typeof value === 'string' ? value : fallback;
+}
+
+function singleFormValue(formData: FormData, key: string): string | undefined {
+	const values = formData.getAll(key);
+	if (values.length === 0) return '';
+	return values.length === 1 && typeof values[0] === 'string' ? values[0] : undefined;
+}
+
+function strictFormCheckbox(formData: FormData, key: string): boolean | undefined {
+	const values = formData.getAll(key);
+	if (values.length === 0) return false;
+	return values.length === 1 && values[0] === 'on' ? true : undefined;
+}
+
+function safeGoalSetupValues(raw: Record<keyof GoalSetupFormValues, unknown>): GoalSetupFormValues {
+	return {
+		goalKind: safeEnumValue(raw.goalKind, ['race', 'foundation'], 'race'),
+		startMode: safeEnumValue(
+			raw.startMode,
+			['', 'established', 'foundation_to_goal', 'foundation_only', 'calibration'],
+			''
+		),
+		raceDistance: safeEnumValue(raw.raceDistance, ['', '5k', '10k', 'half', 'marathon'], ''),
+		targetDate: safeShortString(raw.targetDate, 10),
+		priority: safeEnumValue(raw.priority, ['finish_healthy', 'consistency'], 'finish_healthy'),
+		currentWeeklyDistanceKm: safeShortString(raw.currentWeeklyDistanceKm, 24),
+		currentRunsPerWeek: safeShortString(raw.currentRunsPerWeek, 24),
+		longestRecentRunKm: safeShortString(raw.longestRecentRunKm, 24),
+		experience: safeEnumValue(raw.experience, ['', 'new', 'returning', 'comfortable'], ''),
+		calibrationDurationMinutes: safeShortString(raw.calibrationDurationMinutes, 24),
+		availability: Array.from(
+			new Set(
+				Array.isArray(raw.availability)
+					? raw.availability.filter(
+							(value): value is number =>
+								typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 6
+						)
+					: []
+			)
+		),
+		preferredLongRunDay: safeShortString(raw.preferredLongRunDay, 24),
+		timeZone: safeShortString(raw.timeZone, 100),
+		recentInjury: raw.recentInjury === true,
+		currentPain: raw.currentPain === true,
+		recurringPain: raw.recurringPain === true,
+		medicalRestriction: raw.medicalRestriction === true,
+		injuryNotes: safeShortString(raw.injuryNotes, 240),
+		confirmConcentratedSchedule: raw.confirmConcentratedSchedule === true,
+		confirmReplace: raw.confirmReplace === true
+	};
+}
+
+function safeEnumValue<const T extends string>(
+	value: unknown,
+	allowed: readonly T[],
+	fallback: T
+): T {
+	return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function safeShortString(value: unknown, maximum: number): string {
+	return typeof value === 'string' ? value.slice(0, maximum) : '';
+}
+
+function goalSetupIssueMessage(field: keyof GoalSetupFormValues, fallback: string): string {
+	switch (field) {
+		case 'goalKind':
+			return 'Choose a supported goal.';
+		case 'startMode':
+			return 'Choose a supported starting path.';
+		case 'raceDistance':
+			return 'Choose a supported race distance.';
+		case 'priority':
+			return 'Choose a supported planning priority.';
+		case 'experience':
+			return 'Choose a supported running experience.';
+		case 'availability':
+			return fallback.includes('only once')
+				? fallback
+				: 'Choose valid available days without duplicates.';
+		case 'injuryNotes':
+			return 'Keep health context to 240 characters.';
+		case 'timeZone':
+			return 'Select a valid IANA time zone.';
+		default:
+			return 'Review this field.';
+	}
 }
 
 function isValidIsoDate(value: string): boolean {

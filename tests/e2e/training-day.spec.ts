@@ -58,11 +58,21 @@ test('today keeps saved unsafe feedback visible after reload', async ({ page }) 
 		.first()
 		.click();
 	await expect(page.getByText('Feedback saved.')).toBeVisible();
-	await expect(page.getByText(/Pain was reported for this run\./).first()).toBeVisible();
+	await expect(
+		page
+			.locator('#event-detail-panel')
+			.getByText(/Pain was reported for this run\./)
+			.first()
+	).toBeVisible();
 
 	await page.reload();
 	await page.locator('.calendar-event.pain').first().click();
-	await expect(page.getByText(/Pain was reported for this run\./).first()).toBeVisible();
+	await expect(
+		page
+			.locator('#event-detail-panel')
+			.getByText(/Pain was reported for this run\./)
+			.first()
+	).toBeVisible();
 });
 
 test('future workout edits preview effects and support reset, undo, remove, and restore', async ({
@@ -94,7 +104,7 @@ test('future workout edits preview effects and support reset, undo, remove, and 
 	await expect(preview).toContainText('Generated');
 	await expect(preview).toContainText('Current');
 	await expect(preview).toContainText('Proposed');
-	await expect(preview).toContainText('Projected ramp');
+	await expect(preview).toContainText('Projected plan ramp');
 	await preview.getByRole('button', { name: /^Apply/ }).click();
 	await expect
 		.poll(async () => await getWorkout(futureRun.id))
@@ -140,7 +150,12 @@ test('future workout edits preview effects and support reset, undo, remove, and 
 		});
 
 	await panel.getByRole('button', { name: 'Preview removal' }).click();
-	await expect(panel.getByRole('heading', { name: 'Before removing' })).toBeVisible();
+	await expect(panel.getByRole('heading', { name: 'Review removal' })).toBeVisible();
+	await panel
+		.getByRole('checkbox', {
+			name: 'I reviewed the removed prescription, weekly load, and projected ramp.'
+		})
+		.check();
 	await panel.getByRole('button', { name: 'Remove workout' }).click();
 	await expect.poll(async () => (await getWorkout(futureRun.id)).isRemoved).toBe(true);
 	await panel.getByRole('button', { name: 'Undo removal' }).click();
@@ -163,13 +178,16 @@ test('a future day can hold a second runner-added workout', async ({ page }) => 
 	const addDetails = addSummary.locator('..');
 	await addSummary.click();
 	const addEditor = addDetails.locator('.workout-editor');
-	await addEditor.getByLabel('Distance (km)').fill('1.5');
+	await addEditor.getByLabel('Distance (km)').fill('0.1');
 	await addEditor.getByLabel('Purpose').fill('Short shakeout');
 	await addEditor.getByLabel('Reason for the change (optional)').fill('Second session test');
 	await addEditor.getByRole('button', { name: 'Preview workout' }).click();
 	await expect(addDetails.locator('.edit-preview')).toContainText(
 		'No generated recommendation; this is a runner-added workout.'
 	);
+	await expect(addDetails.locator('.edit-preview')).toContainText('No workout scheduled.');
+	await expect(addDetails.locator('.edit-preview')).toContainText('Within default');
+	await expect(addDetails.locator('.edit-preview')).not.toContainText('Outside default');
 	await addDetails
 		.locator('.edit-preview')
 		.getByRole('button', { name: /^Apply/ })
@@ -181,7 +199,7 @@ test('a future day can hold a second runner-added workout', async ({ page }) => 
 	const added = (await getVisibleWorkoutsOnDate(userId, futureRun.scheduledDate)).find(
 		(workout) => workout.purpose === 'Short shakeout'
 	);
-	expect(added).toMatchObject({ purpose: 'Short shakeout', targetDistanceMeters: 1_500 });
+	expect(added).toMatchObject({ purpose: 'Short shakeout', targetDistanceMeters: 100 });
 	if (!added) throw new Error('Runner-added workout was not found.');
 
 	await panel.getByRole('button', { name: 'Close training detail' }).click();
@@ -189,6 +207,11 @@ test('a future day can hold a second runner-added workout', async ({ page }) => 
 		.getByRole('button', { name: new RegExp(`^${futureRun.scheduledDate}: Short shakeout`) })
 		.click();
 	await panel.getByRole('button', { name: 'Preview removal' }).click();
+	await panel
+		.getByRole('checkbox', {
+			name: 'I reviewed the removed prescription, weekly load, and projected ramp.'
+		})
+		.check();
 	await panel.getByRole('button', { name: 'Remove workout' }).click();
 	await expect.poll(async () => (await getWorkout(added.id)).isRemoved).toBe(true);
 	await panel.getByRole('button', { name: 'Undo removal' }).click();

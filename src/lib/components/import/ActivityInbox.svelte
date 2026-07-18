@@ -12,6 +12,7 @@
 		ScopedEnhanceFactory,
 		ScopedImportResult
 	} from './import-view-model';
+	import { tick } from 'svelte';
 
 	let {
 		activities,
@@ -42,18 +43,28 @@
 	};
 
 	let emptyGpxInput = $state<HTMLInputElement>();
+	let activityList = $state<HTMLDivElement>();
+	let handledGpxResult = $state<ScopedImportResult | null>(null);
 	let activityTraceDetails = $state<
 		Record<string, ActivityTraceDetail | 'loading' | 'failed' | undefined>
 	>({});
 
 	const unlinkedCount = $derived(
-		activities.items.filter((activity) => !activity.workoutId && !activity.extraPlanImpactConfirmed)
-			.length
+		activities.items.filter((activity) => activity.reviewState === 'review').length
 	);
 	const sectionResult = (section: ImportSection) =>
 		scopedResult?.section === section ? scopedResult : null;
 	const actionPending = (key: string) => activeAction === key;
 	const activityTraceDetail = (activityId: string) => activityTraceDetails[activityId];
+	const gpxResult = $derived(sectionResult('gpx'));
+	const inboxResult = $derived(
+		sectionResult('activities') ??
+			sectionResult('empty-gpx') ??
+			(gpxResult && !gpxResult.failed ? gpxResult : null)
+	);
+	const reviewImportResult = $derived(
+		inboxResult?.section === 'gpx' || inboxResult?.section === 'empty-gpx'
+	);
 
 	const km = (meters: number) => `${Math.round((meters / 1000) * 10) / 10} km`;
 	const isoDay = (date: Date | string) =>
@@ -113,6 +124,34 @@
 		if (!(input instanceof HTMLInputElement) || !input.files?.length) return;
 		input.form?.requestSubmit();
 	}
+
+	function firstReviewSummary(): HTMLElement | null {
+		return (
+			activityList?.querySelector<HTMLElement>('details.activity-record.needs-review > summary') ??
+			null
+		);
+	}
+
+	function focusFirstReview(open = false) {
+		const summary = firstReviewSummary();
+		if (!summary) return;
+		if (open && summary.parentElement instanceof HTMLDetailsElement) {
+			summary.parentElement.open = true;
+		}
+		summary.focus({ preventScroll: true });
+		summary.scrollIntoView({ block: 'start' });
+	}
+
+	$effect(() => {
+		const result = sectionResult('gpx') ?? sectionResult('empty-gpx');
+		if (!result || result.failed || result === handledGpxResult) return;
+		handledGpxResult = result;
+		void tick().then(() =>
+			requestAnimationFrame(() => {
+				focusFirstReview(false);
+			})
+		);
+	});
 </script>
 
 <section class="import-inbox" aria-labelledby="activity-inbox-title">
@@ -139,35 +178,48 @@
 	{#if formMessage && !scopedResult}
 		<p class="message" role="status" aria-live="polite">{formMessage}</p>
 	{/if}
-	{#if sectionResult('activities') || sectionResult('empty-gpx')}
-		{@const inboxResult = sectionResult('activities') ?? sectionResult('empty-gpx')}
-		<p
+	{#if inboxResult}
+		<div
 			class="message compact-message"
-			class:bad-message={inboxResult?.failed}
+			class:bad-message={inboxResult.failed}
+			class:inbox-import-result={reviewImportResult && !inboxResult.failed}
 			role="status"
 			aria-live="polite"
 		>
-			{inboxResult?.message}
-		</p>
+			<span>{inboxResult.message}</span>
+			{#if reviewImportResult && !inboxResult.failed && unlinkedCount > 0}
+				<button
+					type="button"
+					class="primary"
+					onclick={() => {
+						focusFirstReview(true);
+					}}
+				>
+					Review imported activity
+				</button>
+			{/if}
+		</div>
 	{/if}
 
-	<div class="activity-list" aria-busy={activeSection === 'activities'}>
+	<div class="activity-list" aria-busy={activeSection === 'activities'} bind:this={activityList}>
 		{#each activities.items as activity (activity.id)}
 			{@const matchingCandidates = candidatesForActivity(activity.activityDate)}
 			{@const traceDetail = activityTraceDetail(activity.id)}
 			<details
 				class="activity-record"
-				class:needs-review={!activity.workoutId && !activity.extraPlanImpactConfirmed}
+				class:needs-review={activity.reviewState === 'review'}
 				ontoggle={(event) => loadActivityTrace(event, activity.id)}
 			>
 				<summary>
 					<StateMarker
-						label={activity.workoutId
-							? 'Linked'
-							: activity.extraPlanImpactConfirmed
-								? 'Counted as extra'
-								: 'Needs review'}
-						tone={activity.workoutId || activity.extraPlanImpactConfirmed ? 'completed' : 'review'}
+						label={activity.reviewState === 'review'
+							? 'Needs review'
+							: activity.workoutId
+								? 'Linked'
+								: activity.extraPlanImpactConfirmed
+									? 'Counted as extra'
+									: 'Recorded'}
+						tone={activity.reviewState === 'review' ? 'review' : 'completed'}
 					/>
 					<span class="record-copy">
 						<strong>{day(activity.activityDate)} · {km(activity.distanceMeters)}</strong>
@@ -196,6 +248,7 @@
 					{#if traceDetail && traceDetail !== 'loading' && traceDetail !== 'failed'}
 						<ActivityVisuals
 							id={`inbox-${activity.id}`}
+							headingLevel={2}
 							routeTrace={traceDetail.routeTrace}
 							heartRateSeries={traceDetail.heartRateSeries}
 							heartRateSummary={activity.heartRateSummary}
@@ -309,7 +362,11 @@
 					{#if activity.workoutId}
 						<section class="decision-group" aria-labelledby={`unlink-${activity.id}`}>
 							<h2 id={`unlink-${activity.id}`}>Plan link</h2>
-							<p>Unlinking returns this activity to the inbox for review.</p>
+							<p>
+								{activity.source === 'gpx' && !activity.extraPlanImpactConfirmed
+									? 'Unlinking returns this imported activity to Review. It will stop counting in calendar actuals and training summaries until you accept a new role.'
+									: 'Unlinking removes the plan match. The already accepted activity remains part of actual training.'}
+							</p>
 							<form
 								method="post"
 								action="?/unlinkActivity"
@@ -432,6 +489,24 @@
 		margin-top: 6px;
 	}
 
+	.inbox-import-result {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.inbox-import-result span {
+		min-width: 0;
+	}
+
+	@media (max-width: 560px) {
+		.inbox-import-result {
+			align-items: stretch;
+			flex-direction: column;
+		}
+	}
+
 	.activity-record {
 		border-bottom: 1px solid var(--line);
 	}
@@ -443,6 +518,7 @@
 		align-items: center;
 		min-height: 84px;
 		padding: 14px 4px;
+		scroll-margin-top: 76px;
 		cursor: pointer;
 		list-style: none;
 	}

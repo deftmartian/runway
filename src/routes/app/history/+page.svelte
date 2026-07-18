@@ -2,7 +2,8 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import StateMarker from '$lib/components/visual/StateMarker.svelte';
-	import { presentRampAssessment } from '$lib/training/training-assessment';
+	import { formatRampEvidence, presentRampAssessment } from '$lib/training/training-assessment';
+	import type { PlanSummary, RiskRating } from '$lib/training/types';
 	import { flushSync } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -23,6 +24,23 @@
 		return minutes < 60
 			? `${minutes} min`
 			: `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+	}
+
+	function weekday(day: number): string {
+		return (
+			['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][day] ??
+			'Selected day'
+		);
+	}
+
+	function rampEvidence(plan: { risk: RiskRating; summary: PlanSummary }): string {
+		const assessment = presentRampAssessment(plan.risk).label;
+		return plan.summary.kind === 'distance'
+			? `${assessment} · ${formatRampEvidence(
+					plan.summary.requiredWeeklyIncreasePercent,
+					plan.summary.defaultWeeklyIncreasePercent
+				)}`
+			: assessment;
 	}
 
 	function planState(reason: string | null): string {
@@ -85,7 +103,7 @@
 					<p class="muted">
 						{formatDate(active.plan.startDate)}–{formatDate(active.plan.targetDate)} · {active.plan
 							.weeks}
-						weeks · {presentRampAssessment(active.plan.risk).label}
+						weeks · {rampEvidence(active.plan)}
 					</p>
 				</div>
 				<StateMarker
@@ -166,9 +184,12 @@
 							<h4>Proposed race phase</h4>
 							<p>
 								{phaseReview.racePlan.weeks} weeks from {formatDate(phaseReview.racePlan.startDate)} to
-								{formatDate(phaseReview.racePlan.targetDate)} · {presentRampAssessment(
-									phaseReview.racePlan.risk
-								).label}
+								{formatDate(phaseReview.racePlan.targetDate)} · {rampEvidence(phaseReview.racePlan)}
+							</p>
+							<p>
+								Long-run day: {weekday(phaseReview.preferredLongRunDay)}. runway chose this from
+								your available days to preserve a recovery day where possible; individual workouts
+								remain editable.
 							</p>
 							{#if phaseReview.racePlan.warnings.length > 0}
 								<ul>

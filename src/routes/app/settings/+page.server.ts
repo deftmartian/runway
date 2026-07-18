@@ -4,14 +4,16 @@ import { parseSetCookieHeader, toCookieOptions } from 'better-auth/cookies';
 import QRCode from 'qrcode';
 import { auth } from '$lib/server/auth';
 import { isFreshAuthSession } from '$lib/server/runway/auth-config';
+import { readAuditRetentionPolicy } from '$lib/server/runway/audit-retention';
 import {
 	accountSecurityRateLimitBuckets,
 	consumeSecurityRateLimit
 } from '$lib/server/runway/security-rate-limit';
 import { revokeTrustedDevices } from '$lib/server/runway/trusted-devices';
-import { deleteActivityData } from '$lib/server/runway/repository';
+import { deleteActivityData } from '$lib/server/runway/repositories/activity-mutations';
 import {
 	getAthleteProfile,
+	updateHealthContext,
 	updateAthleteTimeZone,
 	updateRouteDataMode,
 	updateTrainingProfile
@@ -21,6 +23,7 @@ import {
 	formDataToObject,
 	formString,
 	heartRateProfileSchema,
+	healthContextSchema,
 	authPasswordSchema,
 	totpCodeSchema
 } from '$lib/server/runway/validation';
@@ -66,6 +69,7 @@ export const load: PageServerLoad = async (event) => {
 			localPassword: hasCredentialAccount,
 			oidc: accounts.some((account) => account.providerId === 'authentik')
 		},
+		auditRetention: readAuditRetentionPolicy(),
 		profile: {
 			timeZone: profile?.timeZone ?? null,
 			routeDataMode: profile?.routeDataMode ?? 'private',
@@ -76,7 +80,14 @@ export const load: PageServerLoad = async (event) => {
 			zone2FloorBpm: floors?.zone2FloorBpm ?? null,
 			zone3FloorBpm: floors?.zone3FloorBpm ?? null,
 			zone4FloorBpm: floors?.zone4FloorBpm ?? null,
-			zone5FloorBpm: floors?.zone5FloorBpm ?? null
+			zone5FloorBpm: floors?.zone5FloorBpm ?? null,
+			injuryFlags: profile?.injuryFlags ?? {
+				recentInjury: false,
+				currentPain: false,
+				recurringPain: false,
+				medicalRestriction: false,
+				notes: ''
+			}
 		}
 	};
 };
@@ -111,6 +122,34 @@ export const actions: Actions = {
 		}
 		await updateTrainingProfile(event.locals.user.id, parsed.data);
 		return { scope: 'trainingProfile', message: 'Training profile saved.' };
+	},
+	updateHealthContext: async (event) => {
+		if (!event.locals.user) throw redirect(302, '/login');
+		const parsed = healthContextSchema.safeParse(formDataToObject(await event.request.formData()));
+		if (!parsed.success) {
+			return fail(400, {
+				scope: 'healthContext',
+				message: parsed.error.issues[0]?.message ?? 'Health context could not be saved.'
+			});
+		}
+		await updateHealthContext(event.locals.user.id, {
+			recentInjury: parsed.data.recentInjury,
+			currentPain: parsed.data.currentPain,
+			recurringPain: parsed.data.recurringPain,
+			medicalRestriction: parsed.data.medicalRestriction,
+			notes: parsed.data.injuryNotes
+		});
+		return {
+			scope: 'healthContext',
+			message:
+				parsed.data.recentInjury ||
+				parsed.data.currentPain ||
+				parsed.data.recurringPain ||
+				parsed.data.medicalRestriction ||
+				parsed.data.injuryNotes
+					? 'Health context saved.'
+					: 'Health context cleared.'
+		};
 	},
 	updateRouteDataMode: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
@@ -308,6 +347,58 @@ export const actions: Actions = {
 			scope: 'privacy',
 			message: `${activityMessage}${sourceMessage}${androidMessage}`
 		};
+	},
+	deleteAccount: async (event) => {
+		if (!event.locals.user || !event.locals.session) throw redirect(302, '/login');
+		if (!isFreshAuthSession(event.locals.session.createdAt)) {
+			return fail(403, {
+				scope: 'accountDeletion',
+				message: 'Sign out and sign in again before deleting the account.'
+			});
+		}
+		const rateLimit = await consumeSecurityRateLimit(
+			accountSecurityRateLimitBuckets(
+				'delete-account',
+				event.locals.user.id,
+				event.getClientAddress()
+			)
+		);
+		if (!rateLimit.allowed) {
+			event.setHeaders({ 'retry-after': String(rateLimit.retryAfterSeconds) });
+			return fail(429, {
+				scope: 'accountDeletion',
+				message: 'Too many account-deletion attempts. Try again later.'
+			});
+		}
+		const formData = await event.request.formData();
+		if (formString(formData, 'confirmation') !== 'DELETE') {
+			return fail(400, {
+				scope: 'accountDeletion',
+				message: 'Type DELETE exactly to confirm account deletion.'
+			});
+		}
+		if (formString(formData, 'browserFolderDataCleared') !== 'yes') {
+			return fail(400, {
+				scope: 'accountDeletion',
+				message: 'Browser folder access must be cleared before deleting the account.'
+			});
+		}
+
+		let responseHeaders: Headers;
+		try {
+			const result = await auth.api.deleteUser({
+				body: {},
+				headers: event.request.headers,
+				returnHeaders: true
+			});
+			responseHeaders = result.headers;
+		} catch (error) {
+			return authActionFailure(error, 'The account could not be deleted. Try again.', {
+				scope: 'accountDeletion'
+			});
+		}
+		applyAuthResponseCookies(event, responseHeaders);
+		throw redirect(303, '/');
 	}
 };
 

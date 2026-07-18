@@ -8,11 +8,16 @@ import {
 	normalizeHeartRateSettings,
 	summarizeHeartRateEffort
 } from './heart-rate';
-import { classifyRamp, generateTrainingPlan } from './plan';
+import {
+	classifyRamp,
+	generateCalibrationPlan,
+	generateFoundationPlan,
+	generateTrainingPlan
+} from './plan';
 import {
 	feedbackSchema,
-	goalSetupSchema,
-	heartRateProfileSchema
+	heartRateProfileSchema,
+	healthContextSchema
 } from '$lib/server/runway/validation';
 import type { GoalPriority, TrainingIntake, WorkoutStatus, WorkoutType } from './types';
 
@@ -40,6 +45,26 @@ const baseIntake: TrainingIntake = {
 };
 
 describe('training plan generation', () => {
+	test('normalizes health-context checkboxes and bounds private notes', () => {
+		expect.assertions(4);
+		expect(healthContextSchema.parse({ injuryNotes: '' })).toEqual({
+			recentInjury: false,
+			currentPain: false,
+			recurringPain: false,
+			medicalRestriction: false,
+			injuryNotes: ''
+		});
+		expect(
+			healthContextSchema.parse({
+				recentInjury: 'on',
+				currentPain: 'false',
+				injuryNotes: '  note  '
+			})
+		).toMatchObject({ recentInjury: true, currentPain: false, injuryNotes: 'note' });
+		expect(healthContextSchema.safeParse({ injuryNotes: 'a'.repeat(241) }).success).toBe(false);
+		expect(healthContextSchema.parse({ medicalRestriction: true }).medicalRestriction).toBe(true);
+	});
+
 	test('uses sex-specific heart-rate estimates only as editable defaults', () => {
 		expect.assertions(3);
 
@@ -244,33 +269,6 @@ describe('training plan generation', () => {
 		).toThrow(/recovery day after the long run/i);
 	});
 
-	test('validates unique availability and preferred-day consistency at the form boundary', () => {
-		expect.assertions(2);
-		vi.stubEnv('RUNWAY_FIXED_DATE', '2026-05-15');
-		const input = {
-			raceDistance: 'half',
-			targetDate: '2026-09-01',
-			priority: 'finish_healthy',
-			currentWeeklyDistanceKm: 12,
-			currentRunsPerWeek: 3,
-			longestRecentRunKm: 10,
-			experience: 'returning',
-			preferredLongRunDay: 6,
-			availability: [1, 1, 3],
-			recentInjury: false,
-			currentPain: false,
-			recurringPain: false,
-			medicalRestriction: false,
-			injuryNotes: ''
-		};
-
-		expect(goalSetupSchema.safeParse(input).success).toBe(false);
-		expect(
-			goalSetupSchema.safeParse({ ...input, availability: [1, 3, 5], preferredLongRunDay: 6 })
-				.success
-		).toBe(false);
-	});
-
 	test('can reach its own marathon long-run readiness floor from a strong base', () => {
 		expect.assertions(2);
 		const plan = generateTrainingPlan({
@@ -378,6 +376,50 @@ describe('training plan generation', () => {
 		);
 	});
 
+	test('shows health history as a caution without changing timed prescriptions or their assessment', () => {
+		const common = {
+			priority: 'finish_healthy' as const,
+			units: 'metric' as const,
+			experience: 'new' as const,
+			injuryFlags: {
+				recentInjury: true,
+				currentPain: false,
+				recurringPain: true,
+				medicalRestriction: false,
+				notes: 'Private context that is not interpreted by plan logic.'
+			},
+			startDate: '2026-05-11'
+		};
+		const foundation = generateFoundationPlan({
+			...common,
+			startMode: 'foundation_only',
+			goalKind: 'foundation',
+			raceDistance: null,
+			availability: [1, 3, 6]
+		});
+		const calibration = generateCalibrationPlan({
+			...common,
+			startMode: 'calibration',
+			goalKind: 'race',
+			raceDistance: '5k',
+			targetDate: '2026-08-01',
+			availability: [2, 6],
+			calibrationDurationSeconds: 1_200
+		});
+
+		for (const plan of [foundation, calibration]) {
+			expect(plan.risk).toBe('conservative');
+			expect(plan.summary.warnings).toContain(
+				'Recent injury or recurring pain is noted with this plan. It does not change the timed prescription or assess whether running is appropriate.'
+			);
+			expect(
+				plan.weeks
+					.flatMap((week) => week.workouts)
+					.every((workout) => workout.targetDistanceMeters === 0)
+			).toBe(true);
+		}
+	});
+
 	test('rejects duplicate and out-of-range availability in the generator itself', () => {
 		expect.assertions(3);
 		expect(() => generateTrainingPlan({ ...baseIntake, availability: [1, 1, 3, 6] })).toThrow(
@@ -392,7 +434,7 @@ describe('training plan generation', () => {
 	});
 
 	test('goal priority changes the generated ramp instead of acting as a dead control', () => {
-		expect.assertions(2);
+		expect.assertions(4);
 		const finishHealthy = generateTrainingPlan({
 			...baseIntake,
 			priority: 'finish_healthy',
@@ -417,32 +459,16 @@ describe('training plan generation', () => {
 		});
 
 		expect(finishHealthy.summary.peakMeters).toBeLessThan(consistency.summary.peakMeters);
+		expect(finishHealthy.summary.defaultWeeklyIncreasePercent).toBe(7.5);
+		expect(consistency.summary.defaultWeeklyIncreasePercent).toBe(10);
 		expect(finishHealthy.weeks[1]?.targetDistanceMeters).toBeLessThan(
 			consistency.weeks[1]?.targetDistanceMeters ?? 0
 		);
 	});
 
-	test('rejects unsupported priority values at the request boundary', () => {
-		expect.assertions(1);
-		vi.stubEnv('RUNWAY_FIXED_DATE', '2026-05-15');
-		const result = goalSetupSchema.safeParse({
-			raceDistance: 'half',
-			targetDate: '2026-09-01',
-			priority: 'time',
-			currentWeeklyDistanceKm: 12,
-			currentRunsPerWeek: 3,
-			longestRecentRunKm: 10,
-			experience: 'returning',
-			preferredLongRunDay: 6,
-			availability: [1, 3, 6],
-			recentInjury: false,
-			currentPain: false,
-			recurringPain: false,
-			medicalRestriction: false,
-			injuryNotes: ''
-		});
-
-		expect(result.success).toBe(false);
+	test('persists the injury-adjusted ramp cap used to generate the plan', () => {
+		const plan = generateTrainingPlan(baseIntake);
+		expect(plan.summary.defaultWeeklyIncreasePercent).toBe(5.5);
 	});
 
 	test('domain unions expose only implemented priority, workout, and status values', () => {
@@ -682,6 +708,33 @@ describe('consequence choices', () => {
 				choice: 'skip_continue'
 			}).success
 		).toBe(false);
+	});
+
+	test('accepts optional observed distance alongside a timed result', () => {
+		expect(
+			feedbackSchema.safeParse({
+				workoutId: '550e8400-e29b-41d4-a716-446655440000',
+				status: 'done',
+				completedDistanceKm: 2.4,
+				completedDurationMinutes: 20,
+				feltHard: false,
+				pain: false,
+				choice: 'skip_continue'
+			}).success
+		).toBe(true);
+
+		const consequence = calculateConsequence({
+			status: 'done',
+			choice: 'skip_continue',
+			targetDistanceMeters: 0,
+			targetDurationSeconds: 1_200,
+			completedDistanceMeters: 2_400,
+			completedDurationSeconds: 1_200,
+			pain: false,
+			feltHard: false,
+			weekTargetDistanceMeters: 0
+		});
+		expect(consequence).toMatchObject({ metric: 'duration', weeklyDistanceDeltaMeters: 0 });
 	});
 
 	test('rejects completed feedback without the prescribed measurement', () => {

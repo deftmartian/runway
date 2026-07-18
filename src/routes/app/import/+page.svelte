@@ -46,12 +46,13 @@
 							: result.type === 'error'
 								? 'The request could not be completed.'
 								: 'Import data updated.';
-					scopedResult = {
+					const nextScopedResult: ScopedImportResult = {
 						section,
 						message,
 						failed: result.type === 'failure' || result.type === 'error'
 					};
 					await update();
+					scopedResult = nextScopedResult;
 				} finally {
 					activeAction = null;
 					activeSection = null;

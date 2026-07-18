@@ -1,22 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import CalendarEventButton from './CalendarEvent.svelte';
 	import EventDetailPanel from './EventDetailPanel.svelte';
 	import {
 		isQuietCalendarDay,
 		presentCalendarEvent,
-		shouldCollapseEarlierCalendarWeek
+		presentCalendarTrainingAssessment,
+		presentCalendarWeekAssessment
 	} from './calendar-presentation';
-	import { presentRampAssessment } from '$lib/training/training-assessment';
+	import { addIsoDays, buildTrainingCalendarModel, type CalendarWeekRow } from './calendar-model';
 	import type { ConsequenceResult, RiskRating } from '$lib/training/types';
-	import type {
-		TrainingCalendarActivity,
-		TrainingCalendarFeedback,
-		TrainingCalendarPayload,
-		TrainingCalendarWeek,
-		TrainingCalendarWorkout
-	} from '$lib/training/calendar-view';
+	import type { TrainingCalendarPayload } from '$lib/training/calendar-view';
 	import type {
 		CalendarDay,
 		CalendarEvent,
@@ -32,28 +27,13 @@
 		  }
 		| null
 		| undefined;
-	type WeekLoad = {
-		id: string;
-		label: string;
-		week: TrainingCalendarWeek;
-		rampValue: number;
-		completionValue: number;
-		isCurrent: boolean;
-	};
-	type CalendarWeekRow = {
-		id: string;
-		label: string;
-		load: WeekLoad | null;
-		days: CalendarDay[];
-		isQuietEarlier: boolean;
-	};
-
 	let {
 		calendar,
 		form,
 		currentSignal,
 		hasActivePlan = false,
 		targetDate = null,
+		defaultWeeklyIncreasePercent = null,
 		activityCandidates = []
 	}: {
 		calendar: TrainingCalendarPayload;
@@ -61,40 +41,27 @@
 		currentSignal?: TrainingSignal;
 		hasActivePlan?: boolean;
 		targetDate?: string | null;
+		defaultWeeklyIncreasePercent?: number | null;
 		activityCandidates?: WorkoutCandidate[];
 	} = $props();
 
 	let selectedEventId = $state<string | null>(null);
 	let focusedEventId = $state<string | null>(null);
 	let returnFocus: HTMLElement | null = null;
+	let calendarScroll = $state<HTMLDivElement>();
+	let calendarGrid = $state<HTMLDivElement>();
+	let calendarOverflowing = $state(false);
 
 	const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-	const addIsoDays = (date: string, days: number) => {
-		const timestamp = Date.parse(`${date}T00:00:00.000Z`);
-		return new Date(timestamp + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-	};
-	const weekdayLabel = (date: string) =>
-		new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
-	const dayNumber = (date: string) =>
-		new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric' });
-	const isTrainingRun = (workout: TrainingCalendarWorkout) =>
-		workout.type !== 'rest' && workout.prescriptionKind !== 'rest' && !workout.isRemoved;
-	const canRecordWorkout = (workout: TrainingCalendarWorkout) =>
-		isTrainingRun(workout) &&
-		workout.status === 'planned' &&
-		workout.scheduledDate <= calendar.today;
-	const weekForDate = (date: string) =>
-		calendar.weeks.find(
-			(week) => date >= week.startDate && date <= addIsoDays(week.startDate, 6)
-		) ?? null;
-	const weekForWorkout = (workout: TrainingCalendarWorkout) =>
-		calendar.weeks.find((week) => week.id === workout.weekId) ?? weekForDate(workout.scheduledDate);
 	const km = (meters: number) => `${Math.round((meters / 1000) * 10) / 10} km`;
 	const minutes = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
-	const allEvents = $derived.by(() => buildEvents(calendar));
-	const calendarDays = $derived.by(() => buildCalendarDays(calendar, allEvents));
-	const calendarRows = $derived.by(() => buildCalendarRows(calendar, calendarDays));
+	const calendarModel = $derived.by(() =>
+		buildTrainingCalendarModel(calendar, { hasActivePlan, targetDate })
+	);
+	const allEvents = $derived(calendarModel.events);
+	const calendarDays = $derived(calendarModel.days);
+	const calendarRows = $derived(calendarModel.rows);
 	const calendarEvents = $derived(calendarDays.flatMap((day) => day.events));
 	const selectedEvent = $derived(
 		calendarEvents.find((event) => event.id === selectedEventId) ?? null
@@ -170,16 +137,31 @@
 				: 'Not in this view'
 	);
 	const currentSignalReasons = $derived(currentSignal?.reasons?.filter(Boolean) ?? []);
-	const currentSignalAssessment = $derived(
-		currentSignal ? presentRampAssessment(currentSignal.risk) : null
+	const currentTrainingAssessment = $derived(
+		currentSignal
+			? presentCalendarTrainingAssessment(
+					currentSignal.risk,
+					currentSignal.source,
+					currentSignal.consequence
+				)
+			: null
 	);
-	const currentSignalSourceLabel = $derived(
-		currentSignal?.source === 'feedback'
-			? 'Recent feedback'
-			: currentSignal?.source === 'activity'
-				? 'Recent activity'
-				: 'Current plan'
-	);
+
+	onMount(() => {
+		const updateOverflow = () => {
+			calendarOverflowing = Boolean(
+				calendarScroll && calendarScroll.scrollWidth > calendarScroll.clientWidth + 1
+			);
+		};
+		const observer = new ResizeObserver(updateOverflow);
+		if (calendarScroll) observer.observe(calendarScroll);
+		if (calendarGrid) observer.observe(calendarGrid);
+		const frame = requestAnimationFrame(updateOverflow);
+		return () => {
+			cancelAnimationFrame(frame);
+			observer.disconnect();
+		};
+	});
 	const calendarQuery = (month: string) => `month=${month}`;
 	const emptyDayLabel = (day: CalendarDay) =>
 		day.isToday
@@ -297,200 +279,6 @@
 			})?.id ??
 			null;
 	}
-
-	function openDayEvent(date: string, payload: TrainingCalendarPayload): CalendarEvent {
-		return {
-			id: `open-${date}`,
-			date,
-			kind: 'open',
-			title: 'Open day',
-			workout: null,
-			activity: null,
-			feedback: null,
-			week: weekForDate(date),
-			isRecordable: false,
-			isToday: date === payload.today,
-			isFuture: date > payload.today
-		};
-	}
-
-	function buildEvents(payload: TrainingCalendarPayload): CalendarEvent[] {
-		const feedbackByWorkout: Record<string, TrainingCalendarFeedback> = {};
-		for (const record of payload.feedback) {
-			feedbackByWorkout[record.workoutId] = record;
-		}
-		const activitiesByWorkout: Record<string, TrainingCalendarActivity[]> = {};
-		for (const record of payload.activities) {
-			if (!record.workoutId) continue;
-			const records = activitiesByWorkout[record.workoutId] ?? [];
-			records.push(record);
-			activitiesByWorkout[record.workoutId] = records;
-		}
-
-		const workoutIds = payload.workouts.map((workout) => workout.id);
-		const events: CalendarEvent[] = payload.workouts.map((workout) => {
-			const activity = activitiesByWorkout[workout.id]?.[0] ?? null;
-			const feedback = feedbackByWorkout[workout.id] ?? null;
-			const date = activity?.occurredDate ?? workout.scheduledDate;
-			return {
-				id: `workout-${workout.id}`,
-				date,
-				kind:
-					workout.status === 'skipped' && feedback
-						? 'review'
-						: activity || feedback
-							? 'actual'
-							: workout.type === 'rest'
-								? 'rest'
-								: 'planned',
-				title: workout.type === 'rest' ? 'Rest' : workout.purpose,
-				workout,
-				activity,
-				feedback,
-				week: weekForWorkout(workout),
-				isRecordable: canRecordWorkout(workout),
-				isToday: date === payload.today,
-				isFuture: date > payload.today
-			};
-		});
-
-		for (const record of payload.activities) {
-			if (record.workoutId && workoutIds.includes(record.workoutId)) continue;
-			const week = weekForDate(record.occurredDate);
-			events.push({
-				id: `activity-${record.id}`,
-				date: record.occurredDate,
-				kind: 'actual',
-				title: record.matchedWorkoutPurpose ?? 'Imported run',
-				workout: null,
-				activity: record,
-				feedback: null,
-				week,
-				isRecordable: false,
-				isToday: record.occurredDate === payload.today,
-				isFuture: record.occurredDate > payload.today
-			});
-		}
-
-		return events.sort((left, right) => {
-			if (left.date !== right.date) return left.date.localeCompare(right.date);
-			return eventPriority(left) - eventPriority(right);
-		});
-	}
-
-	function eventPriority(event: CalendarEvent): number {
-		if (event.kind === 'actual') return 0;
-		if (event.isRecordable) return 1;
-		if (event.kind === 'planned') return 2;
-		return 3;
-	}
-
-	function buildCalendarDays(
-		payload: TrainingCalendarPayload,
-		events: CalendarEvent[]
-	): CalendarDay[] {
-		const eventMap: Record<string, CalendarEvent[]> = {};
-		for (const event of events) {
-			const records = eventMap[event.date] ?? [];
-			records.push(event);
-			eventMap[event.date] = records;
-		}
-
-		const days: CalendarDay[] = [];
-		for (
-			let currentDate = payload.rangeStart;
-			currentDate <= payload.rangeEnd;
-			currentDate = addIsoDays(currentDate, 1)
-		) {
-			const dayEvents = eventMap[currentDate] ?? [];
-			days.push({
-				date: currentDate,
-				weekday: weekdayLabel(currentDate),
-				dayNumber: dayNumber(currentDate),
-				inSelectedMonth: currentDate.startsWith(`${payload.month}-`),
-				isToday: currentDate === payload.today,
-				events:
-					dayEvents.length === 0 &&
-					(currentDate <= payload.today ||
-						(hasActivePlan &&
-							currentDate >= payload.today &&
-							(!targetDate || currentDate <= targetDate)))
-						? [openDayEvent(currentDate, payload)]
-						: dayEvents
-			});
-		}
-
-		return days;
-	}
-
-	function buildCalendarRows(
-		payload: TrainingCalendarPayload,
-		days: CalendarDay[]
-	): CalendarWeekRow[] {
-		const loadByWeekStart: Record<string, WeekLoad> = {};
-		for (const load of buildWeekLoad(payload)) {
-			loadByWeekStart[load.week.startDate] = load;
-		}
-
-		const rows: CalendarWeekRow[] = [];
-		for (let index = 0; index < days.length; index += 7) {
-			const rowDays = days.slice(index, index + 7);
-			const startDate = rowDays[0]?.date ?? payload.rangeStart;
-			const load = loadByWeekStart[startDate] ?? null;
-			rows.push({
-				id: startDate,
-				label: load?.label ?? `Week of ${startDate}`,
-				load,
-				days: rowDays,
-				isQuietEarlier: shouldCollapseEarlierCalendarWeek({
-					selectedMonth: payload.month,
-					currentMonth: payload.currentMonth,
-					today: payload.today,
-					hasPlanSummary: Boolean(load),
-					days: rowDays
-				})
-			});
-		}
-		return rows;
-	}
-
-	function buildWeekLoad(payload: TrainingCalendarPayload): WeekLoad[] {
-		if (payload.weeks.length === 0 || !payload.planScale) return [];
-		const usesDuration = payload.weeks.some(
-			(week) => week.targetDurationSeconds > 0 && week.targetDistanceMeters === 0
-		);
-		const peak = Math.max(
-			1,
-			usesDuration
-				? Math.max(...payload.weeks.map((week) => week.targetDurationSeconds))
-				: payload.planScale.peakMeters
-		);
-
-		return payload.weeks.map((week) => {
-			return {
-				id: week.id,
-				label: `Week ${week.weekNumber}`,
-				week,
-				rampValue: Math.max(
-					8,
-					Math.min(
-						100,
-						Math.round(
-							((usesDuration ? week.targetDurationSeconds : week.targetDistanceMeters) / peak) * 100
-						)
-					)
-				),
-				completionValue: Math.min(
-					100,
-					Math.round(
-						((usesDuration ? week.completedDurationSeconds : week.completedDistanceMeters) / peak) *
-							100
-					)
-				),
-				isCurrent: payload.today >= week.startDate && payload.today <= addIsoDays(week.startDate, 6)
-			};
-		});
-	}
 </script>
 
 <section class="training-shell">
@@ -501,12 +289,14 @@
 				{#if currentSignal}
 					<details
 						class="plan-assessment"
-						class:bad-message={currentSignalAssessment?.attention === 'blocked'}
-						open={currentSignalAssessment?.attention === 'blocked'}
+						class:bad-message={currentTrainingAssessment?.presentation.attention === 'blocked'}
+						open={currentTrainingAssessment?.presentation.attention === 'blocked'}
 					>
 						<summary>
-							<span>Ramp assessment · {currentSignalSourceLabel}</span>
-							<strong>{currentSignalAssessment?.label}</strong>
+							<span
+								>{currentTrainingAssessment?.heading} · {currentTrainingAssessment?.sourceLabel}</span
+							>
+							<strong>{currentTrainingAssessment?.presentation.label}</strong>
 						</summary>
 						{#if currentSignalReasons.length > 0}
 							<ul>
@@ -604,7 +394,12 @@
 		<p id="calendar-keyboard-help" class="sr-only">
 			Use the arrow keys to move between training days. Press Enter to open a day.
 		</p>
-		<div class="calendar-month-scroll">
+		{#if calendarOverflowing}
+			<p id="calendar-scroll-help" class="calendar-scroll-help">
+				Scroll sideways to see all seven days.
+			</p>
+		{/if}
+		<div class="calendar-month-scroll" bind:this={calendarScroll}>
 			<div class="calendar-weekday-row" aria-hidden="true">
 				{#each weekdayLabels as label (label)}
 					<span class="calendar-weekday">{label}</span>
@@ -615,7 +410,10 @@
 				class="calendar-month-grid"
 				role="region"
 				aria-label={`${monthTitle} training calendar`}
-				aria-describedby="calendar-keyboard-help"
+				aria-describedby={calendarOverflowing
+					? 'calendar-keyboard-help calendar-scroll-help'
+					: 'calendar-keyboard-help'}
+				bind:this={calendarGrid}
 			>
 				{#each calendarRows as row (row.id)}
 					<svelte:element
@@ -636,7 +434,13 @@
 								{@const load = row.load}
 								{@const durationLoad =
 									load.week.targetDurationSeconds > 0 && load.week.targetDistanceMeters === 0}
-								{@const rampAssessment = presentRampAssessment(load.week.risk)}
+								{@const weekIndex = calendar.weeks.findIndex((week) => week.id === load.week.id)}
+								{@const weekAssessment = presentCalendarWeekAssessment({
+									week: load.week,
+									previousWeek: weekIndex > 0 ? (calendar.weeks[weekIndex - 1] ?? null) : null,
+									baselineMeters: calendar.planScale?.baselineMeters ?? null,
+									defaultWeeklyIncreasePercent
+								})}
 								<div class="calendar-week-load" class:current={load.isCurrent}>
 									<div class="week-load-meta">
 										<span>{load.label}</span>
@@ -695,18 +499,21 @@
 										</svg>
 									</div>
 									<div class="week-load-tags">
-										<span
-											class="badge"
-											class:warn={rampAssessment.attention === 'high' ||
-												rampAssessment.attention === 'review'}
-											class:bad={rampAssessment.attention === 'blocked'}
-											class:good={rampAssessment.attention === 'none'}
-											>{load.week.isTaper
-												? 'taper'
-												: load.week.isDownWeek
-													? 'down week'
-													: rampAssessment.label}</span
-										>
+										{#if weekAssessment.phaseLabel}<span class="badge"
+												>{weekAssessment.phaseLabel}</span
+											>{/if}
+										{#if weekAssessment.presentation}
+											<span
+												class="badge"
+												class:warn={weekAssessment.presentation.attention === 'high' ||
+													weekAssessment.presentation.attention === 'review'}
+												class:bad={weekAssessment.presentation.attention === 'blocked'}
+												class:good={weekAssessment.presentation.attention === 'none'}
+												>{weekAssessment.presentation.label} · {weekAssessment.evidence}</span
+											>
+										{:else}
+											<span class="badge">{weekAssessment.evidence}</span>
+										{/if}
 										{#if load.week.painFlags > 0}<span class="badge bad"
 												>{load.week.painFlags} pain</span
 											>{/if}
@@ -777,6 +584,13 @@
 	.quiet-calendar-week {
 		min-width: 0;
 		border-bottom: 1px solid var(--line);
+	}
+
+	.calendar-scroll-help {
+		margin: 0 0 8px;
+		color: var(--muted);
+		font-size: 0.8rem;
+		font-weight: 620;
 	}
 
 	.quiet-calendar-week > summary {

@@ -43,3 +43,14 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: [version-update:semver-major]
+  - package-ecosystem: gradle
+    directory: /android
+    open-pull-requests-limit: 3
+    schedule:
+      interval: weekly
+      day: sunday
+      time: '07:00'
+      timezone: Etc/UTC
+    groups:
+      android-dependencies:
+        patterns: ['*']

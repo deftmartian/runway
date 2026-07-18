@@ -15,11 +15,13 @@ describe('extra activity consequences', () => {
 
 		expect(consequence.metric).toBe('duration');
 		expect(consequence.actualDifference).toBe(1_200);
+		expect(consequence.weeklyLoadDelta).toEqual({ metric: 'duration', value: 1_200 });
+		expect(consequence.nextRunAdjustment).toEqual({ metric: 'duration', value: -600 });
 		expect(consequence.risk).toBe('aggressive');
 		expect(consequence.nextRunAdjustmentMeters).toBe(0);
 	});
 
-	it('does not divide recorded distance by a zero-distance timed week', () => {
+	it('marks a timed-phase activity without duration as non-comparable', () => {
 		const consequence = calculateExtraActivityConsequence(
 			{ distanceMeters: 2_000, feltHard: false, pain: false },
 			{
@@ -30,9 +32,12 @@ describe('extra activity consequences', () => {
 			}
 		);
 
-		expect(consequence.metric).toBe('distance');
-		expect(consequence.risk).toBe('conservative');
+		expect(consequence.metric).toBe('none');
+		expect(consequence.comparisonStatus).toBe('not_comparable');
+		expect(consequence.weeklyLoadDelta).toBeNull();
+		expect(consequence.risk).toBe('moderate');
 		expect(consequence.recommendedDecision).toBe('keep_plan');
+		expect(consequence.options).not.toContain('rebalance_week');
 	});
 
 	it('keeps pain authoritative without inventing a distance reduction for timed work', () => {
@@ -48,6 +53,7 @@ describe('extra activity consequences', () => {
 
 		expect(consequence.risk).toBe('unsafe');
 		expect(consequence.recommendedDecision).toBe('next_rest');
+		expect(consequence.nextRunAdjustment).toEqual({ metric: 'duration', value: -1_200 });
 		expect(consequence.nextRunAdjustmentMeters).toBe(0);
 	});
 });

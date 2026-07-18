@@ -22,6 +22,35 @@ export function calculateExtraActivityConsequence(
 	input: ExtraActivityInput,
 	targets: ExtraActivityTargets
 ): ConsequenceResult {
+	const timedPlanWithoutDuration =
+		(targets.nextRunTargetDurationSeconds ?? 0) > 0 && (input.durationSeconds ?? 0) <= 0;
+	if (timedPlanWithoutDuration) {
+		const nextDuration = targets.nextRunTargetDurationSeconds ?? 0;
+		const nextRunAdjustment = input.pain
+			? null
+			: input.feltHard
+				? { metric: 'duration' as const, value: -Math.max(300, Math.round(nextDuration * 0.15)) }
+				: null;
+		return {
+			kind: input.pain ? 'pain_reported' : 'extra_activity',
+			comparisonStatus: 'not_comparable',
+			deviation: 'unplanned',
+			metric: 'none',
+			actualDifference: 0,
+			weeklyLoadDelta: null,
+			nextRunAdjustment,
+			weeklyDistanceDeltaMeters: input.distanceMeters,
+			nextRunAdjustmentMeters: 0,
+			risk: input.pain ? 'unsafe' : 'moderate',
+			recommendedDecision: input.pain ? 'next_rest' : input.feltHard ? 'reduce_next' : 'keep_plan',
+			options: input.pain
+				? ['keep_plan', 'next_rest']
+				: nextRunAdjustment
+					? ['keep_plan', 'reduce_next', 'next_rest']
+					: ['keep_plan', 'next_rest'],
+			appliedDecision: null
+		};
+	}
 	const usesDuration =
 		(targets.nextRunTargetDurationSeconds ?? 0) > 0 && (input.durationSeconds ?? 0) > 0;
 	const metric = usesDuration ? 'duration' : 'distance';
@@ -37,6 +66,12 @@ export function calculateExtraActivityConsequence(
 				targets.nextRunTargetDistanceMeters,
 				Math.max(1_000, Math.round(input.distanceMeters * (input.feltHard ? 0.6 : 0.5)))
 			);
+	const nextRunAdjustmentSeconds = usesDuration
+		? -Math.min(
+				targets.nextRunTargetDurationSeconds ?? 0,
+				Math.max(300, Math.round(actualDifference * (input.feltHard ? 0.6 : 0.5)))
+			)
+		: 0;
 
 	if (input.pain) {
 		return {
@@ -44,6 +79,21 @@ export function calculateExtraActivityConsequence(
 			deviation: 'unplanned',
 			metric,
 			actualDifference,
+			weeklyLoadDelta: { metric, value: actualDifference },
+			nextRunAdjustment: {
+				metric,
+				value: usesDuration
+					? -Math.max(
+							300,
+							targets.nextRunTargetDurationSeconds ?? 0,
+							Math.round(actualDifference * 0.5)
+						)
+					: -Math.max(
+							1_000,
+							targets.nextRunTargetDistanceMeters,
+							Math.round(input.distanceMeters * 0.5)
+						)
+			},
 			weeklyDistanceDeltaMeters: input.distanceMeters,
 			nextRunAdjustmentMeters: usesDuration
 				? 0
@@ -72,6 +122,11 @@ export function calculateExtraActivityConsequence(
 		deviation: 'unplanned',
 		metric,
 		actualDifference,
+		weeklyLoadDelta: { metric, value: actualDifference },
+		nextRunAdjustment: {
+			metric,
+			value: usesDuration ? nextRunAdjustmentSeconds : nextRunAdjustmentMeters
+		},
 		weeklyDistanceDeltaMeters: input.distanceMeters,
 		nextRunAdjustmentMeters,
 		risk,

@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.net.URI
 import java.util.Locale
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -58,6 +59,28 @@ if (runwayScheme != "https" && (runwayScheme != "http" || !isLocalDebugHost(runw
 val runwayOrigin = URI(runwayScheme, null, runwayHost, runwayPort, null, null, null).toString()
 val runwayStartUrl = "$runwayOrigin/app"
 val assetStatements = """[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"$runwayOrigin"}}]"""
+val releaseSigningPropertiesFile = rootProject.file(
+    providers.gradleProperty("runwaySigningPropertiesFile")
+        .orElse("signing.properties")
+        .get(),
+)
+val fdroidSourceBuild = providers.gradleProperty("runwayFdroidSourceBuild")
+    .map(String::toBoolean)
+    .orElse(false)
+    .get()
+val releaseSigningProperties = if (releaseSigningPropertiesFile.isFile) {
+    Properties().apply {
+        releaseSigningPropertiesFile.inputStream().use(::load)
+    }
+} else {
+    null
+}
+
+fun requiredSigningProperty(name: String): String = releaseSigningProperties
+    ?.getProperty(name)
+    ?.trim()
+    ?.takeIf(String::isNotEmpty)
+    ?: throw GradleException("android/signing.properties is missing $name")
 
 android {
     namespace = "com.deftmartian.runway"
@@ -78,6 +101,21 @@ android {
         resValue("string", "asset_statements", assetStatements)
     }
 
+    signingConfigs {
+        if (releaseSigningProperties != null) {
+            create("runwayRelease") {
+                storeFile = rootProject.file(requiredSigningProperty("storeFile"))
+                storePassword = requiredSigningProperty("storePassword")
+                keyAlias = requiredSigningProperty("keyAlias")
+                keyPassword = requiredSigningProperty("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -86,6 +124,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("runwayRelease")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -145,11 +184,48 @@ val verifyReleaseInstance by tasks.registering {
     }
 }
 
+val verifyReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "Fails unless an external, complete Android release signing identity is present."
+    dependsOn(verifyReleaseInstance)
+    doLast {
+        if (releaseSigningProperties == null) {
+            throw GradleException(
+                "Release builds require untracked android/signing.properties; copy " +
+                    "android/signing.properties.example and provide operator-owned credentials",
+            )
+        }
+        val configuredStore = rootProject.file(requiredSigningProperty("storeFile"))
+        if (!configuredStore.isFile) {
+            throw GradleException("The release keystore configured by signing.properties was not found")
+        }
+    }
+}
+
+val verifyReleasePackaging by tasks.registering {
+    group = "verification"
+    description = "Requires direct signing or the explicit unsigned F-Droid source-build path."
+    if (fdroidSourceBuild) {
+        dependsOn(verifyReleaseInstance)
+        doLast {
+            if (releaseSigningProperties != null) {
+                throw GradleException(
+                    "F-Droid source builds must be unsigned; remove android/signing.properties",
+                )
+            }
+        }
+    } else {
+        dependsOn(verifyReleaseSigning)
+    }
+}
+
 tasks.matching {
     it.name == "assembleRelease" ||
         it.name == "bundleRelease" ||
         it.name == "packageRelease" ||
+        it.name == "packageReleaseBundle" ||
+        it.name == "signReleaseBundle" ||
         it.name == "installRelease"
 }.configureEach {
-    dependsOn(verifyReleaseInstance)
+    dependsOn(verifyReleasePackaging)
 }

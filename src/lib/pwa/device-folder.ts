@@ -5,13 +5,34 @@ const databaseVersion = 1;
 const configStoreName = 'folders';
 const seenStoreName = 'seen-files';
 const seenUserIndexName = 'user-id';
+const controlChannelName = 'runway-device-folder-control-v1';
 const maxDirectoryEntries = 2_000;
-const maxGpxCandidates = 500;
-const activeScans = new Map<string, Promise<DeviceFolderScanResult>>();
+export const maxDeviceFingerprintCandidatesPerScan = 500;
+const fingerprintWindowBytes = 1_600;
+const fingerprintWindowDivisions = 4;
+export const deviceFolderFingerprintConcurrency = 4;
+export const deviceFolderScanBudgetMs = 20_000;
+export const deviceFolderCandidateBudgetMs = 4_000;
+export const maxDeviceFingerprintBytesPerFile = 8 * 1024;
+export const maxDeviceFingerprintBytesPerScan =
+	maxDeviceFingerprintCandidatesPerScan * maxDeviceFingerprintBytesPerFile;
+type ActiveDeviceFolderScan = {
+	controller: AbortController;
+	listeners: Set<(progress: DeviceFolderScanProgress) => void>;
+	progress: DeviceFolderScanProgress;
+	promise: Promise<DeviceFolderScanResult>;
+};
+
+const activeScans = new Map<string, ActiveDeviceFolderScan>();
+const candidateScanOffsets = new Map<string, number>();
 const blockedUsers = new Set<string>();
 let blockAllScans = false;
+let capabilityRevision = 0;
+let controlChannel: BroadcastChannel | null | undefined;
 
 class DeviceFolderLimitError extends Error {}
+class DeviceFolderScanTimeoutError extends Error {}
+class DeviceFolderScanCancelledError extends Error {}
 
 type DirectoryPermissionHandle = FileSystemDirectoryHandle & {
 	queryPermission?: (descriptor?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>;
@@ -41,6 +62,11 @@ type DeviceFileCandidate = {
 	lastModified: number;
 };
 
+type DeviceFolderControlMessage =
+	| { type: 'connected'; userId: string }
+	| { type: 'disconnected'; userId: string }
+	| { type: 'clear-all' };
+
 export type DeviceFolderConnectionState =
 	| 'https-required'
 	| 'unsupported'
@@ -61,15 +87,40 @@ export type DeviceFolderScanResult = (
 	| { result: 'imported' }
 	| { result: 'duplicate' }
 	| { result: 'deleted' }
+	| { result: 'disconnected' }
+	| { result: 'rate-limited' }
 	| { result: 'future' }
 	| { result: 'time-zone-required' }
 	| { result: 'invalid' }
 	| { result: 'too-large' }
 	| { result: 'too-many-files' }
+	| { result: 'timed-out' }
+	| { result: 'cancelled' }
 	| { result: 'failed' }
 ) & {
 	/** Number of other unseen GPX files left after a terminal result. */
 	remaining?: number;
+	retryAfterSeconds?: number;
+	checkedCandidates?: number;
+	totalCandidates?: number;
+	scanIncomplete?: boolean;
+};
+
+export type DeviceFolderScanProgress = {
+	phase: 'enumerating' | 'fingerprinting' | 'uploading';
+	completed: number;
+	total: number | null;
+};
+
+export type DeviceFolderScanOptions = {
+	onProgress?: (progress: DeviceFolderScanProgress) => void;
+};
+
+type DeviceFolderScanContext = {
+	signal: AbortSignal;
+	deadline: number;
+	progress: DeviceFolderScanProgress;
+	report: (progress: DeviceFolderScanProgress) => void;
 };
 
 export type DeviceFileMetadata = {
@@ -135,7 +186,7 @@ export async function connectDeviceFolder(userId: string): Promise<DeviceFolderC
 	// A persisted storage bucket reduces the chance that Android evicts the
 	// IndexedDB record containing the handle. It does not grant file access.
 	void navigator.storage?.persist?.().catch(() => false);
-	blockedUsers.delete(userId);
+	signalDeviceFolderControl({ type: 'connected', userId });
 	return 'linked';
 }
 
@@ -170,8 +221,9 @@ export async function requestDirectoryReadPermission(
 }
 
 export async function disconnectDeviceFolder(userId: string): Promise<void> {
-	blockedUsers.add(userId);
-	await activeScans.get(userId)?.catch(() => undefined);
+	signalDeviceFolderControl({ type: 'disconnected', userId });
+	await revokeServerBrowserFolderGeneration();
+	await activeScans.get(userId)?.promise.catch(() => undefined);
 	const database = await openDatabase();
 	try {
 		const transaction = database.transaction([configStoreName, seenStoreName], 'readwrite');
@@ -186,9 +238,9 @@ export async function disconnectDeviceFolder(userId: string): Promise<void> {
 /** Remove every retained directory capability before a browser-profile handoff. */
 export async function clearAllDeviceFolderData(): Promise<void> {
 	if (typeof indexedDB === 'undefined') return;
-	blockAllScans = true;
+	signalDeviceFolderControl({ type: 'clear-all' });
 	try {
-		await Promise.all([...activeScans.values()].map((scan) => scan.catch(() => undefined)));
+		await Promise.all([...activeScans.values()].map((scan) => scan.promise.catch(() => undefined)));
 		await new Promise<void>((resolve, reject) => {
 			const request = indexedDB.deleteDatabase(databaseName);
 			request.onsuccess = () => {
@@ -213,6 +265,9 @@ export async function clearAllDeviceFolderData(): Promise<void> {
  */
 export async function retainDeviceFolderForUser(userId: string): Promise<void> {
 	if (typeof indexedDB === 'undefined') return;
+	ensureDeviceFolderControlChannel();
+	blockAllScans = false;
+	blockedUsers.delete(userId);
 	const database = await openDatabase();
 	try {
 		const transaction = database.transaction([configStoreName, seenStoreName], 'readwrite');
@@ -234,58 +289,146 @@ export async function getDeviceFolderConnectionState(
 	return (await queryPermission(handle)) === 'granted' ? 'linked' : 'permission-required';
 }
 
-export function scanDeviceFolder(userId: string): Promise<DeviceFolderScanResult> {
+export function scanDeviceFolder(
+	userId: string,
+	options: DeviceFolderScanOptions = {}
+): Promise<DeviceFolderScanResult> {
+	ensureDeviceFolderControlChannel();
 	if (blockAllScans || blockedUsers.has(userId)) return Promise.resolve({ result: 'unlinked' });
 	const active = activeScans.get(userId);
-	if (active) return active;
-	const scan = scanDeviceFolderOnce(userId).finally(() => activeScans.delete(userId));
-	activeScans.set(userId, scan);
-	return scan;
+	if (active) return observeActiveScan(active, options.onProgress);
+
+	const controller = new AbortController();
+	const listeners = new Set<(progress: DeviceFolderScanProgress) => void>();
+	const entry: ActiveDeviceFolderScan = {
+		controller,
+		listeners,
+		progress: { phase: 'enumerating', completed: 0, total: null },
+		promise: Promise.resolve({ result: 'failed' } as DeviceFolderScanResult)
+	};
+	const context: DeviceFolderScanContext = {
+		signal: controller.signal,
+		deadline: monotonicNow() + deviceFolderScanBudgetMs,
+		progress: entry.progress,
+		report: (progress) => {
+			context.progress = progress;
+			entry.progress = progress;
+			for (const listener of listeners) listener(progress);
+		}
+	};
+	entry.promise = scanDeviceFolderOnce(userId, context).finally(() => {
+		if (activeScans.get(userId) === entry) activeScans.delete(userId);
+	});
+	activeScans.set(userId, entry);
+	return observeActiveScan(entry, options.onProgress);
 }
 
-async function scanDeviceFolderOnce(userId: string): Promise<DeviceFolderScanResult> {
+export function cancelDeviceFolderScan(userId: string): void {
+	activeScans.get(userId)?.controller.abort();
+}
+
+function observeActiveScan(
+	active: ActiveDeviceFolderScan,
+	listener?: (progress: DeviceFolderScanProgress) => void
+): Promise<DeviceFolderScanResult> {
+	if (!listener) return active.promise;
+	active.listeners.add(listener);
+	listener(active.progress);
+	return active.promise.finally(() => active.listeners.delete(listener));
+}
+
+async function scanDeviceFolderOnce(
+	userId: string,
+	context: DeviceFolderScanContext
+): Promise<DeviceFolderScanResult> {
 	if (blockAllScans || blockedUsers.has(userId)) return { result: 'unlinked' };
 	const support = getDeviceFolderSupportState();
 	if (support !== 'supported') return { result: support };
 	const handle = await getStoredFolder(userId);
 	if (!handle) return { result: 'unlinked' };
 	if ((await queryPermission(handle)) !== 'granted') return { result: 'permission-required' };
+	const scanRevision = capabilityRevision;
+	const generations = await fetchImportGenerations();
+	if (generations === null) return { result: 'failed' };
 
-	let candidates: DeviceFileCandidate[];
+	let candidateScan: DeviceCandidateScan;
 	try {
-		candidates = await listGpxCandidates(handle, userId);
+		candidateScan = await listGpxCandidates(handle, userId, context);
 	} catch (error) {
 		if (error instanceof DeviceFolderLimitError) return { result: 'too-many-files' };
+		if (error instanceof DeviceFolderScanTimeoutError) {
+			return scanTimeoutResult(context.progress);
+		}
+		if (error instanceof DeviceFolderScanCancelledError) {
+			return blockAllScans || blockedUsers.has(userId)
+				? { result: 'unlinked' }
+				: { result: 'cancelled' };
+		}
 		const firstFailure = classifyDirectoryReadFailure(error);
 		if (firstFailure !== 'folder-unavailable') return { result: firstFailure };
 		// Android document providers can still be waking up immediately after the
 		// page resumes. Retry that transient state once before asking the runner to act.
-		await new Promise((resolve) => setTimeout(resolve, 350));
+		await waitForOperation(new Promise((resolve) => setTimeout(resolve, 350)), context);
 		try {
-			candidates = await listGpxCandidates(handle, userId);
+			candidateScan = await listGpxCandidates(handle, userId, context);
 		} catch (retryError) {
 			if (retryError instanceof DeviceFolderLimitError) return { result: 'too-many-files' };
+			if (retryError instanceof DeviceFolderScanTimeoutError) {
+				return scanTimeoutResult(context.progress);
+			}
+			if (retryError instanceof DeviceFolderScanCancelledError) {
+				return blockAllScans || blockedUsers.has(userId)
+					? { result: 'unlinked' }
+					: { result: 'cancelled' };
+			}
 			return { result: classifyDirectoryReadFailure(retryError) };
 		}
 	}
+	const { candidates, skippedCandidates } = candidateScan;
 	const seen = await getSeenDigests(userId);
 	const candidate = newestUnseenDeviceFile(candidates, seen);
-	if (!candidate) return { result: 'none' };
+	if (!candidate) {
+		return skippedCandidates > 0
+			? {
+					result: 'timed-out',
+					checkedCandidates: candidateScan.checkedCandidates,
+					totalCandidates: candidateScan.totalCandidates
+				}
+			: { result: 'none' };
+	}
 	const remaining = Math.max(
 		0,
 		candidates.filter((item) => !seen.has(item.fingerprint)).length - 1
 	);
 	if (blockAllScans || blockedUsers.has(userId)) return { result: 'unlinked' };
+	const capabilityState = await revalidateDeviceFolderCapability(userId, handle, scanRevision);
+	if (capabilityState !== 'linked') return { result: capabilityState };
+	context.report({ phase: 'uploading', completed: candidates.length, total: candidates.length });
 
 	let result: DeviceFolderScanResult;
 	try {
-		result = await uploadCandidate(candidate.file);
-	} catch {
+		result = await uploadCandidate(candidate.file, generations, context.signal);
+	} catch (error) {
+		if (context.signal.aborted || error instanceof DeviceFolderScanCancelledError) {
+			return blockAllScans || blockedUsers.has(userId)
+				? { result: 'unlinked' }
+				: { result: 'cancelled' };
+		}
 		return { result: 'failed' };
 	}
 	if (isTerminalDeviceImportResult(result.result)) {
 		await markSeen(userId, candidate.fingerprint);
-		return { ...result, remaining };
+		return {
+			...result,
+			remaining,
+			...(skippedCandidates > 0
+				? {
+						scanIncomplete: true,
+						checkedCandidates: candidateScan.checkedCandidates,
+						totalCandidates: candidateScan.totalCandidates
+					}
+				: {})
+		};
 	}
 	return result;
 }
@@ -311,42 +454,290 @@ export function classifyDirectoryReadFailure(
 
 async function listGpxCandidates(
 	handle: FileSystemDirectoryHandle,
-	userId: string
-): Promise<DeviceFileCandidate[]> {
-	const files: File[] = [];
+	userId: string,
+	context: DeviceFolderScanContext
+): Promise<DeviceCandidateScan> {
+	const fileHandles: FileSystemFileHandle[] = [];
 	let entryCount = 0;
-	for await (const entry of handle.values()) {
+	const iterator = handle.values()[Symbol.asyncIterator]();
+	while (true) {
+		const next = await waitForOperation(iterator.next(), context);
+		if (next.done) break;
+		const entry = next.value;
+		assertScanActive(context);
 		entryCount += 1;
+		context.report({ phase: 'enumerating', completed: entryCount, total: null });
 		if (entryCount > maxDirectoryEntries) throw new DeviceFolderLimitError();
 		if (entry.kind !== 'file' || !isGpxFilename(entry.name)) continue;
-		if (files.length >= maxGpxCandidates) throw new DeviceFolderLimitError();
-		files.push(await entry.getFile());
+		if (fileHandles.length >= maxDeviceFingerprintCandidatesPerScan) {
+			throw new DeviceFolderLimitError();
+		}
+		fileHandles.push(entry);
 	}
-	const candidates: DeviceFileCandidate[] = [];
-	for (const file of files) {
-		candidates.push({
-			file,
-			fingerprint: await fingerprintFile(file, userId),
-			lastModified: file.lastModified
-		});
+	context.report({ phase: 'fingerprinting', completed: 0, total: fileHandles.length });
+
+	const startOffset = normalizedCandidateOffset(
+		candidateScanOffsets.get(userId) ?? 0,
+		fileHandles.length
+	);
+	const orderedHandles = rotateDeviceCandidates(fileHandles, startOffset);
+	let providerAttempts = 0;
+	let completed = 0;
+	let skippedCandidates = 0;
+	const outcomes = await mapWithBoundedConcurrency(
+		orderedHandles,
+		deviceFolderFingerprintConcurrency,
+		async (fileHandle) => {
+			if (monotonicNow() < context.deadline) providerAttempts += 1;
+			const candidateContext: DeviceFolderScanContext = {
+				...context,
+				deadline: Math.min(context.deadline, monotonicNow() + deviceFolderCandidateBudgetMs)
+			};
+			try {
+				const file = await waitForOperation(fileHandle.getFile(), candidateContext);
+				const fingerprint = await fingerprintDeviceFile(file, userId, candidateContext);
+				return { file, fingerprint, lastModified: file.lastModified };
+			} catch (error) {
+				if (error instanceof DeviceFolderScanCancelledError) throw error;
+				if (error instanceof DeviceFolderScanTimeoutError || isSkippableCandidateFailure(error)) {
+					skippedCandidates += 1;
+					return null;
+				}
+				throw error;
+			} finally {
+				completed += 1;
+				context.report({
+					phase: 'fingerprinting',
+					completed,
+					total: orderedHandles.length
+				});
+			}
+		}
+	);
+	const candidates = outcomes.filter(
+		(candidate): candidate is DeviceFileCandidate => candidate !== null
+	);
+	if (skippedCandidates === 0) {
+		candidateScanOffsets.set(userId, 0);
+	} else {
+		// Resume after the provider entries that received time in this pass. Slow or
+		// stale entries cannot silently keep later GPX files out of every scan.
+		candidateScanOffsets.set(
+			userId,
+			normalizedCandidateOffset(startOffset + Math.max(1, providerAttempts), fileHandles.length)
+		);
 	}
-	return candidates;
+	return {
+		candidates,
+		skippedCandidates,
+		checkedCandidates: providerAttempts,
+		totalCandidates: orderedHandles.length
+	};
 }
 
-async function fingerprintFile(file: File, userId: string): Promise<string> {
-	const metadata = new TextEncoder().encode(
-		JSON.stringify([userId, file.name, file.size, file.lastModified])
+type DeviceCandidateScan = {
+	candidates: DeviceFileCandidate[];
+	skippedCandidates: number;
+	checkedCandidates: number;
+	totalCandidates: number;
+};
+
+function isSkippableCandidateFailure(error: unknown): boolean {
+	return (
+		error instanceof DOMException &&
+		[
+			'NotFoundError',
+			'NotReadableError',
+			'InvalidStateError',
+			'AbortError',
+			'UnknownError'
+		].includes(error.name)
 	);
-	// Folder scans run whenever the app regains focus. Fingerprint metadata here
-	// so hundreds of already-seen files do not require repeated content reads.
-	// The selected file is still fully hashed and deduplicated on the server.
-	const digest = await globalThis.crypto.subtle.digest('SHA-256', metadata);
+}
+
+export async function fingerprintDeviceFile(
+	file: File,
+	userId: string,
+	context?: DeviceFolderScanContext
+): Promise<string> {
+	// Gadgetbridge can replace an export without changing its name, byte length,
+	// or modified time. Include deterministic, stratified content windows in the
+	// browser-local marker so common in-place replacements are offered for
+	// authoritative server-side deduplication. Never read more than 8 KiB per
+	// candidate: a full folder scan is capped at about 4 MiB rather than gigabytes.
+	const contentSample = await readFingerprintSample(file, context);
+	const contentDigest = await waitForOptionalScanOperation(
+		globalThis.crypto.subtle.digest('SHA-256', contentSample),
+		context
+	);
+	const identity = new TextEncoder().encode(
+		JSON.stringify([
+			userId,
+			file.name,
+			file.size,
+			file.lastModified,
+			file.size <= maxDeviceFingerprintBytesPerFile ? 'complete-v1' : 'stratified-sample-v1',
+			hexDigest(contentDigest)
+		])
+	);
+	const digest = await waitForOptionalScanOperation(
+		globalThis.crypto.subtle.digest('SHA-256', identity),
+		context
+	);
+	return hexDigest(digest);
+}
+
+async function readFingerprintSample(
+	file: File,
+	context?: DeviceFolderScanContext
+): Promise<Uint8Array<ArrayBuffer>> {
+	const ranges =
+		file.size <= maxDeviceFingerprintBytesPerFile
+			? [{ start: 0, end: file.size }]
+			: fingerprintSampleRanges(file.size);
+	const chunks: Uint8Array<ArrayBuffer>[] = [];
+	let totalBytes = 0;
+	for (const range of ranges) {
+		const chunk = new Uint8Array(
+			await waitForOptionalScanOperation(file.slice(range.start, range.end).arrayBuffer(), context)
+		);
+		chunks.push(chunk);
+		totalBytes += chunk.byteLength;
+	}
+	const sample = new Uint8Array(totalBytes);
+	let offset = 0;
+	for (const chunk of chunks) {
+		sample.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return sample;
+}
+
+function fingerprintSampleRanges(fileSize: number): { start: number; end: number }[] {
+	const lastStart = fileSize - fingerprintWindowBytes;
+	return Array.from({ length: fingerprintWindowDivisions + 1 }, (_, index) => {
+		const start = Math.round((lastStart * index) / fingerprintWindowDivisions);
+		return { start, end: start + fingerprintWindowBytes };
+	});
+}
+
+export function rotateDeviceCandidates<T>(values: T[], offset: number): T[] {
+	if (values.length === 0) return [];
+	const normalized = normalizedCandidateOffset(offset, values.length);
+	return [...values.slice(normalized), ...values.slice(0, normalized)];
+}
+
+export async function mapWithBoundedConcurrency<T, R>(
+	values: T[],
+	concurrency: number,
+	worker: (value: T, index: number) => Promise<R>
+): Promise<R[]> {
+	if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+		throw new Error('Device-folder concurrency must be a positive integer.');
+	}
+	const results = new Array<R>(values.length);
+	let nextIndex = 0;
+	const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+		while (true) {
+			const index = nextIndex;
+			if (index >= values.length) return;
+			nextIndex += 1;
+			const value = values[index] as T;
+			results[index] = await worker(value, index);
+		}
+	});
+	await Promise.all(workers);
+	return results;
+}
+
+function normalizedCandidateOffset(offset: number, length: number): number {
+	if (length === 0) return 0;
+	return ((Math.trunc(offset) % length) + length) % length;
+}
+
+function scanTimeoutResult(progress: DeviceFolderScanProgress): DeviceFolderScanResult {
+	return {
+		result: 'timed-out',
+		checkedCandidates: progress.phase === 'enumerating' ? 0 : progress.completed,
+		...(progress.total === null ? {} : { totalCandidates: progress.total })
+	};
+}
+
+function monotonicNow(): number {
+	return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function assertScanActive(context: DeviceFolderScanContext): void {
+	if (context.signal.aborted) throw new DeviceFolderScanCancelledError();
+	if (monotonicNow() >= context.deadline) throw new DeviceFolderScanTimeoutError();
+}
+
+function waitForOptionalScanOperation<T>(
+	operation: Promise<T>,
+	context?: DeviceFolderScanContext
+): Promise<T> {
+	return context ? waitForOperation(operation, context) : operation;
+}
+
+function waitForOperation<T>(operation: Promise<T>, context: DeviceFolderScanContext): Promise<T> {
+	assertScanActive(context);
+	const remainingMs = Math.max(1, context.deadline - monotonicNow());
+	return new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const finish = (callback: () => void) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			context.signal.removeEventListener('abort', handleAbort);
+			callback();
+		};
+		const handleAbort = () => {
+			finish(() => {
+				reject(new DeviceFolderScanCancelledError());
+			});
+		};
+		const timeout = setTimeout(() => {
+			finish(() => {
+				reject(new DeviceFolderScanTimeoutError());
+			});
+		}, remainingMs);
+		context.signal.addEventListener('abort', handleAbort, { once: true });
+		operation.then(
+			(value) => {
+				finish(() => {
+					resolve(value);
+				});
+			},
+			(error: unknown) => {
+				const reason =
+					error instanceof Error
+						? error
+						: new Error('The device-folder operation failed.', { cause: error });
+				finish(() => {
+					reject(reason);
+				});
+			}
+		);
+	});
+}
+
+function combinedAbortSignal(signal: AbortSignal, timeoutMs: number): AbortSignal {
+	return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+}
+
+function hexDigest(digest: ArrayBuffer): string {
 	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function uploadCandidate(file: File): Promise<DeviceFolderScanResult> {
+async function uploadCandidate(
+	file: File,
+	generations: { activity: number; folder: number },
+	signal: AbortSignal
+): Promise<DeviceFolderScanResult> {
 	if (file.size > maxGpxImportBytes) return { result: 'too-large' };
 	const formData = new FormData();
+	formData.append('activityGeneration', String(generations.activity));
+	formData.append('folderGeneration', String(generations.folder));
 	// Do not transmit Gadgetbridge's original filename. The server only needs
 	// bounded bytes for strict parsing and user-scoped content deduplication.
 	formData.append(
@@ -360,16 +751,26 @@ async function uploadCandidate(file: File): Promise<DeviceFolderScanResult> {
 		method: 'POST',
 		body: formData,
 		credentials: 'same-origin',
-		signal: AbortSignal.timeout(30_000)
+		signal: combinedAbortSignal(signal, 30_000)
 	});
 	const body = (await response.json()) as { result?: unknown };
 	const result = body.result;
+	if (response.status === 429 && result === 'rate-limited') {
+		const retryAfterSeconds = Number(response.headers.get('retry-after'));
+		return {
+			result: 'rate-limited',
+			...(Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds > 0
+				? { retryAfterSeconds }
+				: {})
+		};
+	}
 	if (
 		typeof result !== 'string' ||
 		![
 			'imported',
 			'duplicate',
 			'deleted',
+			'disconnected',
 			'future',
 			'time-zone-required',
 			'invalid',
@@ -379,6 +780,119 @@ async function uploadCandidate(file: File): Promise<DeviceFolderScanResult> {
 		return { result: 'failed' };
 	}
 	return { result } as DeviceFolderScanResult;
+}
+
+async function fetchImportGenerations(): Promise<{ activity: number; folder: number } | null> {
+	try {
+		const response = await fetch('/app/import/device/generation', {
+			method: 'GET',
+			headers: { accept: 'application/json' },
+			credentials: 'same-origin',
+			cache: 'no-store',
+			signal: AbortSignal.timeout(10_000)
+		});
+		if (!response.ok) return null;
+		const body = (await response.json()) as {
+			activityGeneration?: unknown;
+			folderGeneration?: unknown;
+		};
+		return typeof body.activityGeneration === 'number' &&
+			Number.isSafeInteger(body.activityGeneration) &&
+			body.activityGeneration >= 0 &&
+			typeof body.folderGeneration === 'number' &&
+			Number.isSafeInteger(body.folderGeneration) &&
+			body.folderGeneration >= 0
+			? { activity: body.activityGeneration, folder: body.folderGeneration }
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+async function revokeServerBrowserFolderGeneration(): Promise<void> {
+	const response = await fetch('/app/import/device/connection', {
+		method: 'DELETE',
+		credentials: 'same-origin',
+		headers: { accept: 'application/json' },
+		cache: 'no-store',
+		signal: AbortSignal.timeout(10_000)
+	});
+	if (!response.ok) throw new Error('Browser folder disconnection could not be recorded.');
+}
+
+async function revalidateDeviceFolderCapability(
+	userId: string,
+	handle: FileSystemDirectoryHandle,
+	scanRevision: number
+): Promise<'linked' | 'unlinked' | 'permission-required' | 'failed'> {
+	if (blockAllScans || blockedUsers.has(userId) || capabilityRevision !== scanRevision) {
+		return 'unlinked';
+	}
+	try {
+		const stored = await getStoredFolder(userId);
+		if (!stored || !(await isSameDirectory(stored, handle))) return 'unlinked';
+		if ((await queryPermission(stored)) !== 'granted') return 'permission-required';
+	} catch {
+		return 'failed';
+	}
+	return blockAllScans || blockedUsers.has(userId) || capabilityRevision !== scanRevision
+		? 'unlinked'
+		: 'linked';
+}
+
+function ensureDeviceFolderControlChannel(): BroadcastChannel | null {
+	if (controlChannel !== undefined) return controlChannel;
+	if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') {
+		controlChannel = null;
+		return null;
+	}
+	try {
+		controlChannel = new BroadcastChannel(controlChannelName);
+		controlChannel.addEventListener('message', (event: MessageEvent<unknown>) => {
+			if (isDeviceFolderControlMessage(event.data)) applyDeviceFolderControl(event.data);
+		});
+	} catch {
+		controlChannel = null;
+	}
+	return controlChannel;
+}
+
+function signalDeviceFolderControl(message: DeviceFolderControlMessage): void {
+	applyDeviceFolderControl(message);
+	try {
+		ensureDeviceFolderControlChannel()?.postMessage(message);
+	} catch {
+		// IndexedDB capability revalidation remains the cross-tab backstop when
+		// BroadcastChannel is unavailable or a browser profile is shutting down.
+	}
+}
+
+function applyDeviceFolderControl(message: DeviceFolderControlMessage): void {
+	capabilityRevision += 1;
+	if (message.type === 'clear-all') {
+		blockAllScans = true;
+		for (const active of activeScans.values()) active.controller.abort();
+		return;
+	}
+	if (message.type === 'disconnected') {
+		blockedUsers.add(message.userId);
+		activeScans.get(message.userId)?.controller.abort();
+		return;
+	}
+	blockAllScans = false;
+	blockedUsers.delete(message.userId);
+}
+
+export function isDeviceFolderControlMessage(value: unknown): value is DeviceFolderControlMessage {
+	if (!value || typeof value !== 'object' || !('type' in value)) return false;
+	if (value.type === 'clear-all') return true;
+	return (
+		(value.type === 'connected' || value.type === 'disconnected') &&
+		'userId' in value &&
+		typeof value.userId === 'string' &&
+		value.userId.length > 0 &&
+		value.userId.length <= 200
+	);
 }
 
 async function queryPermission(handle: FileSystemDirectoryHandle): Promise<PermissionState> {

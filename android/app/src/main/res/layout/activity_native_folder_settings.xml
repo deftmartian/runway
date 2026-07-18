@@ -3,7 +3,6 @@
     android:id="@+id/folder_settings_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/runway_background"
     android:clipToPadding="false"
     android:fillViewport="true">
 
@@ -17,11 +16,11 @@
         android:paddingBottom="40dp">
 
         <TextView
+            android:id="@+id/screen_heading"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/folder_screen_title"
-            android:textAppearance="@style/TextAppearance.Runway.Title"
-            android:accessibilityHeading="true" />
+            android:textAppearance="@style/TextAppearance.Runway.Title" />
 
         <TextView
             android:layout_width="match_parent"
@@ -62,9 +61,9 @@
             android:layout_marginTop="16dp">
 
             <TextView
+                android:id="@+id/pairing_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:accessibilityHeading="true"
                 android:text="@string/pairing_title"
                 android:textAppearance="@style/TextAppearance.Runway.SectionTitle" />
 
@@ -95,8 +94,6 @@
                     android:id="@+id/pairing_code"
                     style="@style/Widget.Runway.Input"
                     android:layout_marginTop="4dp"
-                    android:autofillHints=""
-                    android:hint="@string/pairing_code_hint"
                     android:importantForAutofill="no"
                     android:imeOptions="actionNext"
                     android:inputType="textCapCharacters|textNoSuggestions"
@@ -114,7 +111,7 @@
                     android:id="@+id/device_label"
                     style="@style/Widget.Runway.Input"
                     android:layout_marginTop="4dp"
-                    android:hint="@string/device_label_default"
+                    android:importantForAutofill="no"
                     android:imeOptions="actionDone"
                     android:inputType="textCapSentences"
                     android:maxLines="1"
@@ -140,9 +137,9 @@
             android:layout_marginTop="14dp">
 
             <TextView
+                android:id="@+id/folder_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:accessibilityHeading="true"
                 android:text="@string/folder_section_title"
                 android:textAppearance="@style/TextAppearance.Runway.SectionTitle" />
 
@@ -185,9 +182,9 @@
             android:layout_marginTop="14dp">
 
             <TextView
+                android:id="@+id/background_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:accessibilityHeading="true"
                 android:text="@string/background_title"
                 android:textAppearance="@style/TextAppearance.Runway.SectionTitle" />
 
@@ -199,6 +196,15 @@
                 android:accessibilityLiveRegion="polite"
                 android:text="@string/background_setup_required"
                 android:textAppearance="@style/TextAppearance.Runway.Body" />
+
+            <TextView
+                android:id="@+id/last_check_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/last_check_never"
+                android:textAppearance="@style/TextAppearance.Runway.Supporting" />
 
             <Button
                 android:id="@+id/background_action"

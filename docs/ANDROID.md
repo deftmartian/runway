@@ -62,18 +62,29 @@ cookies. Native/server communication uses the pairing API described below.
 It releases the old grant when switching folders, checks Android's persisted-grant list before every
 scan, and asks the user to choose again after revocation.
 
-Scans are bounded to 2,000 direct entries. Candidate selection accepts GPX-specific MIME types or a
-`.gpx` name from common providers and rejects known empty or over-10 MB files before opening them.
+Scans restart from the folder root and inspect at most 10,000 direct entries. They never resume at a
+cursor offset because Storage Access Framework providers do not promise stable row ordering between
+queries. Durable keyed revision/content markers make restart-and-dedupe safe. Candidate selection
+accepts GPX-specific MIME types or a `.gpx` name from common providers and rejects known empty or
+over-10 MB files before opening them. The Folder screen reports the hard limit if a selected directory
+is larger, instead of implying files beyond it were checked.
+
 Share intake accepts exactly one `content://` URI with a read grant, performs a bounded streaming read
 off the UI thread, and does not log names, URIs, XML, coordinates, or metadata.
 
 WorkManager provides eventual reconciliation, not a filesystem watcher. Reopening or returning to the
 Android launcher enqueues a constrained one-time check. Periodic work has a 15-minute minimum interval
 and Android may defer it for battery, network, or OEM policy. Product copy must not promise immediate
-import; the native sheet retains an explicit **Check now** action.
+import; the native sheet retains an explicit **Check now** action. Each worker handles at most one GPX,
+but one trigger may chain up to eight bounded workers to reduce a known backlog. The sheet shows the
+last outcome and a lower-bound backlog count.
 
 The app requests no location, activity-recognition, broad storage, contacts, advertising, or Play
-Services permission. The only manifest permission is internet access.
+Services permission, and it requests no dangerous or runtime permission. The source manifest declares
+internet access. WorkManager contributes the normal `ACCESS_NETWORK_STATE`, `WAKE_LOCK`,
+`RECEIVE_BOOT_COMPLETED`, and `FOREGROUND_SERVICE` permissions needed for constrained, reliable
+reconciliation plus an app-scoped signature permission for safe dynamic receivers. The build gate
+checks the merged artifact against that exact allowlist and fails on any unexpected addition.
 
 ## Native upload and authentication boundary
 
@@ -96,14 +107,21 @@ The implemented pairing and upload flow is:
    revocation or privacy deletion. Completed receipts return the original stable result; an id reused
    for different content is rejected. Raw digests are converted to user-scoped HMAC keys before
    storage.
-7. The native worker retains only keyed handled markers and a pending request id. When a provider
-   supplies modification time, it waits until the candidate has been unchanged for at least 30
-   seconds, then processes the newest eligible file per run. It marks `imported`, `duplicate`, and
-   `quarantined`
-   outcomes terminal and retries transient failures. The server still applies parser, duplicate,
-   tombstone, route-retention, time zone, Review-state, and import-generation controls.
+7. The native worker retains only keyed handled/revision markers, a bounded settling observation, and
+   a pending request id. It observes the same bounded content revision twice at least 30 seconds
+   apart before upload, including when provider modification time is missing. Content digest is the
+   authoritative handled identity; a document URI plus size and modification time only accelerates
+   scans. Weak provider revisions are rechecked, so overwriting one document URI can produce a new
+   import instead of being hidden by a permanent URI marker. It marks `imported`, `duplicate`, and
+   `quarantined` outcomes terminal and retries transient failures. The server still applies parser,
+   duplicate, tombstone, route-retention, time zone, Review-state, and import-generation controls.
 8. A device can be revoked from Import sources. Deleting imported activity data revokes all active
    Android devices in the same database transaction before deleting the activity rows.
+
+Folder selection carries a monotonically changing local generation. Switching or disconnecting the
+folder and forgetting or losing the credential cancel both periodic and queued one-time work. A worker
+reloads the credential, tree URI, and generation immediately before upload, so work already reading an
+old grant cannot send after the account or folder changes.
 
 The short code proves possession of the authenticated browser-approved pairing value; it is not
 hardware attestation. A distribution that needs stronger managed-device assurance should replace the
@@ -147,11 +165,16 @@ manifest, Android resource, pairing/import API, or Digital Asset Links change:
 ```sh
 corepack pnpm verify:android
 corepack pnpm verify:android:build
+corepack pnpm verify:android:release
 ```
 
 The build command runs Gradle `lint`, `test`, and `assembleDebug` against the non-routable
-`https://runway.example.test` build origin. It proves the Kotlin and resources compile without
-requiring a real instance or signing identity; it does not produce a distributable release. The
+`https://runway.example.test` build origin. The release-contract command separately proves placeholder
+origins are rejected, a release-shaped identity passes, normal release packaging fails without
+`android/signing.properties`, and the explicit F-Droid path can produce only an unsigned source-built
+artifact without private material. The check points Gradle at an isolated nonexistent signing file,
+so it never reads an operator's local key configuration. Both commands verify their merged manifest
+contains only the reviewed normal operational permissions. Neither command produces a directly distributable release. The
 repository check workflow runs the same commands with JDK 17, Android platform 36, and build tools
-36.0.0. Emulator, physical-device, TWA association, and accessibility evidence remain explicit
-release gates rather than being implied by a successful debug build.
+36.0.0. Emulator, physical-device, TWA association, and accessibility evidence remain explicit release
+gates rather than being implied by a successful build.

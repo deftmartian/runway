@@ -1,4 +1,4 @@
-import type { RiskRating } from './types';
+import type { ConsequenceResult, RiskRating } from './types';
 
 /**
  * Public assessment terms for the planner's numeric load heuristics.
@@ -10,7 +10,11 @@ export type TrainingAssessment =
 	| 'within_default'
 	| 'above_default'
 	| 'high_increase'
-	| 'unsupported';
+	| 'unsupported'
+	| 'needs_review'
+	| 'pain_review';
+
+type NumericTrainingAssessment = Exclude<TrainingAssessment, 'needs_review' | 'pain_review'>;
 
 export type TrainingAssessmentAttention = 'none' | 'review' | 'high' | 'blocked';
 
@@ -21,7 +25,7 @@ export type TrainingAssessmentPresentation = {
 	attention: TrainingAssessmentAttention;
 };
 
-const assessmentByRisk: Record<RiskRating, TrainingAssessment> = {
+const assessmentByRisk: Record<RiskRating, NumericTrainingAssessment> = {
 	conservative: 'within_default',
 	moderate: 'above_default',
 	aggressive: 'high_increase',
@@ -29,7 +33,7 @@ const assessmentByRisk: Record<RiskRating, TrainingAssessment> = {
 };
 
 const rampPresentation: Record<
-	TrainingAssessment,
+	NumericTrainingAssessment,
 	Omit<TrainingAssessmentPresentation, 'assessment'>
 > = {
 	within_default: {
@@ -55,7 +59,7 @@ const rampPresentation: Record<
 };
 
 const changePresentation: Record<
-	TrainingAssessment,
+	NumericTrainingAssessment,
 	Omit<TrainingAssessmentPresentation, 'assessment'>
 > = {
 	within_default: {
@@ -80,7 +84,7 @@ const changePresentation: Record<
 	}
 };
 
-export function trainingAssessmentFromRisk(risk: RiskRating): TrainingAssessment {
+export function trainingAssessmentFromRisk(risk: RiskRating): NumericTrainingAssessment {
 	return assessmentByRisk[risk];
 }
 
@@ -96,15 +100,51 @@ export function presentLoadChangeAssessment(risk: RiskRating): TrainingAssessmen
 	return { assessment, ...changePresentation[assessment] };
 }
 
+export function presentConsequenceAssessment(
+	consequence: ConsequenceResult
+): TrainingAssessmentPresentation {
+	if (consequence.kind === 'pain_reported') {
+		return {
+			assessment: 'pain_review',
+			label: 'Pain review',
+			description: 'Pain was reported, so health guidance stays separate from load arithmetic.',
+			attention: 'blocked'
+		};
+	}
+	if (consequence.comparisonStatus === 'not_comparable') {
+		return {
+			assessment: 'needs_review',
+			label: 'Needs review',
+			description: 'Duration was not recorded, so this run cannot be compared with the timed plan.',
+			attention: 'review'
+		};
+	}
+	return presentLoadChangeAssessment(consequence.risk);
+}
+
 export function formatRampEvidence(
 	requiredWeeklyIncreasePercent: number,
 	defaultWeeklyIncreasePercent?: number
 ): string {
 	const required = formatPercent(requiredWeeklyIncreasePercent);
 	if (defaultWeeklyIncreasePercent === undefined) {
-		return `Required weekly increase: ${required}.`;
+		return `${required} required weekly increase`;
 	}
-	return `Weekly distance would rise ${required}. runway's default for this plan is ${formatPercent(defaultWeeklyIncreasePercent)}.`;
+	return `${required} required · ${formatPercent(defaultWeeklyIncreasePercent)} generated-week cap`;
+}
+
+export function formatLoadChangeEvidence(
+	changeShareOfWeekPercent: number,
+	risk: RiskRating
+): string {
+	const change = formatPercent(changeShareOfWeekPercent);
+	if (risk === 'unsafe') {
+		return `${change} of weekly load; outside-default boundary 25%.`;
+	}
+	if (risk === 'aggressive') {
+		return `${change} of weekly load; high-change boundary 15%.`;
+	}
+	return `${change} of weekly load; default up to 10%.`;
 }
 
 function formatPercent(value: number): string {

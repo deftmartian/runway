@@ -7,20 +7,21 @@ import {
 	getPhaseCompletionReview
 } from '$lib/server/runway/repositories/plan-lifecycle';
 import { listPlanHistory } from '$lib/server/runway/repositories/plan-queries';
-import { getAthleteTimeZone } from '$lib/server/runway/repositories/profiles';
+import { getTrainingDateContext } from '$lib/server/runway/repositories/training-read-context';
 import type { Actions, PageServerLoad } from './$types';
 
 const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) throw redirect(302, '/login');
-	if (!(await getAthleteTimeZone(event.locals.user.id))) throw redirect(302, '/app/onboarding');
+	const context = await getTrainingDateContext(event.locals.user.id);
+	if (!context.timeZone) throw redirect(302, '/app/onboarding');
 	const offset = validOffset(event.url.searchParams.get('offset'));
 	const [history, current, phaseReview] = await Promise.all([
-		listPlanHistory(event.locals.user.id, { limit: PAGE_SIZE, offset }),
+		listPlanHistory(event.locals.user.id, { limit: PAGE_SIZE, offset, context }),
 		offset === 0
 			? Promise.resolve(null)
-			: listPlanHistory(event.locals.user.id, { limit: 1, offset: 0 }),
+			: listPlanHistory(event.locals.user.id, { limit: 1, offset: 0, context }),
 		offset === 0 ? getPhaseCompletionReview(event.locals.user.id) : Promise.resolve(null)
 	]);
 	const firstItem = (current ?? history).items[0] ?? null;
@@ -70,9 +71,11 @@ export const actions: Actions = {
 			return fail(400, { error: 'Confirm that you want to repeat the latest beginner week.' });
 		}
 		try {
-			await continueBeginnerPhase(event.locals.user.id);
+			const result = await continueBeginnerPhase(event.locals.user.id);
 			return {
-				message: 'One more beginner week was added. The recorded baseline was not changed.'
+				message: result.continued
+					? 'One more beginner week was added. The recorded baseline was not changed.'
+					: 'That beginner week was already added. Nothing else changed.'
 			};
 		} catch (error) {
 			return fail(400, {
@@ -106,7 +109,8 @@ function lifecycleError(error: unknown, fallback: string): string {
 	const message = error instanceof Error ? error.message : '';
 	return message === 'The active plan cannot be completed before its target date.' ||
 		message === 'Confirm the recorded baseline before starting the retained race goal.' ||
-		message === 'The recorded work does not support this race ramp yet.'
+		message === 'The recorded work does not support this race ramp yet.' ||
+		message === 'The beginner phase has reached the 52-week plan limit.'
 		? message
 		: fallback;
 }

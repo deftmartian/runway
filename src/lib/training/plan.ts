@@ -10,6 +10,7 @@ import type {
 	GeneratedPlan,
 	GeneratedWeek,
 	GeneratedWorkout,
+	InjuryFlags,
 	PlanIntake,
 	RaceDistance,
 	RiskRating,
@@ -91,7 +92,7 @@ export function generateTrainingPlan(intake: TrainingIntake): GeneratedDistanceP
 
 	const taper = Math.min(taperWeeks[intake.raceDistance], Math.max(1, availableWeeks - 1));
 	const buildWeeks = Math.max(1, availableWeeks - taper);
-	const hasInjuryRisk = hasInjuryRiskFlags(intake);
+	const hasInjuryRisk = hasInjuryRiskFlags(intake.injuryFlags);
 	const baselineMeters = intake.currentWeeklyDistanceMeters;
 	const peakMeters = peakWeeklyMeters[intake.raceDistance];
 	const longRunPeakMeters = peakLongRunMeters[intake.raceDistance];
@@ -108,7 +109,8 @@ export function generateTrainingPlan(intake: TrainingIntake): GeneratedDistanceP
 		? 'unsafe'
 		: classifyRamp(requiredWeeklyIncreasePercent, hasInjuryRisk);
 	const warnings = getWarnings(intake, availableWeeks, requiredWeeklyIncreasePercent, initialRisk);
-	const normalRamp = Math.min(requiredWeeklyIncreasePercent / 100, priorityRampCap(intake));
+	const defaultWeeklyIncreasePercent = priorityRampCap(intake) * 100;
+	const normalRamp = Math.min(requiredWeeklyIncreasePercent, defaultWeeklyIncreasePercent) / 100;
 	const weeks: GeneratedWeek[] = [];
 	const trainingDistances: number[] = [];
 
@@ -239,6 +241,7 @@ export function generateTrainingPlan(intake: TrainingIntake): GeneratedDistanceP
 			baselineMeters,
 			peakMeters: generatedPeakMeters,
 			requiredWeeklyIncreasePercent: Math.round(requiredWeeklyIncreasePercent * 10) / 10,
+			defaultWeeklyIncreasePercent: Math.round(defaultWeeklyIncreasePercent * 10) / 10,
 			longRunPeakMeters: generatedLongRunPeakMeters,
 			warnings
 		},
@@ -344,7 +347,8 @@ export function generateFoundationPlan(intake: FoundationIntake): GeneratedFound
 			sessionsPerWeek: 3,
 			continuousRunTargetSeconds: 1_800,
 			warnings: [
-				'Completion provides observed training data for confirmation; it does not create a race baseline automatically.'
+				'Completion provides observed training data for confirmation; it does not create a race baseline automatically.',
+				...timedPhaseHealthWarnings(intake.injuryFlags)
 			]
 		},
 		sourceRefs: [sourceRefs.nhsCouchTo5k, sourceRefs.mayoBeginnerRunWalk]
@@ -400,7 +404,8 @@ export function generateCalibrationPlan(intake: CalibrationIntake): GeneratedCal
 			sessionsPerWeek: 2,
 			sessionDurationSeconds: intake.calibrationDurationSeconds,
 			warnings: [
-				'Distance remains observational until the runner confirms the completed activities as a baseline.'
+				'Distance remains observational until the runner confirms the completed activities as a baseline.',
+				...timedPhaseHealthWarnings(intake.injuryFlags)
 			]
 		},
 		sourceRefs: [sourceRefs.mayoBeginnerRunWalk]
@@ -535,6 +540,13 @@ function assertPhaseCanStart(flags: TrainingIntake['injuryFlags']): void {
 	}
 }
 
+function timedPhaseHealthWarnings(flags: InjuryFlags): string[] {
+	if (!flags.recentInjury && !flags.recurringPain) return [];
+	return [
+		'Recent injury or recurring pain is noted with this plan. It does not change the timed prescription or assess whether running is appropriate.'
+	];
+}
+
 function requiredBuildRamp(startMeters: number, goalMeters: number, buildWeeks: number): number {
 	if (buildWeeks <= 1 || startMeters >= goalMeters) return 0;
 	const transitions = buildWeeks - 1;
@@ -565,7 +577,7 @@ function getWarnings(
 			"The required weekly increase is above runway's default. Move the target date later or choose a shorter distance."
 		);
 	}
-	if (hasInjuryRiskFlags(intake)) {
+	if (hasInjuryRiskFlags(intake.injuryFlags)) {
 		warnings.push(
 			'Injury recovery or recurring pain is included in the ramp assessment. Get qualified guidance if pain persists, worsens, or changes how you move.'
 		);
@@ -592,7 +604,7 @@ function getWarnings(
 
 function priorityRampCap(intake: TrainingIntake): number {
 	const baseCap = intake.priority === 'finish_healthy' ? 0.075 : 0.1;
-	const injuryReduction = hasInjuryRiskFlags(intake) ? 0.02 : 0;
+	const injuryReduction = hasInjuryRiskFlags(intake.injuryFlags) ? 0.02 : 0;
 	return Math.max(0.04, baseCap - injuryReduction);
 }
 
@@ -704,13 +716,8 @@ function allocateEvenly(
 	return { distances, longRunMeters: 0 };
 }
 
-function hasInjuryRiskFlags(intake: TrainingIntake): boolean {
-	return (
-		intake.injuryFlags.recentInjury ||
-		intake.injuryFlags.currentPain ||
-		intake.injuryFlags.recurringPain ||
-		intake.injuryFlags.medicalRestriction
-	);
+export function hasInjuryRiskFlags(flags: InjuryFlags): boolean {
+	return flags.recentInjury || flags.currentPain || flags.recurringPain || flags.medicalRestriction;
 }
 
 function getLongRunReadinessFloor(distance: RaceDistance): number {

@@ -49,7 +49,8 @@ The native page:
 
 - selects a Gadgetbridge directory with `ACTION_OPEN_DOCUMENT_TREE`;
 - retains only the read grant with `takePersistableUriPermission()`;
-- scans at most 2,000 direct children without raw filesystem paths or broad storage access;
+- scans up to 10,000 direct children from the start without raw filesystem paths, provider-order
+  offsets, or broad storage access, and reports when the selected folder exceeds that bound;
 - checks on launcher resume, enables unique inexact WorkManager checks, and provides an explicit
   **Check now** action;
 - returns directly to the full runway TWA.
@@ -65,12 +66,18 @@ after ten minutes and works once. Android receives a random, one-year credential
 status and bounded GPX import; runway stores only its hash and the app encrypts it under an Android
 Keystore key. It never copies browser cookies or asks for the account password.
 
-Folder workers upload at most one unhandled GPX per check, prefer the newest provider-dated file, and
-wait 30 seconds after its last-modified time so a still-writing export is not quarantined prematurely.
-Operating-system shares upload the one selected GPX. Both paths use stable request ids, content
-digests, strict size bounds, and the existing review-only parser. Imported, duplicate, and terminally
-rejected files are marked handled locally; network and server failures retry. Disconnect a device
-from the PWA if it is lost or no longer trusted. Deleting imported GPX data revokes all active Android
+Each folder worker uploads at most one unhandled GPX and prefers the newest provider-dated file. A
+manual or periodic trigger can chain up to eight bounded workers while a backlog remains, without
+changing Android's 15-minute minimum for periodic scheduling. The Folder screen reports the latest
+outcome and a lower bound for files still waiting. Workers require the same bounded content revision
+to be observed twice at least 30 seconds apart, so a
+provider with missing or unreliable modification times cannot make a partial file terminal. Content
+digests are the authoritative handled identity; size plus modification time only accelerates scans,
+and weak provider identities are rechecked. Operating-system shares upload the one selected GPX.
+Both paths use stable request ids, strict size bounds, and the existing review-only parser. Imported,
+duplicate, and terminally rejected content revisions are marked handled locally; network and server
+failures retry. Disconnect a device from the PWA if it is lost or no longer trusted. Deleting imported
+GPX data revokes all active Android
 devices before removing the records so background work cannot recreate them.
 
 ## Build prerequisites
@@ -82,6 +89,20 @@ devices before removing the records so background work cannot recreate them.
 The reviewed Gradle 8.13 wrapper is checked in and pins the distribution SHA-256. Keep Android SDK
 paths in the ignored `local.properties` file or normal `ANDROID_HOME`/`ANDROID_SDK_ROOT` variables;
 do not commit machine-specific paths.
+
+The committed dependency lock pins every resolved configuration, and Gradle verifies downloaded
+plugin and library artifacts against `gradle/verification-metadata.xml`. CI also validates the
+wrapper JAR and scans the locked release runtime for moderate-or-higher advisories. When deliberately
+changing an Android dependency, regenerate both controls and review every version and checksum change:
+
+```sh
+./gradlew --no-daemon \
+  -PrunwayOrigin=https://runway.example.test \
+  --write-locks --write-verification-metadata sha256 \
+  :app:dependencies lint test assembleDebug
+```
+
+Do not use `--dependency-verification off` to make an unexplained checksum failure pass.
 
 Build with the wrapper:
 
@@ -96,18 +117,25 @@ cd android
 
 When deliberately upgrading Gradle, regenerate the scripts and JAR together, review the wrapper
 change, and replace `distributionSha256Sum` with the checksum published for that exact distribution.
-Do not commit `local.properties`, signing keys, or signing passwords.
+Do not commit `local.properties`, `signing.properties`, signing keys, or signing passwords. Direct
+release builds load the four required values shown in `signing.properties.example` and fail before
+packaging if the external keystore or any value is missing. The explicit F-Droid source-build mode
+produces an unsigned release for `fdroid publish` to sign; it refuses a local signing configuration.
 
 From the repository root, the normal development gate is:
 
 ```sh
 corepack pnpm verify:android
 corepack pnpm verify:android:build
+corepack pnpm verify:android:release
 ```
 
 The first command reviews the static Android/TWA/security contract. The second runs Gradle `lint`,
-`test`, and `assembleDebug` with a non-routable HTTPS test origin. CI runs these exact commands; a
-green build does not replace emulator, device, App Link, TWA, large-text, or TalkBack checks.
+`test`, and `assembleDebug` with a non-routable HTTPS test origin. The third proves the release-origin
+guard, rejects an unsigned normal release, and builds only the explicitly unsigned F-Droid source
+artifact without private key material. The build and release gates inspect their merged manifests and
+reject any permission outside the reviewed normal WorkManager/internet allowlist. CI runs these exact commands; a green build does not replace
+emulator, device, App Link, TWA, large-text, or TalkBack checks.
 
 Plain `./gradlew test` also works with the non-distributable placeholder origin. Tasks that create or
 install a release artifact still fail closed until `-PrunwayOrigin` names a real HTTPS instance.

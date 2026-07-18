@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { presentConsequence } from '$lib/training/consequence-presentation';
+	import {
+		presentConsequence,
+		presentConsequenceFacts
+	} from '$lib/training/consequence-presentation';
 	import { calculateConsequence } from '$lib/training/consequences';
-	import { presentLoadChangeAssessment } from '$lib/training/training-assessment';
+	import { presentConsequenceAssessment } from '$lib/training/training-assessment';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
 	type Status = 'done' | 'skipped';
@@ -78,8 +81,10 @@
 		if (completedDistanceMeters !== undefined && !Number.isFinite(completedDistanceMeters)) {
 			return 'Enter a valid completed distance.';
 		}
-		if (targetDistanceMeters > 0 && (completedDistanceMeters ?? 0) <= 0) {
-			return 'A completed run needs a positive distance.';
+		if (completedDistanceMeters !== undefined && completedDistanceMeters <= 0) {
+			return targetDistanceMeters > 0
+				? 'A completed run needs a positive distance.'
+				: 'Observed distance must be positive or left blank.';
 		}
 		if (targetDurationSeconds) {
 			const minutes = Number(completedDurationMinutes);
@@ -105,23 +110,10 @@
 			...(completedDurationSeconds === undefined ? {} : { completedDurationSeconds })
 		});
 	});
-	const kmChange = (meters: number) => {
-		const rounded = Math.round((meters / 1000) * 10) / 10;
-		return `${rounded > 0 ? '+' : ''}${rounded} km`;
-	};
 	const consequencePresentation = $derived(consequence ? presentConsequence(consequence) : null);
+	const consequenceFacts = $derived(consequence ? presentConsequenceFacts(consequence) : null);
 	const consequenceAssessment = $derived(
-		consequence ? presentLoadChangeAssessment(consequence.risk) : null
-	);
-	const weekImpact = $derived(
-		!consequence || consequence.weeklyDistanceDeltaMeters === 0
-			? 'No weekly distance change'
-			: `Week ${kmChange(consequence.weeklyDistanceDeltaMeters)}`
-	);
-	const nextRunImpact = $derived(
-		!consequence || consequence.nextRunAdjustmentMeters === 0
-			? 'No next-run change'
-			: `Next run ${kmChange(consequence.nextRunAdjustmentMeters)}`
+		consequence ? presentConsequenceAssessment(consequence) : null
 	);
 	const feedbackEnhance: SubmitFunction = ({ cancel }) => {
 		if (saving || measurementError) {
@@ -172,6 +164,26 @@
 					bind:value={completedDistanceKm}
 				/>
 			</label>
+		{:else if targetDurationSeconds}
+			<label>
+				Distance observed (km) <span class="optional">Optional</span>
+				<input
+					name="completedDistanceKm"
+					type="number"
+					min="0.1"
+					max="100"
+					step="0.1"
+					disabled={status === 'skipped'}
+					aria-invalid={Boolean(measurementError)}
+					aria-describedby={measurementError
+						? `observed-distance-help-${workoutId} measurement-error-${workoutId}`
+						: `observed-distance-help-${workoutId}`}
+					bind:value={completedDistanceKm}
+				/>
+				<span id={`observed-distance-help-${workoutId}`} class="field-help">
+					Records what happened; it does not turn this timed session into a distance target.
+				</span>
+			</label>
 		{/if}
 		<label>
 			Duration completed (min{targetDurationSeconds ? '' : ', optional'})
@@ -210,8 +222,10 @@
 					<span>{consequencePresentation.safety}</span>
 				{/if}
 				<span class="consequence-facts">
-					<strong>{weekImpact}</strong>
-					<strong>{nextRunImpact}</strong>
+					{#if consequenceFacts}
+						<strong>{consequenceFacts.weekImpact}</strong>
+						<strong>{consequenceFacts.nextRunImpact}</strong>
+					{/if}
 					{#if consequenceAssessment}<strong>{consequenceAssessment.label}</strong>{/if}
 				</span>
 			</div>

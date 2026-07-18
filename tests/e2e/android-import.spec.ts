@@ -3,7 +3,8 @@ import AxeBuilder from '@axe-core/playwright';
 import { createHash, randomUUID } from 'node:crypto';
 import { fixedBrowserClockScript, testDate } from '../support/test-clock';
 import { createPlan, openImportSourceSetup } from './support/runway';
-import { gpxForDistance } from './support/import-fixtures';
+import { getGpxImportCounts, getUserId, waitForAndroidImportClaim } from './support/db';
+import { gpxForDistance, startHeldAndroidImport } from './support/import-fixtures';
 
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(fixedBrowserClockScript());
@@ -124,4 +125,47 @@ test('Android pairing imports idempotently and privacy deletion revokes the devi
 		headers: { authorization: `Bearer ${paired.token}`, 'x-runway-client': 'runway-android/1' }
 	});
 	expect(statusAfterDeletion.status()).toBe(401);
+});
+
+test('disconnecting an Android device cancels its claimed in-flight import', async ({ page }) => {
+	const email = await createPlan(page);
+	const userId = await getUserId(email);
+	await page.goto('/app/import');
+	await openImportSourceSetup(page, 'Android folder');
+	await page.getByRole('button', { name: 'Create pairing code' }).click();
+	const pairingCode = (await page.locator('.pairing-code strong').textContent())?.trim() ?? '';
+	const pairing = await page.request.post('/api/android/pair', {
+		headers: {
+			'content-type': 'application/json',
+			'x-runway-client': 'runway-android/1'
+		},
+		data: { code: pairingCode, label: 'Held import phone' }
+	});
+	expect(pairing.status()).toBe(201);
+	const paired = (await pairing.json()) as { deviceId: string; token: string };
+	await page.reload();
+
+	const gpx = gpxForDistance(testDate, 4_200);
+	const requestId = randomUUID();
+	const held = startHeldAndroidImport(
+		new URL('/api/android/import', page.url()),
+		{
+			authorization: `Bearer ${paired.token}`,
+			'content-type': 'application/gpx+xml',
+			'x-runway-client': 'runway-android/1',
+			'x-runway-content-sha256': createHash('sha256').update(gpx).digest('hex'),
+			'x-runway-request-id': requestId
+		},
+		gpx
+	);
+	await waitForAndroidImportClaim(paired.deviceId, requestId);
+
+	await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+	await expect(page.getByText('Held import phone', { exact: true })).not.toBeVisible();
+	held.finish();
+	await expect(held.response).resolves.toMatchObject({
+		status: 401,
+		body: { result: 'unauthorized', reason: 'device-revoked' }
+	});
+	await expect.poll(() => getGpxImportCounts(userId)).toEqual({ activities: 0, imports: 0 });
 });

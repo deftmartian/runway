@@ -1,15 +1,17 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { fail, redirect, type RequestEvent } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import {
-	confirmActivityAsExtra,
-	deleteActivityRecord,
 	getActivityRecords,
-	getImportWorkoutCandidates,
+	getImportWorkoutCandidates
+} from '$lib/server/runway/repositories/activity-queries';
+import {
+	deleteActivityRecord,
 	linkActivityToWorkout,
 	recordImportedActivity,
 	unlinkActivityFromWorkout,
 	updateActivityFeedback
-} from '$lib/server/runway/repository';
+} from '$lib/server/runway/repositories/activity-mutations';
+import { confirmActivityAsExtra } from '$lib/server/runway/repositories/extra-activity-mutations';
 import {
 	getActivityImportGeneration,
 	getAthleteProfile
@@ -23,8 +25,14 @@ import {
 } from '$lib/server/runway/android-devices';
 import {
 	androidPairingCreateRateLimitBuckets,
-	consumeSecurityRateLimit
+	consumeSecurityRateLimit,
+	gpxImportRateLimitBuckets,
+	nextcloudImportRateLimitBuckets
 } from '$lib/server/runway/security-rate-limit';
+import {
+	ImportOperationBusyError,
+	withUserImportOperationLease
+} from '$lib/server/runway/import-operation-lease';
 import {
 	activityIdSchema,
 	activityLinkSchema,
@@ -36,6 +44,7 @@ import { hashActivityFile, parseGpx } from '$lib/training/gpx';
 import { formatConsequenceSummary } from '$lib/training/consequence-presentation';
 import {
 	disconnectImportSource,
+	importSourceLimitMessage,
 	importTimeZoneRequiredMessage,
 	isImportTimeZoneConfigured,
 	listImportSources,
@@ -139,93 +148,28 @@ export const actions: Actions = {
 	},
 	importGpx: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
-		const importGeneration = await getActivityImportGeneration(event.locals.user.id);
-		if (!(await isImportTimeZoneConfigured(event.locals.user.id))) {
-			return fail(400, { message: importTimeZoneRequiredMessage });
-		}
-		const formData = await event.request.formData();
-		const file = formData.get('file');
-		if (!(file instanceof File)) {
-			return fail(400, { message: 'Choose a GPX file.' });
-		}
-		if (file.size > maxGpxImportBytes) {
-			return fail(400, { message: 'GPX file is too large for import.' });
-		}
-		const buffer = Buffer.from(await file.arrayBuffer());
-		const matchMode = formString(formData, 'matchMode');
-		const selectedWorkoutId = formString(formData, 'workoutId').trim();
-		const matching:
-			| { mode: 'unlinked' }
-			| { mode: 'auto' }
-			| { mode: 'workout'; workoutId: string }
-			| null =
-			matchMode === 'unlinked'
-				? { mode: 'unlinked' }
-				: matchMode === 'auto'
-					? { mode: 'auto' }
-					: matchMode === 'workout' && selectedWorkoutId
-						? { mode: 'workout', workoutId: selectedWorkoutId }
-						: null;
-		if (!matching) {
-			return fail(400, { message: 'Choose how this activity should match the plan.' });
-		}
-		let parsed;
+		const userId = event.locals.user.id;
+		const rateLimit = await consumeSecurityRateLimit(
+			gpxImportRateLimitBuckets(userId, event.getClientAddress())
+		);
+		if (!rateLimit.allowed) return importActionRateLimited(event, rateLimit.retryAfterSeconds);
 		try {
-			parsed = parseGpx(buffer);
-		} catch {
-			return fail(400, { message: 'The GPX file could not be parsed.' });
-		}
-
-		try {
-			const activity = await recordImportedActivity(
-				event.locals.user.id,
-				hashActivityFile(buffer, event.locals.user.id),
-				parsed,
-				matching,
-				importGeneration
+			return await withUserImportOperationLease(userId, 'manual-gpx', () =>
+				importManualGpx(event, userId)
 			);
-			const heartRateMessage = activity.heartRateSummary
-				? ' Heart-rate zone time was included.'
-				: parsed.hasHeartRate
-					? ' Add age or custom zones in Settings to view the imported heart-rate samples.'
-					: '';
-			const consequenceMessage = activity.importConsequence
-				? ` ${formatConsequenceSummary(activity.importConsequence)}`
-				: '';
-			const planMessage =
-				matching.mode === 'unlinked'
-					? ` Added to the activity inbox.${consequenceMessage}`
-					: activity.workoutId
-						? matching.mode === 'auto'
-							? ` Auto-matched to a planned workout.${consequenceMessage}`
-							: ` Matched to the selected planned workout.${consequenceMessage}`
-						: ` No workout matched. Added to the activity inbox.${consequenceMessage}`;
-			return {
-				message: `Imported ${Math.round((parsed.distanceMeters / 1000) * 10) / 10} km.${heartRateMessage}${planMessage}`
-			};
 		} catch (error) {
-			const message = error instanceof Error ? error.message : '';
-			if (message === 'This activity file has already been imported.') {
-				return fail(400, { message: 'This GPX file has already been imported.' });
+			if (error instanceof ImportOperationBusyError) {
+				return importActionRateLimited(event, error.retryAfterSeconds);
 			}
-			if (message === 'This workout already has an imported activity.') {
-				return fail(400, { message: 'That workout already has an imported activity.' });
-			}
-			if (message === 'Imported activities cannot be in the future.') {
-				return fail(400, { message });
-			}
-			if (
-				message === importTimeZoneRequiredMessage ||
-				message === 'This deleted activity file cannot be imported again.' ||
-				message === 'Import was cancelled because activity data was deleted.'
-			) {
-				return fail(400, { message });
-			}
-			return fail(400, { message: 'The GPX file could not be saved with that workout match.' });
+			throw error;
 		}
 	},
 	saveNextcloudSource: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
+		const rateLimit = await consumeSecurityRateLimit(
+			nextcloudImportRateLimitBuckets('connect', event.locals.user.id, event.getClientAddress())
+		);
+		if (!rateLimit.allowed) return importActionRateLimited(event, rateLimit.retryAfterSeconds);
 		const formData = await event.request.formData();
 		const label = formString(formData, 'label');
 		const shareUrl = formString(formData, 'shareUrl');
@@ -235,6 +179,9 @@ export const actions: Actions = {
 			await saveNextcloudSource(event.locals.user.id, { label, shareUrl, sharePassword });
 			return { message: 'Nextcloud folder connected.' };
 		} catch (error) {
+			if (error instanceof ImportOperationBusyError) {
+				return importActionRateLimited(event, error.retryAfterSeconds);
+			}
 			return fail(400, {
 				message: nextcloudSourceError(error, 'Nextcloud folder could not be connected.')
 			});
@@ -242,6 +189,10 @@ export const actions: Actions = {
 	},
 	testNextcloudSource: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
+		const rateLimit = await consumeSecurityRateLimit(
+			nextcloudImportRateLimitBuckets('test', event.locals.user.id, event.getClientAddress())
+		);
+		if (!rateLimit.allowed) return importActionRateLimited(event, rateLimit.retryAfterSeconds);
 		const sourceId = formString(await event.request.formData(), 'sourceId');
 		try {
 			const result = await testNextcloudSource(event.locals.user.id, sourceId);
@@ -252,6 +203,9 @@ export const actions: Actions = {
 						: `Connection works. ${result.count} GPX file${result.count === 1 ? '' : 's'} visible.`
 			};
 		} catch (error) {
+			if (error instanceof ImportOperationBusyError) {
+				return importActionRateLimited(event, error.retryAfterSeconds);
+			}
 			return fail(400, {
 				message: nextcloudSourceError(error, 'Nextcloud folder could not be checked.')
 			});
@@ -259,11 +213,18 @@ export const actions: Actions = {
 	},
 	syncNextcloudSource: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
+		const rateLimit = await consumeSecurityRateLimit(
+			nextcloudImportRateLimitBuckets('sync', event.locals.user.id, event.getClientAddress())
+		);
+		if (!rateLimit.allowed) return importActionRateLimited(event, rateLimit.retryAfterSeconds);
 		const sourceId = formString(await event.request.formData(), 'sourceId');
 		let result;
 		try {
 			result = await syncNextcloudSource(event.locals.user.id, sourceId);
-		} catch {
+		} catch (error) {
+			if (error instanceof ImportOperationBusyError) {
+				return importActionRateLimited(event, error.retryAfterSeconds);
+			}
 			return fail(400, { message: 'Nextcloud folder could not be synced.' });
 		}
 		if (result.status === 'failed') return fail(400, { message: result.message });
@@ -356,10 +317,106 @@ export const actions: Actions = {
 	}
 };
 
+async function importManualGpx(event: RequestEvent, userId: string) {
+	const importGeneration = await getActivityImportGeneration(userId);
+	if (!(await isImportTimeZoneConfigured(userId))) {
+		return fail(400, { message: importTimeZoneRequiredMessage });
+	}
+	const formData = await event.request.formData();
+	const file = formData.get('file');
+	if (!(file instanceof File)) return fail(400, { message: 'Choose a GPX file.' });
+	if (file.size > maxGpxImportBytes) {
+		return fail(400, { message: 'GPX file is too large for import.' });
+	}
+	const buffer = Buffer.from(await file.arrayBuffer());
+	const matchMode = formString(formData, 'matchMode');
+	const selectedWorkoutId = formString(formData, 'workoutId').trim();
+	const matching:
+		| { mode: 'unlinked' }
+		| { mode: 'auto' }
+		| { mode: 'workout'; workoutId: string }
+		| null =
+		matchMode === 'unlinked'
+			? { mode: 'unlinked' }
+			: matchMode === 'auto'
+				? { mode: 'auto' }
+				: matchMode === 'workout' && selectedWorkoutId
+					? { mode: 'workout', workoutId: selectedWorkoutId }
+					: null;
+	if (!matching) return fail(400, { message: 'Choose how this activity should match the plan.' });
+
+	let parsed;
+	try {
+		parsed = parseGpx(buffer);
+	} catch {
+		return fail(400, { message: 'The GPX file could not be parsed.' });
+	}
+
+	try {
+		const activity = await recordImportedActivity(
+			userId,
+			hashActivityFile(buffer, userId),
+			parsed,
+			matching,
+			importGeneration
+		);
+		const heartRateMessage = activity.heartRateSummary
+			? ' Heart-rate zone time was included.'
+			: parsed.hasHeartRate
+				? ' Add age or custom zones in Settings to view the imported heart-rate samples.'
+				: '';
+		const consequenceMessage = activity.importConsequence
+			? ` ${formatConsequenceSummary(activity.importConsequence)}`
+			: '';
+		const planMessage =
+			matching.mode === 'unlinked'
+				? ` Added to the activity inbox.${consequenceMessage}`
+				: activity.workoutId
+					? matching.mode === 'auto'
+						? ` Auto-matched to a planned workout.${consequenceMessage}`
+						: ` Matched to the selected planned workout.${consequenceMessage}`
+					: ` No workout matched. Added to the activity inbox.${consequenceMessage}`;
+		return {
+			message: `Imported ${Math.round((parsed.distanceMeters / 1000) * 10) / 10} km.${heartRateMessage}${planMessage}`
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : '';
+		if (message === 'This activity file has already been imported.') {
+			return fail(400, { message: 'This GPX file has already been imported.' });
+		}
+		if (message === 'This workout already has an imported activity.') {
+			return fail(400, { message: 'That workout already has an imported activity.' });
+		}
+		if (
+			message === 'Activity date is outside the active plan weeks.' ||
+			message === 'Selected workout is no longer available for this activity import.'
+		) {
+			return fail(400, { message });
+		}
+		if (message === 'Imported activities cannot be in the future.') return fail(400, { message });
+		if (
+			message === importTimeZoneRequiredMessage ||
+			message === 'This deleted activity file cannot be imported again.' ||
+			message === 'Import was cancelled because activity data was deleted.'
+		) {
+			return fail(400, { message });
+		}
+		return fail(400, { message: 'The GPX file could not be saved with that workout match.' });
+	}
+}
+
+function importActionRateLimited(event: RequestEvent, retryAfterSeconds: number) {
+	event.setHeaders({ 'retry-after': String(retryAfterSeconds) });
+	return fail(429, {
+		message: 'Another import is already running or the import limit was reached. Try again shortly.'
+	});
+}
+
 function nextcloudSourceError(error: unknown, fallback: string): string {
 	const message = error instanceof Error ? error.message : '';
 	const knownMessages = new Set([
 		importTimeZoneRequiredMessage,
+		importSourceLimitMessage,
 		'Enter the Nextcloud share URL.',
 		'Enter the share password.',
 		'Nextcloud folder label is too long.',
@@ -390,10 +447,16 @@ function activityRecordError(error: unknown, fallback: string): string {
 		'Activity is already linked.',
 		'Linked activities already count against the plan.',
 		'This activity has already been counted as extra.',
+		'Activity is no longer available to count.',
 		'Workout is not available for linking.',
 		'Workout is outside the activity match window.',
+		'Activity date is outside the active plan weeks.',
 		'That workout already has an activity.',
-		'Activity is not linked.'
+		'Activity is not linked.',
+		'Activity is no longer available for linking.',
+		'Workout is no longer available for linking.',
+		'Linked workout not found.',
+		'Activity is no longer linked to this workout.'
 	]);
 	return knownMessages.has(message) ? message : fallback;
 }

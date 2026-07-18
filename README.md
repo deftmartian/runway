@@ -74,11 +74,11 @@ Start from the documented environment template:
 ```sh
 cp .env.example .env
 openssl rand -hex 24
-openssl rand -hex 32
+corepack pnpm secret:generate
 ```
 
 Put the first generated value in `POSTGRES_PASSWORD` and in the password segment of
-`APP_DATABASE_URL`. Put the second in `BETTER_AUTH_SECRET`. The published image is a production
+`APP_DATABASE_URL`. Put the generated `runway-secret-v1_…` value in `BETTER_AUTH_SECRET`. The published image is a production
 artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
@@ -108,6 +108,10 @@ docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait ap
 ```
 
 The app port is loopback-only by default.
+
+The production overlay pins that listener to loopback even if `RUNWAY_BIND_ADDRESS` is set. When the
+reverse proxy runs on another host, use the documented ipvlan overlay plus a firewall rule that
+allows only the proxy source; do not expose port `4100` directly to clients.
 
 For a local plain-HTTP evaluation, use the source-based development quick start below at
 `http://localhost:4100`; do not weaken the production image's HTTPS checks.

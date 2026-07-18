@@ -1,4 +1,4 @@
-# Android Release And Personal F-Droid Repository
+# Android Release And Source-built Personal F-Droid Repository
 
 This is release guidance, not evidence that the Android app is production-ready. Complete the gates
 in [`docs/ANDROID.md`](../../docs/ANDROID.md) before distributing to non-test users.
@@ -68,19 +68,21 @@ corepack pnpm verify:android:build
 This catches Kotlin, resource, lint, and unit-test failures using a non-routable HTTPS test origin.
 It is development evidence only and does not validate signing or Digital Asset Links.
 
-Generate the reviewed Gradle 8.13 wrapper described in [`android/README.md`](../README.md). Inject
-signing from protected CI secrets or an untracked local `signing.properties`, never from committed
-Gradle values, then run:
+Copy `android/signing.properties.example` to the ignored `android/signing.properties` and point it at
+the operator-owned keystore. Provide every required password and alias through that local file (or
+materialize the same ignored file from protected CI secrets), never through committed Gradle values.
+Then run:
 
 ```sh
+cd android
 ORIGIN=https://runway.example.com
 APP_ID=com.example.runway
 
-./gradlew --no-daemon \
+./gradlew --no-daemon --dependency-verification strict \
   -PrunwayOrigin="$ORIGIN" \
   -PrunwayApplicationId="$APP_ID" \
   :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
-./gradlew --no-daemon \
+./gradlew --no-daemon --dependency-verification strict \
   -PrunwayOrigin="$ORIGIN" \
   -PrunwayApplicationId="$APP_ID" \
   :app:dependencies
@@ -95,21 +97,23 @@ There are no Play Services dependencies. Android Browser Helper uses the user's 
 and falls back to Custom Tabs. Review the dependency report before every release and reject trackers,
 undeclared network behavior, or a WebView fallback.
 
-## Publish through a personal F-Droid repository
+## Publish source builds through a personal F-Droid repository
 
-Copy `android/fdroid/metadata/REPLACE_APPLICATION_ID.yml.example` to the personal repo's `metadata/`
-directory using the final application id as its filename. Fill all placeholders, including
-`gradleprops` for the bound origin/id and `AllowedAPKSigningKeys` for the APK certificate.
+The supported personal-repository flow builds from the pinned source commit. It does not copy an APK
+built elsewhere into `repo/`. Copy `android/fdroid/metadata/REPLACE_APPLICATION_ID.yml.example` to the
+personal repo's `metadata/` directory using the final application id as its filename. Fill every
+placeholder and keep `runwayFdroidSourceBuild=true`; that explicit mode requires a real release origin,
+refuses `android/signing.properties`, and emits an unsigned release for fdroidserver to sign.
 
-Run `fdroidserver` in a dedicated operator or CI environment. Keep its index key outside the web root
-and publish only verified release APKs:
+Run fdroidserver in a dedicated operator or CI environment. Keep its index and APK signing keys
+outside the web root, build the exact metadata commit, then sign and publish that result:
 
 ```sh
 mkdir runway-fdroid && cd runway-fdroid
 fdroid init
-cp /verified/path/runway-release.apk repo/
-fdroid update --create-metadata
 fdroid lint REPLACE_APPLICATION_ID
+fdroid build --latest REPLACE_APPLICATION_ID
+fdroid publish REPLACE_APPLICATION_ID
 fdroid update
 fdroid deploy
 ```
@@ -119,8 +123,10 @@ the repository index, archive, APKs, and signatures over HTTPS. Add it to a clea
 the exact URL and repository fingerprint/QR code, install the app, verify TWA association, link a
 folder, and then test an upgrade from the previous signed APK without losing the persisted grant.
 
-The repository fingerprint proves the F-Droid index. The APK certificate proves Android updates and
-Digital Asset Links. Verify both; they are not interchangeable.
+After the first controlled publish, record and pin the fdroidserver-managed APK certificate in
+`AllowedAPKSigningKeys` and deploy the same fingerprint through `ANDROID_CERTIFICATE_SHA256` for
+Digital Asset Links. The repository fingerprint proves the F-Droid index. The APK certificate proves
+Android updates and origin trust. Verify both; they are not interchangeable.
 
 Useful upstream references:
 

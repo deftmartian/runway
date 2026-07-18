@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	activity,
+	athleteProfile,
 	goal,
 	planAdjustment,
 	trainingPlan,
@@ -12,6 +13,9 @@ import {
 import { getWorkoutRecommendationTraces } from './adjustment-ledger';
 import { requireAthleteTimeZone } from './profiles';
 import { addDays, toIsoDateInTimeZone, todayIsoInTimeZone } from '$lib/training/date';
+import { classifyRamp, hasInjuryRiskFlags } from '$lib/training/plan';
+import type { PlanSummary, RiskRating, WorkoutType } from '$lib/training/types';
+import type { TrainingDateContext } from './training-read-context';
 
 export async function getActivePlan(userId: string) {
 	const [record] = await db
@@ -36,12 +40,15 @@ export async function getCurrentGoal(userId: string) {
 
 export async function listPlanHistory(
 	userId: string,
-	options: { limit?: number; offset?: number } = {}
+	options: { limit?: number; offset?: number; context?: TrainingDateContext } = {}
 ) {
 	const limit = Math.min(50, Math.max(1, Math.trunc(options.limit ?? 20)));
 	const offset = Math.max(0, Math.trunc(options.offset ?? 0));
-	const timeZone = await requireAthleteTimeZone(userId);
-	const today = todayIsoInTimeZone(timeZone);
+	const timeZone = options.context
+		? options.context.timeZone
+		: await requireAthleteTimeZone(userId);
+	if (!timeZone) throw new Error('Set training time zone first.');
+	const today = options.context?.today ?? todayIsoInTimeZone(timeZone);
 	const rows = await db
 		.select({ plan: trainingPlan, goal })
 		.from(trainingPlan)
@@ -60,18 +67,36 @@ export async function listPlanHistory(
 		return { items: [], nextOffset: null, today };
 	}
 
-	const workoutRows = await db
-		.select({
-			id: workout.id,
-			planId: workout.planId,
-			scheduledDate: workout.scheduledDate,
-			type: workout.type,
-			status: workout.status,
-			targetDistanceMeters: workout.targetDistanceMeters,
-			isRemoved: workout.isRemoved
-		})
-		.from(workout)
-		.where(and(eq(workout.userId, userId), inArray(workout.planId, planIds)));
+	const [workoutRows, weekRows, [profile]] = await Promise.all([
+		db
+			.select({
+				id: workout.id,
+				planId: workout.planId,
+				scheduledDate: workout.scheduledDate,
+				type: workout.type,
+				status: workout.status,
+				targetDistanceMeters: workout.targetDistanceMeters,
+				targetDurationSeconds: workout.targetDurationSeconds,
+				isRemoved: workout.isRemoved
+			})
+			.from(workout)
+			.where(and(eq(workout.userId, userId), inArray(workout.planId, planIds))),
+		db
+			.select({
+				planId: trainingWeek.planId,
+				startDate: trainingWeek.startDate,
+				weekNumber: trainingWeek.weekNumber,
+				risk: trainingWeek.risk
+			})
+			.from(trainingWeek)
+			.where(and(eq(trainingWeek.userId, userId), inArray(trainingWeek.planId, planIds)))
+			.orderBy(asc(trainingWeek.weekNumber)),
+		db
+			.select({ injuryFlags: athleteProfile.injuryFlags })
+			.from(athleteProfile)
+			.where(eq(athleteProfile.userId, userId))
+			.limit(1)
+	]);
 	const workoutIds = workoutRows.filter((row) => !row.isRemoved).map((row) => row.id);
 	const feedbackRows =
 		workoutIds.length === 0
@@ -137,7 +162,13 @@ export async function listPlanHistory(
 				startDate: plan.startDate,
 				targetDate: plan.targetDate,
 				weeks: plan.weeks,
-				risk: plan.risk,
+				risk: effectiveRiskForPlanRows(
+					plan,
+					weekRows.filter((row) => row.planId === plan.id),
+					workoutRows.filter((row) => row.planId === plan.id),
+					profile ? hasInjuryRiskFlags(profile.injuryFlags) : false
+				),
+				summary: plan.summary,
 				completedAt: plan.completedAt,
 				archivedAt: plan.archivedAt,
 				lifecycleReason: plan.lifecycleReason
@@ -179,12 +210,7 @@ export async function getPlanDetail(userId: string, planId: string) {
 	if (!planRecord) return null;
 
 	const [weeks, workouts, feedbackRows, activityRows, adjustments] = await Promise.all([
-		db
-			.select()
-			.from(trainingWeek)
-			.where(and(eq(trainingWeek.userId, userId), eq(trainingWeek.planId, planId)))
-			.orderBy(asc(trainingWeek.weekNumber))
-			.limit(52),
+		getPlanWeeks(userId, planId),
 		db
 			.select()
 			.from(workout)
@@ -226,31 +252,20 @@ export async function getPlanDetail(userId: string, planId: string) {
 	const cutoffDate = planRecord.plan.archivedAt
 		? toIsoDateInTimeZone(planRecord.plan.archivedAt, timeZone)
 		: today;
-	return { ...planRecord, weeks, workouts, feedback, activities, adjustments, cutoffDate };
-}
-
-export async function getPlanSchedule(userId: string, planId: string) {
-	const [planRecord] = await db
-		.select({ plan: trainingPlan, goal })
-		.from(trainingPlan)
-		.innerJoin(goal, eq(trainingPlan.goalId, goal.id))
-		.where(and(eq(trainingPlan.userId, userId), eq(trainingPlan.id, planId)))
-		.limit(1);
-
-	if (!planRecord) return null;
-
-	const weeks = await getPlanWeeks(userId, planId);
-	const workouts = await db
-		.select()
-		.from(workout)
-		.where(and(eq(workout.userId, userId), eq(workout.planId, planId)))
-		.orderBy(asc(workout.scheduledDate));
-
-	return { ...planRecord, weeks, workouts };
+	return {
+		...planRecord,
+		plan: { ...planRecord.plan, risk: effectivePlanRisk(weeks, planRecord.plan.risk) },
+		weeks,
+		workouts,
+		feedback,
+		activities,
+		adjustments,
+		cutoffDate
+	};
 }
 
 export async function getPlanWeeks(userId: string, planId: string) {
-	const [weeks, workouts] = await Promise.all([
+	const [weeks, workouts, [planRecord], [profile]] = await Promise.all([
 		db
 			.select()
 			.from(trainingWeek)
@@ -265,9 +280,19 @@ export async function getPlanWeeks(userId: string, planId: string) {
 				isRemoved: workout.isRemoved
 			})
 			.from(workout)
-			.where(and(eq(workout.userId, userId), eq(workout.planId, planId)))
+			.where(and(eq(workout.userId, userId), eq(workout.planId, planId))),
+		db
+			.select({ summary: trainingPlan.summary })
+			.from(trainingPlan)
+			.where(and(eq(trainingPlan.userId, userId), eq(trainingPlan.id, planId)))
+			.limit(1),
+		db
+			.select({ injuryFlags: athleteProfile.injuryFlags })
+			.from(athleteProfile)
+			.where(eq(athleteProfile.userId, userId))
+			.limit(1)
 	]);
-	return weeks.map((week) => {
+	const effectiveWeeks = weeks.map((week) => {
 		const weekWorkouts = workouts.filter(
 			(record) =>
 				!record.isRemoved &&
@@ -276,6 +301,17 @@ export async function getPlanWeeks(userId: string, planId: string) {
 		);
 		return {
 			...week,
+			hasMixedLoad:
+				weekWorkouts.some(
+					(record) =>
+						record.type !== 'rest' && record.type !== 'race' && record.targetDistanceMeters > 0
+				) &&
+				weekWorkouts.some(
+					(record) =>
+						record.type !== 'rest' &&
+						record.type !== 'race' &&
+						(record.targetDurationSeconds ?? 0) > 0
+				),
 			targetDistanceMeters: weekWorkouts.reduce(
 				(sum, record) =>
 					sum +
@@ -301,6 +337,97 @@ export async function getPlanWeeks(userId: string, planId: string) {
 			)
 		};
 	});
+	const hasInjuryRisk = profile ? hasInjuryRiskFlags(profile.injuryFlags) : false;
+	return effectiveWeeks.map((week, index) => {
+		const usesDuration = week.targetDurationSeconds > 0 && week.targetDistanceMeters === 0;
+		const currentLoad = usesDuration ? week.targetDurationSeconds : week.targetDistanceMeters;
+		const previousWeek = effectiveWeeks[index - 1];
+		const previousLoad = previousWeek
+			? usesDuration
+				? previousWeek.targetDurationSeconds
+				: previousWeek.targetDistanceMeters
+			: !usesDuration && planRecord?.summary.kind === 'distance'
+				? planRecord.summary.baselineMeters
+				: 0;
+		if (previousLoad <= 0) return week;
+		const rampPercent = ((currentLoad - previousLoad) / previousLoad) * 100;
+		return { ...week, risk: classifyRamp(rampPercent, hasInjuryRisk) };
+	});
+}
+
+const riskRank: Record<RiskRating, number> = {
+	conservative: 0,
+	moderate: 1,
+	aggressive: 2,
+	unsafe: 3
+};
+
+export function effectivePlanRisk(weeks: { risk: RiskRating }[], fallback: RiskRating): RiskRating {
+	return weeks.reduce(
+		(highest, week) => (riskRank[week.risk] > riskRank[highest] ? week.risk : highest),
+		fallback
+	);
+}
+
+function effectiveRiskForPlanRows(
+	plan: { risk: RiskRating; summary: PlanSummary },
+	weeks: { startDate: string; risk: RiskRating }[],
+	workouts: {
+		scheduledDate: string;
+		type: WorkoutType;
+		targetDistanceMeters: number;
+		targetDurationSeconds: number | null;
+		isRemoved: boolean;
+	}[],
+	hasInjuryRisk: boolean
+): RiskRating {
+	const effectiveWeeks = weeks.map((week, index) => {
+		const endDate = addDays(week.startDate, 6);
+		const current = workouts.filter(
+			(record) =>
+				!record.isRemoved &&
+				record.type !== 'rest' &&
+				record.type !== 'race' &&
+				record.scheduledDate >= week.startDate &&
+				record.scheduledDate <= endDate
+		);
+		const targetDistanceMeters = current.reduce(
+			(sum, record) => sum + record.targetDistanceMeters,
+			0
+		);
+		const targetDurationSeconds = current.reduce(
+			(sum, record) => sum + (record.targetDurationSeconds ?? 0),
+			0
+		);
+		const usesDuration = targetDurationSeconds > 0 && targetDistanceMeters === 0;
+		const previousWeek = weeks[index - 1];
+		const previous = previousWeek
+			? workouts.filter(
+					(record) =>
+						!record.isRemoved &&
+						record.type !== 'rest' &&
+						record.type !== 'race' &&
+						record.scheduledDate >= previousWeek.startDate &&
+						record.scheduledDate <= addDays(previousWeek.startDate, 6)
+				)
+			: [];
+		const previousLoad = previousWeek
+			? previous.reduce(
+					(sum, record) =>
+						sum +
+						(usesDuration ? (record.targetDurationSeconds ?? 0) : record.targetDistanceMeters),
+					0
+				)
+			: !usesDuration && plan.summary.kind === 'distance'
+				? plan.summary.baselineMeters
+				: 0;
+		if (previousLoad <= 0) return { risk: week.risk };
+		const currentLoad = usesDuration ? targetDurationSeconds : targetDistanceMeters;
+		return {
+			risk: classifyRamp(((currentLoad - previousLoad) / previousLoad) * 100, hasInjuryRisk)
+		};
+	});
+	return effectivePlanRisk(effectiveWeeks, plan.risk);
 }
 
 export async function getPlanTrace(userId: string, planId: string) {

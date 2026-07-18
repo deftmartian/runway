@@ -7,6 +7,7 @@
 		retainDeviceFolderForUser,
 		scanDeviceFolder,
 		supportsDeviceFolderImport,
+		type DeviceFolderScanProgress,
 		type DeviceFolderScanResult
 	} from '$lib/pwa/device-folder';
 	import { onMount } from 'svelte';
@@ -16,6 +17,9 @@
 	let lastScanStartedAt = Number.NEGATIVE_INFINITY;
 	let permissionNoticeShown = false;
 	let scanning = $state(false);
+	let showScanProgress = $state(false);
+	let scanProgress = $state<DeviceFolderScanProgress | null>(null);
+	let progressTimer: ReturnType<typeof setTimeout> | undefined;
 	let accountIsolation = Promise.resolve(false);
 
 	onMount(() => {
@@ -42,6 +46,7 @@
 		scanWhenActive();
 
 		return () => {
+			clearTimeout(progressTimer);
 			globalThis.removeEventListener('focus', scanWhenActive);
 			globalThis.removeEventListener('online', scanWhenActive);
 			globalThis.removeEventListener('pageshow', scanWhenActive);
@@ -53,6 +58,10 @@
 	async function runScan() {
 		if (scanning) return;
 		scanning = true;
+		scanProgress = null;
+		showScanProgress = false;
+		clearTimeout(progressTimer);
+		progressTimer = setTimeout(() => (showScanProgress = true), 500);
 		let result: DeviceFolderScanResult;
 		try {
 			if (!(await accountIsolation)) {
@@ -62,20 +71,27 @@
 				};
 				return;
 			}
-			result = await scanDeviceFolder(userId);
+			result = await scanDeviceFolder(userId, {
+				onProgress: (progress) => (scanProgress = progress)
+			});
 		} catch {
 			result = { result: 'failed' };
 		} finally {
+			clearTimeout(progressTimer);
+			showScanProgress = false;
 			scanning = false;
 		}
 
 		if (result.result === 'imported') {
 			const remaining = result.remaining ?? 0;
+			const incomplete = result.scanIncomplete
+				? ' Some GPX files could not be read; scan again from Import.'
+				: '';
 			notice = {
 				message:
 					remaining > 0
-						? `A GPX is ready for review. ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.`
-						: 'A GPX from the device folder is ready for review.',
+						? `A GPX is ready for review. ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.${incomplete}`
+						: `A GPX from the device folder is ready for review.${incomplete}`,
 				failed: false,
 				remaining
 			};
@@ -83,9 +99,9 @@
 		}
 		if (result.result === 'duplicate' || result.result === 'deleted') {
 			const remaining = result.remaining ?? 0;
-			if (remaining > 0) {
+			if (remaining > 0 || result.scanIncomplete) {
 				notice = {
-					message: `${result.result === 'duplicate' ? 'An already imported GPX' : 'A previously deleted activity'} was skipped. ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.`,
+					message: `${result.result === 'duplicate' ? 'An already imported GPX' : 'A previously deleted activity'} was skipped.${remaining > 0 ? ` ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.` : ''}${result.scanIncomplete ? ' Some GPX files could not be read; scan again from Import.' : ''}`,
 					failed: false,
 					remaining
 				};
@@ -138,6 +154,19 @@
 			};
 			return;
 		}
+		if (result.result === 'timed-out') {
+			const checked = result.checkedCandidates ?? 0;
+			const total = result.totalCandidates;
+			notice = {
+				message:
+					total === undefined
+						? 'Folder checking paused because the file provider did not respond. Open Import to try again.'
+						: `Folder checking paused after ${checked} of ${total} GPX files. Open Import to try again.`,
+				failed: false
+			};
+			return;
+		}
+		if (result.result === 'cancelled') return;
 		if (result.result === 'invalid' || result.result === 'too-large') {
 			const remaining = result.remaining ?? 0;
 			notice = {
@@ -173,11 +202,21 @@
 		notice = null;
 		requestAnimationFrame(() => document.querySelector<HTMLElement>('#app-content')?.focus());
 	}
+
+	function scanProgressMessage(progress: DeviceFolderScanProgress | null): string {
+		if (!progress || progress.phase === 'enumerating') return 'Reading the device folder…';
+		if (progress.phase === 'uploading') return 'Adding the newest GPX to the inbox…';
+		return `Checking GPX files · ${progress.completed} of ${progress.total ?? 0}`;
+	}
 </script>
 
-<div class="device-folder-scan-state" aria-hidden="true" aria-busy={scanning}></div>
-
-{#if notice}
+{#if scanning && showScanProgress}
+	<div class="device-folder-notice" aria-live="polite" aria-busy="true">
+		<Notice title="Checking device folder" tone="info" role="status">
+			<span>{scanProgressMessage(scanProgress)}</span>
+		</Notice>
+	</div>
+{:else if notice}
 	<div class="device-folder-notice" aria-live="polite">
 		<Notice
 			title="Device folder"
@@ -240,13 +279,5 @@
 			left: max(10px, env(safe-area-inset-left));
 			width: auto;
 		}
-	}
-
-	.device-folder-scan-state {
-		position: fixed;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
 	}
 </style>

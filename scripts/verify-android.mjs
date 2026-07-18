@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,8 +8,14 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const errors = [];
 const requiredFiles = [
 	'android/app/build.gradle.kts',
+	'android/.gitignore',
 	'android/app/src/main/AndroidManifest.xml',
 	'android/app/src/main/res/layout/activity_native_folder_settings.xml',
+	'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
+	'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml',
+	'android/app/src/main/res/drawable/ic_launcher_monochrome.xml',
+	'android/signing.properties.example',
+	'scripts/verify-android-artifact.mjs',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt',
@@ -16,6 +23,8 @@ const requiredFiles = [
 	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
 	'android/gradle/wrapper/gradle-wrapper.properties',
+	'android/gradle/verification-metadata.xml',
+	'android/app/gradle.lockfile',
 	'android/gradlew',
 	'android/gradlew.bat',
 	'android/assetlinks.json.template',
@@ -23,6 +32,7 @@ const requiredFiles = [
 	'src/routes/[...wellKnown]/+server.ts',
 	'src/routes/app/import/+page.server.ts',
 	'src/routes/app/import/+page.svelte',
+	'src/lib/components/import/AndroidSourceSetup.svelte',
 	'src/lib/components/import/ImportSourceSetup.svelte'
 ];
 
@@ -60,7 +70,8 @@ for (const required of [
 	'.NativeFolderSettingsActivity',
 	'android:autoVerify="true"',
 	'android.support.customtabs.trusted.DEFAULT_URL',
-	'asset_statements'
+	'asset_statements',
+	'android:icon="@mipmap/ic_launcher"'
 ]) {
 	if (!manifest.includes(required)) errors.push(`AndroidManifest.xml is missing ${required}`);
 }
@@ -73,9 +84,47 @@ for (const required of [
 	'verifyReleaseInstance',
 	'assembleRelease',
 	'runwayOrigin',
-	'runwayApplicationId'
+	'runwayApplicationId',
+	'releaseSigningPropertiesFile',
+	'verifyReleaseSigning'
 ]) {
 	if (!build.includes(required)) errors.push(`Android Gradle contract is missing ${required}`);
+}
+
+const androidIgnore = read('android/.gitignore');
+for (const required of ['signing.properties', '*.jks', '*.keystore']) {
+	if (!androidIgnore.split(/\r?\n/).includes(required)) {
+		errors.push(`Android ignore contract is missing ${required}`);
+	}
+}
+
+const releaseVerification = read('scripts/verify-android-release.mjs');
+for (const required of [
+	"'--dependency-verification'",
+	"'strict'",
+	'runwaySigningPropertiesFile',
+	':app:verifyReleaseSigning',
+	'-PrunwayFdroidSourceBuild=true',
+	'app-release-unsigned.apk'
+]) {
+	if (!releaseVerification.includes(required)) {
+		errors.push(`Android release verification is missing ${required}`);
+	}
+}
+
+const artifactVerification = read('scripts/verify-android-artifact.mjs');
+for (const required of [
+	'android.permission.INTERNET',
+	'android.permission.ACCESS_NETWORK_STATE',
+	'android.permission.WAKE_LOCK',
+	'android.permission.RECEIVE_BOOT_COMPLETED',
+	'android.permission.FOREGROUND_SERVICE',
+	'DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
+	'protectionLevel="signature"'
+]) {
+	if (!artifactVerification.includes(required)) {
+		errors.push(`Android merged-manifest permission gate is missing ${required}`);
+	}
 }
 
 const wrapper = read('android/gradle/wrapper/gradle-wrapper.properties');
@@ -85,6 +134,38 @@ for (const required of [
 	'validateDistributionUrl=true'
 ]) {
 	if (!wrapper.includes(required)) errors.push(`Android Gradle wrapper is missing ${required}`);
+}
+
+const wrapperJarChecksum = createHash('sha256')
+	.update(readFileSync(resolve(root, 'android/gradle/wrapper/gradle-wrapper.jar')))
+	.digest('hex');
+if (wrapperJarChecksum !== '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f') {
+	errors.push('Android Gradle wrapper JAR does not match the reviewed Gradle 8.13 wrapper');
+}
+
+const rootBuild = read('android/build.gradle.kts');
+for (const required of ['lockAllConfigurations()', 'LockMode.STRICT']) {
+	if (!rootBuild.includes(required))
+		errors.push(`Android dependency locking is missing ${required}`);
+}
+
+const dependencyVerification = read('android/gradle/verification-metadata.xml');
+for (const required of ['<verify-metadata>true</verify-metadata>', '<sha256 value="']) {
+	if (!dependencyVerification.includes(required)) {
+		errors.push(`Android dependency verification metadata is missing ${required}`);
+	}
+}
+
+const dependencyLock = read('android/app/gradle.lockfile');
+for (const required of [
+	'androidx.activity:activity-ktx:',
+	'androidx.core:core-ktx:',
+	'androidx.work:work-runtime:',
+	'com.google.androidbrowserhelper:androidbrowserhelper:',
+	'releaseRuntimeClasspath'
+]) {
+	if (!dependencyLock.includes(required))
+		errors.push(`Android dependency lock is missing ${required}`);
 }
 
 const launcher = read('android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt');
@@ -105,7 +186,10 @@ for (const required of [
 	'setContentView(R.layout.activity_native_folder_settings)',
 	'R.id.primary_action',
 	'R.id.background_status',
-	'getWorkInfosForUniqueWork'
+	'getWorkInfosForUniqueWork',
+	'enableEdgeToEdge()',
+	'EdgeToEdgeLayout.applySystemBarPadding',
+	'executor.shutdown()'
 ]) {
 	if (!folderSettings.includes(required)) {
 		errors.push(
@@ -120,12 +204,12 @@ if (folderSettings.includes('private fun buildContent()')) {
 }
 
 const importPageServer = read('src/routes/app/import/+page.server.ts');
-const importSourceSetup = read('src/lib/components/import/ImportSourceSetup.svelte');
+const androidSourceSetup = read('src/lib/components/import/AndroidSourceSetup.svelte');
 if (!importPageServer.includes('androidApplicationId: androidApplicationId ?? null')) {
 	errors.push('Android folder link must fail closed without a configured release identity');
 }
 for (const required of ['intent://folder#Intent', 'package=${androidApplicationId};end']) {
-	if (!importSourceSetup.includes(required)) {
+	if (!androidSourceSetup.includes(required)) {
 		errors.push(`Android folder link is missing package binding: ${required}`);
 	}
 }
@@ -158,6 +242,33 @@ for (const required of [
 }
 if (kotlin.includes('api_unavailable')) {
 	errors.push('Android source still contains the blocked pre-release API state');
+}
+for (const required of [
+	'completePairing(',
+	'filterPotentiallyUnhandled(',
+	'observeContent(',
+	'metadataRevisionIdentity(',
+	'WindowInsetsCompat.Type.displayCutout()',
+	'ImportConnectionGeneration.capture(',
+	'ReconciliationScheduler.cancelAll(',
+	'ReconciliationStatusStore(',
+	'continueBacklog('
+]) {
+	if (!kotlin.includes(required))
+		errors.push(`Android release blocker contract is missing ${required}`);
+}
+if (/ScanProgressStore|nextOffset|startOffset/.test(kotlin)) {
+	errors.push('Android source still relies on unstable provider cursor offsets');
+}
+
+const scanner = read('android/app/src/main/java/com/deftmartian/runway/SafTreeScanner.kt');
+if (!scanner.includes('MAX_ENTRIES_PER_SCAN = 10_000')) {
+	errors.push('Android restart scan must keep the explicit 10,000-entry bound');
+}
+
+const adaptiveIcon = read('android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml');
+if (!adaptiveIcon.includes('<monochrome')) {
+	errors.push('Android adaptive icon is missing its monochrome layer');
 }
 
 const strings = read('android/app/src/main/res/values/strings.xml');

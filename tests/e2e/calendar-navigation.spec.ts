@@ -44,6 +44,10 @@ test('training calendar month controls are URL-backed', async ({ page }) => {
 
 test('authenticated app avoids horizontal overflow on mobile and desktop', async ({ page }) => {
 	await createPlan(page);
+	await page.setViewportSize({ width: 320, height: 800 });
+	await page.goto('/app');
+	await expect(page.getByText('Scroll sideways to see all seven days.')).toBeVisible();
+	await expectNoHorizontalOverflow(page);
 
 	for (const viewport of [
 		{ width: 390, height: 844 },
@@ -70,6 +74,9 @@ test('authenticated app avoids horizontal overflow on mobile and desktop', async
 		await page.getByRole('link', { name: label, exact: true }).click();
 		await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible();
 		await expectNoHorizontalOverflow(page);
+		if (label === 'Calendar') {
+			await expect(page.getByText('Scroll sideways to see all seven days.')).toBeVisible();
+		}
 	}
 });
 
@@ -109,6 +116,11 @@ test('mobile training detail contains focus and locks background scrolling', asy
 	const panel = page.getByRole('dialog');
 	await expect(panel).toBeVisible();
 	await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+	await panel.getByText('Edit planned workout', { exact: true }).click();
+	await panel.evaluate((element) => {
+		element.scrollTop = element.scrollHeight;
+	});
+	await expect(panel.getByRole('button', { name: 'Close training detail' })).toBeInViewport();
 	const lastFocusable = panel
 		.locator(
 			'a[href]:visible, button:not([disabled]):visible, details summary:visible, input:not([disabled]):visible, select:not([disabled]):visible, textarea:not([disabled]):visible, [tabindex]:not([tabindex="-1"]):visible'

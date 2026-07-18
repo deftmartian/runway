@@ -96,7 +96,7 @@ describe('workout edit previews', () => {
 			isSelected: true,
 			relativeChangePercent: 33.3,
 			changeShareOfWeekPercent: 16.7,
-			risk: 'unsafe'
+			risk: 'aggressive'
 		});
 		expect(preview.workoutChanges[0]?.before.targetDistanceMeters).toBe(3_000);
 		expect(preview.workoutChanges[0]?.after.targetDistanceMeters).toBe(4_000);
@@ -105,14 +105,182 @@ describe('workout edit previews', () => {
 			isSelected: false,
 			relativeChangePercent: 33.3,
 			changeShareOfWeekPercent: 16.7,
-			risk: 'unsafe'
+			risk: 'aggressive'
 		});
 		expect(preview.workoutChanges[1]?.before.targetDistanceMeters).toBe(3_000);
 		expect(preview.workoutChanges[1]?.after.targetDistanceMeters).toBe(2_000);
 		expect(preview.weekChanges[0]).toEqual(
 			expect.objectContaining({ distanceBeforeMeters: 6_000, distanceAfterMeters: 6_000 })
 		);
-		expect(preview.risk).toBe('unsafe');
+		expect(preview.weeklyLoadChangePercent).toBe(16.7);
+		expect(preview.risk).toBe('aggressive');
+		expect(preview.requiresConfirmation).toBe(true);
+	});
+
+	it('assesses an edit by its share of weekly load, not its relative workout change', () => {
+		const otherRuns = [
+			{ ...base, id: 'workout-2', scheduledDate: '2026-07-23', targetDistanceMeters: 9_000 },
+			{ ...base, id: 'workout-3', scheduledDate: '2026-07-25', targetDistanceMeters: 9_000 },
+			{ ...base, id: 'workout-4', scheduledDate: '2026-07-26', targetDistanceMeters: 9_000 }
+		];
+		const preview = previewWorkoutEdit({
+			current: base,
+			recommended: proposalFromWorkout(base),
+			proposed: { ...proposalFromWorkout(base), targetDistanceMeters: 3_400 },
+			workouts: [base, ...otherRuns],
+			weeks,
+			today: '2026-07-16',
+			rebalance: false
+		});
+
+		expect(preview.workoutChanges[0]).toMatchObject({
+			relativeChangePercent: 13.3,
+			changeShareOfWeekPercent: 1.3,
+			risk: 'conservative'
+		});
+		expect(preview.weeklyLoadChangePercent).toBe(1.3);
+		expect(preview.risk).toBe('conservative');
+		expect(preview.requiresConfirmation).toBe(false);
+	});
+
+	it.each([
+		[3_000, 'conservative'],
+		[3_100, 'moderate'],
+		[4_600, 'aggressive'],
+		[7_600, 'unsafe']
+	] as const)(
+		'uses the documented weekly-load bands for a %s meter change',
+		(changeMeters, expectedRisk) => {
+			const other = { ...base, id: 'workout-2', targetDistanceMeters: 27_000 };
+			const preview = previewWorkoutEdit({
+				current: base,
+				recommended: proposalFromWorkout(base),
+				proposed: {
+					...proposalFromWorkout(base),
+					targetDistanceMeters: base.targetDistanceMeters + changeMeters
+				},
+				workouts: [base, other],
+				weeks,
+				today: '2026-07-16',
+				rebalance: false
+			});
+
+			expect(preview.risk).toBe(expectedRisk);
+		}
+	);
+
+	it('keeps projected plan ramp separate from the edit-share assessment', () => {
+		const priorWeek = {
+			...base,
+			id: 'workout-prior',
+			weekId: 'week-1',
+			targetDistanceMeters: 10_000
+		};
+		const selected = { ...base, weekId: 'week-2', scheduledDate: '2026-07-28' };
+		const other = {
+			...base,
+			id: 'workout-other',
+			weekId: 'week-2',
+			scheduledDate: '2026-07-30',
+			targetDistanceMeters: 27_000
+		};
+		const preview = previewWorkoutEdit({
+			current: selected,
+			recommended: proposalFromWorkout(selected),
+			proposed: { ...proposalFromWorkout(selected), targetDistanceMeters: 3_400 },
+			workouts: [priorWeek, selected, other],
+			weeks,
+			today: '2026-07-16',
+			rebalance: false
+		});
+
+		expect(preview.projectedRampPercent).toBe(204);
+		expect(preview.projectedRampRisk).toBe('unsafe');
+		expect(preview.weeklyLoadChangePercent).toBe(1.3);
+		expect(preview.risk).toBe('conservative');
+	});
+
+	it('uses injury-adjusted thresholds for the projected ramp', () => {
+		const prior = { ...base, targetDistanceMeters: 10_000 };
+		const selected = {
+			...base,
+			id: 'workout-week-2',
+			weekId: 'week-2',
+			scheduledDate: '2026-07-28',
+			targetDistanceMeters: 10_000
+		};
+		const preview = previewWorkoutEdit({
+			current: selected,
+			recommended: proposalFromWorkout(selected),
+			proposed: { ...proposalFromWorkout(selected), targetDistanceMeters: 10_700 },
+			workouts: [prior, selected],
+			weeks,
+			today: '2026-07-16',
+			rebalance: false,
+			hasInjuryRisk: true
+		});
+
+		expect(preview.projectedRampPercent).toBe(7);
+		expect(preview.projectedRampRisk).toBe('moderate');
+	});
+
+	it('assesses a small added workout as a share of existing weekly load', () => {
+		const existing = {
+			...base,
+			id: 'workout-existing',
+			scheduledDate: '2026-07-24',
+			targetDistanceMeters: 30_000
+		};
+		const added = { ...base, id: 'new-workout', targetDistanceMeters: 100, isRemoved: true };
+		const preview = previewWorkoutEdit({
+			current: added,
+			recommended: null,
+			proposed: { ...proposalFromWorkout(added), isRemoved: false },
+			workouts: [existing, added],
+			weeks,
+			today: '2026-07-16',
+			rebalance: false,
+			operation: 'add'
+		});
+
+		expect(preview.operation).toBe('add');
+		expect(preview.workoutChanges[0]).toMatchObject({
+			relativeChangePercent: null,
+			changeShareOfWeekPercent: 0.3,
+			risk: 'conservative'
+		});
+		expect(preview.risk).toBe('conservative');
+		expect(preview.requiresConfirmation).toBe(false);
+	});
+
+	it('labels a distance-to-duration conversion as a separate comparison guardrail', () => {
+		const timedProposal = {
+			...proposalFromWorkout(base),
+			prescriptionKind: 'timed' as const,
+			targetDistanceMeters: 0,
+			targetDurationSeconds: 1_200,
+			intervalStructure: {
+				warmupSeconds: 0,
+				cooldownSeconds: 480,
+				blocks: [{ repetitions: 6, segments: [{ kind: 'run' as const, durationSeconds: 120 }] }]
+			}
+		};
+		const preview = previewWorkoutEdit({
+			current: base,
+			recommended: proposalFromWorkout(base),
+			proposed: timedProposal,
+			workouts: [base],
+			weeks,
+			today: '2026-07-16',
+			rebalance: false
+		});
+
+		expect(preview.guardrails).toEqual([
+			expect.objectContaining({
+				kind: 'prescription_basis_change',
+				label: 'Prescription basis changed'
+			})
+		]);
 		expect(preview.requiresConfirmation).toBe(true);
 	});
 

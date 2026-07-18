@@ -128,6 +128,43 @@ export async function updateTrainingProfile(
 	return heartRateSettings;
 }
 
+export async function updateHealthContext(
+	userId: string,
+	injuryFlags: {
+		recentInjury: boolean;
+		currentPain: boolean;
+		recurringPain: boolean;
+		medicalRestriction: boolean;
+		notes: string;
+	}
+) {
+	await db.transaction(async (tx) => {
+		await tx
+			.insert(athleteProfile)
+			.values({ userId, injuryFlags })
+			.onConflictDoUpdate({
+				target: athleteProfile.userId,
+				set: { injuryFlags, updatedAt: new Date() }
+			});
+
+		await tx.insert(auditEvent).values({
+			userId,
+			eventType: 'profile.health_context_updated',
+			detail: {
+				activeFlagCount: [
+					injuryFlags.recentInjury,
+					injuryFlags.currentPain,
+					injuryFlags.recurringPain,
+					injuryFlags.medicalRestriction
+				].filter(Boolean).length,
+				hasNotes: injuryFlags.notes.length > 0
+			}
+		});
+	});
+
+	return injuryFlags;
+}
+
 export async function getAthleteTimeZone(userId: string): Promise<string | null> {
 	const [profile] = await db
 		.select({ timeZone: athleteProfile.timeZone })

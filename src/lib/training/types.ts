@@ -80,6 +80,7 @@ export type DistanceSummary = {
 	baselineMeters: number;
 	peakMeters: number;
 	requiredWeeklyIncreasePercent: number;
+	defaultWeeklyIncreasePercent: number;
 	longRunPeakMeters: number;
 	warnings: string[];
 };
@@ -291,12 +292,26 @@ export type WorkoutFeedbackInput = {
 	recentMissedWorkouts?: number;
 };
 
+export type ConsequenceMetric = 'distance' | 'duration';
+
+/** A signed load change expressed in the prescription's native unit. */
+export type ConsequenceMetricDelta = {
+	metric: ConsequenceMetric;
+	value: number;
+};
+
 export type ConsequenceResult = {
 	kind: ConsequenceKind;
+	/** Omitted on legacy records; only set when native-unit load comparison is unavailable. */
+	comparisonStatus?: 'not_comparable';
 	deviation: DeviationClassification;
 	metric: 'distance' | 'duration' | 'none';
 	actualDifference: number;
+	weeklyLoadDelta: ConsequenceMetricDelta | null;
+	nextRunAdjustment: ConsequenceMetricDelta | null;
+	/** Legacy distance projection; presentation and decisions use weeklyLoadDelta. */
 	weeklyDistanceDeltaMeters: number;
+	/** Legacy distance projection; presentation and decisions use nextRunAdjustment. */
 	nextRunAdjustmentMeters: number;
 	risk: RiskRating;
 	recommendedDecision: PlanDecision;

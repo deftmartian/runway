@@ -1,0 +1,6 @@
+# Copy to android/signing.properties and keep the populated file out of source control.
+# Relative storeFile paths are resolved from android/; absolute paths are also supported.
+storeFile=/secure/path/runway-release.jks
+storePassword=REPLACE_WITH_KEYSTORE_PASSWORD
+keyAlias=REPLACE_WITH_KEY_ALIAS
+keyPassword=REPLACE_WITH_KEY_PASSWORD

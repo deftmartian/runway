@@ -13,6 +13,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
 import java.io.IOException
 import java.util.concurrent.Executors
 
@@ -22,7 +24,10 @@ class ShareReceiverActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildContent())
+        enableEdgeToEdge()
+        val content = buildContent()
+        setContentView(content)
+        EdgeToEdgeLayout.applySystemBarPadding(content)
         inspectSharedFile()
     }
 
@@ -35,6 +40,8 @@ class ShareReceiverActivity : ComponentActivity() {
         val credentialStore = AndroidCredentialStore(this)
         val credential = credentialStore.load()
         if (credential == null) {
+            ReconciliationScheduler.cancelAll(this)
+            ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
             status.setText(R.string.share_pairing_required)
             return
         }
@@ -84,9 +91,11 @@ class ShareReceiverActivity : ComponentActivity() {
                         }
                         ImportApiResult.Unauthorized -> {
                             HandledImportStore(this).clearForDevice(credential.deviceId)
-                            ScanProgressStore(this).reset(credential.deviceId)
                             credentialStore.clear()
-                            ReconciliationScheduler.disablePeriodic(this)
+                            ReconciliationScheduler.cancelAll(this)
+                            ReconciliationStatusStore(this).record(
+                                ReconciliationWorker.STATE_PAIRING_REQUIRED,
+                            )
                             R.string.share_pairing_required
                         }
                         ImportApiResult.RequestConflict -> R.string.share_retryable
@@ -165,6 +174,7 @@ class ShareReceiverActivity : ComponentActivity() {
             setText(R.string.share_title)
             textSize = 24f
             setTypeface(typeface, Typeface.BOLD)
+            ViewCompat.setAccessibilityHeading(this, true)
         })
         status = TextView(this).apply {
             setText(R.string.share_checking)

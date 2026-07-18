@@ -2085,6 +2085,7 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .event-detail-panel {
+	--event-detail-padding: 18px;
 	position: fixed;
 	z-index: 61;
 	inset: max(14px, var(--safe-area-top)) max(14px, var(--safe-area-right))
@@ -2099,7 +2100,7 @@ button.command-readout.review:not(:disabled):hover {
 	max-height: min(calc(100dvh - 28px - var(--safe-area-top) - var(--safe-area-bottom)), 820px);
 	margin: auto;
 	overflow: auto;
-	padding: 18px;
+	padding: var(--event-detail-padding);
 	border: 1px solid var(--line);
 	border-radius: var(--radius);
 	background: var(--surface);
@@ -2107,10 +2108,17 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .event-detail-header {
+	position: sticky;
+	z-index: 2;
+	top: calc(-1 * var(--event-detail-padding));
 	display: flex;
 	gap: 10px;
 	align-items: start;
 	justify-content: space-between;
+	margin: calc(-1 * var(--event-detail-padding)) calc(-1 * var(--event-detail-padding)) 0;
+	padding: var(--event-detail-padding) var(--event-detail-padding) 12px;
+	border-bottom: 1px solid var(--line);
+	background: color-mix(in oklab, var(--surface), transparent 2%);
 }
 
 .event-detail-header .section-title {
@@ -2975,11 +2983,11 @@ details.setup-codes > summary {
 	}
 
 	.event-detail-panel {
+		--event-detail-padding: 14px;
 		width: auto;
 		max-width: 680px;
 		max-height: min(calc(100vh - 22px), 760px);
 		max-height: min(calc(100dvh - 22px - var(--safe-area-top) - var(--safe-area-bottom)), 760px);
-		padding: 14px;
 	}
 
 	.inline-action-form {

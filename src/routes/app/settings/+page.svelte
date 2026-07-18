@@ -5,17 +5,19 @@
 	import SecuritySettings from '$lib/components/settings/SecuritySettings.svelte';
 	import TrainingSettings from '$lib/components/settings/TrainingSettings.svelte';
 	import type { SettingsFormState } from '$lib/components/settings/types';
-	import { disconnectDeviceFolder } from '$lib/pwa/device-folder';
+	import { clearAllDeviceFolderData, disconnectDeviceFolder } from '$lib/pwa/device-folder';
+	import { notifyEnhancedFormSaved } from '$lib/pwa/lifecycle';
 	import type { ActionData, PageData, SubmitFunction } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let settingsActionPending = $state<string | null>(null);
 	let privacyClientMessage = $state('');
+	let accountDeletionClientMessage = $state('');
 	let privacyAttention = $state<'routeMaps' | 'activityData' | null>(null);
 	const scopedForm = $derived((form ?? {}) as SettingsFormState);
 
 	function enhanceSettingsAction(key: string, confirmation?: string): SubmitFunction {
-		return async ({ cancel }) => {
+		return async ({ cancel, formData, formElement }) => {
 			if (settingsActionPending || (confirmation && !globalThis.confirm(confirmation))) {
 				cancel();
 				return;
@@ -36,6 +38,19 @@
 					return;
 				}
 			}
+			if (key === 'deleteAccount') {
+				accountDeletionClientMessage = '';
+				try {
+					await clearAllDeviceFolderData();
+					formData.set('browserFolderDataCleared', 'yes');
+				} catch {
+					accountDeletionClientMessage =
+						'The account was not deleted because runway could not clear this browser’s folder access. Close other runway tabs and try again.';
+					settingsActionPending = null;
+					cancel();
+					return;
+				}
+			}
 			return async ({ result, update }) => {
 				try {
 					if (key === 'routeDataMode') privacyAttention = 'routeMaps';
@@ -44,6 +59,11 @@
 						privacyClientMessage =
 							'The folder was disconnected, but imported GPX activities were not deleted. Try again, or reconnect the folder from Import.';
 					}
+					if (result.type !== 'redirect' && key === 'deleteAccount') {
+						accountDeletionClientMessage =
+							'Browser folder access was cleared, but the account was not deleted. Review the message below and try again.';
+					}
+					if (result.type === 'success') notifyEnhancedFormSaved(formElement);
 					await update({
 						reset: result.type === 'success',
 						invalidateAll: result.type === 'success'
@@ -82,8 +102,10 @@
 	<DataPrivacySettings
 		profile={data.profile}
 		user={data.user}
+		auditRetention={data.auditRetention}
 		form={scopedForm}
 		{privacyClientMessage}
+		{accountDeletionClientMessage}
 		{privacyAttention}
 		{settingsActionPending}
 		{enhanceSettingsAction}
@@ -401,6 +423,43 @@
 			.route-privacy-form input {
 				flex: 0 0 auto;
 				margin-top: 0.2rem;
+			}
+
+			.health-context-form {
+				display: grid;
+				gap: 18px;
+				max-width: 680px;
+			}
+
+			.health-flags {
+				display: grid;
+				gap: 10px;
+				margin: 0;
+				padding: 0;
+				border: 0;
+			}
+
+			.health-flags label {
+				display: flex;
+				align-items: flex-start;
+				gap: 10px;
+				padding: 12px 0;
+				border-bottom: 1px solid color-mix(in oklab, var(--line), transparent 50%);
+			}
+
+			.health-flags label span {
+				display: grid;
+				gap: 3px;
+			}
+
+			.health-flags input {
+				flex: 0 0 auto;
+				margin-top: 3px;
+			}
+
+			.clear-health-context {
+				padding-top: 16px;
+				border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
 			}
 
 			.mobile-account-actions {

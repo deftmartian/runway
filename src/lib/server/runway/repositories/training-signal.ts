@@ -3,13 +3,21 @@ import { db } from '$lib/server/db';
 import { activity, trainingPlan, workout, workoutFeedback } from '$lib/server/db/schema';
 import { formatConsequenceAuditReason } from '$lib/training/consequence-presentation';
 import { addDays } from '$lib/training/date';
-import type { ConsequenceResult, RiskRating } from '$lib/training/types';
+import type { ConsequenceResult, PlanDecision, RiskRating } from '$lib/training/types';
 
 const riskRank: Record<RiskRating, number> = {
 	conservative: 0,
 	moderate: 1,
 	aggressive: 2,
 	unsafe: 3
+};
+
+export type RecordedTrainingEvidence = {
+	consequence: ConsequenceResult;
+	appliedDecision: PlanDecision | null;
+	createdAt: Date;
+	evidenceDate: string;
+	source: 'feedback' | 'activity';
 };
 
 export function currentSignalReasonsFor(input: {
@@ -31,17 +39,51 @@ export function currentSignalReasonsFor(input: {
 	return Array.from(new Set(reasons)).slice(0, 3);
 }
 
+export function selectCurrentTrainingSignal(input: {
+	planRisk: RiskRating;
+	planWarnings: string[];
+	recordedEvidence: RecordedTrainingEvidence[];
+}) {
+	const latestEvidence = [...input.recordedEvidence].sort(
+		(left, right) =>
+			right.evidenceDate.localeCompare(left.evidenceDate) ||
+			right.createdAt.getTime() - left.createdAt.getTime()
+	)[0];
+	const latestIsResolved =
+		latestEvidence !== undefined &&
+		(latestEvidence.appliedDecision !== null ||
+			latestEvidence.consequence.appliedDecision !== null);
+	const selected = latestEvidence && !latestIsResolved ? latestEvidence : undefined;
+	const recordedEvidenceWins =
+		selected !== undefined && riskRank[selected.consequence.risk] >= riskRank[input.planRisk];
+	const selectedConsequence = recordedEvidenceWins ? selected.consequence : null;
+
+	return {
+		risk: recordedEvidenceWins ? selected.consequence.risk : input.planRisk,
+		consequence: selectedConsequence,
+		reasons: currentSignalReasonsFor({
+			planRisk: input.planRisk,
+			planWarnings: input.planWarnings,
+			selectedConsequence
+		}),
+		source: recordedEvidenceWins ? selected.source : ('plan' as const)
+	};
+}
+
 export async function currentTrainingSignal(
 	userId: string,
 	plan: typeof trainingPlan.$inferSelect,
-	today: string
+	today: string,
+	effectivePlanRisk: RiskRating = plan.risk
 ) {
 	const recentStart = addDays(today, -28);
 	const [feedbackRows, activityRows] = await Promise.all([
 		db
 			.select({
 				consequence: workoutFeedback.consequence,
+				appliedDecision: workoutFeedback.appliedDecision,
 				createdAt: workoutFeedback.createdAt,
+				evidenceDate: workout.scheduledDate,
 				source: sql<'feedback'>`'feedback'`
 			})
 			.from(workoutFeedback)
@@ -59,12 +101,14 @@ export async function currentTrainingSignal(
 					lte(workout.scheduledDate, today)
 				)
 			)
-			.orderBy(desc(workoutFeedback.createdAt))
+			.orderBy(desc(workout.scheduledDate), desc(workoutFeedback.createdAt))
 			.limit(100),
 		db
 			.select({
 				consequence: activity.consequence,
+				appliedDecision: activity.appliedDecision,
 				createdAt: activity.createdAt,
+				evidenceDate: activity.activityDate,
 				source: sql<'activity'>`'activity'`
 			})
 			.from(activity)
@@ -72,35 +116,23 @@ export async function currentTrainingSignal(
 				and(
 					eq(activity.userId, userId),
 					eq(activity.reviewState, 'accepted'),
+					eq(activity.consequencePlanId, plan.id),
 					gte(activity.activityDate, recentStart),
 					lte(activity.activityDate, today),
 					isNotNull(activity.consequence)
 				)
 			)
-			.orderBy(desc(activity.createdAt))
+			.orderBy(desc(activity.activityDate), desc(activity.createdAt))
 			.limit(100)
 	]);
-	const selected = [
-		...feedbackRows,
-		...activityRows.flatMap((record) =>
-			record.consequence ? [{ ...record, consequence: record.consequence }] : []
-		)
-	].sort(
-		(left, right) =>
-			riskRank[right.consequence.risk] - riskRank[left.consequence.risk] ||
-			right.createdAt.getTime() - left.createdAt.getTime()
-	)[0];
-	const recordedSignalWins =
-		selected !== undefined && riskRank[selected.consequence.risk] >= riskRank[plan.risk];
-	const selectedConsequence = recordedSignalWins ? selected.consequence : null;
-	return {
-		risk: recordedSignalWins ? selected.consequence.risk : plan.risk,
-		consequence: selectedConsequence,
-		reasons: currentSignalReasonsFor({
-			planRisk: plan.risk,
-			planWarnings: plan.summary.warnings,
-			selectedConsequence
-		}),
-		source: recordedSignalWins ? selected.source : ('plan' as const)
-	};
+	return selectCurrentTrainingSignal({
+		planRisk: effectivePlanRisk,
+		planWarnings: plan.summary.warnings,
+		recordedEvidence: [
+			...feedbackRows,
+			...activityRows.flatMap((record) =>
+				record.consequence ? [{ ...record, consequence: record.consequence }] : []
+			)
+		]
+	});
 }

@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import StateMarker from '$lib/components/visual/StateMarker.svelte';
-	import { presentConsequence } from '$lib/training/consequence-presentation';
-	import { presentRampAssessment } from '$lib/training/training-assessment';
+	import {
+		presentConsequence,
+		presentConsequenceFacts
+	} from '$lib/training/consequence-presentation';
+	import { formatRampEvidence, presentRampAssessment } from '$lib/training/training-assessment';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -82,10 +85,15 @@
 		);
 	}
 
-	function kmChange(meters: number): string {
-		const value = Math.round((meters / 1_000) * 10) / 10;
-		return `${value > 0 ? '+' : ''}${value} km`;
-	}
+	const planAssessment = $derived(presentRampAssessment(data.detail.plan.risk));
+	const planRampEvidence = $derived(
+		data.detail.plan.summary.kind === 'distance'
+			? formatRampEvidence(
+					data.detail.plan.summary.requiredWeeklyIncreasePercent,
+					data.detail.plan.summary.defaultWeeklyIncreasePercent
+				)
+			: null
+	);
 
 	function adjustmentLabel(trigger: (typeof data.detail.adjustments)[number]['triggerType']) {
 		switch (trigger) {
@@ -146,11 +154,14 @@
 			</div>
 			<div>
 				<dt>Priority</dt>
-				<dd>{data.detail.goal.priority === 'finish_healthy' ? 'Finish healthy' : 'Consistency'}</dd>
+				<dd>{data.detail.goal.priority === 'finish_healthy' ? 'Lower ramp' : 'Consistency'}</dd>
 			</div>
 			<div>
 				<dt>Ramp assessment</dt>
-				<dd>{presentRampAssessment(data.detail.plan.risk).label}</dd>
+				<dd>
+					{planAssessment.label}
+					{#if planRampEvidence}<small>{planRampEvidence}</small>{/if}
+				</dd>
 			</div>
 			<div>
 				<dt>{data.detail.plan.status === 'active' ? 'State' : 'Closed'}</dt>
@@ -249,6 +260,9 @@
 									activity?.durationSeconds ?? feedback?.completedDurationSeconds}
 								{@const consequence = activity?.consequence ?? feedback?.consequence}
 								{@const consequenceView = consequence ? presentConsequence(consequence) : null}
+								{@const consequenceFacts = consequence
+									? presentConsequenceFacts(consequence)
+									: null}
 								<article class="history-workout-record">
 									<header>
 										<div>
@@ -293,15 +307,13 @@
 										</p>
 									{/if}
 
-									{#if consequence && consequenceView}
+									{#if consequence && consequenceView && consequenceFacts}
 										<div class="message compact-message history-recorded-consequence">
 											<strong>{consequenceView.outcome}</strong>
 											<span>{consequenceView.planChange}</span>
 											{#if consequenceView.safety}<span>{consequenceView.safety}</span>{/if}
-											<small>
-												Week {kmChange(consequence.weeklyDistanceDeltaMeters)} · next run
-												{kmChange(consequence.nextRunAdjustmentMeters)}
-											</small>
+											<small>{consequenceFacts.weekImpact} · {consequenceFacts.nextRunImpact}</small
+											>
 										</div>
 									{/if}
 								</article>
@@ -335,6 +347,15 @@
 
 	.history-detail-header h1 {
 		font-size: clamp(1.8rem, 5vw, 2.8rem);
+	}
+
+	.history-detail-summary dd small {
+		display: block;
+		max-width: 36ch;
+		margin-top: 4px;
+		color: var(--muted);
+		font-weight: 500;
+		line-height: 1.35;
 	}
 
 	.history-detail-explainer {

@@ -80,7 +80,8 @@ export function accountSecurityRateLimitBuckets(
 		| 'verify-two-factor-setup'
 		| 'disable-two-factor'
 		| 'delete-passkey'
-		| 'export-data',
+		| 'export-data'
+		| 'delete-account',
 	userId: string,
 	clientAddress: string
 ): RateLimitBucket[] {
@@ -139,6 +140,34 @@ export function androidApiDeviceRateLimitBuckets(
 			name: `android-${action}:device`,
 			subject: deviceId,
 			max: action === 'import' ? 30 : 120,
+			windowMs: tenMinutes
+		}
+	];
+}
+
+export function gpxImportRateLimitBuckets(
+	userId: string,
+	clientAddress: string
+): RateLimitBucket[] {
+	return [
+		{ name: 'gpx-import:ip', subject: clientAddress, max: 60, windowMs: tenMinutes },
+		{ name: 'gpx-import:user', subject: userId, max: 30, windowMs: tenMinutes }
+	];
+}
+
+export function nextcloudImportRateLimitBuckets(
+	action: 'connect' | 'test' | 'sync',
+	userId: string,
+	clientAddress: string
+): RateLimitBucket[] {
+	const actionMaximum = action === 'connect' ? 5 : action === 'test' ? 10 : 20;
+	return [
+		{ name: 'nextcloud-import:ip', subject: clientAddress, max: 40, windowMs: tenMinutes },
+		{ name: 'nextcloud-import:user', subject: userId, max: 20, windowMs: tenMinutes },
+		{
+			name: `nextcloud-import:${action}:user`,
+			subject: userId,
+			max: actionMaximum,
 			windowMs: tenMinutes
 		}
 	];

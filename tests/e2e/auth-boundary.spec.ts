@@ -10,6 +10,7 @@ test('unreviewed Better Auth endpoints stay behind runway product actions', asyn
 		'/api/auth/two-factor/verify-totp',
 		'/api/auth/oauth2/link',
 		'/api/auth/change-password',
+		'/api/auth/delete-user',
 		'/api/auth/passkey/delete-passkey'
 	]) {
 		const response = await page.request.post(pathname, {

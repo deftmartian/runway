@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+	enforceNextcloudVisibleGpxLimit,
 	isNextcloudAuthenticationRejection,
 	listNextcloudGpxFiles,
+	maxNextcloudVisibleGpxFiles,
 	parseNextcloudShareUrl
 } from './nextcloud';
 import { sealSecret } from './secrets';
@@ -106,6 +108,19 @@ describe('parseNextcloudShareUrl', () => {
 });
 
 describe('listNextcloudGpxFiles', () => {
+	test('applies an explicit visible-folder bound before marker queries', () => {
+		expect(
+			enforceNextcloudVisibleGpxLimit(
+				Array.from({ length: maxNextcloudVisibleGpxFiles }, (_, id) => id)
+			)
+		).toHaveLength(maxNextcloudVisibleGpxFiles);
+		expect(() =>
+			enforceNextcloudVisibleGpxLimit(
+				Array.from({ length: maxNextcloudVisibleGpxFiles + 1 }, (_, id) => id)
+			)
+		).toThrow(`at most ${maxNextcloudVisibleGpxFiles} GPX files`);
+	});
+
 	test('ignores WebDAV hrefs outside the public share folder', async () => {
 		expect.assertions(2);
 		vi.stubGlobal(

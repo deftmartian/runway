@@ -28,14 +28,34 @@ if (
 }
 
 const csp = header(home.headers, 'content-security-policy');
-for (const directive of [
-	'default-src',
-	'script-src',
-	'style-src',
-	'connect-src',
-	'frame-ancestors'
-]) {
-	if (!csp.includes(directive)) failures.push(`CSP is missing ${directive}.`);
+const exactStaticCsp = {
+	'default-src': ["'self'"],
+	'base-uri': ["'self'"],
+	'connect-src': ["'self'"],
+	'font-src': ["'self'"],
+	'form-action': ["'self'"],
+	'frame-ancestors': ["'none'"],
+	'img-src': ["'self'", 'data:'],
+	'manifest-src': ["'self'"],
+	'object-src': ["'none'"],
+	'style-src': ["'self'"],
+	'style-src-attr': ["'unsafe-inline'"],
+	'worker-src': ["'self'"],
+	'require-trusted-types-for': ["'script'"],
+	'trusted-types': ['svelte-trusted-html', 'sveltekit-trusted-url', 'runway-service-worker']
+};
+for (const [directive, expectedSources] of Object.entries(exactStaticCsp)) {
+	assertExactDirective(csp, directive, expectedSources);
+}
+const cspDirectiveNames = csp
+	.split(';')
+	.map((part) => part.trim().split(/\s+/, 1)[0])
+	.filter(Boolean);
+const expectedDirectiveNames = [...Object.keys(exactStaticCsp), 'script-src'];
+for (const directive of cspDirectiveNames) {
+	if (!expectedDirectiveNames.includes(directive)) {
+		failures.push(`CSP contains unexpected directive ${directive}.`);
+	}
 }
 const scriptSrc = directiveValue(csp, 'script-src');
 const styleSrc = directiveValue(csp, 'style-src');
@@ -56,6 +76,19 @@ if (!scriptSrc.includes("'strict-dynamic'")) {
 }
 if (!scriptSrc.includes("'nonce-")) {
 	failures.push('CSP script-src is missing a SvelteKit nonce.');
+}
+const scriptSources = directiveSources(csp, 'script-src');
+const nonceSources = scriptSources.filter((source) =>
+	/^'nonce-[A-Za-z0-9+/]+={0,2}'$/.test(source)
+);
+if (
+	nonceSources.length !== 1 ||
+	JSON.stringify(scriptSources.filter((source) => !source.startsWith("'nonce-")).sort()) !==
+		JSON.stringify(["'self'", "'strict-dynamic'"].sort())
+) {
+	failures.push(
+		'CSP script-src differs from the exact self, strict-dynamic, per-response nonce contract.'
+	);
 }
 if (scriptSrc.includes("'unsafe-inline'")) {
 	failures.push('CSP script-src still allows unsafe-inline.');
@@ -334,6 +367,21 @@ function directiveValue(policy, directiveName) {
 		.map((part) => part.trim())
 		.find((part) => part.startsWith(`${directiveName} `));
 	return directive ?? '';
+}
+
+function directiveSources(policy, directiveName) {
+	const directive = directiveValue(policy, directiveName);
+	return directive ? directive.split(/\s+/).slice(1) : [];
+}
+
+function assertExactDirective(policy, directiveName, expectedSources) {
+	const actual = directiveSources(policy, directiveName).sort();
+	const expected = [...expectedSources].sort();
+	if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+		failures.push(
+			`CSP ${directiveName} differs from the expected ${expectedSources.join(' ')} contract.`
+		);
+	}
 }
 
 function firstImmutableAsset(response) {

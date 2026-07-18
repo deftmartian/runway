@@ -4,16 +4,17 @@ import {
 	abandonAndroidImportRequest,
 	authenticateAndroidDevice,
 	claimAndroidImportRequest,
-	completeAndroidImportRequest,
-	type AndroidImportResult
+	type AndroidImportResult,
+	type AuthenticatedAndroidDevice
 } from '$lib/server/runway/android-devices';
 import { readBoundedRequestBody } from '$lib/server/runway/bounded-request-body';
 import {
-	importGpxIntoReviewInbox,
+	finalizeAndroidGpxIntoReviewInbox,
+	finalizeAndroidReviewOutcome,
 	maxGpxImportBytes,
+	type AndroidGpxReviewFinalization,
 	type GpxReviewImportResult
 } from '$lib/server/runway/gpx-review-import';
-import { getActivityImportGeneration } from '$lib/server/runway/repositories/profiles';
 import {
 	androidApiDeviceRateLimitBuckets,
 	androidApiPreAuthRateLimitBuckets,
@@ -75,49 +76,90 @@ export const POST: RequestHandler = async (event) => {
 		return androidImportResponse(requestId, claim.result, claim.reason, true);
 	}
 
-	const importGeneration = await getActivityImportGeneration(device.userId);
 	const body = await readBoundedRequestBody(event.request, maxGpxImportBytes);
 	if (body.result !== 'ok') {
 		const reason = body.result === 'too-large' ? 'too-large' : 'invalid';
-		if (!(await completeAndroidImportRequest(device, claim.receiptId, 'quarantined', reason))) {
-			return revokedDuringImport(requestId);
-		}
-		return androidImportResponse(requestId, 'quarantined', reason, false);
+		return respondToFinalization(
+			requestId,
+			device,
+			claim.receiptId,
+			claim.claimUpdatedAt,
+			await finalizeAndroidReviewOutcome(
+				device,
+				claim.receiptId,
+				claim.claimUpdatedAt,
+				claim.importGeneration,
+				{ result: reason }
+			)
+		);
 	}
 	const actualDigest = createHash('sha256').update(body.buffer).digest('hex');
 	if (actualDigest !== contentDigest) {
-		if (
-			!(await completeAndroidImportRequest(
-				device,
-				claim.receiptId,
-				'quarantined',
-				'digest-mismatch'
-			))
-		) {
-			return revokedDuringImport(requestId);
+		const finalized = await finalizeAndroidReviewOutcome(
+			device,
+			claim.receiptId,
+			claim.claimUpdatedAt,
+			claim.importGeneration,
+			{ result: 'invalid' },
+			'digest-mismatch'
+		);
+		if (finalized.state === 'completed') {
+			return androidImportResponse(requestId, 'quarantined', 'digest-mismatch', false);
 		}
-		return androidImportResponse(requestId, 'quarantined', 'digest-mismatch', false);
+		return respondToFinalization(
+			requestId,
+			device,
+			claim.receiptId,
+			claim.claimUpdatedAt,
+			finalized
+		);
 	}
 
-	const imported = await importGpxIntoReviewInbox(device.userId, body.buffer, importGeneration);
-	const mapped = mapImportResult(imported);
-	if (mapped.result === 'retryable') {
-		await abandonAndroidImportRequest(device, claim.receiptId);
+	const finalized = await finalizeAndroidGpxIntoReviewInbox(
+		device,
+		claim.receiptId,
+		claim.claimUpdatedAt,
+		claim.importGeneration,
+		body.buffer
+	);
+	return respondToFinalization(requestId, device, claim.receiptId, claim.claimUpdatedAt, finalized);
+};
+
+async function respondToFinalization(
+	requestId: string,
+	device: AuthenticatedAndroidDevice,
+	receiptId: string,
+	claimUpdatedAt: Date,
+	finalized: AndroidGpxReviewFinalization
+) {
+	if (finalized.state === 'revoked') {
+		return revokedDuringImport(requestId);
+	}
+	if (finalized.state === 'lease-lost') {
 		return json(
-			{ result: 'retryable', requestId, reason: mapped.reason },
+			{ result: 'retryable', requestId, reason: 'request-lease-lost' },
+			{ status: 409, headers: { 'Retry-After': '5' } }
+		);
+	}
+	if (finalized.state === 'retryable') {
+		await abandonAndroidImportRequest(device, receiptId, claimUpdatedAt);
+		return json(
+			{ result: 'retryable', requestId, reason: finalized.reason },
 			{
-				status: mapped.reason === 'time-zone-required' ? 409 : 503,
+				status: finalized.reason === 'time-zone-required' ? 409 : 503,
 				headers: { 'Retry-After': '60' }
 			}
 		);
 	}
-	if (
-		!(await completeAndroidImportRequest(device, claim.receiptId, mapped.result, mapped.reason))
-	) {
-		return revokedDuringImport(requestId);
+	const mapped = mapImportResult(finalized.result);
+	if (mapped.result === 'retryable') {
+		return json(
+			{ result: 'retryable', requestId, reason: mapped.reason },
+			{ status: 503, headers: { 'Retry-After': '60' } }
+		);
 	}
 	return androidImportResponse(requestId, mapped.result, mapped.reason, false);
-};
+}
 
 function mapImportResult(
 	result: GpxReviewImportResult
@@ -160,8 +202,5 @@ function rateLimited(retryAfterSeconds: number) {
 }
 
 function revokedDuringImport(requestId: string) {
-	return json(
-		{ result: 'retryable', requestId, reason: 'device-revoked' },
-		{ status: 409, headers: { 'Retry-After': '5' } }
-	);
+	return json({ result: 'unauthorized', requestId, reason: 'device-revoked' }, { status: 401 });
 }

@@ -128,6 +128,7 @@ export const athleteProfile = pgTable(
 		preferredLongRunDay: integer('preferred_long_run_day'),
 		availability: jsonb('availability').$type<number[]>().notNull().default([]),
 		activityImportGeneration: integer('activity_import_generation').notNull().default(0),
+		browserFolderGeneration: integer('browser_folder_generation').notNull().default(0),
 		injuryFlags: jsonb('injury_flags')
 			.$type<{
 				recentInjury: boolean;
@@ -165,6 +166,10 @@ export const athleteProfile = pgTable(
 		check(
 			'athlete_profile_import_generation_nonnegative',
 			sql`${table.activityImportGeneration} >= 0`
+		),
+		check(
+			'athlete_profile_browser_folder_generation_nonnegative',
+			sql`${table.browserFolderGeneration} >= 0`
 		),
 		check(
 			'athlete_profile_route_data_mode_known',
@@ -807,6 +812,24 @@ export const passwordResetRateLimit = pgTable(
 		index('password_reset_rate_limit_reset_idx').on(table.resetAt),
 		check('password_reset_rate_limit_count_nonnegative', sql`${table.count} >= 0`)
 	]
+);
+
+export const importOperationLease = pgTable(
+	'import_operation_lease',
+	{
+		userId: text('user_id')
+			.primaryKey()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		token: uuid('token').notNull(),
+		operation: text('operation').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull()
+	},
+	(table) => [index('import_operation_lease_expires_idx').on(table.expiresAt)]
 );
 
 export const goalRelations = relations(goal, ({ many }) => ({

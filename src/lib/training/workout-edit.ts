@@ -27,6 +27,7 @@ export type WorkoutEditWeek = {
 };
 
 export type WorkoutEditPreview = {
+	operation: 'edit' | 'add' | 'remove';
 	recommended: WorkoutEditProposal | null;
 	current: WorkoutEditProposal;
 	proposed: WorkoutEditProposal;
@@ -41,9 +42,19 @@ export type WorkoutEditPreview = {
 	}[];
 	spacingConflicts: { workoutId: string; scheduledDate: string; purpose: string }[];
 	affectedFutureWorkoutIds: string[];
+	/** Largest share of an affected week's existing load changed by this edit. */
+	weeklyLoadChangePercent: number;
 	projectedRampPercent: number;
+	projectedRampRisk: RiskRating;
+	guardrails: WorkoutEditGuardrail[];
 	risk: RiskRating;
 	requiresConfirmation: boolean;
+};
+
+export type WorkoutEditGuardrail = {
+	kind: 'prescription_basis_change';
+	label: string;
+	description: string;
 };
 
 export type WorkoutEditWorkoutChange = {
@@ -64,6 +75,8 @@ export function previewWorkoutEdit(input: {
 	weeks: WorkoutEditWeek[];
 	today: string;
 	rebalance: boolean;
+	hasInjuryRisk?: boolean;
+	operation?: 'edit' | 'add' | 'remove';
 }): WorkoutEditPreview {
 	assertWorkoutProposal(input.proposed);
 	const currentProposal = proposalFromWorkout(input.current);
@@ -132,7 +145,13 @@ export function previewWorkoutEdit(input: {
 	const destinationAfter = weekLoad(after, input.proposed.weekId);
 	const destinationBefore = weekLoad(before, input.proposed.weekId);
 	const previousLoad = previousWeek ? weekLoad(after, previousWeek.id) : destinationBefore;
-	const usesDuration = input.proposed.prescriptionKind === 'timed';
+	const proposedHasNoLoad =
+		input.proposed.isRemoved ||
+		input.proposed.prescriptionKind === 'rest' ||
+		input.proposed.type === 'rest';
+	const usesDuration =
+		input.proposed.prescriptionKind === 'timed' ||
+		(proposedHasNoLoad && input.current.prescriptionKind === 'timed');
 	const projected = usesDuration
 		? destinationAfter.durationSeconds
 		: destinationAfter.distanceMeters;
@@ -144,18 +163,24 @@ export function previewWorkoutEdit(input: {
 	const largestWeekChangeShare = weekChanges.reduce((largest, change) => {
 		const beforeValue = usesDuration ? change.durationBeforeSeconds : change.distanceBeforeMeters;
 		const afterValue = usesDuration ? change.durationAfterSeconds : change.distanceAfterMeters;
-		return Math.max(largest, Math.abs(afterValue - beforeValue) / Math.max(beforeValue, 1));
+		const weekBase = beforeValue > 0 ? beforeValue : Math.max(afterValue, 1);
+		return Math.max(largest, Math.abs(afterValue - beforeValue) / weekBase);
 	}, 0);
 	const workoutChangeRisk = workoutChanges.reduce<RiskRating>(
 		(highest, change) => highestRisk(highest, change.risk),
 		'conservative'
 	);
-	const loadRisk = riskFromShare(
-		Math.max(largestWeekChangeShare, Math.max(0, projectedRampPercent / 100))
+	const largestWorkoutChangeShare = workoutChanges.reduce(
+		(largest, change) => Math.max(largest, Math.abs(change.changeShareOfWeekPercent ?? 0) / 100),
+		0
 	);
+	const assessedWeeklyLoadShare = Math.max(largestWeekChangeShare, largestWorkoutChangeShare);
+	const loadRisk = riskFromShare(assessedWeeklyLoadShare);
 	const risk = highestRisk(loadRisk, workoutChangeRisk);
+	const guardrails = prescriptionBasisGuardrails(workoutChanges);
 
 	return {
+		operation: input.operation ?? 'edit',
 		recommended: input.recommended,
 		current: currentProposal,
 		proposed: input.proposed,
@@ -163,9 +188,13 @@ export function previewWorkoutEdit(input: {
 		weekChanges,
 		spacingConflicts,
 		affectedFutureWorkoutIds: rebalanced.map((change) => change.workoutId),
+		weeklyLoadChangePercent: roundPercent(assessedWeeklyLoadShare * 100),
 		projectedRampPercent,
+		projectedRampRisk: rampRisk(projectedRampPercent, input.hasInjuryRisk ?? false),
+		guardrails,
 		risk,
-		requiresConfirmation: risk === 'aggressive' || risk === 'unsafe' || spacingConflicts.length > 0
+		requiresConfirmation:
+			risk !== 'conservative' || spacingConflicts.length > 0 || guardrails.length > 0
 	};
 }
 
@@ -179,8 +208,8 @@ function workoutChangePreview(
 	const afterProposal = proposalFromWorkout(after);
 	const beforeMetric = loadMetric(beforeProposal);
 	const afterMetric = loadMetric(afterProposal);
-	if (beforeMetric.kind === 'rest' || afterMetric.kind === 'rest') {
-		if (beforeMetric.kind === 'rest' && afterMetric.kind === 'rest') {
+	if (beforeMetric.kind === 'none' || afterMetric.kind === 'none') {
+		if (beforeMetric.kind === 'none' && afterMetric.kind === 'none') {
 			return {
 				workoutId: before.id,
 				isSelected,
@@ -191,25 +220,39 @@ function workoutChangePreview(
 				risk: 'conservative'
 			};
 		}
+		const activeMetric = beforeMetric.kind === 'none' ? afterMetric : beforeMetric;
+		if (activeMetric.kind === 'none') {
+			throw new Error('An added or removed workout must have a load metric.');
+		}
+		const weekBefore = weekLoad(workoutsBefore, before.weekId);
+		const weekValue =
+			activeMetric.kind === 'timed' ? weekBefore.durationSeconds : weekBefore.distanceMeters;
+		const weekBase = weekValue > 0 ? weekValue : activeMetric.value;
+		const changeShareOfWeekPercent = finitePercent(activeMetric.value, weekBase);
 		return {
 			workoutId: before.id,
 			isSelected,
 			before: beforeProposal,
 			after: afterProposal,
 			relativeChangePercent: null,
-			changeShareOfWeekPercent: null,
-			risk: 'unsafe'
+			changeShareOfWeekPercent,
+			risk: riskFromShare(changeShareOfWeekPercent / 100)
 		};
 	}
 	if (beforeMetric.kind !== afterMetric.kind) {
+		const weekBefore = weekLoad(workoutsBefore, before.weekId);
+		const weekValue =
+			afterMetric.kind === 'timed' ? weekBefore.durationSeconds : weekBefore.distanceMeters;
+		const weekBase = weekValue > 0 ? weekValue : afterMetric.value;
+		const changeShareOfWeekPercent = finitePercent(afterMetric.value, weekBase);
 		return {
 			workoutId: before.id,
 			isSelected,
 			before: beforeProposal,
 			after: afterProposal,
 			relativeChangePercent: null,
-			changeShareOfWeekPercent: null,
-			risk: 'unsafe'
+			changeShareOfWeekPercent,
+			risk: riskFromShare(changeShareOfWeekPercent / 100)
 		};
 	}
 
@@ -231,15 +274,15 @@ function workoutChangePreview(
 		after: afterProposal,
 		relativeChangePercent,
 		changeShareOfWeekPercent,
-		risk: riskFromShare(Math.max(relativeChangePercent, changeShareOfWeekPercent) / 100)
+		risk: riskFromShare(changeShareOfWeekPercent / 100)
 	};
 }
 
 function loadMetric(
 	proposal: WorkoutEditProposal
-): { kind: 'distance' | 'timed'; value: number } | { kind: 'rest' } {
+): { kind: 'distance' | 'timed'; value: number } | { kind: 'none' } {
 	if (proposal.isRemoved || proposal.prescriptionKind === 'rest' || proposal.type === 'rest') {
-		return { kind: 'rest' };
+		return { kind: 'none' };
 	}
 	return proposal.prescriptionKind === 'timed'
 		? { kind: 'timed', value: proposal.targetDurationSeconds ?? 0 }
@@ -463,7 +506,37 @@ function daysBetween(left: string, right: string) {
 
 function finitePercent(delta: number, base: number) {
 	const value = (delta / Math.max(base, 1)) * 100;
-	return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+	return Number.isFinite(value) ? roundPercent(value) : 0;
+}
+
+function roundPercent(value: number) {
+	return Math.round(value * 10) / 10;
+}
+
+export function rampRisk(percent: number, hasInjuryRisk = false): RiskRating {
+	const offset = hasInjuryRisk ? 2 : 0;
+	if (percent > 18 - offset) return 'unsafe';
+	if (percent > 12 - offset) return 'aggressive';
+	if (percent > 8 - offset) return 'moderate';
+	return 'conservative';
+}
+
+function prescriptionBasisGuardrails(changes: WorkoutEditWorkoutChange[]): WorkoutEditGuardrail[] {
+	const changesBasis = changes.some((change) => {
+		const before = loadMetric(change.before);
+		const after = loadMetric(change.after);
+		return before.kind !== 'none' && after.kind !== 'none' && before.kind !== after.kind;
+	});
+	return changesBasis
+		? [
+				{
+					kind: 'prescription_basis_change',
+					label: 'Prescription basis changed',
+					description:
+						'Distance and duration are not directly comparable. Review both prescriptions before applying this change.'
+				}
+			]
+		: [];
 }
 
 function riskFromShare(share: number): RiskRating {

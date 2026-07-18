@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { defineConfig } from '@playwright/test';
 import { testDate } from './tests/support/test-clock';
 

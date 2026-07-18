@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, lte, notInArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { db } from '$lib/server/db';
 import {
 	activity,
@@ -20,6 +21,7 @@ import {
 	phaseTransitionOptions
 } from '$lib/training/phase-transition';
 import type {
+	DistanceSummary,
 	GeneratedPlan,
 	PhaseBaseline,
 	PhaseTransitionOption,
@@ -29,6 +31,40 @@ import type {
 } from '$lib/training/types';
 
 export type PlanLifecycleReason = 'completed' | 'changed_goal' | 'abandoned';
+
+export type PlanCreationInputField =
+	| 'timeZone'
+	| 'targetDate'
+	| 'availability'
+	| 'baseline'
+	| 'health'
+	| 'calibrationDuration';
+
+export type PlanCreationInputCode =
+	| 'invalid_time_zone'
+	| 'invalid_target_date'
+	| 'unsupported_plan'
+	| 'invalid_availability'
+	| 'invalid_baseline'
+	| 'health_blocked'
+	| 'invalid_calibration_duration';
+
+export class PlanCreationInputError extends Error {
+	readonly code: PlanCreationInputCode;
+	readonly field: PlanCreationInputField;
+
+	constructor(
+		code: PlanCreationInputCode,
+		field: PlanCreationInputField,
+		message: string,
+		options?: ErrorOptions
+	) {
+		super(message, options);
+		this.name = 'PlanCreationInputError';
+		this.code = code;
+		this.field = field;
+	}
+}
 
 export type PlanLifecycleResult = {
 	planId: string;
@@ -46,26 +82,47 @@ export type PhaseCompletionReview = {
 	baseline: PhaseBaseline;
 	recommended: PhaseTransitionOption;
 	options: PhaseTransitionOption[];
+	preferredLongRunDay: number;
 	racePlan: {
 		risk: RiskRating;
 		weeks: number;
 		startDate: string;
 		targetDate: string;
+		summary: DistanceSummary;
 		warnings: string[];
 	} | null;
 };
 
 export async function createGoalAndPlan(userId: string, intake: PlanIntake, timeZone: string) {
-	if (!isValidTimeZone(timeZone)) throw new Error('Select a valid training time zone.');
+	if (!isValidTimeZone(timeZone)) {
+		throw new PlanCreationInputError(
+			'invalid_time_zone',
+			'timeZone',
+			'Select a valid training time zone.'
+		);
+	}
 	const phaseBlocked = intake.injuryFlags.currentPain || intake.injuryFlags.medicalRestriction;
-	const generated = phaseBlocked ? null : generatePlan(intake);
+	let generated: GeneratedPlan | null = null;
+	if (!phaseBlocked) {
+		try {
+			generated = generatePlan(intake);
+		} catch (error) {
+			throw knownPlanCreationInputError(error);
+		}
+	}
 	if (generated?.risk === 'unsafe') {
-		throw new Error(
+		throw new PlanCreationInputError(
+			'unsupported_plan',
+			'targetDate',
 			"This goal is outside runway's plan-generation limits. Choose a later date or a shorter distance."
 		);
 	}
 	if (generated && generated.weeks.length > 52) {
-		throw new Error('Training plans cannot exceed 52 weeks.');
+		throw new PlanCreationInputError(
+			'unsupported_plan',
+			'targetDate',
+			'Training plans cannot exceed 52 weeks.'
+		);
 	}
 
 	return db.transaction(async (tx) => {
@@ -261,8 +318,34 @@ export async function confirmPhaseBaseline(userId: string) {
 
 export async function continueBeginnerPhase(userId: string) {
 	return db.transaction(async (tx) => {
-		const context = await phaseCompletionContext(tx, userId);
-		if (!context) throw new Error('There is no completed beginner phase to continue.');
+		const timeZone = await requireAthleteTimeZoneInTransaction(tx, userId);
+		const [record] = await tx
+			.select({ plan: trainingPlan, goal })
+			.from(trainingPlan)
+			.innerJoin(goal, and(eq(trainingPlan.goalId, goal.id), eq(goal.userId, userId)))
+			.where(and(eq(trainingPlan.userId, userId), eq(trainingPlan.status, 'active')))
+			.limit(1)
+			.for('update', { of: trainingPlan });
+		if (!record || record.plan.phase === 'distance') {
+			throw new Error('There is no completed beginner phase to continue.');
+		}
+		const today = todayIsoInTimeZone(timeZone);
+		if (record.plan.targetDate > today) {
+			return {
+				planId: record.plan.id,
+				targetDate: record.plan.targetDate,
+				continued: false as const
+			};
+		}
+		if (record.plan.weeks >= 52) {
+			throw new Error('The beginner phase has reached the 52-week plan limit.');
+		}
+		const context = {
+			plan: record.plan as typeof trainingPlan.$inferSelect & {
+				phase: 'foundation' | 'calibration';
+			},
+			goal: record.goal
+		};
 		const [lastWeek] = await tx
 			.select()
 			.from(trainingWeek)
@@ -320,10 +403,20 @@ export async function continueBeginnerPhase(userId: string) {
 			);
 		}
 		const targetDate = addDays(context.plan.targetDate, 7);
-		await tx
+		const [updatedPlan] = await tx
 			.update(trainingPlan)
 			.set({ targetDate, weeks: context.plan.weeks + 1, updatedAt: new Date() })
-			.where(and(eq(trainingPlan.userId, userId), eq(trainingPlan.id, context.plan.id)));
+			.where(
+				and(
+					eq(trainingPlan.userId, userId),
+					eq(trainingPlan.id, context.plan.id),
+					eq(trainingPlan.status, 'active'),
+					eq(trainingPlan.weeks, context.plan.weeks),
+					eq(trainingPlan.targetDate, context.plan.targetDate)
+				)
+			)
+			.returning({ id: trainingPlan.id });
+		if (!updatedPlan) throw new Error('The beginner phase changed before it could be continued.');
 		if (context.goal.kind === 'foundation') {
 			await tx
 				.update(goal)
@@ -335,7 +428,7 @@ export async function continueBeginnerPhase(userId: string) {
 			eventType: 'plan.phase_continued',
 			detail: { planId: context.plan.id, phase: context.plan.phase, targetDate }
 		});
-		return { planId: context.plan.id, targetDate };
+		return { planId: context.plan.id, targetDate, continued: true as const };
 	});
 }
 
@@ -380,51 +473,55 @@ async function insertGeneratedPlan(
 		.returning();
 	if (!createdPlan) throw new Error('Failed to create training plan.');
 
-	for (const generatedWeek of generated.weeks) {
-		const [createdWeek] = await tx
-			.insert(trainingWeek)
-			.values({
-				userId,
-				planId: createdPlan.id,
-				weekNumber: generatedWeek.weekNumber,
-				startDate: generatedWeek.startDate,
-				targetDistanceMeters: generatedWeek.trainingTargetDistanceMeters,
-				targetDurationSeconds: generatedWeek.targetDurationSeconds,
-				longRunMeters: generatedWeek.longRunMeters,
-				risk: generatedWeek.risk,
-				isDownWeek: generatedWeek.isDownWeek,
-				isTaper: generatedWeek.isTaper
-			})
-			.returning();
-		if (!createdWeek) throw new Error('Failed to create training week.');
+	const generatedWeeks = generated.weeks.map((generatedWeek) => ({
+		id: randomUUID(),
+		generatedWeek
+	}));
+	await tx.insert(trainingWeek).values(
+		generatedWeeks.map(({ id, generatedWeek }) => ({
+			id,
+			userId,
+			planId: createdPlan.id,
+			weekNumber: generatedWeek.weekNumber,
+			startDate: generatedWeek.startDate,
+			targetDistanceMeters: generatedWeek.trainingTargetDistanceMeters,
+			targetDurationSeconds: generatedWeek.targetDurationSeconds,
+			longRunMeters: generatedWeek.longRunMeters,
+			risk: generatedWeek.risk,
+			isDownWeek: generatedWeek.isDownWeek,
+			isTaper: generatedWeek.isTaper
+		}))
+	);
 
-		await tx.insert(workout).values(
-			generatedWeek.workouts.map((generatedWorkout) => ({
-				userId,
-				planId: createdPlan.id,
-				weekId: createdWeek.id,
-				scheduledDate: generatedWorkout.scheduledDate,
-				type: generatedWorkout.type,
-				prescriptionKind: generatedWorkout.prescription.kind,
-				targetDistanceMeters: generatedWorkout.targetDistanceMeters,
-				...(generatedWorkout.targetDurationSeconds === undefined
-					? {}
-					: { targetDurationSeconds: generatedWorkout.targetDurationSeconds }),
-				...(generatedWorkout.prescription.kind === 'timed'
-					? {
-							intervalStructure: {
-								warmupSeconds: generatedWorkout.prescription.warmupSeconds,
-								cooldownSeconds: generatedWorkout.prescription.cooldownSeconds,
-								blocks: generatedWorkout.prescription.blocks
-							}
+	const generatedWorkouts = generatedWeeks.flatMap(({ id: weekId, generatedWeek }) =>
+		generatedWeek.workouts.map((generatedWorkout) => ({
+			userId,
+			planId: createdPlan.id,
+			weekId,
+			scheduledDate: generatedWorkout.scheduledDate,
+			type: generatedWorkout.type,
+			prescriptionKind: generatedWorkout.prescription.kind,
+			targetDistanceMeters: generatedWorkout.targetDistanceMeters,
+			...(generatedWorkout.targetDurationSeconds === undefined
+				? {}
+				: { targetDurationSeconds: generatedWorkout.targetDurationSeconds }),
+			...(generatedWorkout.prescription.kind === 'timed'
+				? {
+						intervalStructure: {
+							warmupSeconds: generatedWorkout.prescription.warmupSeconds,
+							cooldownSeconds: generatedWorkout.prescription.cooldownSeconds,
+							blocks: generatedWorkout.prescription.blocks
 						}
-					: {}),
-				intensity: generatedWorkout.intensity,
-				purpose: generatedWorkout.purpose,
-				reason: generatedWorkout.reason,
-				sourceRefs: generatedWorkout.sourceRefs
-			}))
-		);
+					}
+				: {}),
+			intensity: generatedWorkout.intensity,
+			purpose: generatedWorkout.purpose,
+			reason: generatedWorkout.reason,
+			sourceRefs: generatedWorkout.sourceRefs
+		}))
+	);
+	if (generatedWorkouts.length > 0) {
+		await tx.insert(workout).values(generatedWorkouts);
 	}
 	return createdPlan;
 }
@@ -487,6 +584,7 @@ async function phaseCompletionContext(
 	const feedbackRows = await tx
 		.select({
 			workoutId: workoutFeedback.workoutId,
+			status: workout.status,
 			distanceMeters: workoutFeedback.completedDistanceMeters,
 			durationSeconds: workoutFeedback.completedDurationSeconds
 		})
@@ -513,7 +611,7 @@ async function phaseCompletionContext(
 			...feedbackRows.map((item) => ({
 				distanceMeters: item.distanceMeters,
 				durationSeconds: item.durationSeconds,
-				completed: true
+				completed: item.status !== 'skipped'
 			}))
 		],
 		baselineWindowWeeks
@@ -573,6 +671,7 @@ function phaseReviewFromContext(context: PhaseCompletionContext): PhaseCompletio
 		baseline: context.baseline,
 		recommended: transition.recommended,
 		options: transition.options,
+		preferredLongRunDay: context.preferredLongRunDay,
 		racePlan:
 			context.racePlan?.phase === 'distance'
 				? {
@@ -580,6 +679,7 @@ function phaseReviewFromContext(context: PhaseCompletionContext): PhaseCompletio
 						weeks: context.racePlan.weeks.length,
 						startDate: context.racePlan.startDate,
 						targetDate: context.racePlan.targetDate,
+						summary: context.racePlan.summary,
 						warnings: context.racePlan.summary.warnings
 					}
 				: null
@@ -625,7 +725,7 @@ async function endActivePlan(
 }
 
 function normalizedBaselineRuns(baseline: PhaseBaseline): number {
-	return Math.max(2, Math.min(5, Math.round(baseline.runsPerWeek)));
+	return Math.max(2, Math.min(5, Math.floor(baseline.runsPerWeek)));
 }
 
 function preferredBaselineLongRunDay(availability: number[], runCount: number): number {
@@ -636,6 +736,62 @@ function preferredBaselineLongRunDay(availability: number[], runCount: number): 
 		}
 	}
 	return availability[0] ?? 6;
+}
+
+function knownPlanCreationInputError(error: unknown): PlanCreationInputError {
+	if (error instanceof PlanCreationInputError) return error;
+	if (!(error instanceof Error)) throw error;
+	const options = { cause: error };
+	if (
+		error.message === 'The target date must be on or after the plan start date.' ||
+		error.message === 'Training plans cannot exceed 52 weeks.' ||
+		error.message.startsWith('Invalid date:')
+	) {
+		return new PlanCreationInputError('invalid_target_date', 'targetDate', error.message, options);
+	}
+	if (
+		error.message === 'Available run days must be unique weekdays from 0 through 6.' ||
+		error.message.startsWith('Choose at least ') ||
+		error.message === 'Choose available days that leave a rest day between beginner sessions.' ||
+		error.message === 'The preferred long-run day must be one of the available run days.' ||
+		error.message ===
+			'Availability must include enough unique days for the planned run frequency.' ||
+		error.message === 'Availability must leave a recovery day after the long run.'
+	) {
+		return new PlanCreationInputError(
+			'invalid_availability',
+			'availability',
+			error.message,
+			options
+		);
+	}
+	if (
+		error.message === 'The planner requires a current weekly baseline of at least 3 km.' ||
+		error.message === 'The planner requires a current baseline of 2 to 5 runs per week.' ||
+		error.message === 'The planner requires a positive recent long-run distance.'
+	) {
+		return new PlanCreationInputError('invalid_baseline', 'baseline', error.message, options);
+	}
+	if (
+		error.message === 'A workout phase cannot start while pain is present now.' ||
+		error.message === 'A workout phase cannot start while a clinician has limited running.' ||
+		error.message === 'A running ramp cannot be created while pain is present now.' ||
+		error.message === 'A running ramp cannot be created while a clinician has limited running.'
+	) {
+		return new PlanCreationInputError('health_blocked', 'health', error.message, options);
+	}
+	if (
+		error.message ===
+		'Calibration duration must be a whole number of seconds from 10 to 30 minutes.'
+	) {
+		return new PlanCreationInputError(
+			'invalid_calibration_duration',
+			'calibrationDuration',
+			error.message,
+			options
+		);
+	}
+	throw error;
 }
 
 function labelRace(distance: RaceDistance): string {

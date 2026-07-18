@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getActivityTraceDetail } from '$lib/server/runway/repository';
+import { getActivityTraceDetail } from '$lib/server/runway/repositories/activity-queries';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, params }) => {

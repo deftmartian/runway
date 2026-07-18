@@ -1,9 +1,14 @@
-import type { ConsequenceResult, PlanDecision } from './types';
+import type { ConsequenceMetricDelta, ConsequenceResult, PlanDecision } from './types';
 
 export type ConsequencePresentation = {
 	outcome: string;
 	planChange: string;
 	safety?: string;
+};
+
+export type ConsequenceFacts = {
+	weekImpact: string;
+	nextRunImpact: string;
 };
 
 export function formatDistanceChange(meters: number): string {
@@ -12,20 +17,64 @@ export function formatDistanceChange(meters: number): string {
 }
 
 export function formatDurationChange(seconds: number): string {
-	const minutes = Math.round(Math.abs(seconds) / 60);
-	return `${minutes} min`;
+	const totalSeconds = Math.round(Math.abs(seconds));
+	const minutes = Math.floor(totalSeconds / 60);
+	const remainder = totalSeconds % 60;
+	if (minutes === 0) return `${remainder} sec`;
+	if (remainder === 0) return `${minutes} min`;
+	return `${minutes} min ${remainder} sec`;
+}
+
+export function formatConsequenceDelta(delta: ConsequenceMetricDelta, signed = false): string {
+	const amount =
+		delta.metric === 'duration'
+			? formatDurationChange(delta.value)
+			: formatDistanceChange(delta.value);
+	if (!signed || delta.value === 0) return amount;
+	return `${delta.value > 0 ? '+' : '−'}${amount}`;
+}
+
+export function presentConsequenceFacts(result: ConsequenceResult): ConsequenceFacts {
+	if (result.comparisonStatus === 'not_comparable') {
+		return {
+			weekImpact: 'Timed load comparison unavailable without a recorded duration',
+			nextRunImpact:
+				result.nextRunAdjustment === null
+					? 'No calculated next-run reduction'
+					: `Next run ${formatConsequenceDelta(result.nextRunAdjustment, true)}`
+		};
+	}
+	const weekly = result.weeklyLoadDelta;
+	const nextRun = result.nextRunAdjustment;
+	return {
+		weekImpact:
+			weekly === null
+				? 'No planned weekly-load comparison'
+				: weekly.value === 0
+					? `Week matched planned ${weekly.metric}`
+					: `Week ${formatConsequenceDelta(weekly, true)}`,
+		nextRunImpact:
+			nextRun === null || nextRun.value === 0
+				? 'No next-run change'
+				: `Next run ${formatConsequenceDelta(nextRun, true)}`
+	};
 }
 
 export function presentConsequence(result: ConsequenceResult): ConsequencePresentation {
 	const exactDifference =
 		result.metric === 'duration'
 			? formatDurationChange(result.actualDifference)
-			: formatDistanceChange(result.actualDifference);
+			: result.metric === 'distance'
+				? formatDistanceChange(result.actualDifference)
+				: 'the recorded amount';
 	const direction = result.actualDifference < 0 ? 'below' : 'above';
 	const outcome = (() => {
 		if (result.kind === 'pain_reported') return 'Pain was reported for this run.';
 		if (result.kind === 'historical_link') return 'Activity linked as historical training.';
 		if (result.kind === 'extra_activity' || result.deviation === 'unplanned') {
+			if (result.comparisonStatus === 'not_comparable') {
+				return `Unplanned run added ${formatDistanceChange(result.weeklyDistanceDeltaMeters)} to actual training; duration is needed to compare it with this timed week.`;
+			}
 			return `Unplanned run added ${exactDifference} to actual training load.`;
 		}
 		if (result.deviation === 'skipped') return 'Workout skipped.';
@@ -41,7 +90,7 @@ export function presentConsequence(result: ConsequenceResult): ConsequencePresen
 
 	const planChange = result.appliedDecision
 		? appliedDecisionLabel(result)
-		: `No future plan change applied. Recommended: ${decisionLabel(result.recommendedDecision)}.`;
+		: `No future plan change applied. Recommended: ${recommendedDecisionLabel(result)}.`;
 
 	return {
 		outcome,
@@ -87,8 +136,8 @@ function appliedDecisionLabel(result: ConsequenceResult): string {
 		case 'keep_plan':
 			return 'Remaining plan kept unchanged.';
 		case 'reduce_next':
-			return result.nextRunAdjustmentMeters < 0
-				? `Next run reduced by ${formatDistanceChange(result.nextRunAdjustmentMeters)}.`
+			return result.nextRunAdjustment && result.nextRunAdjustment.value < 0
+				? `Next run reduced by ${formatConsequenceDelta(result.nextRunAdjustment)}.`
 				: 'Next workout reduced.';
 		case 'next_rest':
 			return 'Next workout changed to rest.';
@@ -99,4 +148,15 @@ function appliedDecisionLabel(result: ConsequenceResult): string {
 		case null:
 			return 'No future plan change applied.';
 	}
+}
+
+function recommendedDecisionLabel(result: ConsequenceResult): string {
+	if (
+		result.recommendedDecision === 'reduce_next' &&
+		result.nextRunAdjustment &&
+		result.nextRunAdjustment.value < 0
+	) {
+		return `reduce the next run by ${formatConsequenceDelta(result.nextRunAdjustment)}`;
+	}
+	return decisionLabel(result.recommendedDecision);
 }

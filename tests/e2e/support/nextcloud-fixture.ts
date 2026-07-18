@@ -5,6 +5,7 @@ import { gpx } from './gpx';
 export async function startNextcloudShareFixture(options?: {
 	requirePassword?: boolean;
 	malformedNewest?: boolean;
+	holdNewestDownload?: boolean;
 }): Promise<{
 	url: string;
 	password: string;
@@ -13,6 +14,8 @@ export async function startNextcloudShareFixture(options?: {
 	renamedDownloads: () => number;
 	exposeRenamedDuplicate: () => void;
 	replaceNewer: () => void;
+	newestDownloadStarted: () => Promise<void>;
+	releaseNewestDownload: () => void;
 	close: () => Promise<void>;
 }> {
 	const requirePassword = options?.requirePassword ?? true;
@@ -25,6 +28,14 @@ export async function startNextcloudShareFixture(options?: {
 	let renamedDuplicateVisible = false;
 	let newerRevision = 1;
 	let malformedNewest = options?.malformedNewest ?? false;
+	let signalNewestDownload!: () => void;
+	const newestDownloadStarted = new Promise<void>((resolve) => {
+		signalNewestDownload = resolve;
+	});
+	let releaseNewestDownload!: () => void;
+	const newestDownloadReleased = new Promise<void>((resolve) => {
+		releaseNewestDownload = resolve;
+	});
 	const server: Server = createServer((request, response) => {
 		if (requirePassword && request.headers.authorization !== authorization) {
 			response.writeHead(401);
@@ -45,12 +56,20 @@ export async function startNextcloudShareFixture(options?: {
 
 		if (request.method === 'GET' && request.url?.endsWith('/newer.gpx')) {
 			newerDownloads += 1;
-			sendXml(
-				response,
-				malformedNewest
-					? '<gpx><metadata /></gpx>'
-					: gpx(newerRevision === 1 ? '2026-05-14T12:00:00Z' : '2026-05-12T18:00:00Z')
-			);
+			signalNewestDownload();
+			const finish = () => {
+				sendXml(
+					response,
+					malformedNewest
+						? '<gpx><metadata /></gpx>'
+						: gpx(newerRevision === 1 ? '2026-05-14T12:00:00Z' : '2026-05-12T18:00:00Z')
+				);
+			};
+			if (options?.holdNewestDownload) {
+				void newestDownloadReleased.then(finish);
+			} else {
+				finish();
+			}
 			return;
 		}
 
@@ -79,6 +98,8 @@ export async function startNextcloudShareFixture(options?: {
 			newerRevision = 2;
 			malformedNewest = false;
 		},
+		newestDownloadStarted: () => newestDownloadStarted,
+		releaseNewestDownload,
 		close: () =>
 			new Promise((resolve) => {
 				server.close(() => {

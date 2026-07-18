@@ -66,9 +66,12 @@ internal class HandledMarkerDatabase(context: Context) : SQLiteOpenHelper(
         return handled
     }
 
-    fun record(deviceKey: String, marker: String) {
+    fun record(deviceKey: String, marker: String) = record(deviceKey, listOf(marker))
+
+    fun record(deviceKey: String, markers: Collection<String>) {
+        if (markers.isEmpty()) return
         writableDatabase.inTransaction { database ->
-            insert(database, deviceKey, marker)
+            markers.forEach { marker -> insert(database, deviceKey, marker) }
             prune(database, deviceKey)
         }
     }
@@ -151,7 +154,8 @@ internal class HandledMarkerDatabase(context: Context) : SQLiteOpenHelper(
         const val COLUMN_DEVICE_KEY = "device_key"
         const val COLUMN_MARKER = "marker"
         const val COLUMN_HANDLED_ORDER = "handled_order"
-        const val MAX_MARKERS_PER_DEVICE = 10_000
+        // A fully described import retains one content marker and one metadata-revision accelerator.
+        const val MAX_MARKERS_PER_DEVICE = 20_000
         const val MAX_QUERY_MARKERS = 800
     }
 }

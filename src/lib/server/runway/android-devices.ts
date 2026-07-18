@@ -3,12 +3,14 @@ import { and, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import {
+	athleteProfile,
 	androidDevice,
 	androidImportRequest,
 	androidPairingRequest,
 	auditEvent,
 	user as authUser
 } from '$lib/server/db/schema';
+import type { RunwayTransaction } from './repositories/transaction';
 
 const pairingLifetimeMs = 10 * 60 * 1_000;
 const deviceLifetimeMs = 365 * 24 * 60 * 60 * 1_000;
@@ -31,7 +33,7 @@ export type AuthenticatedAndroidDevice = AndroidDeviceSummary & { userId: string
 export type AndroidImportResult = 'imported' | 'duplicate' | 'quarantined';
 
 type ImportClaim =
-	| { state: 'claimed'; receiptId: string }
+	| { state: 'claimed'; receiptId: string; importGeneration: number; claimUpdatedAt: Date }
 	| { state: 'processing' }
 	| { state: 'conflict' }
 	| { state: 'revoked' }
@@ -216,6 +218,13 @@ export async function listAndroidDevices(userId: string): Promise<AndroidDeviceS
 
 export async function revokeAndroidDevice(userId: string, deviceId: string): Promise<boolean> {
 	return db.transaction(async (tx) => {
+		const [owner] = await tx
+			.select({ id: authUser.id })
+			.from(authUser)
+			.where(eq(authUser.id, userId))
+			.limit(1)
+			.for('update');
+		if (!owner) return false;
 		const revoked = await tx
 			.update(androidDevice)
 			.set({ revokedAt: new Date(), updatedAt: new Date() })
@@ -253,6 +262,13 @@ export async function claimAndroidImportRequest(
 			.limit(1)
 			.for('update');
 		if (!owner) return { state: 'revoked' };
+		const [profile] = await tx
+			.select({ generation: athleteProfile.activityImportGeneration })
+			.from(athleteProfile)
+			.where(eq(athleteProfile.userId, device.userId))
+			.limit(1)
+			.for('update');
+		const importGeneration = profile?.generation ?? 0;
 		const [activeDevice] = await tx
 			.select({ id: androidDevice.id })
 			.from(androidDevice)
@@ -279,7 +295,9 @@ export async function claimAndroidImportRequest(
 			})
 			.onConflictDoNothing()
 			.returning({ id: androidImportRequest.id });
-		if (created) return { state: 'claimed', receiptId: created.id };
+		if (created) {
+			return { state: 'claimed', receiptId: created.id, importGeneration, claimUpdatedAt: now };
+		}
 
 		const [existing] = await tx
 			.select({
@@ -315,51 +333,130 @@ export async function claimAndroidImportRequest(
 				)
 			)
 			.returning({ id: androidImportRequest.id });
-		return reclaimed ? { state: 'claimed', receiptId: reclaimed.id } : { state: 'processing' };
+		return reclaimed
+			? {
+					state: 'claimed',
+					receiptId: reclaimed.id,
+					importGeneration,
+					claimUpdatedAt: now
+				}
+			: { state: 'processing' };
 	});
 }
 
-export async function completeAndroidImportRequest(
+export type AndroidImportCompletion<T> = {
+	result: AndroidImportResult;
+	reason: string | null;
+	value: T;
+};
+
+export type AndroidImportFinalization<T> =
+	| ({ state: 'completed' } & AndroidImportCompletion<T>)
+	| { state: 'revoked' }
+	| { state: 'lease-lost' };
+
+export async function finalizeAndroidImportRequest<T>(
 	device: AuthenticatedAndroidDevice,
 	receiptId: string,
-	result: AndroidImportResult,
-	reason: string | null = null
-): Promise<boolean> {
+	claimUpdatedAt: Date,
+	expectedImportGeneration: number,
+	finalize: (tx: RunwayTransaction) => Promise<AndroidImportCompletion<T>>
+): Promise<AndroidImportFinalization<T>> {
 	const now = new Date();
 	return db.transaction(async (tx) => {
-		const completed = await tx
-			.update(androidImportRequest)
-			.set({ state: 'completed', result, reason, completedAt: now, updatedAt: now })
+		const [owner] = await tx
+			.select({ id: authUser.id })
+			.from(authUser)
+			.where(eq(authUser.id, device.userId))
+			.limit(1)
+			.for('update');
+		if (!owner) return { state: 'revoked' };
+		const [activeDevice] = await tx
+			.select({ id: androidDevice.id })
+			.from(androidDevice)
+			.where(
+				and(
+					eq(androidDevice.id, device.id),
+					eq(androidDevice.userId, device.userId),
+					isNull(androidDevice.revokedAt),
+					gt(androidDevice.expiresAt, now)
+				)
+			)
+			.limit(1)
+			.for('update');
+		if (!activeDevice) return { state: 'revoked' };
+		const [receipt] = await tx
+			.select({ id: androidImportRequest.id })
+			.from(androidImportRequest)
 			.where(
 				and(
 					eq(androidImportRequest.id, receiptId),
 					eq(androidImportRequest.deviceId, device.id),
 					eq(androidImportRequest.userId, device.userId),
-					eq(androidImportRequest.state, 'processing')
+					eq(androidImportRequest.state, 'processing'),
+					eq(androidImportRequest.updatedAt, claimUpdatedAt)
+				)
+			)
+			.limit(1)
+			.for('update');
+		if (!receipt) return { state: 'lease-lost' };
+		const [profile] = await tx
+			.select({ generation: athleteProfile.activityImportGeneration })
+			.from(athleteProfile)
+			.where(eq(athleteProfile.userId, device.userId))
+			.limit(1)
+			.for('update');
+		if ((profile?.generation ?? 0) !== expectedImportGeneration) {
+			return { state: 'revoked' };
+		}
+
+		const completion = await finalize(tx);
+		const completed = await tx
+			.update(androidImportRequest)
+			.set({
+				state: 'completed',
+				result: completion.result,
+				reason: completion.reason,
+				completedAt: now,
+				updatedAt: now
+			})
+			.where(
+				and(
+					eq(androidImportRequest.id, receiptId),
+					eq(androidImportRequest.deviceId, device.id),
+					eq(androidImportRequest.userId, device.userId),
+					eq(androidImportRequest.state, 'processing'),
+					eq(androidImportRequest.updatedAt, claimUpdatedAt)
 				)
 			)
 			.returning({ id: androidImportRequest.id });
-		if (completed.length === 0) return false;
+		if (completed.length === 0) return { state: 'lease-lost' };
 		await tx
 			.update(androidDevice)
 			.set({
 				lastSeenAt: now,
-				lastImportedAt: result === 'imported' ? now : device.lastImportedAt,
+				lastImportedAt: completion.result === 'imported' ? now : device.lastImportedAt,
 				updatedAt: now
 			})
 			.where(eq(androidDevice.id, device.id));
 		await tx.insert(auditEvent).values({
 			userId: device.userId,
 			eventType: 'android.import.completed',
-			detail: { deviceId: device.id, receiptId, result, reason }
+			detail: {
+				deviceId: device.id,
+				receiptId,
+				result: completion.result,
+				reason: completion.reason
+			}
 		});
-		return true;
+		return { state: 'completed', ...completion };
 	});
 }
 
 export async function abandonAndroidImportRequest(
 	device: AuthenticatedAndroidDevice,
-	receiptId: string
+	receiptId: string,
+	claimUpdatedAt: Date
 ): Promise<void> {
 	await db
 		.delete(androidImportRequest)
@@ -368,7 +465,8 @@ export async function abandonAndroidImportRequest(
 				eq(androidImportRequest.id, receiptId),
 				eq(androidImportRequest.deviceId, device.id),
 				eq(androidImportRequest.userId, device.userId),
-				eq(androidImportRequest.state, 'processing')
+				eq(androidImportRequest.state, 'processing'),
+				eq(androidImportRequest.updatedAt, claimUpdatedAt)
 			)
 		);
 }

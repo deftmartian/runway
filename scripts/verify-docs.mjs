@@ -40,7 +40,7 @@ const caddyfilePath = resolve(root, 'deploy/Caddyfile.example');
 if (existsSync(caddyfilePath)) {
 	const caddyfile = readFileSync(caddyfilePath, 'utf8');
 	for (const required of [
-		'trusted_proxies static {$RUNWAY_TRUSTED_PROXY_CIDRS}',
+		'trusted_proxies static {$RUNWAY_TRUSTED_PROXY_CIDRS:RUNWAY_TRUSTED_PROXY_CIDRS_REQUIRED}',
 		'trusted_proxies_strict',
 		'header_up X-Forwarded-For {client_ip}',
 		'replace token REDACTED',

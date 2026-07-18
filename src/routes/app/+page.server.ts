@@ -1,28 +1,34 @@
 import { fail, redirect } from '@sveltejs/kit';
 import {
 	addFutureWorkout,
-	applyConsequenceDecision,
 	applyFutureWorkoutEdit,
-	confirmActivityAsExtra,
-	deleteActivityRecord,
-	deleteWorkoutFeedback,
-	getImportWorkoutCandidates,
-	getTrainingCalendar,
-	linkActivityToWorkout,
 	previewFutureWorkoutAdd,
 	previewFutureWorkoutEdit,
 	previewFutureWorkoutRemoval,
-	recordManualRun,
-	recordWorkoutFeedback,
 	removeFutureWorkout,
 	resetFutureWorkout,
 	type FutureWorkoutAddInput,
 	type FutureWorkoutEditInput,
+	undoFutureWorkoutAdjustment
+} from '$lib/server/runway/repositories/future-workouts';
+import { getImportWorkoutCandidates } from '$lib/server/runway/repositories/activity-queries';
+import {
+	deleteActivityRecord,
+	linkActivityToWorkout,
 	unlinkActivityFromWorkout,
-	undoFutureWorkoutAdjustment,
 	updateActivityFeedback
-} from '$lib/server/runway/repository';
-import { getAthleteTimeZone } from '$lib/server/runway/repositories/profiles';
+} from '$lib/server/runway/repositories/activity-mutations';
+import {
+	confirmActivityAsExtra,
+	recordManualRun
+} from '$lib/server/runway/repositories/extra-activity-mutations';
+import { getTrainingCalendar } from '$lib/server/runway/repositories/calendar';
+import { getTrainingReadContext } from '$lib/server/runway/repositories/training-read-context';
+import {
+	applyConsequenceDecision,
+	deleteWorkoutFeedback,
+	recordWorkoutFeedback
+} from '$lib/server/runway/repositories/workout-feedback';
 import {
 	activityIdSchema,
 	activityLinkSchema,
@@ -43,12 +49,14 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) throw redirect(302, '/login');
-	if (!(await getAthleteTimeZone(event.locals.user.id))) throw redirect(302, '/app/onboarding');
+	const context = await getTrainingReadContext(event.locals.user.id);
+	if (!context.timeZone) throw redirect(302, '/app/onboarding');
 	const month = event.url.searchParams.get('month');
-	return {
-		...(await getTrainingCalendar(event.locals.user.id, { month })),
-		activityCandidates: await getImportWorkoutCandidates(event.locals.user.id)
-	};
+	const [calendar, activityCandidates] = await Promise.all([
+		getTrainingCalendar(event.locals.user.id, { month, context }),
+		getImportWorkoutCandidates(event.locals.user.id, context)
+	]);
+	return { ...calendar, activityCandidates };
 };
 
 export const actions: Actions = {
@@ -452,6 +460,7 @@ function feedbackErrorMessage(error: unknown): string {
 	const knownMessages = new Set([
 		'Workout not found.',
 		'Workout is scheduled for the future.',
+		'Rest days do not accept workout feedback. Record an unplanned run instead.',
 		'Feedback has already been recorded for this workout.',
 		"This goal is outside runway's plan-generation limits. Choose a later date or a shorter distance.",
 		'Training plans cannot exceed 52 weeks.'
@@ -475,10 +484,16 @@ function activityRecordError(error: unknown, fallback: string): string {
 		'Activity is already linked.',
 		'Linked activities already count against the plan.',
 		'This activity has already been counted as extra.',
+		'Activity is no longer available to count.',
 		'Workout is not available for linking.',
 		'Workout is outside the activity match window.',
+		'Activity date is outside the active plan weeks.',
 		'That workout already has an activity.',
-		'Activity is not linked.'
+		'Activity is not linked.',
+		'Activity is no longer available for linking.',
+		'Workout is no longer available for linking.',
+		'Linked workout not found.',
+		'Activity is no longer linked to this workout.'
 	]);
 	return knownMessages.has(message) ? message : fallback;
 }

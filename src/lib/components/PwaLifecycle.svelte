@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
+	import { dev } from '$app/environment';
 	import Notice from '$lib/components/Notice.svelte';
 	import { startInstallPromptCapture } from '$lib/pwa/install-prompt';
-	import { updateReloadBlockReason } from '$lib/pwa/lifecycle';
+	import {
+		enhancedFormsShareSaveScope,
+		enhancedFormSavedEvent,
+		serviceWorkerSetupMessage,
+		serviceWorkerSetupState,
+		updateReloadBlockReason
+	} from '$lib/pwa/lifecycle';
 	import { onMount } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
@@ -28,6 +35,7 @@
 	let updateBlockReason = $state<'unsaved-changes' | 'pending-action' | null>(null);
 	let activatingUpdate = $state(false);
 	let activationProblem = $state(false);
+	let serviceWorkerProblemDismissed = $state(false);
 	let registration: ServiceWorkerRegistration | null = null;
 	let waitingWorker: ServiceWorker | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -52,6 +60,7 @@
 			reconnected = true;
 			clearTimeout(reconnectTimer);
 			reconnectTimer = setTimeout(() => (reconnected = false), 4_000);
+			if ($serviceWorkerSetupState === 'failed') void registerServiceWorker();
 		};
 		const handleOffline = () => {
 			online = false;
@@ -88,6 +97,18 @@
 			dirtyForms.delete(event.target);
 			queueMicrotask(refreshActiveUpdateBlockReason);
 		};
+		const handleEnhancedFormSaved = (event: Event) => {
+			if (!(event instanceof CustomEvent)) return;
+			const saved = (event.detail as { form?: unknown } | null)?.form;
+			if (!(saved instanceof HTMLFormElement)) return;
+			for (const dirty of dirtyForms) {
+				if (enhancedFormsShareSaveScope(dirty, saved)) dirtyForms.delete(dirty);
+			}
+			for (const [pending] of pendingForms) {
+				if (enhancedFormsShareSaveScope(pending, saved)) pendingForms.delete(pending);
+			}
+			queueMicrotask(refreshActiveUpdateBlockReason);
+		};
 		const handleFormSubmit = (event: SubmitEvent) => {
 			if (!(event.target instanceof HTMLFormElement)) return;
 			pendingForms.set(event.target, {
@@ -110,6 +131,7 @@
 		document.addEventListener('click', handleFormButton, true);
 		document.addEventListener('reset', handleFormReset, true);
 		document.addEventListener('submit', handleFormSubmit, true);
+		document.addEventListener(enhancedFormSavedEvent, handleEnhancedFormSaved);
 		document.addEventListener('visibilitychange', handleVisibilityChange);
 
 		const pendingObserver = new MutationObserver(syncPendingForms);
@@ -119,11 +141,12 @@
 			subtree: true
 		});
 
-		if ('serviceWorker' in navigator) {
-			void navigator.serviceWorker
-				.register(serviceWorkerUrl(), { scope: '/' })
-				.then(bindRegistration)
-				.catch(() => undefined);
+		if (dev) {
+			serviceWorkerSetupState.set('development');
+		} else if ('serviceWorker' in navigator) {
+			void registerServiceWorker();
+		} else {
+			serviceWorkerSetupState.set('unsupported');
 		}
 
 		return () => {
@@ -138,10 +161,25 @@
 			document.removeEventListener('click', handleFormButton, true);
 			document.removeEventListener('reset', handleFormReset, true);
 			document.removeEventListener('submit', handleFormSubmit, true);
+			document.removeEventListener(enhancedFormSavedEvent, handleEnhancedFormSaved);
 			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			pendingObserver.disconnect();
 		};
 	});
+
+	async function registerServiceWorker() {
+		serviceWorkerSetupState.set('checking');
+		try {
+			bindRegistration(
+				await navigator.serviceWorker.register(serviceWorkerUrl(), {
+					scope: '/'
+				})
+			);
+			serviceWorkerSetupState.set('ready');
+		} catch {
+			serviceWorkerSetupState.set('failed');
+		}
+	}
 
 	function bindRegistration(nextRegistration: ServiceWorkerRegistration) {
 		registration = nextRegistration;
@@ -292,6 +330,19 @@
 	{/if}
 </div>
 
+{#if $serviceWorkerSetupState === 'failed' && !serviceWorkerProblemDismissed}
+	<div class="service-worker-setup-notice">
+		<Notice title="App setup incomplete" tone="warning" role="alert" label="App setup incomplete">
+			<span>{serviceWorkerSetupMessage($serviceWorkerSetupState)}</span>
+			{#snippet actions()}
+				<button type="button" onclick={() => (serviceWorkerProblemDismissed = true)}>Dismiss</button
+				>
+				<button type="button" class="primary" onclick={registerServiceWorker}>Retry setup</button>
+			{/snippet}
+		</Notice>
+	</div>
+{/if}
+
 <style>
 	.pwa-notices {
 		position: fixed;
@@ -311,12 +362,24 @@
 		pointer-events: auto;
 	}
 
+	.service-worker-setup-notice {
+		position: relative;
+		z-index: 1;
+		width: min(calc(100% - 32px), 480px);
+		margin: 16px auto max(16px, env(safe-area-inset-bottom));
+	}
+
 	@media (max-width: 560px) {
 		.pwa-notices {
 			right: max(10px, env(safe-area-inset-right));
 			left: max(10px, env(safe-area-inset-left));
 			bottom: max(10px, env(safe-area-inset-bottom));
 			width: auto;
+		}
+
+		.service-worker-setup-notice {
+			width: min(calc(100% - 20px), 480px);
+			margin-bottom: calc(78px + env(safe-area-inset-bottom));
 		}
 	}
 </style>

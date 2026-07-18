@@ -22,6 +22,7 @@ export type ImportedActivitySummary = {
 	id: string;
 	workoutId: string | null;
 	source: string;
+	reviewState: 'review' | 'accepted';
 	activityDate: Date | string;
 	distanceMeters: number;
 	durationSeconds: number | null;

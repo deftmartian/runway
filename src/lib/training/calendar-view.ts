@@ -1,8 +1,6 @@
 import type {
-	ActivityRouteTrace,
 	ConsequenceResult,
 	HeartRateActivitySummary,
-	HeartRateSeries,
 	RiskRating,
 	TimedIntervalStructure,
 	WorkoutStatus,
@@ -15,6 +13,7 @@ export type TrainingCalendarWeek = {
 	startDate: string;
 	targetDistanceMeters: number;
 	targetDurationSeconds: number;
+	hasMixedLoad?: boolean;
 	eventDistanceMeters: number;
 	totalScheduledDistanceMeters: number;
 	longRunMeters: number;
@@ -98,8 +97,8 @@ export type TrainingCalendarActivity = {
 	averageHeartRate: number | null;
 	maxHeartRate: number | null;
 	heartRateSummary: HeartRateActivitySummary | null;
-	heartRateSeries: HeartRateSeries | null;
-	routeTrace: ActivityRouteTrace | null;
+	hasHeartRateSeries: boolean;
+	hasRouteTrace: boolean;
 	averageCadence: number | null;
 	feltHard: boolean;
 	pain: boolean;
@@ -140,4 +139,8 @@ export type TrainingCalendarPayload = {
 	activities: TrainingCalendarActivity[];
 	feedback: TrainingCalendarFeedback[];
 	planScale: { baselineMeters: number; peakMeters: number } | null;
+	activityOverflow: {
+		limit: number;
+		truncated: boolean;
+	};
 };

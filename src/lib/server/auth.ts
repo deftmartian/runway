@@ -9,6 +9,8 @@ import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
 import { db } from '$lib/server/db';
 import { authLogger } from '$lib/server/runway/auth-log';
+import { validateProductionSecretConfiguration } from '$lib/server/runway/production-secrets';
+import { revokeUserVerificationRecords } from '$lib/server/runway/trusted-devices';
 import {
 	authFreshSessionSeconds,
 	canonicalAppOrigin,
@@ -52,9 +54,7 @@ const authSecret =
 	env['BETTER_AUTH_SECRET'] ??
 	(building ? 'runway-build-time-placeholder-secret-00000000' : undefined);
 
-if (isProductionRuntime && !env['BETTER_AUTH_SECRET']) {
-	throw new Error('BETTER_AUTH_SECRET is required in production.');
-}
+if (isProductionRuntime) validateProductionSecretConfiguration(env);
 if (isProductionRuntime && oidcConfigCount > 0 && oidcConfigCount < 3) {
 	throw new Error('OIDC_ISSUER, OIDC_CLIENT_ID, and OIDC_CLIENT_SECRET must be set together.');
 }
@@ -105,6 +105,12 @@ export const auth = betterAuth({
 			update: {
 				before: (account) => Promise.resolve({ data: omitStoredOidcIdToken(account) })
 			}
+		}
+	},
+	user: {
+		deleteUser: {
+			enabled: true,
+			beforeDelete: async (user) => revokeUserVerificationRecords(user.id)
 		}
 	},
 	account: oauthTokenStorageOptions,

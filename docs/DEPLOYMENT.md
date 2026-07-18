@@ -29,8 +29,9 @@ Set these before running the production app:
 - `RUNWAY_IMAGE=ghcr.io/deftmartian/runway:sha-<full-commit-sha>` or an immutable image digest
 
 Standard production installs publish the app to `127.0.0.1:4100` for a reverse proxy on the Docker
-host. `RUNWAY_BIND_ADDRESS` and `RUNWAY_PORT` can change that listener. Do not bind the app to every
-host interface unless a firewall or trusted network prevents clients from bypassing the proxy.
+host. `RUNWAY_PORT` can change that loopback listener; the production overlay deliberately ignores
+`RUNWAY_BIND_ADDRESS` so it cannot turn the app into a public listener. Use the reviewed ipvlan
+overlay and a source-address firewall rule when a reverse proxy on another host needs an upstream.
 
 The optional `deploy/compose.ipvlan.yaml` overlay follows the homelab stack convention: set
 `VLAN_TAG`, `VLAN_TRUNK_INTERFACE`, and `DNS_SERVER`. It creates `vlan<VLAN_TAG>_runway` on
@@ -43,6 +44,12 @@ It is not the production entrypoint. Production commands must include
 `APP_DATABASE_URL`, `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, both public origins,
 and `RUNWAY_IMAGE` are explicit. Add `-f deploy/compose.ipvlan.yaml` only for the optional VLAN
 deployment.
+
+The published container always runs with production security checks. There is no flag that permits a
+plain-HTTP production origin. To exercise a locally built container, give it the same required
+production environment and reach it through an HTTPS reverse proxy on its loopback listener. For a
+plain-HTTP local product session, use the source development quick start in the README and do not
+expose that session publicly.
 
 Local account signups should stay closed unless the operator is intentionally onboarding a user:
 
@@ -83,6 +90,14 @@ after Better Auth validates it instead of persisting it in plaintext. Do not cha
 without a new source-level and database-level review. Better Auth's
 [versioned secrets](https://better-auth.com/docs/reference/options#secrets) are the supported rotation
 mechanism.
+
+Production startup cannot infer how a human-chosen string was generated. It therefore accepts only
+the versioned format emitted by `corepack pnpm secret:generate`: `runway-secret-v1_` followed by the
+canonical base64url encoding of exactly 32 bytes from Node's operating-system CSPRNG. Do not handcraft
+a value that merely matches the shape. The same format policy applies to
+every entry in `BETTER_AUTH_SECRETS` and to any explicitly configured `IMPORT_SECRET_KEY`,
+`AUTH_RATE_LIMIT_SECRET`, `PASSWORD_RESET_RATE_LIMIT_SECRET`, or `ANDROID_CREDENTIAL_SECRET`.
+Configuration errors identify the setting but never print the rejected value.
 
 The same Better Auth key material also protects TOTP secrets, encrypted recovery codes, OAuth state,
 and some cookie data. Local password hashes and passkey public credentials do not need the old
@@ -206,6 +221,13 @@ Create an Authentik OAuth2/OpenID provider for runway:
 
 Then create or attach an Authentik application using that provider.
 
+Use Authentik only as runway's OIDC identity provider. Do not add an Authentik proxy provider,
+outpost, `forward_auth`, or Cloudflare Access policy in front of runway. A second authentication gate
+creates a separate session boundary, can block `/api/auth` callbacks and installed-PWA requests, and
+does not replace runway's own authorization. If an operator intentionally adds another access layer,
+that is a different topology and needs its own callback, logout, health-check, Android, PWA, and
+client-address review.
+
 OIDC enrollment is closed by default. To enroll the first intended account, set
 `ALLOW_OIDC_SIGNUPS=true`, deploy, complete that account's Authentik sign-in, then immediately set it
 back to `false` and redeploy. Do not leave it open as a substitute for an account-approval flow.
@@ -279,6 +301,10 @@ Verification:
 - the same GPX under a different file name is skipped by content hash;
 - deleting one imported activity writes a hash-only tombstone so a connected source cannot recreate it;
 - deleting all imported activity data disconnects import sources so scheduled sync cannot recreate deleted records.
+- concurrent manual, browser-folder, share-target, and Nextcloud work for one user is serialized by a
+  two-minute crash-expiring database lease; a busy interactive request returns `429` and `Retry-After`;
+- persistent per-user and derived-client-address budgets apply before GPX body parsing or interactive
+  Nextcloud WebDAV calls, so the proxy client-address contract must remain correct.
 
 ## Gadgetbridge Device Folder
 
@@ -294,6 +320,11 @@ runway opens or returns to the foreground. It imports at most one unhandled GPX 
 and never modifies the directory. It cannot run while closed. If access is revoked, choose the folder
 again from Import. Browsers without persistent directory access should use Android Share or the
 Nextcloud source instead.
+
+Disconnect is server-authoritative: it rotates a browser-folder generation before deleting the local
+handle. An upload from another tab must present the prior generation and is rejected in its final
+recording transaction. This generation is separate from the activity-deletion generation so ordinary
+disconnect does not change deletion tombstones or other import sources.
 
 Use a dedicated export directory. runway refuses to enumerate beyond 2,000 direct entries or 500 GPX
 candidates in one check. Invalid, oversized, and future-dated files are skipped so they cannot block
@@ -360,10 +391,18 @@ and [trusted-proxy options](https://caddyserver.com/docs/caddyfile/options#trust
 edge topology changes. Do not copy CDN address ranges into this repository; keeping them current is
 an edge/firewall operation.
 
-At Cloudflare, use Full (strict) TLS, restrict the origin so only Cloudflare and operator traffic can
-reach it, and bypass shared caching for authenticated, login, logout, and `/api/auth` routes. Treat
-the current published Cloudflare address ranges as operational data: update the Caddy trust list and
-origin firewall together, then verify the derived client address at the app.
+At Cloudflare, use Full (strict) TLS with a valid origin certificate for the runway hostname; never
+use Flexible mode. Restrict the origin so only current Cloudflare ranges and explicit operator
+traffic can reach it. Preserve the original HTTPS scheme and `Host` header so `ORIGIN`,
+`PUBLIC_APP_ORIGIN`, passkeys, cookies, password-reset links, and OIDC callbacks all agree on one
+public origin.
+
+Use a bypass-cache rule as the default for the runway hostname. If an explicit cache rule is desired,
+limit it to immutable `/_app/immutable/*` assets and do not override the response cache headers.
+Never shared-cache `/`, `/app*`, `/login*`, `/logout*`, `/api/auth*`, `/api/android*`, health routes,
+the service worker, or manifest. Cloudflare must not cache a response merely because a cookie was
+absent. Treat the current published Cloudflare address ranges as operational data: update the Caddy
+trust list and origin firewall together, then verify the derived client address at the app.
 
 The reference Caddy log filter replaces the password-reset `token` query value with `REDACTED`.
 Configure the equivalent query filter in OPNsense and every CDN, WAF, tracing, and error-log layer.
@@ -385,14 +424,16 @@ anywhere.
 Expected edge behavior:
 
 - HTTPS only;
-- HSTS on the public host;
+- exact `Strict-Transport-Security: max-age=31536000` baseline on the public host (add
+  `includeSubDomains` or `preload` only after reviewing every affected hostname);
 - `X-Content-Type-Options: nosniff`;
 - `X-Frame-Options: DENY`;
 - `Content-Security-Policy` at least as strict as the app baseline;
 - `Permissions-Policy` disabling camera, microphone, and geolocation;
 - `Referrer-Policy: strict-origin-when-cross-origin`, with reset links protected by `no-referrer`;
 - long-lived immutable cache for hashed SvelteKit assets under `/_app/immutable/`;
-- no shared caching for `/app`, `/login`, `/logout`, and `/api/auth`.
+- no shared caching for public HTML, `/app`, `/login`, `/logout`, health, service-worker,
+  `/api/auth`, or `/api/android` responses.
 
 Run after deployment:
 

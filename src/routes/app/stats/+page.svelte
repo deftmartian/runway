@@ -3,6 +3,8 @@
 	import PlanTrace from '$lib/components/visual/PlanTrace.svelte';
 	import { formatPace } from '$lib/training/format';
 	import {
+		formatRampEvidence,
+		presentConsequenceAssessment,
 		presentLoadChangeAssessment,
 		presentRampAssessment
 	} from '$lib/training/training-assessment';
@@ -55,9 +57,12 @@
 				)
 			: 0
 	);
-	const rampPressure = $derived(
+	const rampEvidence = $derived(
 		data.active?.plan.summary.kind === 'distance'
-			? data.active.plan.summary.requiredWeeklyIncreasePercent
+			? formatRampEvidence(
+					data.active.plan.summary.requiredWeeklyIncreasePercent,
+					data.active.plan.summary.defaultWeeklyIncreasePercent
+				)
 			: null
 	);
 	const currentRisk = $derived(
@@ -66,7 +71,9 @@
 	const currentAssessment = $derived(
 		data.history.currentSignal?.source === 'feedback' ||
 			data.history.currentSignal?.source === 'activity'
-			? presentLoadChangeAssessment(currentRisk)
+			? data.history.currentSignal.consequence
+				? presentConsequenceAssessment(data.history.currentSignal.consequence)
+				: presentLoadChangeAssessment(currentRisk)
 			: presentRampAssessment(currentRisk)
 	);
 	const currentRiskReasons = $derived(data.history.currentSignal?.reasons ?? []);
@@ -255,8 +262,8 @@
 					</div>
 				{:else}
 					<div>
-						<dt>Required weekly increase</dt>
-						<dd>{Math.round((rampPressure ?? 0) * 10) / 10}%</dd>
+						<dt>Weekly ramp</dt>
+						<dd>{rampEvidence}</dd>
 					</div>
 					<div>
 						<dt>Peak planned long run</dt>

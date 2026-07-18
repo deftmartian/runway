@@ -160,7 +160,7 @@ Use the same control geometry, SVG mark, and trace identity. Do not wrap every p
 - **Current:** runner-edited plan after active adjustments.
 - **Actual:** accepted recorded work.
 - **Ramp assessment:** Within default, Above default, High increase, or Unsupported. This describes runway's plan-generation arithmetic, not medical safety.
-- **Load-change assessment:** Within default, Above default, High change, or Outside default. A valid runner-controlled change remains available after explicit confirmation.
+- **Load-change assessment:** Within default, Above default, High change, or Outside default. Show the measured share of affected weekly load and the relevant 10%, 15%, or 25% boundary. Keep workout-relative change, projected plan ramp, and prescription-basis warnings as separate facts. A valid runner-controlled change remains available after explicit confirmation.
 - **Plan change:** explicit stored change to future workouts.
 
 ## Visual Verification

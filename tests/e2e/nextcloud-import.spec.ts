@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { fixedBrowserClockScript } from '../support/test-clock';
 import { createAccount, setTrainingTimeZone, openImportSourceSetup } from './support/runway';
+import { getGpxImportCounts, getUserId } from './support/db';
 import {
 	startHeldShareImport,
 	gpxForDistance,
@@ -111,6 +112,51 @@ test('privacy deletion cancels a Share import that is still uploading', async ({
 
 	await page.goto('/app/import');
 	await expect(page.locator('.activity-record')).toHaveCount(0);
+});
+
+test('disconnecting a Nextcloud folder cancels a download already in flight', async ({ page }) => {
+	const share = await startNextcloudShareFixture({ holdNewestDownload: true });
+	try {
+		const email = await createAccount(page);
+		const userId = await getUserId(email);
+		await setTrainingTimeZone(email);
+		await page.goto('/app/import');
+		await openImportSourceSetup(page, 'Nextcloud');
+		await page.getByLabel('Label').fill('Held watch exports');
+		await page.getByLabel('Share link').fill(share.url);
+		await page.getByLabel('Share password').fill(share.password);
+		await page.getByRole('button', { name: 'Connect folder' }).click();
+		await expect(page.getByText('Nextcloud folder connected.')).toBeVisible();
+		const sourceId = await page
+			.locator('form[action="?/disconnectImportSource"] input[name="sourceId"]')
+			.inputValue();
+		const origin = new URL(page.url()).origin;
+
+		const syncResponse = page.request.post('/app/import?/syncNextcloudSource', {
+			headers: { origin },
+			form: { sourceId }
+		});
+		await share.newestDownloadStarted();
+		const disconnectResponse = await page.request.post('/app/import?/disconnectImportSource', {
+			headers: { origin },
+			form: { sourceId }
+		});
+		expect(disconnectResponse.status()).toBeLessThan(500);
+		share.releaseNewestDownload();
+		const sync = await syncResponse;
+		expect(sync.status()).toBeLessThan(500);
+		await expect(sync.text()).resolves.toContain(
+			'The import folder was disconnected while this import was running.'
+		);
+
+		await page.reload();
+		await expect(page.getByText('No import sources connected.')).toBeVisible();
+		await expect(page.locator('.activity-record')).toHaveCount(0);
+		await expect.poll(() => getGpxImportCounts(userId)).toEqual({ activities: 0, imports: 0 });
+	} finally {
+		share.releaseNewestDownload();
+		await share.close();
+	}
 });
 
 test('Nextcloud share sync backfills past a failed revision and retries it only after change', async ({

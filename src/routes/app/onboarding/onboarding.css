@@ -1,0 +1,452 @@
+.onboarding-page {
+	max-width: 1080px;
+}
+
+.onboarding-page .onboarding-header {
+	display: flex;
+	align-items: end;
+	justify-content: space-between;
+	gap: 24px;
+	padding: 10px 0 24px;
+	border-bottom: 1px solid var(--line);
+}
+
+.onboarding-page .onboarding-header h1,
+.onboarding-page .onboarding-header p,
+.onboarding-page .step-header h2,
+.onboarding-page .step-header p,
+.onboarding-page .step-header span {
+	margin: 0;
+}
+
+.onboarding-page .onboarding-header h1 {
+	font-size: clamp(2rem, 5vw, 3.4rem);
+	line-height: 1;
+}
+
+.onboarding-page .eyebrow,
+.onboarding-page .step-header p {
+	color: var(--accent);
+	font-size: 0.73rem;
+	font-weight: 780;
+	letter-spacing: 0.13em;
+	text-transform: uppercase;
+}
+
+.onboarding-page .pending-note {
+	max-width: 48ch;
+	padding-left: 14px;
+	border-left: 3px solid var(--review);
+	color: var(--muted);
+}
+
+.onboarding-page .step-rail {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	margin: 24px 0 42px;
+	border-bottom: 1px solid var(--line);
+}
+
+.onboarding-page .step-rail button {
+	justify-content: flex-start;
+	gap: 8px;
+	min-height: 48px;
+	padding: 8px 4px;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	color: var(--muted);
+	font-weight: 680;
+}
+
+.onboarding-page .step-rail button.current {
+	border-bottom-color: var(--accent);
+	color: var(--text);
+}
+
+.onboarding-page .step-rail span {
+	font-family: ui-monospace, monospace;
+}
+
+.onboarding-page form,
+.onboarding-page form > fieldset {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.onboarding-page .setup-step {
+	display: grid;
+	gap: 28px;
+	min-width: 0;
+	min-height: 470px;
+	scroll-margin-top: 84px;
+}
+
+.onboarding-page .setup-step[hidden] {
+	display: none;
+}
+
+.onboarding-page .setup-step:focus {
+	outline: 0;
+}
+
+.onboarding-page .step-header {
+	display: grid;
+	gap: 7px;
+	max-width: 720px;
+}
+
+.onboarding-page .step-header h2 {
+	font-size: clamp(1.65rem, 4vw, 2.4rem);
+}
+
+.onboarding-page .step-header > span {
+	color: var(--muted);
+}
+
+.onboarding-page .choice-track {
+	display: grid;
+	gap: 1px;
+	border: 1px solid var(--line);
+	background: var(--line);
+}
+
+.onboarding-page .choice-track.two-up {
+	grid-template-columns: repeat(2, 1fr);
+}
+
+.onboarding-page .choice-track.mode-track {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.onboarding-page .starting-path-fieldset {
+	display: grid;
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.onboarding-page .starting-path-fieldset legend {
+	padding: 0;
+	font-weight: 690;
+}
+
+.onboarding-page .starting-path-fieldset > p {
+	margin: -4px 0 0;
+	color: var(--muted);
+	font-size: 0.88rem;
+}
+
+.onboarding-page .choice-track label {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+	min-width: 0;
+	min-height: 126px;
+	padding: 18px;
+	background: var(--surface);
+	cursor: pointer;
+}
+
+.onboarding-page .choice-track label.selected {
+	box-shadow: inset 0 3px var(--accent);
+	background: var(--surface-strong);
+}
+
+.onboarding-page .choice-track input {
+	align-self: flex-start;
+	width: 18px;
+	height: 18px;
+	margin: 0 0 8px;
+}
+
+.onboarding-page .choice-track span,
+.onboarding-page .foundation-summary span {
+	color: var(--muted);
+	font-size: 0.9rem;
+	font-weight: 450;
+}
+
+.onboarding-page .choice-track strong,
+.onboarding-page .choice-track span,
+.onboarding-page .review-ledger strong,
+.onboarding-page .decision-note strong,
+.onboarding-page .decision-note span {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.onboarding-page .choice-track strong,
+.onboarding-page .choice-track span {
+	width: 100%;
+	text-align: left;
+}
+
+.onboarding-page .field-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 20px;
+}
+
+.onboarding-page .field-grid.three-up {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.onboarding-page .single-field {
+	width: min(100%, 520px);
+}
+
+.onboarding-page .field-grid > label,
+.onboarding-page .single-field {
+	display: grid;
+	gap: 8px;
+	align-content: start;
+	font-weight: 690;
+}
+
+.onboarding-page .field-help,
+.onboarding-page .optional {
+	color: var(--muted);
+	font-size: 0.8rem;
+	font-weight: 450;
+}
+
+.onboarding-page .field-error {
+	color: var(--danger);
+	font-size: 0.82rem;
+	font-weight: 650;
+}
+
+.onboarding-page .block-error {
+	display: block;
+	margin-top: -18px;
+}
+
+.onboarding-page .foundation-summary,
+.onboarding-page .decision-note {
+	display: grid;
+	gap: 6px;
+	padding: 18px 0 18px 18px;
+	border-left: 3px solid var(--accent);
+}
+
+.onboarding-page .decision-note.warning {
+	border-left-color: var(--review);
+}
+
+.onboarding-page .decision-note span {
+	max-width: 68ch;
+	color: var(--muted);
+}
+
+.onboarding-page .health-grid {
+	align-items: start;
+}
+
+.onboarding-page .health-context-panel {
+	grid-column: 1 / -1;
+	display: grid;
+	gap: 14px;
+	padding-top: 4px;
+}
+
+.onboarding-page .health-context-heading {
+	display: grid;
+	gap: 5px;
+}
+
+.onboarding-page .health-context-heading h3,
+.onboarding-page .health-context-heading p {
+	margin: 0;
+}
+
+.onboarding-page .health-context-heading p {
+	max-width: 72ch;
+	color: var(--muted);
+	font-size: 0.88rem;
+}
+
+.onboarding-page .health-flags {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1px;
+	border: 1px solid var(--line);
+	background: var(--line);
+}
+
+.onboarding-page .health-flags label {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	min-height: 88px;
+	padding: 15px;
+	background: var(--surface);
+	font-size: 0.9rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.onboarding-page .health-flags input {
+	flex: 0 0 auto;
+	margin-top: 3px;
+}
+
+.onboarding-page .health-flags span {
+	display: grid;
+	gap: 5px;
+}
+
+.onboarding-page .health-flags strong {
+	font-weight: 680;
+}
+
+.onboarding-page .health-flags small {
+	color: var(--muted);
+	font-size: 0.8rem;
+	line-height: 1.4;
+}
+
+.onboarding-page .day-choices {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(52px, 1fr));
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.onboarding-page .day-choices legend {
+	grid-column: 1 / -1;
+	margin-bottom: 8px;
+	font-weight: 690;
+}
+
+.onboarding-page .day-choices label {
+	display: grid;
+	place-items: center;
+	min-height: 54px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-small);
+	background: var(--surface);
+	cursor: pointer;
+}
+
+.onboarding-page .day-choices label.selected {
+	border-color: var(--accent);
+	background: color-mix(in oklab, var(--accent), transparent 88%);
+}
+
+.onboarding-page .day-choices label:focus-within {
+	outline: 3px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.onboarding-page .day-choices input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.onboarding-page .review-ledger {
+	border-top: 1px solid var(--line);
+}
+
+.onboarding-page .review-ledger > div {
+	display: grid;
+	grid-template-columns: minmax(130px, 0.35fr) 1fr;
+	gap: 20px;
+	min-width: 0;
+	padding: 16px 0;
+	border-bottom: 1px solid var(--line);
+}
+
+.onboarding-page .review-ledger span {
+	color: var(--muted);
+}
+
+.onboarding-page .replace-confirmation {
+	display: flex;
+	gap: 12px;
+	align-items: start;
+	padding: 16px;
+	border: 1px solid var(--review);
+	border-radius: var(--radius-small);
+}
+
+.onboarding-page .replace-confirmation input {
+	width: 18px;
+	height: 18px;
+}
+
+.onboarding-page .replace-confirmation span {
+	display: grid;
+	gap: 4px;
+}
+
+.onboarding-page .step-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	margin-top: 32px;
+	padding-top: 18px;
+	border-top: 1px solid var(--line);
+}
+
+.onboarding-page .form-message {
+	margin-bottom: 20px;
+}
+
+@media (max-width: 760px) {
+	.onboarding-page .onboarding-header {
+		display: grid;
+	}
+
+	.onboarding-page .step-rail {
+		margin-bottom: 28px;
+	}
+
+	.onboarding-page .step-rail button {
+		justify-content: center;
+		font-size: 0;
+	}
+
+	.onboarding-page .step-rail span {
+		font-size: 0.78rem;
+	}
+
+	.onboarding-page .choice-track.two-up,
+	.onboarding-page .choice-track.mode-track,
+	.onboarding-page .field-grid,
+	.onboarding-page .field-grid.three-up {
+		grid-template-columns: 1fr;
+	}
+
+	.onboarding-page .health-flags {
+		grid-template-columns: 1fr;
+	}
+
+	.onboarding-page .choice-track label {
+		min-height: 0;
+	}
+
+	.onboarding-page .setup-step {
+		min-height: 0;
+	}
+
+	.onboarding-page .day-choices {
+		grid-template-columns: repeat(4, 1fr);
+	}
+
+	.onboarding-page .review-ledger > div {
+		grid-template-columns: 1fr;
+		gap: 5px;
+	}
+
+	.onboarding-page .step-actions .button {
+		flex: 1;
+	}
+}

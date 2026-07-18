@@ -43,7 +43,15 @@ test('an empty inbox offers a direct review-only GPX upload', async ({ page }) =
 	});
 
 	await expect(page.getByText(/Added to the activity inbox\./)).toBeVisible();
-	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toBeVisible();
+	const record = page.locator('details.activity-record').first();
+	const reviewSummary = record.locator('summary');
+	await expect(record.locator('.state-marker').filter({ hasText: 'Needs review' })).toBeVisible();
+	await expect(reviewSummary).toBeFocused();
+	await expect(page.getByRole('button', { name: 'Review imported activity' })).toBeVisible();
+	await page.getByRole('button', { name: 'Review imported activity' }).click();
+	await expect(record).toHaveAttribute('open', '');
+	await expect(record.getByRole('heading', { name: 'Route map', level: 2 })).toBeVisible();
+	await expectNoCriticalAxeViolations(page);
 });
 
 test('local account can create a conservative training plan and import GPX aggregates', async ({

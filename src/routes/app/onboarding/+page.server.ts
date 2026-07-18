@@ -1,45 +1,22 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { createGoalAndPlan } from '$lib/server/runway/repositories/plan-lifecycle';
+import {
+	createGoalAndPlan,
+	PlanCreationInputError
+} from '$lib/server/runway/repositories/plan-lifecycle';
 import { getActivePlan, getCurrentGoal } from '$lib/server/runway/repositories/plan-queries';
 import { getAthleteProfile } from '$lib/server/runway/repositories/profiles';
-import { formString } from '$lib/server/runway/validation';
+import {
+	parseGoalSetupForm,
+	type GoalSetupFieldErrors,
+	type GoalSetupFormValues
+} from '$lib/server/runway/validation';
 import { addDays, isValidTimeZone, todayIsoInTimeZone } from '$lib/training/date';
-import type {
-	GoalKind,
-	GoalPriority,
-	PlanIntake,
-	RaceDistance,
-	StartMode
-} from '$lib/training/types';
+import type { PlanIntake, RaceDistance, StartMode } from '$lib/training/types';
 import type { Actions, PageServerLoad } from './$types';
 
 type Experience = PlanIntake['experience'];
-type ExperienceField = Experience | '';
-type StartModeField = StartMode | '';
-
-type GoalFormValues = {
-	goalKind: GoalKind;
-	startMode: StartModeField;
-	raceDistance: RaceDistance | '';
-	targetDate: string;
-	priority: GoalPriority;
-	currentWeeklyDistanceKm: string;
-	currentRunsPerWeek: string;
-	longestRecentRunKm: string;
-	experience: ExperienceField;
-	calibrationDurationMinutes: string;
-	availability: number[];
-	preferredLongRunDay: string;
-	timeZone: string;
-	recentInjury: boolean;
-	currentPain: boolean;
-	recurringPain: boolean;
-	medicalRestriction: boolean;
-	injuryNotes: string;
-	confirmReplace: boolean;
-};
-
-type GoalFieldErrors = Partial<Record<keyof GoalFormValues | 'healthFlags', string>>;
+type GoalFormValues = GoalSetupFormValues;
+type GoalFieldErrors = GoalSetupFieldErrors & { healthFlags?: string };
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) throw redirect(302, '/login');
@@ -74,13 +51,17 @@ export const actions: Actions = {
 	createPlan: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
 		const formData = await event.request.formData();
-		const values = goalFormValues(formData);
+		const parsedForm = parseGoalSetupForm(formData);
+		const values = parsedForm.values;
 		const currentGoal = await getCurrentGoal(event.locals.user.id);
 		const targetBounds =
 			isValidTimeZone(values.timeZone) && values.startMode
 				? targetDateBounds(values.timeZone, values.startMode)
 				: null;
-		const fieldErrors = validatePlanIntake(values, targetBounds);
+		const fieldErrors = {
+			...validatePlanIntake(values, targetBounds),
+			...parsedForm.fieldErrors
+		};
 
 		if (currentGoal && !values.confirmReplace) {
 			fieldErrors.confirmReplace = 'Confirm that the current goal should be archived first.';
@@ -95,15 +76,11 @@ export const actions: Actions = {
 			const created = await createGoalAndPlan(event.locals.user.id, intake, values.timeZone);
 			hasPlan = Boolean(created.plan);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : '';
+			if (!(error instanceof PlanCreationInputError)) throw error;
 			return fail(400, {
 				message: 'This setup cannot produce a plan yet.',
 				values,
-				fieldErrors: {
-					...(message.includes('Unsafe')
-						? { targetDate: 'Move the target date later or choose a shorter goal.' }
-						: { availability: message || 'Review the selected schedule.' })
-				} satisfies GoalFieldErrors
+				fieldErrors: planCreationFieldErrors(error)
 			});
 		}
 		if (!hasPlan) throw redirect(303, '/app/onboarding?pending=1');
@@ -204,6 +181,10 @@ function validatePlanIntake(
 	}
 	if (values.injuryNotes.length > 240)
 		errors.injuryNotes = 'Keep health context to 240 characters.';
+	if (requiresConcentratedScheduleAcceptance(values) && !values.confirmConcentratedSchedule) {
+		errors.confirmConcentratedSchedule =
+			'Confirm the two-day concentration before creating this plan.';
+	}
 
 	if (values.startMode === 'established' && !healthBlocked) {
 		const weekly = strictNumber(values.currentWeeklyDistanceKm);
@@ -257,6 +238,7 @@ function emptyGoalValues(timeZone: string): GoalFormValues {
 		recurringPain: false,
 		medicalRestriction: false,
 		injuryNotes: '',
+		confirmConcentratedSchedule: false,
 		confirmReplace: false
 	};
 }
@@ -293,50 +275,36 @@ function valuesFromCurrentGoal(
 		recurringPain: profile?.injuryFlags.recurringPain ?? false,
 		medicalRestriction: profile?.injuryFlags.medicalRestriction ?? false,
 		injuryNotes: profile?.injuryFlags.notes ?? '',
+		confirmConcentratedSchedule: false,
 		confirmReplace: false
 	};
 }
 
-function goalFormValues(formData: FormData): GoalFormValues {
-	return {
-		goalKind: enumValue(formData, 'goalKind', ['race', 'foundation']) || 'race',
-		startMode: enumValue(formData, 'startMode', [
-			'established',
-			'foundation_to_goal',
-			'foundation_only',
-			'calibration'
-		]),
-		raceDistance: enumValue(formData, 'raceDistance', ['5k', '10k', 'half', 'marathon']),
-		targetDate: formString(formData, 'targetDate'),
-		priority:
-			enumValue(formData, 'priority', ['finish_healthy', 'consistency']) || 'finish_healthy',
-		currentWeeklyDistanceKm: formString(formData, 'currentWeeklyDistanceKm'),
-		currentRunsPerWeek: formString(formData, 'currentRunsPerWeek'),
-		longestRecentRunKm: formString(formData, 'longestRecentRunKm'),
-		experience: enumValue(formData, 'experience', ['new', 'returning', 'comfortable']),
-		calibrationDurationMinutes: formString(formData, 'calibrationDurationMinutes', '20'),
-		availability: Array.from(
-			new Set(
-				formData
-					.getAll('availability')
-					.map(Number)
-					.filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
-			)
-		),
-		preferredLongRunDay: formString(formData, 'preferredLongRunDay'),
-		timeZone: formString(formData, 'timeZone'),
-		recentInjury: formData.get('recentInjury') === 'on',
-		currentPain: formData.get('currentPain') === 'on',
-		recurringPain: formData.get('recurringPain') === 'on',
-		medicalRestriction: formData.get('medicalRestriction') === 'on',
-		injuryNotes: formString(formData, 'injuryNotes'),
-		confirmReplace: formData.get('confirmReplace') === 'on'
-	};
+function requiresConcentratedScheduleAcceptance(values: GoalFormValues): boolean {
+	return (
+		values.startMode === 'established' &&
+		!values.currentPain &&
+		!values.medicalRestriction &&
+		(values.raceDistance === 'half' || values.raceDistance === 'marathon') &&
+		strictNumber(values.currentRunsPerWeek) === 2
+	);
 }
 
-function enumValue<const T extends string>(formData: FormData, key: string, values: T[]): T | '' {
-	const value = formString(formData, key);
-	return values.includes(value as T) ? (value as T) : '';
+function planCreationFieldErrors(error: PlanCreationInputError): GoalFieldErrors {
+	switch (error.field) {
+		case 'timeZone':
+			return { timeZone: error.message };
+		case 'targetDate':
+			return { targetDate: error.message };
+		case 'availability':
+			return { availability: error.message };
+		case 'baseline':
+			return { currentWeeklyDistanceKm: error.message };
+		case 'health':
+			return { healthFlags: error.message };
+		case 'calibrationDuration':
+			return { calibrationDurationMinutes: error.message };
+	}
 }
 
 function strictNumber(value: string): number | null {

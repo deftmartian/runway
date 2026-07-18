@@ -80,7 +80,7 @@ export const trainingSourceDetails: Record<
 	[sourceRefs.reiHalfMarathon]: {
 		label: 'REI half marathon training guidance',
 		url: 'https://www.rei.com/learn/expert-advice/how-to-run-half-marathon.html',
-		rule: 'Plans progress the long run, retain rest, and schedule 3 to 4 run days.'
+		rule: 'Plans use the source for gradual long-run progression and rest. runway preserves a reported two-run baseline only after the runner acknowledges the resulting concentration.'
 	},
 	[sourceRefs.reiMarathonTraining]: {
 		label: 'REI marathon training guidance',

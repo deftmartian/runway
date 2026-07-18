@@ -122,6 +122,16 @@ Every runway-owned table carries `userId`, and relational writes use user-scoped
 
 Calendar, import, stats, history, and settings use bounded selects/aggregates and small fixed query batches. New list routes require pagination or a documented finite bound. Remote I/O never remains inside a long database transaction.
 
+Training-data export uses a read-only, repeatable-read snapshot and serializes each ordered table in
+250-row pages. The snapshot is staged to an owner-only (`0600`) temporary file before the HTTP body is
+opened, so neither the full relational graph nor the completed JSON document is held in memory. The
+response removes the artifact on completion, cancellation, or read error; a conservative 24-hour
+reaper removes only stale, real `runway-training-export-*` directories left by a process crash. This
+trades temporary disk space equal to the uncapped export size for a consistent snapshot and bounded
+memory. Operators must therefore leave adequate space in the runtime temporary filesystem. The
+`account.export` success audit is written only after staging finishes and is not part of the snapshot
+that it records.
+
 ## Authentication And Email
 
 Better Auth owns auth protocol and persistence. runway does not implement password hashing, session signing, TOTP, OIDC validation, WebAuthn, or cryptographic sealing primitives.
@@ -132,10 +142,12 @@ Local accounts, OIDC, TOTP/recovery codes, and passkeys are product requirements
 
 All GPX entry points use the same bounded parser and persist activity date/time, duration, distance,
 point count, optional heart-rate/cadence/speed aggregates, a heart-rate series of at most 600 points,
-and—when enabled—a route trace of at most 600 points. Route retention defaults to `private` for the
-self-hosted database and can be changed to `discard`; changing it to `discard` also clears existing
-route traces while leaving activity totals and heart-rate data intact. Raw GPX bytes are discarded
-after validation. Coordinates and metadata are never logged.
+and—when enabled—a representative route trace of at most 600 points that retains the first and last
+track points. Series timestamps are stored as elapsed seconds from the retained activity start time;
+the original per-point timestamps are not retained separately. Route retention defaults to `private`
+for the self-hosted database and can be changed to `discard`; changing it to `discard` also clears
+existing route traces while leaving activity totals and heart-rate data intact. Raw GPX bytes are
+discarded after validation. Coordinates and metadata are never logged.
 
 Authenticated activity records render the retained route as a local SVG with relative-speed
 segments, start/finish markers, and no external tile request. Heart rate renders as an accessible
@@ -149,6 +161,12 @@ Manual upload can use an explicit match choice. The installed-PWA share target a
 ### Browser device folder
 
 Supported Chromium PWAs can approve a Gadgetbridge export directory through File System Access. The handle and handled-file hashes remain in browser IndexedDB, keyed by runway user id. The app scans only while visible, reads bounded direct-child metadata, submits at most one newest unhandled GPX per check, quarantines terminal rejects, never modifies the folder, and clears browser-local access at account handoff/sign-out.
+
+The browser submits both the activity-deletion generation and a separate browser-folder generation.
+The final recording transaction locks and checks both. Plain folder disconnect increments only the
+folder generation before local capability removal, so another tab's already-submitted upload cannot
+finish after disconnect. A database-backed, two-minute crash-expiring operation lease allows at most
+one manual, share-target, browser-folder, or Nextcloud import operation per user at a time.
 
 ### Android app
 
@@ -169,6 +187,11 @@ gates are documented in [ANDROID.md](ANDROID.md).
 The server uses a password-protected public folder share, exact-origin allowlisting, and WebDAV `PROPFIND`/`GET`. Tokens/passwords are sealed with `@hapi/iron`; deterministic keyed blind indexes support uniqueness without storing raw remote paths. The worker imports at most one eligible revision per source per pass and backfills older unhandled revisions over later passes.
 
 Source-item claims, user-scoped content hashes, keyed revision constraints, and deletion tombstones make sync idempotent across processes. Every import also captures `athlete_profile.activity_import_generation`; the recording transaction locks and rechecks that generation. Deleting imported activity increments it, so an upload or remote fetch that began earlier cannot recreate data after deletion. Remote listing/download occurs outside long transactions.
+
+Interactive GPX and Nextcloud operations use persistent per-user and per-client-address request
+budgets before multipart parsing or remote WebDAV work. Nextcloud connect, test, and sync also share
+the per-user operation lease with the browser import paths; the scheduled worker observes the same
+lease and retries a busy source on a later pass.
 
 ## PWA And Cache Boundary
 

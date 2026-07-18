@@ -13,11 +13,9 @@ data class GpxTreeCandidate(
 data class TreeScanSummary(
     val entriesScanned: Int,
     val candidates: List<GpxTreeCandidate>,
-    val startOffset: Int,
-    val nextOffset: Int?,
+    val truncated: Boolean,
 ) {
     val gpxCandidates: Int = candidates.size
-    val truncated: Boolean = nextOffset != null
 }
 
 sealed interface TreeScanResult {
@@ -27,8 +25,7 @@ sealed interface TreeScanResult {
 }
 
 class SafTreeScanner(private val contentResolver: ContentResolver) {
-    fun scan(state: TreeAccessState, startOffset: Int = 0): TreeScanResult {
-        require(startOffset >= 0) { "startOffset must not be negative" }
+    fun scan(state: TreeAccessState): TreeScanResult {
         if (state !is TreeAccessState.Connected) return TreeScanResult.PermissionRequired
 
         return try {
@@ -55,17 +52,6 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
                 val modifiedColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                 var entries = 0
                 val candidates = mutableListOf<GpxTreeCandidate>()
-
-                if (startOffset > 0 && !it.moveToPosition(startOffset - 1)) {
-                    return TreeScanResult.Success(
-                        TreeScanSummary(
-                            entriesScanned = 0,
-                            candidates = emptyList(),
-                            startOffset = startOffset,
-                            nextOffset = null,
-                        ),
-                    )
-                }
 
                 while (entries < MAX_ENTRIES_PER_SCAN && it.moveToNext()) {
                     entries += 1
@@ -106,8 +92,7 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
                     TreeScanSummary(
                         entriesScanned = entries,
                         candidates = candidates,
-                        startOffset = startOffset,
-                        nextOffset = if (hasMore) startOffset + entries else null,
+                        truncated = hasMore,
                     ),
                 )
             }
@@ -119,6 +104,6 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
     }
 
     private companion object {
-        const val MAX_ENTRIES_PER_SCAN = 2_000
+        const val MAX_ENTRIES_PER_SCAN = 10_000
     }
 }

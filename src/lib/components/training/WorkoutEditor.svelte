@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { notifyEnhancedFormSaved } from '$lib/pwa/lifecycle';
 	import type { TrainingCalendarWorkout } from '$lib/training/calendar-view';
-	import { presentLoadChangeAssessment } from '$lib/training/training-assessment';
+	import {
+		formatLoadChangeEvidence,
+		presentLoadChangeAssessment,
+		presentRampAssessment
+	} from '$lib/training/training-assessment';
 	import type { WorkoutEditProposal, WorkoutEditWorkoutChange } from '$lib/training/workout-edit';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { CalendarFormState, WorkoutEditFormValues } from './calendar-types';
@@ -25,6 +30,7 @@
 	let workoutType = $state(initial.type);
 	let replaceIntervals = $state(initial.replaceIntervals);
 	const mode = readMode();
+	const dirtyScope = $derived(`workout-editor:${workout?.id ?? date}`);
 	const matchingForm = $derived.by(() => {
 		if (!form?.scope) return null;
 		if (
@@ -120,17 +126,27 @@
 
 	function workoutChangeImpact(change: WorkoutEditWorkoutChange) {
 		const assessment = presentLoadChangeAssessment(change.risk).label;
-		if (change.relativeChangePercent === null || change.changeShareOfWeekPercent === null) {
-			return `Prescription type changed · ${assessment}`;
+		if (change.changeShareOfWeekPercent === null) {
+			return `Load cannot be compared · ${assessment}`;
+		}
+		if (change.relativeChangePercent === null) {
+			return `${formatLoadChangeEvidence(change.changeShareOfWeekPercent, change.risk)} ${assessment}.`;
 		}
 		if (change.relativeChangePercent === 0 && change.changeShareOfWeekPercent === 0) {
 			return `Load unchanged · ${assessment}`;
 		}
-		return `${change.relativeChangePercent}% change to this workout · ${change.changeShareOfWeekPercent}% of its original week's load · ${assessment}`;
+		return `${change.relativeChangePercent}% change to this workout · ${formatLoadChangeEvidence(change.changeShareOfWeekPercent, change.risk)} ${assessment}.`;
 	}
 
 	const preserveEditorValues: SubmitFunction = () => {
 		return async ({ update }) => {
+			await update({ reset: false });
+		};
+	};
+
+	const applyEditorValues: SubmitFunction = ({ formElement }) => {
+		return async ({ result, update }) => {
+			if (result.type === 'success') notifyEnhancedFormSaved(formElement);
 			await update({ reset: false });
 		};
 	};
@@ -141,6 +157,7 @@
 	action={mode === 'edit' ? '?/previewWorkoutEdit' : '?/previewWorkoutAdd'}
 	use:enhance={preserveEditorValues}
 	class="workout-editor"
+	data-pwa-dirty-scope={dirtyScope}
 >
 	{#if workout}<input type="hidden" name="workoutId" value={workout.id} />{/if}
 	<input type="hidden" name="intervalStructureJson" value={initial.intervalStructureJson} />
@@ -294,7 +311,11 @@
 			</div>
 			<div>
 				<dt>Current</dt>
-				<dd>{prescriptionLabel(preview.current)}</dd>
+				<dd>
+					{preview.operation === 'add'
+						? 'No workout scheduled.'
+						: prescriptionLabel(preview.current)}
+				</dd>
 			</div>
 			<div>
 				<dt>Proposed</dt>
@@ -309,7 +330,11 @@
 					<dl>
 						<div>
 							<dt>Before</dt>
-							<dd>{prescriptionLabel(change.before)}</dd>
+							<dd>
+								{preview.operation === 'add' && change.isSelected
+									? 'No workout scheduled.'
+									: prescriptionLabel(change.before)}
+							</dd>
 						</div>
 						<div>
 							<dt>After</dt>
@@ -330,9 +355,19 @@
 				</li>
 			{/each}
 			<li>
-				Projected ramp {preview.projectedRampPercent}% · {presentLoadChangeAssessment(preview.risk)
-					.label}
+				Edit assessment: {presentLoadChangeAssessment(preview.risk).label} · {formatLoadChangeEvidence(
+					preview.weeklyLoadChangePercent,
+					preview.risk
+				)}
 			</li>
+			<li>
+				Projected plan ramp: {preview.projectedRampPercent}% · {presentRampAssessment(
+					preview.projectedRampRisk
+				).label}
+			</li>
+			{#each preview.guardrails as guardrail (guardrail.kind)}
+				<li><strong>{guardrail.label}.</strong> {guardrail.description}</li>
+			{/each}
 			{#if preview.spacingConflicts.length > 0}
 				<li>
 					Recovery spacing conflict with {preview.spacingConflicts
@@ -345,7 +380,8 @@
 			<form
 				method="post"
 				action={mode === 'edit' ? '?/applyWorkoutEdit' : '?/applyWorkoutAdd'}
-				use:enhance={preserveEditorValues}
+				use:enhance={applyEditorValues}
+				data-pwa-dirty-scope={dirtyScope}
 			>
 				{#if editValues.workoutId}<input
 						type="hidden"

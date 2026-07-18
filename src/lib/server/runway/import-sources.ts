@@ -1,28 +1,37 @@
-import { and, eq, lt, ne, or } from 'drizzle-orm';
+import { and, eq, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	activityDeletionTombstone,
 	activityImport,
 	athleteProfile,
 	importSource,
-	importSourceItem
+	importSourceItem,
+	user as authUser
 } from '$lib/server/db/schema';
 import { hashActivityFile, parseGpx } from '$lib/training/gpx';
-import { recordImportedActivity } from './repository';
+import {
+	recordNextcloudImportedActivity,
+	type NextcloudImportClaim
+} from './repositories/activity-mutations';
+import type { RunwayTransaction } from './repositories/transaction';
 import {
 	downloadNextcloudFile,
 	isNextcloudAuthenticationRejection,
 	listNextcloudGpxFiles,
+	maxNextcloudVisibleGpxFiles,
 	parseNextcloudShareUrl,
 	type NextcloudRemoteFile
 } from './nextcloud';
 import { sealSecret, secretBlindIndex } from './secrets';
+import { withUserImportOperationLease } from './import-operation-lease';
 
 const maxRemoteGpxBytes = 10 * 1024 * 1024;
 const staleImportClaimMs = 30 * 60 * 1000;
 const maxSourceLabelCharacters = 120;
 const maxShareUrlCharacters = 2_048;
 const maxSharePasswordCharacters = 1_024;
+export const maxImportSourcesPerUser = 10;
+export const importSourceLimitMessage = `You can connect up to ${maxImportSourcesPerUser} import folders. Disconnect one before adding another.`;
 export const importTimeZoneRequiredMessage = 'Set training time zone before importing.';
 
 export type NextcloudSourceInput = {
@@ -59,7 +68,8 @@ export async function listImportSources(userId: string) {
 		})
 		.from(importSource)
 		.where(eq(importSource.userId, userId))
-		.orderBy(importSource.createdAt);
+		.orderBy(importSource.createdAt, importSource.id)
+		.limit(maxImportSourcesPerUser);
 }
 
 export async function isImportTimeZoneConfigured(userId: string): Promise<boolean> {
@@ -72,6 +82,12 @@ export async function isImportTimeZoneConfigured(userId: string): Promise<boolea
 }
 
 export async function saveNextcloudSource(userId: string, input: NextcloudSourceInput) {
+	return withUserImportOperationLease(userId, 'nextcloud-connect', () =>
+		saveNextcloudSourceUnlocked(userId, input)
+	);
+}
+
+async function saveNextcloudSourceUnlocked(userId: string, input: NextcloudSourceInput) {
 	await requireImportTimeZone(userId);
 	const normalized = normalizeNextcloudSourceInput(input);
 	const parsed = parseNextcloudShareUrl(normalized.shareUrl);
@@ -86,35 +102,57 @@ export async function saveNextcloudSource(userId: string, input: NextcloudSource
 		parsed.shareToken
 	);
 
-	const [source] = await db
-		.insert(importSource)
-		.values({
-			userId,
-			type: 'nextcloud_share',
-			label,
-			shareHost: parsed.shareHost,
-			shareTokenSecret,
-			shareTokenKey,
-			sharePasswordSecret,
-			enabled: true,
-			lastCheckedAt: new Date(),
-			lastSuccessAt: new Date(),
-			lastError: null
-		})
-		.onConflictDoUpdate({
-			target: [importSource.userId, importSource.shareHost, importSource.shareTokenKey],
-			set: {
+	const source = await db.transaction(async (tx) => {
+		await lockImportSourceOwner(tx, userId);
+		const [[existing], [sourceCount]] = await Promise.all([
+			tx
+				.select({ id: importSource.id })
+				.from(importSource)
+				.where(
+					and(
+						eq(importSource.userId, userId),
+						eq(importSource.shareHost, parsed.shareHost),
+						eq(importSource.shareTokenKey, shareTokenKey)
+					)
+				)
+				.limit(1),
+			tx
+				.select({ count: sql<number>`count(*)::int` })
+				.from(importSource)
+				.where(eq(importSource.userId, userId))
+		]);
+		enforceImportSourceLimit(Boolean(existing), sourceCount?.count ?? 0);
+		const [saved] = await tx
+			.insert(importSource)
+			.values({
+				userId,
+				type: 'nextcloud_share',
 				label,
+				shareHost: parsed.shareHost,
 				shareTokenSecret,
+				shareTokenKey,
 				sharePasswordSecret,
 				enabled: true,
 				lastCheckedAt: new Date(),
 				lastSuccessAt: new Date(),
-				lastError: null,
-				updatedAt: new Date()
-			}
-		})
-		.returning();
+				lastError: null
+			})
+			.onConflictDoUpdate({
+				target: [importSource.userId, importSource.shareHost, importSource.shareTokenKey],
+				set: {
+					label,
+					shareTokenSecret,
+					sharePasswordSecret,
+					enabled: true,
+					lastCheckedAt: new Date(),
+					lastSuccessAt: new Date(),
+					lastError: null,
+					updatedAt: new Date()
+				}
+			})
+			.returning();
+		return saved;
+	});
 
 	if (!source) throw new Error('Nextcloud source could not be saved.');
 	return source;
@@ -175,7 +213,19 @@ export function normalizeNextcloudSourceInput(input: NextcloudSourceInput): Next
 	return { label, shareUrl, sharePassword };
 }
 
+export function enforceImportSourceLimit(existingSource: boolean, sourceCount: number): void {
+	if (!existingSource && sourceCount >= maxImportSourcesPerUser) {
+		throw new Error(importSourceLimitMessage);
+	}
+}
+
 export async function testNextcloudSource(userId: string, sourceId: string) {
+	return withUserImportOperationLease(userId, 'nextcloud-test', () =>
+		testNextcloudSourceUnlocked(userId, sourceId)
+	);
+}
+
+async function testNextcloudSourceUnlocked(userId: string, sourceId: string) {
 	const source = await getOwnedSource(userId, sourceId);
 	await requireImportTimeZone(userId);
 	if (!source.enabled || !source.sharePasswordSecret) {
@@ -189,10 +239,14 @@ export async function testNextcloudSource(userId: string, sourceId: string) {
 }
 
 export async function disconnectImportSource(userId: string, sourceId: string) {
-	const [source] = await db
-		.delete(importSource)
-		.where(and(eq(importSource.userId, userId), eq(importSource.id, sourceId)))
-		.returning({ id: importSource.id });
+	const source = await db.transaction(async (tx) => {
+		await lockImportSourceOwner(tx, userId);
+		const [deleted] = await tx
+			.delete(importSource)
+			.where(and(eq(importSource.userId, userId), eq(importSource.id, sourceId)))
+			.returning({ id: importSource.id });
+		return deleted;
+	});
 	if (!source) throw new Error('Import source was not found.');
 }
 
@@ -200,7 +254,9 @@ export async function syncNextcloudSource(
 	userId: string,
 	sourceId: string
 ): Promise<NextcloudSyncResult> {
-	return syncNextcloudSourceUnlocked(userId, sourceId);
+	return withUserImportOperationLease(userId, 'nextcloud-sync', () =>
+		syncNextcloudSourceUnlocked(userId, sourceId)
+	);
 }
 
 async function syncNextcloudSourceUnlocked(
@@ -240,8 +296,8 @@ async function syncNextcloudSourceUnlocked(
 			return { status: 'skipped', message: 'That GPX file was already handled.' };
 		}
 
-		if (await alreadyHandledContent(userId, contentHash, claimed.id)) {
-			await markSourceItemImported(claimed.id, null);
+		if (await alreadyHandledContent(userId, contentHash, claimed.itemId)) {
+			await markSourceItemImported(userId, claimed, null);
 			await markSourceSuccess(source.id, null);
 			return { status: 'skipped', message: 'That GPX file was already handled.' };
 		}
@@ -250,28 +306,31 @@ async function syncNextcloudSourceUnlocked(
 		try {
 			parsed = parseGpx(buffer);
 		} catch {
-			await markSourceItemFailed(claimed.id, 'The selected GPX file could not be parsed.');
+			await markSourceItemFailed(userId, claimed, 'The selected GPX file could not be parsed.');
 			await markSourceFailure(source.id, 'The selected GPX file could not be parsed.');
 			return { status: 'failed', message: 'The selected GPX file could not be parsed.' };
 		}
 
-		let activity;
 		try {
-			activity = await recordImportedActivity(
+			await recordNextcloudImportedActivity(
 				userId,
-				contentHash,
+				{
+					sourceId: source.id,
+					itemId: claimed.itemId,
+					contentHash: claimed.contentHash,
+					claimedAt: claimed.claimedAt
+				},
 				parsed,
-				{ mode: 'unlinked' },
 				importGeneration
 			);
 		} catch (error) {
 			if (isDuplicateActivityError(error)) {
-				await markSourceItemImported(claimed.id, null);
+				await markSourceItemImported(userId, claimed, null);
 				await markSourceSuccess(source.id, null);
 				return { status: 'skipped', message: 'That GPX file was already handled.' };
 			}
 			if (error instanceof Error && error.message === importTimeZoneRequiredMessage) {
-				await releaseSourceItemClaim(claimed.id);
+				await releaseSourceItemClaim(userId, claimed);
 				await markSourceFailure(source.id, importTimeZoneRequiredMessage);
 				return { status: 'failed', message: importTimeZoneRequiredMessage };
 			}
@@ -279,29 +338,58 @@ async function syncNextcloudSourceUnlocked(
 				error instanceof Error &&
 				error.message === 'Import was cancelled because activity data was deleted.'
 			) {
-				await releaseSourceItemClaim(claimed.id);
+				await releaseSourceItemClaim(userId, claimed);
 				return {
 					status: 'skipped',
 					message: 'Activity data was deleted while this import was running.'
 				};
 			}
+			if (
+				error instanceof Error &&
+				(error.message === 'Import was cancelled because the source was disconnected.' ||
+					error.message === 'Import source claim changed before completion.')
+			) {
+				return {
+					status: 'skipped',
+					message: 'The import folder was disconnected while this import was running.'
+				};
+			}
 
-			await markSourceItemFailed(claimed.id, 'The selected GPX file could not be imported.');
+			await markSourceItemFailed(userId, claimed, 'The selected GPX file could not be imported.');
 			await markSourceFailure(source.id, 'The selected GPX file could not be imported.');
 			return { status: 'failed', message: 'The selected GPX file could not be imported.' };
 		}
 
-		await markSourceItemImported(claimed.id, activity.id);
-		await markSourceSuccess(source.id, new Date());
 		return {
 			status: 'imported',
 			message: `Imported ${Math.round((parsed.distanceMeters / 1000) * 10) / 10} km to the activity inbox for review.`
 		};
 	} catch (error) {
+		if (!(await isConnectedImportSource(userId, sourceId))) {
+			return {
+				status: 'skipped',
+				message: 'The import folder was disconnected while this import was running.'
+			};
+		}
 		const message = safeSyncError(error);
 		await markSourceFailure(source.id, message);
 		return { status: 'failed', message };
 	}
+}
+
+async function isConnectedImportSource(userId: string, sourceId: string): Promise<boolean> {
+	const [source] = await db
+		.select({ id: importSource.id })
+		.from(importSource)
+		.where(
+			and(
+				eq(importSource.id, sourceId),
+				eq(importSource.userId, userId),
+				eq(importSource.enabled, true)
+			)
+		)
+		.limit(1);
+	return Boolean(source);
 }
 
 function safeSyncError(error: unknown): string {
@@ -317,6 +405,7 @@ function safeSyncError(error: unknown): string {
 		'Nextcloud share returned an invalid WebDAV response.',
 		'Nextcloud response is too large.',
 		'The selected GPX file is too large for import.',
+		`Nextcloud folders can expose at most ${maxNextcloudVisibleGpxFiles} GPX files per sync.`,
 		'The selected GPX file could not be parsed.',
 		'The selected GPX file could not be imported.'
 	]);
@@ -350,6 +439,7 @@ async function newestRemoteCandidate(
 
 	if (newestFirst.length === 0) return { file: null, alreadyHandled: false };
 
+	const remoteKeys = newestFirst.map((file) => nextcloudRemoteKey(userId, sourceId, file.href));
 	const knownItems = await db
 		.select({
 			remoteKey: importSourceItem.remoteKey,
@@ -360,7 +450,14 @@ async function newestRemoteCandidate(
 			lastCheckedAt: importSourceItem.lastCheckedAt
 		})
 		.from(importSourceItem)
-		.where(eq(importSourceItem.sourceId, sourceId));
+		.where(
+			and(
+				eq(importSourceItem.userId, userId),
+				eq(importSourceItem.sourceId, sourceId),
+				inArray(importSourceItem.remoteKey, remoteKeys)
+			)
+		)
+		.limit(maxNextcloudVisibleGpxFiles);
 
 	return selectNewestRemoteCandidate(newestFirst, knownItems, (file) =>
 		nextcloudRemoteKey(userId, sourceId, file.href)
@@ -486,8 +583,9 @@ async function claimSourceItem(
 	sourceId: string,
 	file: NextcloudRemoteFile,
 	contentHash: string
-) {
+): Promise<NextcloudImportClaim | null> {
 	const remoteKey = nextcloudRemoteKey(userId, sourceId, file.href);
+	const claimedAt = new Date();
 	const [existing] = await db
 		.select({
 			id: importSourceItem.id,
@@ -514,7 +612,7 @@ async function claimSourceItem(
 					etag: file.etag,
 					contentLength: file.contentLength,
 					lastModifiedAt: file.lastModifiedAt,
-					lastCheckedAt: new Date(),
+					lastCheckedAt: claimedAt,
 					errorSummary: null
 				})
 				.where(and(eq(importSourceItem.id, existing.id), eq(importSourceItem.status, 'imported')));
@@ -532,7 +630,7 @@ async function claimSourceItem(
 				status: 'importing',
 				activityId: null,
 				importedAt: null,
-				lastCheckedAt: new Date(),
+				lastCheckedAt: claimedAt,
 				errorSummary: null
 			})
 			.where(
@@ -545,8 +643,19 @@ async function claimSourceItem(
 					)
 				)
 			)
-			.returning({ id: importSourceItem.id });
-		return claimed ?? null;
+			.returning({
+				id: importSourceItem.id,
+				contentHash: importSourceItem.contentHash,
+				claimedAt: importSourceItem.lastCheckedAt
+			});
+		return claimed?.contentHash
+			? {
+					sourceId,
+					itemId: claimed.id,
+					contentHash: claimed.contentHash,
+					claimedAt: claimed.claimedAt
+				}
+			: null;
 	}
 
 	const [claimed] = await db
@@ -559,19 +668,35 @@ async function claimSourceItem(
 			contentLength: file.contentLength,
 			lastModifiedAt: file.lastModifiedAt,
 			contentHash,
-			status: 'importing'
+			status: 'importing',
+			lastCheckedAt: claimedAt
 		})
 		.onConflictDoNothing()
-		.returning({ id: importSourceItem.id });
+		.returning({
+			id: importSourceItem.id,
+			contentHash: importSourceItem.contentHash,
+			claimedAt: importSourceItem.lastCheckedAt
+		});
 
-	return claimed ?? null;
+	return claimed?.contentHash
+		? {
+				sourceId,
+				itemId: claimed.id,
+				contentHash: claimed.contentHash,
+				claimedAt: claimed.claimedAt
+			}
+		: null;
 }
 
 function nextcloudRemoteKey(userId: string, sourceId: string, href: string): string {
 	return secretBlindIndex(`nextcloud-remote-item:${userId}:${sourceId}`, href);
 }
 
-async function markSourceItemImported(itemId: string, activityId: string | null) {
+async function markSourceItemImported(
+	userId: string,
+	claim: NextcloudImportClaim,
+	activityId: string | null
+) {
 	await db
 		.update(importSourceItem)
 		.set({
@@ -581,7 +706,7 @@ async function markSourceItemImported(itemId: string, activityId: string | null)
 			lastCheckedAt: new Date(),
 			errorSummary: null
 		})
-		.where(eq(importSourceItem.id, itemId));
+		.where(sourceItemClaimCondition(userId, claim));
 }
 
 function isStaleImportClaim(lastCheckedAt: Date): boolean {
@@ -596,7 +721,7 @@ function isDuplicateActivityError(error: unknown): boolean {
 	);
 }
 
-async function markSourceItemFailed(itemId: string, message: string) {
+async function markSourceItemFailed(userId: string, claim: NextcloudImportClaim, message: string) {
 	await db
 		.update(importSourceItem)
 		.set({
@@ -604,13 +729,22 @@ async function markSourceItemFailed(itemId: string, message: string) {
 			lastCheckedAt: new Date(),
 			errorSummary: message.slice(0, 240)
 		})
-		.where(eq(importSourceItem.id, itemId));
+		.where(sourceItemClaimCondition(userId, claim));
 }
 
-async function releaseSourceItemClaim(itemId: string) {
-	await db
-		.delete(importSourceItem)
-		.where(and(eq(importSourceItem.id, itemId), eq(importSourceItem.status, 'importing')));
+async function releaseSourceItemClaim(userId: string, claim: NextcloudImportClaim) {
+	await db.delete(importSourceItem).where(sourceItemClaimCondition(userId, claim));
+}
+
+function sourceItemClaimCondition(userId: string, claim: NextcloudImportClaim) {
+	return and(
+		eq(importSourceItem.id, claim.itemId),
+		eq(importSourceItem.userId, userId),
+		eq(importSourceItem.sourceId, claim.sourceId),
+		eq(importSourceItem.status, 'importing'),
+		eq(importSourceItem.contentHash, claim.contentHash),
+		eq(importSourceItem.lastCheckedAt, claim.claimedAt)
+	);
 }
 
 async function markSourceSuccess(sourceId: string, importedAt: Date | null) {
@@ -635,4 +769,14 @@ async function markSourceFailure(sourceId: string, message: string) {
 			updatedAt: new Date()
 		})
 		.where(eq(importSource.id, sourceId));
+}
+
+async function lockImportSourceOwner(tx: RunwayTransaction, userId: string): Promise<void> {
+	const [owner] = await tx
+		.select({ id: authUser.id })
+		.from(authUser)
+		.where(eq(authUser.id, userId))
+		.limit(1)
+		.for('update');
+	if (!owner) throw new Error('Account not found.');
 }

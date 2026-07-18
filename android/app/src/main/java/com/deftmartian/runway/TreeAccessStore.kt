@@ -9,8 +9,8 @@ import androidx.core.net.toUri
 
 sealed interface TreeAccessState {
     data object Missing : TreeAccessState
-    data class PermissionRequired(val uri: Uri) : TreeAccessState
-    data class Connected(val uri: Uri) : TreeAccessState
+    data class PermissionRequired(val uri: Uri, val generation: Long) : TreeAccessState
+    data class Connected(val uri: Uri, val generation: Long) : TreeAccessState
 }
 
 class TreeAccessStore(context: Context) {
@@ -34,11 +34,14 @@ class TreeAccessStore(context: Context) {
         }.getOrDefault(false)
 
         if (persisted) {
+            ReconciliationScheduler.cancelAll(appContext)
             if (previousUri != null && previousUri != uri) {
                 HandledImportStore(appContext).clearAll()
-                ScanProgressStore(appContext).clearAll()
             }
-            preferences.edit { putString(TREE_URI_KEY, uri.toString()) }
+            preferences.edit(commit = true) {
+                putString(TREE_URI_KEY, uri.toString())
+                putLong(TREE_GENERATION_KEY, nextGeneration())
+            }
             if (previousUri != null && previousUri != uri) {
                 runCatching {
                     appContext.contentResolver.releasePersistableUriPermission(
@@ -54,17 +57,19 @@ class TreeAccessStore(context: Context) {
     fun currentState(): TreeAccessState {
         val rawUri = preferences.getString(TREE_URI_KEY, null) ?: return TreeAccessState.Missing
         val uri = runCatching { rawUri.toUri() }.getOrNull() ?: return TreeAccessState.Missing
+        val generation = preferences.getLong(TREE_GENERATION_KEY, 0)
         val permission = appContext.contentResolver.persistedUriPermissions.firstOrNull {
             it.uri == uri && it.isReadPermission
         }
         return if (permission == null) {
-            TreeAccessState.PermissionRequired(uri)
+            TreeAccessState.PermissionRequired(uri, generation)
         } else {
-            TreeAccessState.Connected(uri)
+            TreeAccessState.Connected(uri, generation)
         }
     }
 
     fun disconnect() {
+        ReconciliationScheduler.cancelAll(appContext)
         val state = currentState()
         val uri = when (state) {
             is TreeAccessState.Connected -> state.uri
@@ -79,13 +84,24 @@ class TreeAccessStore(context: Context) {
                 )
             }
         }
-        preferences.edit { remove(TREE_URI_KEY) }
+        preferences.edit(commit = true) {
+            remove(TREE_URI_KEY)
+            putLong(TREE_GENERATION_KEY, nextGeneration())
+        }
         HandledImportStore(appContext).clearAll()
-        ScanProgressStore(appContext).clearAll()
+        ReconciliationStatusStore(appContext).record(
+            ReconciliationWorker.STATE_PERMISSION_REQUIRED,
+        )
+    }
+
+    private fun nextGeneration(): Long {
+        val current = preferences.getLong(TREE_GENERATION_KEY, 0)
+        return if (current == Long.MAX_VALUE) 1 else current + 1
     }
 
     private companion object {
         const val PREFERENCES_NAME = "runway_android"
         const val TREE_URI_KEY = "gpx_tree_uri"
+        const val TREE_GENERATION_KEY = "gpx_tree_generation"
     }
 }

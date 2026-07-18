@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="runway_launcher_background">#102131</color>
     <color name="runway_background">#F7F3EA</color>
     <color name="runway_surface">#FFFEFB</color>
     <color name="runway_surface_variant">#E8F1EF</color>

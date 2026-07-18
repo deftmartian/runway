@@ -132,10 +132,25 @@ fail the worker pass instead of silently changing policy.
 Audit rows can retain event type, timestamp, opaque record identifiers, counts, and minimized
 operational detail until expiry. They must not contain route coordinates, imported filenames,
 Nextcloud tokens or paths, credentials, reset tokens, or health-note text. Activity deletion removes
-or redacts activity-linked audit payloads. A user data export includes only audit rows that remain at
-the time of export; exporting does not reset their expiry. A complete export requires a session
+or redacts activity-linked audit payloads. A training-data export includes only audit rows that remain
+at the time of export; exporting does not reset their expiry. It includes account identity, profile,
+plans, workouts, feedback, activities, import history, devices, deletion markers, and retained audit
+rows. It does not export password hashes, sessions, passkeys, two-factor secrets or recovery codes,
+OIDC provider tokens, sealed import credentials, or raw GPX files. The export requires a session
 created within the preceding ten minutes, uses persistent per-user and per-address throttles, and
-records an `account.export` event without export contents.
+records an `account.export` event without export contents only after a complete repeatable-read
+snapshot has been staged successfully. Export JSON is assembled in bounded pages in an owner-only
+temporary file, streamed once, and removed on completion, cancellation, or read error. A 24-hour
+reaper handles crash leftovers without touching active exports. It is POST-only so runway's
+exact-origin mutation boundary applies; GET requests are rejected without creating an audit event.
+
+Full account deletion is a separate Settings action. It requires the runner to type an exact
+confirmation from a fresh session and is persistently throttled by user and client address. The PWA
+clears its origin-local folder capability database before sending the request. A Better Auth
+pre-deletion hook removes generic verification rows whose value is the user id, including trusted-device
+and in-progress two-factor grants. Better Auth then owns user deletion, session invalidation, and
+credential removal; database foreign keys cascade the deletion to
+runway profiles, plans, workouts, activities, imports, devices, tombstones, and audit events.
 
 ## GPX Handling
 
@@ -155,7 +170,8 @@ Importer behavior should:
 - retain only bounded route and heart-rate display series, with an explicit route-retention control;
 - make delete/export possible through authenticated settings controls;
 - scope duplicate-detection hashes to the user so they are not stable cross-user fingerprints;
-- document whether elevation, heart rate, and timestamps are stored.
+- disclose that the activity start time, heart-rate elapsed-time samples, average cadence, and—when
+  route retention is enabled—representative route points including the first and last are stored.
 
 An approved device-folder source is a browser-local capability, not a server path. Store its
 `FileSystemDirectoryHandle` and only hashed handled-file markers in IndexedDB, scoped to the signed-in
@@ -169,13 +185,32 @@ device-folder, and Nextcloud imports capture that generation before parsing or r
 recording transaction locks the profile row and rejects stale work. This is the authoritative barrier
 against another tab, process, or worker recreating activity after deletion.
 
+Before enumerating an approved browser folder, the authenticated client fetches both the activity-data
+generation and a separate browser-folder generation from a private, no-store endpoint and submits those
+exact values with the selected upload. The final recording transaction locks and rechecks both.
+Plain folder disconnect advances only the folder generation before removing the local capability, so an
+upload already waiting in another tab cannot finish after disconnect. Immediately
+before uploading, it re-reads IndexedDB, verifies that the same directory capability and read permission
+are still current, and checks a cross-tab capability revision. Folder disconnect, sign-out, activity-data
+deletion, and account deletion broadcast revocation to other same-origin tabs; IndexedDB revalidation is
+the fallback when BroadcastChannel is unavailable. A stale handle cannot adopt a newer generation after
+privacy deletion.
+
+Manual, share-target, and browser-folder GPX requests consume persistent user and client-address budgets
+before reading multipart content. Nextcloud connect, test, and sync consume separate persistent budgets
+before remote work. A per-user database lease permits one expensive import operation at a time across
+web and worker processes; a crashed process loses the lease after two minutes. Busy and exhausted
+interactive requests return `429` with `Retry-After` rather than continuing unbounded work.
+
 Scan only in a visible authenticated page, inspect at most 2,000 direct children and 500 GPX candidates,
-fingerprint candidates sequentially, process at most one file per foreground check, and use the same
-server-side size, parsing, deduplication, deletion-tombstone, and review-only controls as other PWA
-imports. Changing the approved directory clears the old handled markers. A malformed, oversized, or
-future-dated file is marked handled so it cannot starve older valid exports; reconnecting the folder
-deliberately clears those markers for a retry. Disconnect deletes the local handle and markers but does
-not alter Gadgetbridge files. Treat permission loss as an explicit reconnect state.
+fingerprint candidates sequentially using fixed windows stratified from the start through the midpoint
+to the end plus metadata, and read no more than 4 MiB across a maximum-size scan. The server still hashes
+the complete selected upload for authoritative deduplication. Process at most one file per foreground
+check, and use the same server-side size, parsing, deletion-tombstone, and review-only controls as other
+PWA imports. Changing the approved directory clears the old handled markers. A malformed,
+oversized, or future-dated file is marked handled so it cannot starve older valid exports; reconnecting
+the folder deliberately clears those markers for a retry. Disconnect deletes the local handle and
+markers but does not alter Gadgetbridge files. Treat permission loss as an explicit reconnect state.
 
 ## Nextcloud Share Import
 

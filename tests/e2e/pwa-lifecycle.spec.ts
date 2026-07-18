@@ -1,5 +1,28 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test('a service-worker setup failure stays out of the form and can be dismissed', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator.serviceWorker, 'register', {
+			configurable: true,
+			value: () => Promise.reject(new Error('Synthetic registration failure.'))
+		});
+	});
+	await page.goto('/login');
+	const notice = page.getByRole('alert', { name: /App setup incomplete/ });
+	await expect(notice).toBeVisible();
+	const signIn = page.getByRole('button', { name: 'Sign in', exact: true }).last();
+	const [noticeBox, signInBox] = await Promise.all([notice.boundingBox(), signIn.boundingBox()]);
+	expect(noticeBox).not.toBeNull();
+	expect(signInBox).not.toBeNull();
+	if (noticeBox && signInBox) {
+		expect(noticeBox.y).toBeGreaterThanOrEqual(signInBox.y + signInBox.height);
+	}
+	await notice.getByRole('button', { name: 'Dismiss' }).click();
+	await expect(notice).toHaveCount(0);
+});
+
 test('a controller replacement reloads a clean client', async ({ page }) => {
 	await openControlledLogin(page);
 

@@ -13,7 +13,8 @@
 		heartRateSummary,
 		averageHeartRate,
 		maxHeartRate,
-		durationSeconds
+		durationSeconds,
+		headingLevel = 3
 	}: {
 		id: string;
 		routeTrace: ActivityRouteTrace | null;
@@ -22,7 +23,9 @@
 		averageHeartRate: number | null;
 		maxHeartRate: number | null;
 		durationSeconds: number | null;
+		headingLevel?: 2 | 3;
 	} = $props();
+	const headingTag = $derived(headingLevel === 2 ? 'h2' : 'h3');
 
 	type SpeedCategory = 'slower' | 'typical' | 'faster';
 	type ProjectedRoutePoint = ActivityRouteTrace['points'][number] & { x: number; y: number };
@@ -187,7 +190,7 @@
 			<article class="activity-visual route-visual" aria-labelledby={`${id}-route-title`}>
 				<header>
 					<div>
-						<h3 id={`${id}-route-title`}>Route map</h3>
+						<svelte:element this={headingTag} id={`${id}-route-title`}>Route map</svelte:element>
 						<p>Relative speed · local route trace</p>
 					</div>
 					<span>{routeTrace?.sourcePointCount ?? routePlot.length} source points</span>
@@ -241,7 +244,7 @@
 			<article class="activity-visual heart-visual" aria-labelledby={`${id}-heart-title`}>
 				<header>
 					<div>
-						<h3 id={`${id}-heart-title`}>Heart rate</h3>
+						<svelte:element this={headingTag} id={`${id}-heart-title`}>Heart rate</svelte:element>
 						<p>Recorded response over elapsed time</p>
 					</div>
 					{#if averageHeartRate !== null}<span
@@ -360,12 +363,12 @@
 		gap: 16px;
 	}
 
-	.activity-visual h3,
+	.activity-visual :is(h2, h3),
 	.activity-visual p {
 		margin: 0;
 	}
 
-	.activity-visual h3 {
+	.activity-visual :is(h2, h3) {
 		font-size: 1rem;
 	}
 

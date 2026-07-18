@@ -4,6 +4,8 @@ import {
 	canRecordUnplannedRun,
 	isQuietCalendarDay,
 	presentCalendarEvent,
+	presentCalendarTrainingAssessment,
+	presentCalendarWeekAssessment,
 	shouldCollapseEarlierCalendarWeek
 } from './calendar-presentation';
 
@@ -75,8 +77,8 @@ describe('presentCalendarEvent', () => {
 					averageHeartRate: null,
 					maxHeartRate: null,
 					heartRateSummary: null,
-					heartRateSeries: null,
-					routeTrace: null,
+					hasHeartRateSeries: false,
+					hasRouteTrace: false,
 					averageCadence: null,
 					feltHard: true,
 					pain: true,
@@ -107,6 +109,102 @@ describe('presentCalendarEvent', () => {
 		expect(
 			canRecordUnplannedRun(calendarEvent({ date: '2026-07-15', isFuture: true }), today)
 		).toBe(false);
+	});
+});
+
+describe('presentCalendarTrainingAssessment', () => {
+	it('uses ramp arithmetic only for the generated plan', () => {
+		const assessment = presentCalendarTrainingAssessment('unsafe', 'plan');
+		expect(assessment).toMatchObject({
+			heading: 'Ramp assessment',
+			sourceLabel: 'Current plan'
+		});
+		expect(assessment.presentation.label).toBe('Unsupported');
+		expect(assessment.presentation.attention).toBe('blocked');
+	});
+
+	it('presents feedback and activity as accepted load context, not plan ramps', () => {
+		const feedbackAssessment = presentCalendarTrainingAssessment('unsafe', 'feedback');
+		const activityAssessment = presentCalendarTrainingAssessment('aggressive', 'activity');
+		expect(feedbackAssessment).toMatchObject({
+			heading: 'Feedback review',
+			sourceLabel: 'Recent feedback'
+		});
+		expect(feedbackAssessment.presentation.label).toBe('Outside default');
+		expect(feedbackAssessment.presentation.attention).toBe('high');
+		expect(activityAssessment).toMatchObject({
+			heading: 'Load assessment',
+			sourceLabel: 'Recent activity'
+		});
+		expect(activityAssessment.presentation.label).toBe('High change');
+		expect(activityAssessment.presentation.attention).toBe('high');
+	});
+});
+
+describe('presentCalendarWeekAssessment', () => {
+	const week = (
+		overrides: Partial<import('$lib/training/calendar-view').TrainingCalendarWeek> = {}
+	) => ({
+		id: 'week-2',
+		weekNumber: 2,
+		startDate: '2026-07-27',
+		targetDistanceMeters: 10_750,
+		targetDurationSeconds: 0,
+		eventDistanceMeters: 0,
+		totalScheduledDistanceMeters: 10_750,
+		longRunMeters: 4_000,
+		risk: 'conservative' as const,
+		isDownWeek: false,
+		isTaper: false,
+		completedDistanceMeters: 0,
+		completedDurationSeconds: 0,
+		eventCompletedDistanceMeters: 0,
+		completedRuns: 0,
+		plannedRuns: 3,
+		painFlags: 0,
+		hardFlags: 0,
+		...overrides
+	});
+
+	it('pairs the measured weekly change with the configured plan cap', () => {
+		expect(
+			presentCalendarWeekAssessment({
+				week: week(),
+				previousWeek: week({ id: 'week-1', weekNumber: 1, targetDistanceMeters: 10_000 }),
+				baselineMeters: 9_000,
+				defaultWeeklyIncreasePercent: 7.5
+			})
+		).toMatchObject({
+			presentation: { label: 'Within default' },
+			evidence: '7.5% weekly increase · 7.5% plan cap',
+			phaseLabel: null
+		});
+	});
+
+	it('keeps taper context beside a measured reduction', () => {
+		expect(
+			presentCalendarWeekAssessment({
+				week: week({ targetDistanceMeters: 6_000, isTaper: true }),
+				previousWeek: week({ id: 'week-1', weekNumber: 1, targetDistanceMeters: 10_000 }),
+				baselineMeters: 9_000,
+				defaultWeeklyIncreasePercent: 7.5
+			})
+		).toMatchObject({
+			presentation: { label: 'Within default' },
+			evidence: '40% weekly reduction · 7.5% plan cap',
+			phaseLabel: 'Taper'
+		});
+	});
+
+	it('does not invent a numeric comparison for an opening timed week', () => {
+		expect(
+			presentCalendarWeekAssessment({
+				week: week({ targetDistanceMeters: 0, targetDurationSeconds: 1_200 }),
+				previousWeek: null,
+				baselineMeters: null,
+				defaultWeeklyIncreasePercent: null
+			})
+		).toEqual({ presentation: null, evidence: 'Opening week', phaseLabel: null });
 	});
 });
 
