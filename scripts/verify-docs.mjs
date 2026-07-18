@@ -16,7 +16,8 @@ const requiredFiles = [
 	'docs/ARCHITECTURE.md',
 	'docs/SECURITY.md',
 	'docs/DEPLOYMENT.md',
-	'docs/TRAINING_SOURCES.md'
+	'docs/TRAINING_SOURCES.md',
+	'deploy/Caddyfile.example'
 ];
 
 for (const file of requiredFiles) {
@@ -33,6 +34,25 @@ if (typeof packageJson.description !== 'string' || packageJson.description.trim(
 
 if (packageJson.repository?.url !== 'git+https://github.com/deftmartian/runway.git') {
 	errors.push('package.json must identify the canonical source repository');
+}
+
+const caddyfilePath = resolve(root, 'deploy/Caddyfile.example');
+if (existsSync(caddyfilePath)) {
+	const caddyfile = readFileSync(caddyfilePath, 'utf8');
+	for (const required of [
+		'trusted_proxies static {$RUNWAY_TRUSTED_PROXY_CIDRS}',
+		'trusted_proxies_strict',
+		'header_up X-Forwarded-For {client_ip}',
+		'replace token REDACTED',
+		'Strict-Transport-Security "max-age=31536000"'
+	]) {
+		if (!caddyfile.includes(required)) {
+			errors.push(`deploy/Caddyfile.example is missing the edge contract: ${required}`);
+		}
+	}
+	if (/Content-Security-Policy/i.test(caddyfile)) {
+		errors.push('deploy/Caddyfile.example must preserve the application nonce CSP, not replace it');
+	}
 }
 
 const licensePath = resolve(root, 'LICENSE');

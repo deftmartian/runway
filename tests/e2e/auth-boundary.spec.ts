@@ -1,10 +1,17 @@
 import { expect, test } from '@playwright/test';
 
-test('raw password and two-factor endpoints stay behind runway page actions', async ({ page }) => {
+test('unreviewed Better Auth endpoints stay behind runway product actions', async ({ page }) => {
 	await page.goto('/login');
 	const origin = new URL(page.url()).origin;
 
-	for (const pathname of ['/api/auth/sign-in/email', '/api/auth/two-factor/verify-totp']) {
+	for (const pathname of [
+		'/api/auth/sign-in/email',
+		'/api/auth/sign-in/oauth2',
+		'/api/auth/two-factor/verify-totp',
+		'/api/auth/oauth2/link',
+		'/api/auth/change-password',
+		'/api/auth/passkey/delete-passkey'
+	]) {
 		const response = await page.request.post(pathname, {
 			headers: { origin },
 			data: {}

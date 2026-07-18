@@ -45,6 +45,19 @@ Security constraints:
 - OAuth access and refresh tokens are encrypted at rest with Better Auth's versioned secret support;
   the generic OIDC ID token is discarded after validation instead of being stored plaintext.
 
+Password, signup, password-reset, two-factor, OIDC-start, and passkey authentication paths use
+database-backed HMAC-keyed limits so limits survive process restarts and apply across web replicas.
+Raw password, two-factor, signup, OAuth-start, account-linking, and account-mutation HTTP routes are
+not public bypasses: the Better Auth router uses an explicit route-and-method allowlist. Runway
+exposes supported operations through its rate-limited server actions. Browser-required passkey HTTP
+routes stay available but are persistently limited by the proxy-derived client address. This depends
+on the one-hop trusted-proxy contract in
+[DEPLOYMENT.md](DEPLOYMENT.md#reverse-proxy-and-network-edge).
+
+Passkey registration uses Better Auth's fresh-session middleware with a ten-minute freshness window.
+Passkey removal applies the same recent-sign-in window and a persistent per-user/per-address limit.
+After that window the UI requires the user to sign out and sign in again before changing passkeys.
+
 State-changing requests require the exact public Origin. The only missing-Origin exception is the
 installed PWA's `POST /app/import/share` navigation because the Web Share Target algorithm does not
 attach an Origin header. That exception requires the exact path, multipart content, and browser-set
@@ -58,7 +71,12 @@ count-only checks show no OAuth or TOTP ciphertext still references it. The stag
 re-authentication, revocation, restore, and compromised-key procedures live in
 [DEPLOYMENT.md](DEPLOYMENT.md#better-auth-secret-and-encrypted-provider-tokens).
 
-The app sets baseline defensive headers on SvelteKit responses, including CSP, frame blocking, referrer policy, permissions policy, and `private, no-store` on authenticated routes. The production edge should enforce the outer security-header policy globally while preserving long-lived cache headers for hashed assets.
+The app sets a nonce-based CSP3 policy with `strict-dynamic`, Trusted Types enforcement, frame
+blocking, cross-origin isolation boundaries, referrer and permissions policies, and `private,
+no-store` on authenticated routes. Inline scripts and style blocks are not allowed. Svelte component
+style attributes retain a narrow `style-src-attr 'unsafe-inline'` allowance; do not expand that to
+`script-src` or general `style-src`. The production edge should preserve the per-response CSP nonce,
+set HSTS at the public HTTPS host, and retain long-lived cache headers only for hashed assets.
 
 ## Email And Password Reset
 
@@ -106,7 +124,9 @@ Audit rows can retain event type, timestamp, opaque record identifiers, counts, 
 operational detail until expiry. They must not contain route coordinates, imported filenames,
 Nextcloud tokens or paths, credentials, reset tokens, or health-note text. Activity deletion removes
 or redacts activity-linked audit payloads. A user data export includes only audit rows that remain at
-the time of export; exporting does not reset their expiry.
+the time of export; exporting does not reset their expiry. A complete export requires a session
+created within the preceding ten minutes, uses persistent per-user and per-address throttles, and
+records an `account.export` event without export contents.
 
 ## GPX Handling
 

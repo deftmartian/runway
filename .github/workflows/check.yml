@@ -34,3 +34,7 @@ jobs:
         run: corepack pnpm verify
       - name: Compose configuration
         run: corepack pnpm verify:compose && corepack pnpm verify:compose:production
+      - name: Android TWA static contract
+        run: corepack pnpm verify:android
+      - name: Caddy edge contract
+        run: corepack pnpm verify:caddy

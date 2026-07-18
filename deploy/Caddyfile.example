@@ -1,0 +1,43 @@
+# Set RUNWAY_HOST to the public hostname and RUNWAY_UPSTREAM to the private
+# HTTP origin, for example 127.0.0.1:4100 or 192.168.100.10:4100.
+#
+# Set RUNWAY_TRUSTED_PROXY_CIDRS to the current published CIDRs for the only
+# proxy allowed to reach Caddy (Cloudflare in the documented topology). The
+# value may contain multiple space-separated CIDRs. Keeping this required makes
+# a missing trust decision fail during Caddy configuration instead of silently
+# collapsing every rate-limit bucket onto the proxy address.
+{
+	servers {
+		trusted_proxies static {$RUNWAY_TRUSTED_PROXY_CIDRS}
+		trusted_proxies_strict
+	}
+}
+
+{$RUNWAY_HOST} {
+	# When access logging is enabled, redact the one reset-link bearer query
+	# before it reaches any log output.
+	log {
+		format filter {
+			request>uri query {
+				replace token REDACTED
+			}
+		}
+	}
+
+	# Keep HSTS at the TLS edge. Add includeSubDomains or preload only when every
+	# affected hostname is ready for that commitment.
+	header Strict-Transport-Security "max-age=31536000"
+
+	reverse_proxy {$RUNWAY_UPSTREAM} {
+		# runway deliberately accepts one derived address, not a client-supplied
+		# forwarding chain. The production Compose overlay pairs this with ADDRESS_HEADER and
+		# XFF_DEPTH=1.
+		header_up X-Forwarded-For {client_ip}
+		# Caddy sets X-Forwarded-Proto and X-Forwarded-Host by default.
+
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 30s
+		}
+	}
+}

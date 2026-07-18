@@ -2,6 +2,19 @@ export const oauthTokenStorageOptions = Object.freeze({
 	encryptOAuthTokens: true as const
 });
 
+export const authFreshSessionSeconds = 10 * 60;
+
+export function isFreshAuthSession(
+	createdAt: Date | string,
+	now = Date.now(),
+	maxAgeSeconds = authFreshSessionSeconds
+): boolean {
+	const createdAtMs =
+		createdAt instanceof Date ? createdAt.getTime() : new Date(createdAt).getTime();
+	const ageMs = now - createdAtMs;
+	return Number.isFinite(createdAtMs) && ageMs >= -30_000 && ageMs < maxAgeSeconds * 1_000;
+}
+
 export function omitStoredOidcIdToken(account: Record<string, unknown>): Record<string, unknown> {
 	if (!Object.hasOwn(account, 'idToken')) return account;
 	return { ...account, idToken: null };
@@ -47,4 +60,12 @@ export function passkeyRpIdProblem(origin: string, rpId: string): string | null 
 		return `PASSKEY_RP_ID must exactly match the PUBLIC_APP_ORIGIN hostname (${hostname}).`;
 	}
 	return null;
+}
+
+export function publicOriginMismatchProblem(
+	requestOrigin: string,
+	passkeyOrigin: string
+): string | null {
+	if (requestOrigin === passkeyOrigin) return null;
+	return 'PUBLIC_APP_ORIGIN must match ORIGIN for a single public runway instance.';
 }

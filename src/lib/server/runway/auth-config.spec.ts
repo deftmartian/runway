@@ -1,14 +1,29 @@
 import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import { describe, expect, test } from 'vitest';
 import {
+	authFreshSessionSeconds,
 	canonicalAppOrigin,
+	isFreshAuthSession,
 	omitStoredOidcIdToken,
 	oauthTokenStorageOptions,
 	oidcDiscoveryUrl,
-	passkeyRpIdProblem
+	passkeyRpIdProblem,
+	publicOriginMismatchProblem
 } from './auth-config';
 
 describe('authentication configuration', () => {
+	test('keeps sensitive account changes behind a short fresh-session window', () => {
+		expect(authFreshSessionSeconds).toBe(600);
+	});
+
+	test('accepts only recent, valid session timestamps', () => {
+		const now = Date.parse('2026-07-18T12:00:00.000Z');
+		expect(isFreshAuthSession('2026-07-18T11:55:00.000Z', now)).toBe(true);
+		expect(isFreshAuthSession('2026-07-18T11:49:59.000Z', now)).toBe(false);
+		expect(isFreshAuthSession('not-a-date', now)).toBe(false);
+		expect(isFreshAuthSession('2026-07-18T12:02:00.000Z', now)).toBe(false);
+	});
+
 	test('accepts a canonical app origin', () => {
 		expect.assertions(1);
 		expect(canonicalAppOrigin('https://runway.example.test', 'ORIGIN')).toBe(
@@ -39,6 +54,15 @@ describe('authentication configuration', () => {
 		expect(passkeyRpIdProblem('https://runway.example.test', 'example.test')).toMatch(
 			/exactly match/
 		);
+	});
+
+	test('requires one canonical public origin', () => {
+		expect(
+			publicOriginMismatchProblem('https://runway.example.test', 'https://runway.example.test')
+		).toBeNull();
+		expect(
+			publicOriginMismatchProblem('https://runway.example.test', 'https://passkeys.example.test')
+		).toMatch(/must match/);
 	});
 
 	test('keeps OAuth token storage encrypted with a versioned ciphertext envelope', async () => {

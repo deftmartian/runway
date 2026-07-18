@@ -1,0 +1,13 @@
+runway is a private, self-hosted running plan and activity review app.
+
+This Android build opens the complete runway PWA for one configured server as a verified Trusted Web
+Activity. Planning, calendar, run detail, import review, history, stats, settings, and authentication
+are all part of the installed app experience. If origin verification fails, runway safely shows the
+page in a browser Custom Tab instead of hiding an unverified site in a WebView.
+
+Android also retains read access to a user-approved Gadgetbridge GPX export folder and can schedule
+bounded checks without broad storage, location, fitness, Play Services, or advertising permissions.
+You can share one GPX file to runway from another Android app.
+
+This developer preview does not upload native folder/share files yet. Scoped device pairing and the
+mobile import API must be completed before a public release.

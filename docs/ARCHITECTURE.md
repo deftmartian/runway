@@ -150,6 +150,14 @@ Manual upload can use an explicit match choice. The installed-PWA share target a
 
 Supported Chromium PWAs can approve a Gadgetbridge export directory through File System Access. The handle and handled-file hashes remain in browser IndexedDB, keyed by runway user id. The app scans only while visible, reads bounded direct-child metadata, submits at most one newest unhandled GPX per check, quarantines terminal rejects, never modifies the folder, and clears browser-local access at account handoff/sign-out.
 
+### Android app
+
+The pre-release Android app launches the complete instance-bound PWA as a Digital Asset Links-verified
+Trusted Web Activity, falling back to a browser Custom Tab rather than WebView. Native code owns the
+persisted Storage Access Framework read grant, bounded shares, folder settings, and inexact WorkManager
+reconciliation. Upload remains blocked until the server has a scoped, revocable device-pairing and
+import API. The boundary and production gates are documented in [ANDROID.md](ANDROID.md).
+
 ### Nextcloud folder share
 
 The server uses a password-protected public folder share, exact-origin allowlisting, and WebDAV `PROPFIND`/`GET`. Tokens/passwords are sealed with `@hapi/iron`; deterministic keyed blind indexes support uniqueness without storing raw remote paths. The worker imports at most one eligible revision per source per pass and backfills older unhandled revisions over later passes.
@@ -165,6 +173,8 @@ The service worker caches only the offline shell and immutable public applicatio
 The adapter-node image runs on port `4100` and expects PostgreSQL through `DATABASE_URL`. Production
 Compose pulls one explicitly selected image for web, worker, and migration roles; it contains the SQL
 journal and production migration runner but not the development toolchain. Migrations complete before
-web/worker cutover.
+web/worker cutover. Web and worker use separately bounded connection pools with validated connect,
+idle, lifetime, statement, and idle-transaction limits. Health responses identify the semantic release
+and exact build; worker readiness also rejects stale successful work and overlong in-flight passes.
 
 The intended edge is Cloudflare, OPNsense Caddy, Authentik, runway, and PostgreSQL. Caddy owns the outer security header/TLS policy; SvelteKit retains defensive baseline headers and `private, no-store` for authenticated responses. Exact deployment, rotation, backup, and recovery steps live in [DEPLOYMENT.md](DEPLOYMENT.md).

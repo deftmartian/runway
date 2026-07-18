@@ -3,6 +3,7 @@ import { APIError } from 'better-auth/api';
 import { parseSetCookieHeader, toCookieOptions } from 'better-auth/cookies';
 import QRCode from 'qrcode';
 import { auth } from '$lib/server/auth';
+import { isFreshAuthSession } from '$lib/server/runway/auth-config';
 import {
 	accountSecurityRateLimitBuckets,
 	consumeSecurityRateLimit
@@ -243,10 +244,30 @@ export const actions: Actions = {
 		}
 	},
 	deletePasskey: async (event) => {
-		if (!event.locals.user) throw redirect(302, '/login');
+		if (!event.locals.user || !event.locals.session) throw redirect(302, '/login');
+		if (!isFreshAuthSession(event.locals.session.createdAt)) {
+			return fail(403, {
+				scope: 'passkeys',
+				message: 'Sign out and sign in again before removing a passkey.'
+			});
+		}
 		const formData = await event.request.formData();
 		const id = formString(formData, 'id');
 		if (!id) return fail(400, { scope: 'passkeys', message: 'Choose a passkey to remove.' });
+		const rateLimit = await consumeSecurityRateLimit(
+			accountSecurityRateLimitBuckets(
+				'delete-passkey',
+				event.locals.user.id,
+				event.getClientAddress()
+			)
+		);
+		if (!rateLimit.allowed) {
+			event.setHeaders({ 'retry-after': String(rateLimit.retryAfterSeconds) });
+			return fail(429, {
+				scope: 'passkeys',
+				message: 'Too many passkey changes. Try again later.'
+			});
+		}
 		try {
 			await auth.api.deletePasskey({ body: { id }, headers: event.request.headers });
 			return { scope: 'passkeys', message: 'Passkey removed.' };

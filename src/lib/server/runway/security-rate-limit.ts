@@ -34,6 +34,35 @@ export function signUpRateLimitBuckets(email: string, clientAddress: string): Ra
 	];
 }
 
+export function oidcSignInRateLimitBuckets(clientAddress: string): RateLimitBucket[] {
+	return [{ name: 'oidc-sign-in:ip', subject: clientAddress, max: 20, windowMs: tenMinutes }];
+}
+
+export function passkeyAuthenticationRateLimitBuckets(
+	action: 'options' | 'verify',
+	clientAddress: string
+): RateLimitBucket[] {
+	return [
+		{ name: 'passkey-authentication:ip', subject: clientAddress, max: 40, windowMs: tenMinutes },
+		{
+			name: `passkey-authentication:${action}:ip`,
+			subject: clientAddress,
+			max: action === 'options' ? 30 : 15,
+			windowMs: tenMinutes
+		}
+	];
+}
+
+export function passkeyRegistrationRateLimitBuckets(
+	userId: string,
+	clientAddress: string
+): RateLimitBucket[] {
+	return [
+		{ name: 'passkey-registration:ip', subject: clientAddress, max: 30, windowMs: tenMinutes },
+		{ name: 'passkey-registration:user', subject: userId, max: 20, windowMs: tenMinutes }
+	];
+}
+
 export function twoFactorRateLimitBuckets(
 	method: 'totp' | 'backup',
 	challenge: string,
@@ -46,7 +75,12 @@ export function twoFactorRateLimitBuckets(
 }
 
 export function accountSecurityRateLimitBuckets(
-	action: 'enable-two-factor' | 'verify-two-factor-setup' | 'disable-two-factor',
+	action:
+		| 'enable-two-factor'
+		| 'verify-two-factor-setup'
+		| 'disable-two-factor'
+		| 'delete-passkey'
+		| 'export-data',
 	userId: string,
 	clientAddress: string
 ): RateLimitBucket[] {

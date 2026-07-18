@@ -1,0 +1,4 @@
+Developer preview of the full runway PWA in a Trusted Web Activity, persisted folder access, bounded
+GPX shares, and scheduled reconciliation.
+
+Uploads remain disabled until secure device pairing is available.

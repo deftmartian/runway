@@ -15,6 +15,14 @@ const standardEnv = {
 		process.env['RUNWAY_IMAGE'] ?? 'ghcr.io/deftmartian/runway:sha-compose-verification',
 	RUNWAY_BIND_ADDRESS: process.env['RUNWAY_BIND_ADDRESS'] ?? '127.0.0.1',
 	RUNWAY_PORT: process.env['RUNWAY_PORT'] ?? '4100',
+	APP_DATABASE_POOL_MAX: process.env['APP_DATABASE_POOL_MAX'] ?? '7',
+	WORKER_DATABASE_POOL_MAX: process.env['WORKER_DATABASE_POOL_MAX'] ?? '3',
+	DATABASE_CONNECT_TIMEOUT_SECONDS: process.env['DATABASE_CONNECT_TIMEOUT_SECONDS'] ?? '8',
+	DATABASE_IDLE_TIMEOUT_SECONDS: process.env['DATABASE_IDLE_TIMEOUT_SECONDS'] ?? '40',
+	DATABASE_MAX_LIFETIME_SECONDS: process.env['DATABASE_MAX_LIFETIME_SECONDS'] ?? '1200',
+	DATABASE_STATEMENT_TIMEOUT_MS: process.env['DATABASE_STATEMENT_TIMEOUT_MS'] ?? '25000',
+	DATABASE_IDLE_TRANSACTION_TIMEOUT_MS:
+		process.env['DATABASE_IDLE_TRANSACTION_TIMEOUT_MS'] ?? '26000',
 	VLAN_TAG: '',
 	VLAN_TRUNK_INTERFACE: '',
 	DNS_SERVER: ''
@@ -35,6 +43,19 @@ function renderCompose(files, env) {
 }
 
 const standard = renderCompose(['compose.yaml', 'deploy/compose.production.yaml'], standardEnv);
+const local = renderCompose(['compose.yaml'], standardEnv);
+if (
+	local.services.app.environment?.ADDRESS_HEADER !== undefined ||
+	local.services.app.environment?.XFF_DEPTH !== undefined
+) {
+	throw new Error('Base Compose must use the socket address when no reverse proxy is configured.');
+}
+if (
+	standard.services.app.environment?.ADDRESS_HEADER !== 'x-forwarded-for' ||
+	String(standard.services.app.environment?.XFF_DEPTH) !== '1'
+) {
+	throw new Error('Production Compose must enforce the one-hop forwarded-address contract.');
+}
 for (const service of ['app', 'worker', 'migrate']) {
 	if (standard.services[service]?.image !== standardEnv.RUNWAY_IMAGE) {
 		throw new Error(`Production Compose must use RUNWAY_IMAGE for the ${service} service.`);
@@ -58,6 +79,28 @@ if (
 }
 if (standard.networks.vlan) {
 	throw new Error('Standard production Compose must not require an ipvlan network.');
+}
+if (
+	standard.services.app.environment.DATABASE_POOL_MAX !== standardEnv.APP_DATABASE_POOL_MAX ||
+	standard.services.worker.environment.DATABASE_POOL_MAX !== standardEnv.WORKER_DATABASE_POOL_MAX
+) {
+	throw new Error(
+		'Production Compose must keep web and worker database pools independently bounded.'
+	);
+}
+for (const setting of [
+	'DATABASE_CONNECT_TIMEOUT_SECONDS',
+	'DATABASE_IDLE_TIMEOUT_SECONDS',
+	'DATABASE_MAX_LIFETIME_SECONDS',
+	'DATABASE_STATEMENT_TIMEOUT_MS',
+	'DATABASE_IDLE_TRANSACTION_TIMEOUT_MS'
+]) {
+	if (
+		standard.services.app.environment[setting] !== standardEnv[setting] ||
+		standard.services.worker.environment[setting] !== standardEnv[setting]
+	) {
+		throw new Error(`Production Compose must pass ${setting} to web and worker.`);
+	}
 }
 
 const ipvlan = renderCompose(

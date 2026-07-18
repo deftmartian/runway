@@ -4471,6 +4471,11 @@ export async function getActivityTraceDetail(userId: string, activityId: string)
 }
 
 export async function exportUserData(userId: string) {
+	await db.insert(auditEvent).values({
+		userId,
+		eventType: 'account.export',
+		detail: {}
+	});
 	const [
 		[account],
 		[profile],

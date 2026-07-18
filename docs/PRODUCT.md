@@ -120,7 +120,9 @@ Route data, schedule patterns, pain/load-risk notes, pace and heart-rate history
 
 ## Non-Goals
 
-- Native Android or iOS app.
+- A separate native product that duplicates the planning UI. The Android package presents the
+  complete authenticated runway PWA and adds only Android-owned capabilities such as durable folder
+  access, shares, and background reconciliation.
 - Live GPS recording or watch replacement.
 - Social feeds, leaderboards, streak pressure, or public routes.
 - Guided audio, coaching personality, or motivation programs.

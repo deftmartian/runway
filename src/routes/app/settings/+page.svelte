@@ -151,7 +151,10 @@
 		try {
 			const result = await authClient.passkey.addPasskey({ name });
 			if (result.error) {
-				passkeyMessage = 'Passkey setup failed.';
+				passkeyMessage =
+					'code' in result.error && result.error.code === 'SESSION_NOT_FRESH'
+						? 'Sign out and sign in again before adding a passkey.'
+						: 'Passkey setup failed.';
 				return;
 			}
 			passkeyMessage = 'Passkey added.';

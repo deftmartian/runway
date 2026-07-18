@@ -1,5 +1,10 @@
 import http from 'node:http';
 import https from 'node:https';
+import { readFile } from 'node:fs/promises';
+
+const packageMetadata = JSON.parse(
+	await readFile(new URL('../package.json', import.meta.url), 'utf8')
+);
 
 const siteUrl = process.env.SITE_URL ?? 'http://localhost:4100';
 const publicUrl = new URL(siteUrl);
@@ -35,6 +40,17 @@ for (const directive of [
 const scriptSrc = directiveValue(csp, 'script-src');
 const styleSrc = directiveValue(csp, 'style-src');
 const styleSrcAttr = directiveValue(csp, 'style-src-attr');
+for (const [directive, requiredValue] of [
+	['default-src', "'self'"],
+	['base-uri', "'self'"],
+	['form-action', "'self'"],
+	['frame-ancestors', "'none'"],
+	['object-src', "'none'"]
+]) {
+	if (!directiveValue(csp, directive).split(/\s+/).includes(requiredValue)) {
+		failures.push(`CSP ${directive} is missing ${requiredValue}.`);
+	}
+}
 if (!scriptSrc.includes("'strict-dynamic'")) {
 	failures.push('CSP script-src is missing strict-dynamic.');
 }
@@ -65,6 +81,10 @@ if (!firstNonce || !secondNonce || firstNonce === secondNonce) {
 }
 
 for (const [name, expected] of [
+	['cross-origin-opener-policy', 'same-origin'],
+	['cross-origin-resource-policy', 'same-origin'],
+	['origin-agent-cluster', '?1'],
+	['x-permitted-cross-domain-policies', 'none'],
 	['x-content-type-options', 'nosniff'],
 	['x-frame-options', 'DENY'],
 	['referrer-policy', 'strict-origin-when-cross-origin']
@@ -78,8 +98,12 @@ for (const feature of ['camera=()', 'geolocation=()', 'microphone=()']) {
 	if (!permissionsPolicy.includes(feature))
 		failures.push(`Permissions-Policy is missing ${feature}.`);
 }
-if (publicUrl.protocol === 'https:' && !header(home.headers, 'strict-transport-security')) {
-	failures.push('HTTPS deployment is missing Strict-Transport-Security.');
+if (publicUrl.protocol === 'https:') {
+	const hsts = header(home.headers, 'strict-transport-security');
+	const maxAge = Number(/(?:^|;)\s*max-age=(\d+)/i.exec(hsts)?.[1]);
+	if (!Number.isFinite(maxAge) || maxAge < 31_536_000) {
+		failures.push('HTTPS deployment needs HSTS max-age of at least one year.');
+	}
 }
 
 const app = await request(new URL('/app', siteUrl));
@@ -99,6 +123,18 @@ if (appLocation) {
 const reset = await request(new URL('/login/reset-password', siteUrl));
 if (header(reset.headers, 'referrer-policy') !== 'no-referrer') {
 	failures.push('/login/reset-password is missing no-referrer policy.');
+}
+const resetBearer = await request(
+	new URL(`/login/reset-password?token=${'A'.repeat(43)}`, siteUrl)
+);
+const resetCookie = header(resetBearer.headers, 'set-cookie');
+for (const attribute of ['HttpOnly', 'SameSite=Lax', 'Path=/login/reset-password']) {
+	if (!resetCookie.toLowerCase().includes(attribute.toLowerCase())) {
+		failures.push(`Reset-token cookie is missing ${attribute}.`);
+	}
+}
+if (publicUrl.protocol === 'https:' && !resetCookie.toLowerCase().includes('secure')) {
+	failures.push('HTTPS reset-token cookie is missing Secure.');
 }
 
 const manifest = await request(new URL('/manifest.webmanifest', siteUrl));
@@ -190,6 +226,9 @@ try {
 	const liveBody = JSON.parse(live.body);
 	if (!cacheRevision || liveBody.version !== cacheRevision) {
 		failures.push('Service-worker cache revision does not match the running application build.');
+	}
+	if (liveBody.build !== liveBody.version || liveBody.release !== packageMetadata.version) {
+		failures.push('Health identity does not match the application release and build.');
 	}
 } catch {
 	failures.push('/health/live did not return valid JSON.');

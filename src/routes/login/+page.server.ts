@@ -4,6 +4,7 @@ import { env } from '$env/dynamic/private';
 import { auth } from '$lib/server/auth';
 import {
 	consumeSecurityRateLimit,
+	oidcSignInRateLimitBuckets,
 	signInRateLimitBuckets,
 	signUpRateLimitBuckets
 } from '$lib/server/runway/security-rate-limit';
@@ -122,6 +123,16 @@ export const actions: Actions = {
 		throw redirect(302, '/app');
 	},
 	signInOidc: async (event) => {
+		const rateLimit = await consumeSecurityRateLimit(
+			oidcSignInRateLimitBuckets(event.getClientAddress())
+		);
+		if (!rateLimit.allowed) {
+			event.setHeaders({ 'retry-after': String(rateLimit.retryAfterSeconds) });
+			return fail(429, {
+				scope: 'signInOidc',
+				message: 'Too many sign-in attempts. Try again later.'
+			});
+		}
 		try {
 			const result = await auth.api.signInWithOAuth2({
 				body: { providerId: 'authentik', callbackURL: '/app' },

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">runway</string>
+    <string name="folder_screen_title">Device folder</string>
+    <string name="folder_screen_intro">Choose the folder where Gadgetbridge writes GPX files. Android keeps read access when runway is closed.</string>
+    <string name="folder_shortcut_short">Folder</string>
+    <string name="folder_shortcut_long">Device folder</string>
+    <string name="choose_folder">Choose folder</string>
+    <string name="disconnect_folder">Disconnect folder</string>
+    <string name="check_now">Check now</string>
+    <string name="enable_background">Enable background checks</string>
+    <string name="disable_background">Disable background checks</string>
+    <string name="upload_blocked">Background upload is disabled in this pre-release build until runway has a scoped device-pairing API.</string>
+    <string name="folder_connected">Folder connected. Android read access is persisted.</string>
+    <string name="folder_connected_background">Folder connected. Background checks are enabled.</string>
+    <string name="folder_permission_needed">The saved folder needs permission again.</string>
+    <string name="folder_not_connected">No folder connected.</string>
+    <string name="folder_connection_failed">Android did not grant persistent read access to that folder.</string>
+    <string name="folder_disconnected">Folder access removed.</string>
+    <string name="check_queued">Folder check queued.</string>
+    <string name="background_enabled">Background checks enabled. Android schedules them inexactly.</string>
+    <string name="background_disabled">Background checks disabled.</string>
+    <string name="return_to_runway">Back to runway</string>
+    <string name="open_runway">Open runway</string>
+    <string name="share_title">Import GPX</string>
+    <string name="share_checking">Checking the shared file…</string>
+    <string name="share_ready_no_upload">This file passed local size and type checks. Nothing was uploaded because device pairing is not implemented yet.</string>
+    <string name="share_rejected">This share is not a readable GPX file.</string>
+    <string name="share_too_large">This file is larger than the 10 MB import limit.</string>
+    <string name="close">Close</string>
+</resources>

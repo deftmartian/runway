@@ -65,7 +65,7 @@ states.
 - **Calibration:** two identical easy run/walk sessions per week for two weeks, using time instead
   of invented distance.
 
-## Run the Published Container
+## Run the Published Container Behind HTTPS
 
 Requirements: Docker Engine with Compose v2 and OpenSSL for generating local secrets.
 
@@ -78,16 +78,16 @@ openssl rand -hex 32
 ```
 
 Put the first generated value in `POSTGRES_PASSWORD` and in the password segment of
-`APP_DATABASE_URL`. Put the second in `BETTER_AUTH_SECRET`. For a local evaluation, the minimum
-relevant `.env` values are:
+`APP_DATABASE_URL`. Put the second in `BETTER_AUTH_SECRET`. The published image is a production
+artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
 RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.0.1"
 POSTGRES_PASSWORD="<first generated value>"
 APP_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
 BETTER_AUTH_SECRET="<second generated value>"
-ORIGIN="http://localhost:4100"
-PUBLIC_APP_ORIGIN="http://localhost:4100"
+ORIGIN="https://runway.example.com"
+PUBLIC_APP_ORIGIN="https://runway.example.com"
 ALLOW_LOCAL_SIGNUPS="true"
 ```
 
@@ -99,8 +99,9 @@ docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait ap
 docker compose -f compose.yaml -f deploy/compose.production.yaml ps
 ```
 
-Open [http://localhost:4100](http://localhost:4100), create the intended account, then set
-`ALLOW_LOCAL_SIGNUPS="false"` and apply the change:
+Configure the existing HTTPS reverse proxy with the private runway upstream and header contract in
+[`deploy/Caddyfile.example`](deploy/Caddyfile.example), then open the public HTTPS origin. Create the
+intended account, set `ALLOW_LOCAL_SIGNUPS="false"`, and apply the change:
 
 ```sh
 docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
@@ -108,9 +109,14 @@ docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait ap
 
 The app port is loopback-only by default.
 
+For a local plain-HTTP evaluation, use the source-based development quick start below at
+`http://localhost:4100`; do not weaken the production image's HTTPS checks.
+
 For an update or rollback, change `RUNWAY_IMAGE` to a tested version, full `sha-*` tag, or digest;
-run `pull`; then run `up` again. Production deployments should use HTTPS, keep registration closed,
-back up PostgreSQL before updates, and pin an immutable image reference. The
+run `pull`; then run `up` again. Before changing the database or image, create and prove a private
+backup with `corepack pnpm db:backup -- <new-file>` and
+`corepack pnpm db:backup:verify -- <file>`. Production deployments should use HTTPS, keep registration
+closed, and pin an immutable image reference. The
 [deployment guide](docs/DEPLOYMENT.md) covers the full environment contract, reverse proxy, OIDC,
 SMTP, imports, backups, and health checks.
 

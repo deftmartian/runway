@@ -1,0 +1,24 @@
+Categories:
+  - Sports & Health
+License: AGPL-3.0-only
+AuthorName: REPLACE_AUTHOR_NAME
+SourceCode: https://REPLACE_SOURCE_URL
+IssueTracker: https://REPLACE_ISSUE_URL
+AllowedAPKSigningKeys: REPLACE_WITH_LOWERCASE_CERT_SHA256_WITHOUT_COLONS
+
+RepoType: git
+Repo: https://REPLACE_GIT_URL
+
+Builds:
+  - versionName: 0.1.0-dev
+    versionCode: 1
+    commit: REPLACE_SOURCE_COMMIT
+    subdir: android
+    gradle:
+      - yes
+    gradleprops:
+      - runwayOrigin=https://REPLACE_RUNWAY_HOST
+      - runwayApplicationId=REPLACE_APPLICATION_ID
+
+AutoUpdateMode: None
+UpdateCheckMode: None

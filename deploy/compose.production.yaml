@@ -6,6 +6,8 @@ services:
       ORIGIN: ${ORIGIN:?Set ORIGIN to the public HTTPS origin}
       PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN to the public HTTPS origin}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a high-entropy secret}
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: '1'
 
   worker:
     image: ${RUNWAY_IMAGE:?Set RUNWAY_IMAGE to a tested runway image tag or digest}

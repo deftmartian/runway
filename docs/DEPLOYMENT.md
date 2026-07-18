@@ -4,7 +4,7 @@ This document covers the public runway deployment through the existing OPNsense 
 
 ## Production Shape
 
-The Docker image runs the SvelteKit Node adapter on port `4100`. PostgreSQL runs separately. OPNsense Caddy, Cloudflare, and Authentik sit in front of the app in deployment; runway does not run a second reverse proxy.
+The Docker image runs the SvelteKit Node adapter on port `4100`. PostgreSQL runs separately. OPNsense Caddy terminates the public connection and proxies to runway; Cloudflare may proxy the public host. Authentik is runway's OIDC identity provider, not a second `forward_auth` gate. runway does not run another reverse proxy.
 
 Compose can run a web container plus a worker container for scheduled Nextcloud sync. Both application containers run as the unprivileged Node user with a read-only root filesystem, all Linux capabilities dropped, and privilege escalation disabled. Keep PostgreSQL on a private network and set a real database password.
 
@@ -45,6 +45,29 @@ Local account signups should stay closed unless the operator is intentionally on
 - `ALLOW_LOCAL_SIGNUPS=false`
 - `LOCAL_AUTH_ENABLED=true` if local fallback is allowed
 - `ALLOW_OIDC_SIGNUPS=false` except during an intentional OIDC enrollment window
+
+### Database Runtime Limits
+
+The web and worker use separate bounded PostgreSQL pools. Compose defaults to 10 web connections and
+5 worker connections through `APP_DATABASE_POOL_MAX` and `WORKER_DATABASE_POOL_MAX`. Keep their sum,
+plus migration and operator capacity, below PostgreSQL's configured connection limit. A deployment
+with multiple web or worker replicas must multiply the pool values by the replica count.
+
+Both processes fail at startup when any of these settings is malformed or outside its safe range:
+
+| Setting                                | Default | Allowed range    |
+| -------------------------------------- | ------: | ---------------- |
+| `DATABASE_POOL_MAX`                    |      10 | 1-50             |
+| `DATABASE_CONNECT_TIMEOUT_SECONDS`     |      10 | 1-60 seconds     |
+| `DATABASE_IDLE_TIMEOUT_SECONDS`        |      30 | 1-600 seconds    |
+| `DATABASE_MAX_LIFETIME_SECONDS`        |    1800 | 60-86400 seconds |
+| `DATABASE_STATEMENT_TIMEOUT_MS`        |   30000 | 1000-300000 ms   |
+| `DATABASE_IDLE_TRANSACTION_TIMEOUT_MS` |   30000 | 1000-300000 ms   |
+
+Compose maps the role-specific pool settings to `DATABASE_POOL_MAX`; direct non-Compose deployments
+set `DATABASE_POOL_MAX` themselves. Statement and idle-transaction timeouts are PostgreSQL session
+limits, so a stalled request releases database work instead of occupying a connection indefinitely.
+Tune them only with evidence from slow-query logs and an intentional PostgreSQL connection budget.
 
 ## Better Auth Secret And Encrypted Provider Tokens
 
@@ -274,6 +297,12 @@ then confirm repeated focus does not duplicate it. Also verify permission revoca
 disconnect, folder switching, future-dated and malformed GPX quarantine, the entry bounds, the 10 MB
 limit, and local capability deletion on sign-out and privacy deletion.
 
+For a complete installed Android experience with reliable access after the browser process is stopped,
+use the instance-bound TWA design in [ANDROID.md](ANDROID.md). The APK must be built for this exact HTTPS
+origin and signing identity, and the origin must publish matching Digital Asset Links. Native folder
+access and bounded reconciliation are present, but upload remains blocked until a scoped device-pairing
+API exists. Do not distribute it as import-capable before those production gates are complete.
+
 ## Reverse Proxy And Network Edge
 
 An external HTTPS reverse proxy can own the public edge; runway does not need to bundle its own proxy.
@@ -301,13 +330,42 @@ trusted-proxy handling, and replace the upstream
 `ADDRESS_HEADER=x-forwarded-for` and `XFF_DEPTH=1` for that one-hop reverse-proxy-to-app contract. Do
 not allow other network clients to reach the app and supply their own forwarded header.
 
+Plain HTTP to the runway upstream is acceptable only on same-host loopback or a dedicated, strongly
+isolated link restricted to Caddy and the app. If the hop crosses a shared, wireless, routed, or
+otherwise untrusted network, use an internal HTTPS upstream with certificate validation or mTLS;
+route, session, heart-rate, schedule, and pain data must not cross that hop in cleartext.
+
+`deploy/Caddyfile.example` is the reference contract for a Caddyfile deployment. In the OPNsense
+Caddy UI, map the same settings to the runway host and private HTTP upstream: terminate HTTPS at
+Caddy, replace the upstream `X-Forwarded-For` value with Caddy's derived client address, and send the
+public scheme and host. Do not expose the private upstream to ordinary clients.
+
+By default Caddy ignores incoming `X-Forwarded-*` values when the immediate peer is not trusted. When
+Cloudflare is in front, configure Caddy's global `servers.trusted_proxies` from Cloudflare's current
+published CIDRs and enable `trusted_proxies_strict`, then pass `{client_ip}` as the single upstream
+address. Review the current Caddy
+[reverse-proxy header behavior](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#headers)
+and [trusted-proxy options](https://caddyserver.com/docs/caddyfile/options#trusted-proxies) when the
+edge topology changes. Do not copy CDN address ranges into this repository; keeping them current is
+an edge/firewall operation.
+
+At Cloudflare, use Full (strict) TLS, restrict the origin so only Cloudflare and operator traffic can
+reach it, and bypass shared caching for authenticated, login, logout, and `/api/auth` routes. Treat
+the current published Cloudflare address ranges as operational data: update the Caddy trust list and
+origin firewall together, then verify the derived client address at the app.
+
+The reference Caddy log filter replaces the password-reset `token` query value with `REDACTED`.
+Configure the equivalent query filter in OPNsense and every CDN, WAF, tracing, and error-log layer.
+After deployment, issue one disposable reset link, request it once, and inspect raw logs at every
+layer. The real token must not appear; revoke the test session afterward.
+
 The application generates a fresh CSP nonce per response. Do not replace its CSP at the edge with one
 static header. If the edge adds a CSP, it must preserve the response nonce and be at
 least as strict as the application policy.
 
 Password-reset links arrive at `/login/reset-password?token=...` once before runway moves the bearer
 token into an HttpOnly, path-scoped cookie and redirects to the clean URL. Configure reverse-proxy and
-runtime/error log formats to delete the `token` query value, including on upstream failures. Apply the
+runtime/error log formats to redact the `token` query value, including on upstream failures. Apply the
 equivalent rule to CDN logs, request tracing, WAF event exports, and any upstream log processor—or
 omit query strings entirely for this path. Send a disposable reset request
 after deployment and verify the raw edge and origin log output; the token value must not appear
@@ -414,8 +472,17 @@ Compose exposes three health checks:
 - `/health/worker` proves the dedicated worker scheduler started and its last completed pass did not
   end in a top-level failure.
 
+All three responses expose the semantic `release`, exact `build`, and backward-compatible `version`
+build field. Record the health identity with the deployed image digest so an operator can distinguish
+an old process from a failed rollout without inspecting private application data.
+
 The worker starts one pass immediately and then checks on its interval. Scheduled import is opt-in:
 only the worker service sets `IMPORT_WORKER_ENABLED=true`; the web service explicitly sets it false.
+Worker health reports `starting` or `running` while a pass is legitimately active, fails an active pass
+after 35 minutes, and fails when no successful pass has completed for 20 minutes. These limits are
+longer than the normal five-minute interval and shorter than an indefinitely wedged scheduler. The
+health payload contains only timestamps, ages, and scheduler state; it does not expose source names,
+remote paths, credentials, or activity details.
 Each pass also deletes at most 500 audit events older than the retention window. The default is 365
 days. Set `AUDIT_EVENT_RETENTION_DAYS` to an integer from 1 to 3650 to override it. Use the exact value
 `disabled` only when indefinite retention is an explicit deployment decision; invalid values make the
@@ -423,10 +490,47 @@ worker pass unhealthy.
 
 ## Backup, Restore, And Rollback
 
-Before every database or image change, take a PostgreSQL custom-format backup with `pg_dump -Fc`,
-store it outside the Compose volume with access limited to the operator, and record the image digest.
-Periodically prove the backup by restoring it into a separate empty database with `pg_restore`
-and running `/health/ready` plus a read-only application smoke check against that restored copy.
+Before every database or image change, create a PostgreSQL custom-format backup outside the Compose
+volume. The backup command refuses to overwrite a path, creates it with mode `0600`, streams database
+bytes without printing them, and verifies the archive inventory before reporting success:
+
+```sh
+corepack pnpm db:backup -- /restricted-backups/runway-before-update.dump
+```
+
+The scripts use a transient client from the digest-pinned Compose PostgreSQL image. They read the
+source in this order: `RUNWAY_BACKUP_DATABASE_URL`, `APP_DATABASE_URL`, `DATABASE_URL`, then the
+rendered Compose app configuration. Keep URLs in the environment or restricted `.env`, never command
+arguments or shell history. A dedicated backup role may be supplied through
+`RUNWAY_BACKUP_DATABASE_URL`; it needs enough read access for `pg_dump`.
+
+Periodically perform a real restore drill, not just an archive listing:
+
+```sh
+corepack pnpm db:backup:verify -- /restricted-backups/runway-before-update.dump
+```
+
+Verification creates a randomly named temporary database, restores the complete archive, checks the
+required runway tables and exact migration journal, and drops the temporary database. The standard
+Compose database owner can do this. A restricted backup role instead needs a separate same-cluster
+`RUNWAY_BACKUP_ADMIN_DATABASE_URL` with permission to create and drop the temporary database. Budget
+free disk for another full copy and run the drill away from peak load.
+
+Recovery always targets a separately created, empty database. The restore command refuses the active
+source database, refuses a non-empty target, refuses symlink or group/world-readable archives, restores
+with ownership and grants removed, and verifies the migration journal before succeeding:
+
+```sh
+export RUNWAY_RESTORE_DATABASE_URL='postgres://restore-user:<password>@db:5432/runway_restore'
+corepack pnpm db:restore -- /restricted-backups/runway-before-update.dump
+unset RUNWAY_RESTORE_DATABASE_URL
+```
+
+If restore fails, discard the partially populated target instead of attempting to repair it in place.
+After a successful restore, inject the matching key manifest, start the matching image with imports
+disabled, confirm `/health/ready`, and run the read-only authentication checks from the restore
+verification checklist above. The scripts never back up `BETTER_AUTH_SECRET`, `BETTER_AUTH_SECRETS`,
+or `IMPORT_SECRET_KEY`; preserve that key material separately as described in the contract.
 
 For an application-only regression, redeploy the previous image build ID. For a database-changing
 release, restore the pre-release backup into a new database and point the previous image at that

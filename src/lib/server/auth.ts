@@ -10,11 +10,13 @@ import { getRequestEvent } from '$app/server';
 import { db } from '$lib/server/db';
 import { authLogger } from '$lib/server/runway/auth-log';
 import {
+	authFreshSessionSeconds,
 	canonicalAppOrigin,
 	omitStoredOidcIdToken,
 	oauthTokenStorageOptions,
 	oidcDiscoveryUrl,
-	passkeyRpIdProblem
+	passkeyRpIdProblem,
+	publicOriginMismatchProblem
 } from '$lib/server/runway/auth-config';
 
 const isProductionRuntime = env['NODE_ENV'] === 'production' && !building;
@@ -23,6 +25,13 @@ const configuredPasskeyOrigin = env['PUBLIC_APP_ORIGIN'];
 const passkeyOrigin = canonicalAppOrigin(configuredPasskeyOrigin || origin, 'PUBLIC_APP_ORIGIN');
 assertProductionHttps('ORIGIN', origin);
 assertProductionHttps('PUBLIC_APP_ORIGIN', passkeyOrigin);
+const publicOriginConfigurationProblem = publicOriginMismatchProblem(origin, passkeyOrigin);
+if (publicOriginConfigurationProblem && isProductionRuntime) {
+	throw new Error(publicOriginConfigurationProblem);
+}
+if (publicOriginConfigurationProblem && !building) {
+	console.warn(`[runway auth] ${publicOriginConfigurationProblem}`);
+}
 const passkeyRpId = env['PASSKEY_RP_ID'] || new URL(passkeyOrigin).hostname;
 const passkeyRpIdConfigurationProblem = passkeyRpIdProblem(passkeyOrigin, passkeyRpId);
 if (passkeyRpIdConfigurationProblem && isProductionRuntime) {
@@ -84,6 +93,9 @@ export const auth = betterAuth({
 	secret: authSecret,
 	logger: authLogger,
 	trustedOrigins: Array.from(new Set([origin, passkeyOrigin, ...developmentTrustedOrigins])),
+	session: {
+		freshAge: authFreshSessionSeconds
+	},
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	databaseHooks: {
 		account: {

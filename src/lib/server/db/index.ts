@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
+import { readDatabaseRuntimeOptions } from './config';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 
@@ -18,6 +19,8 @@ if (
 	throw new Error('DATABASE_URL must not use the development database password in production.');
 }
 
-const client = postgres(databaseUrl);
+const environment = { ...env, ...process.env };
+const processRole = environment['IMPORT_WORKER_ENABLED'] === 'true' ? 'worker' : 'web';
+const client = postgres(databaseUrl, readDatabaseRuntimeOptions(environment, processRole));
 
 export const db = drizzle(client, { schema });
