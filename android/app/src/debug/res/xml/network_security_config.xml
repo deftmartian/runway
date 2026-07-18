@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- Debug builds may target a private HTTP origin. Release builds use the deny-all config. -->
+    <!--suppress InsecureBaseConfiguration -->
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

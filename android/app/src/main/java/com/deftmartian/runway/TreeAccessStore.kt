@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.edit
+import androidx.core.net.toUri
 
 sealed interface TreeAccessState {
     data object Missing : TreeAccessState
@@ -32,7 +34,7 @@ class TreeAccessStore(context: Context) {
         }.getOrDefault(false)
 
         if (persisted) {
-            preferences.edit().putString(TREE_URI_KEY, uri.toString()).apply()
+            preferences.edit { putString(TREE_URI_KEY, uri.toString()) }
             if (previousUri != null && previousUri != uri) {
                 runCatching {
                     appContext.contentResolver.releasePersistableUriPermission(
@@ -47,7 +49,7 @@ class TreeAccessStore(context: Context) {
 
     fun currentState(): TreeAccessState {
         val rawUri = preferences.getString(TREE_URI_KEY, null) ?: return TreeAccessState.Missing
-        val uri = runCatching { Uri.parse(rawUri) }.getOrNull() ?: return TreeAccessState.Missing
+        val uri = runCatching { rawUri.toUri() }.getOrNull() ?: return TreeAccessState.Missing
         val permission = appContext.contentResolver.persistedUriPermissions.firstOrNull {
             it.uri == uri && it.isReadPermission
         }
@@ -73,7 +75,7 @@ class TreeAccessStore(context: Context) {
                 )
             }
         }
-        preferences.edit().remove(TREE_URI_KEY).apply()
+        preferences.edit { remove(TREE_URI_KEY) }
     }
 
     private companion object {

@@ -11,6 +11,10 @@ const requiredFiles = [
 	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
+	'android/gradle/wrapper/gradle-wrapper.jar',
+	'android/gradle/wrapper/gradle-wrapper.properties',
+	'android/gradlew',
+	'android/gradlew.bat',
 	'android/assetlinks.json.template',
 	'android/docs/RELEASE.md'
 ];
@@ -64,6 +68,15 @@ for (const required of [
 	'runwayApplicationId'
 ]) {
 	if (!build.includes(required)) errors.push(`Android Gradle contract is missing ${required}`);
+}
+
+const wrapper = read('android/gradle/wrapper/gradle-wrapper.properties');
+for (const required of [
+	'gradle-8.13-bin.zip',
+	'distributionSha256Sum=20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78',
+	'validateDistributionUrl=true'
+]) {
+	if (!wrapper.includes(required)) errors.push(`Android Gradle wrapper is missing ${required}`);
 }
 
 const launcher = read('android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt');

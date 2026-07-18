@@ -1,7 +1,9 @@
 package com.deftmartian.runway
 
 import android.content.Intent
+import android.content.pm.ShortcutManager
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -33,6 +35,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (
+            Build.VERSION.SDK_INT >= 25 &&
+            intent.action == RunwayLauncherActivity.ACTION_OPEN_FOLDER_SETTINGS
+        ) {
+            getSystemService(ShortcutManager::class.java)
+                ?.reportShortcutUsed(RunwayLauncherActivity.FOLDER_SHORTCUT_ID)
+        }
         treeAccessStore = TreeAccessStore(this)
         setContentView(buildContent())
         refreshFolderState()

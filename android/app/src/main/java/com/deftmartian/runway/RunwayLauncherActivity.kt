@@ -41,8 +41,8 @@ class RunwayLauncherActivity : LauncherActivity() {
         runCatching { shortcutManager.setDynamicShortcuts(listOf(shortcut)) }
     }
 
-    private companion object {
-        const val ACTION_OPEN_FOLDER_SETTINGS = "com.deftmartian.runway.OPEN_FOLDER_SETTINGS"
-        const val FOLDER_SHORTCUT_ID = "device-folder"
+    companion object {
+        internal const val ACTION_OPEN_FOLDER_SETTINGS = "com.deftmartian.runway.OPEN_FOLDER_SETTINGS"
+        internal const val FOLDER_SHORTCUT_ID = "device-folder"
     }
 }

@@ -67,12 +67,14 @@ gap with browser cookies, a username/password, an embedded token URL, or an unbo
 - Android SDK platform 36 and matching build tools
 - Gradle 8.13 for the initial wrapper generation
 
-The current development machine did not have those tools, so no unverified wrapper JAR was added. On
-a toolchain-enabled machine, generate and review it once:
+The reviewed Gradle 8.13 wrapper is checked in and pins the distribution SHA-256. Keep Android SDK
+paths in the ignored `local.properties` file or normal `ANDROID_HOME`/`ANDROID_SDK_ROOT` variables;
+do not commit machine-specific paths.
+
+Build with the wrapper:
 
 ```sh
 cd android
-gradle wrapper --gradle-version 8.13 --distribution-type bin
 ./gradlew --version
 ./gradlew \
   -PrunwayOrigin=https://runway.example.com \
@@ -80,7 +82,8 @@ gradle wrapper --gradle-version 8.13 --distribution-type bin
   :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-Commit the wrapper scripts, properties, and JAR together after verifying the distribution checksum.
+When deliberately upgrading Gradle, regenerate the scripts and JAR together, review the wrapper
+change, and replace `distributionSha256Sum` with the checksum published for that exact distribution.
 Do not commit `local.properties`, signing keys, or signing passwords.
 
 See [Android architecture and production gates](../docs/ANDROID.md) and

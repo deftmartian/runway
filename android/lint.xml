@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- AGP 8.13.2 is intentionally paired with the reviewed Gradle 8.13 wrapper. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <!-- core-ktx 1.19 requires API 37 and AGP 9.1; runway intentionally targets API 36. -->
+    <issue id="GradleDependency" severity="ignore" />
+</lint>
