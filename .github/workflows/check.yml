@@ -56,8 +56,20 @@ jobs:
         run: corepack pnpm verify:compose && corepack pnpm verify:compose:production
       - name: Android TWA static contract
         run: corepack pnpm verify:android
-      - name: Android lint, unit, and debug build
-        run: corepack pnpm verify:android:build
+      - name: Android lint
+        run: >-
+          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
+          -PrunwayOrigin=https://runway.example.test lint
+      - name: Android unit tests
+        run: >-
+          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
+          -PrunwayOrigin=https://runway.example.test test
+      - name: Android debug build
+        run: >-
+          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
+          -PrunwayOrigin=https://runway.example.test assembleDebug
+      - name: Android debug artifact contract
+        run: node scripts/verify-android-artifact.mjs debug
       - name: Android release identity and signing guard
         run: corepack pnpm verify:android:release
       - name: Caddy edge contract
