@@ -4,10 +4,10 @@ import {
 	completeActivePlan,
 	confirmPhaseBaseline,
 	continueBeginnerPhase,
-	getAthleteTimeZone,
-	getPhaseCompletionReview,
-	listPlanHistory
-} from '$lib/server/runway/repository';
+	getPhaseCompletionReview
+} from '$lib/server/runway/repositories/plan-lifecycle';
+import { listPlanHistory } from '$lib/server/runway/repositories/plan-queries';
+import { getAthleteTimeZone } from '$lib/server/runway/repositories/profiles';
 import type { Actions, PageServerLoad } from './$types';
 
 const PAGE_SIZE = 20;

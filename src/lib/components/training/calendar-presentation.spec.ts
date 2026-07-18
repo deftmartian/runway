@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEvent } from './calendar-types';
-import { canRecordUnplannedRun, presentCalendarEvent } from './calendar-presentation';
+import {
+	canRecordUnplannedRun,
+	isQuietCalendarDay,
+	presentCalendarEvent,
+	shouldCollapseEarlierCalendarWeek
+} from './calendar-presentation';
 
 function calendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 	return {
@@ -101,6 +106,90 @@ describe('presentCalendarEvent', () => {
 		expect(canRecordUnplannedRun(calendarEvent({ kind: 'actual' }), today)).toBe(true);
 		expect(
 			canRecordUnplannedRun(calendarEvent({ date: '2026-07-15', isFuture: true }), today)
+		).toBe(false);
+	});
+});
+
+describe('calendar week visibility', () => {
+	const weekDays = (event?: CalendarEvent) =>
+		Array.from({ length: 7 }, (_, index) => ({
+			date: `2026-07-${String(6 + index).padStart(2, '0')}`,
+			inSelectedMonth: true,
+			events: event && index === 1 ? [event] : []
+		}));
+
+	it('collapses only quiet weeks before the current week in the current month', () => {
+		expect(
+			shouldCollapseEarlierCalendarWeek({
+				selectedMonth: '2026-07',
+				currentMonth: '2026-07',
+				today: '2026-07-18',
+				hasPlanSummary: false,
+				days: weekDays()
+			})
+		).toBe(true);
+	});
+
+	it.each([
+		['planned work', calendarEvent({ kind: 'planned' })],
+		['recorded history', calendarEvent({ kind: 'actual', isRecordable: false })],
+		['review work', calendarEvent({ kind: 'review' })]
+	])('keeps a prior week visible when it contains %s', (_, event) => {
+		expect(
+			shouldCollapseEarlierCalendarWeek({
+				selectedMonth: '2026-07',
+				currentMonth: '2026-07',
+				today: '2026-07-18',
+				hasPlanSummary: false,
+				days: weekDays(event)
+			})
+		).toBe(false);
+	});
+
+	it('keeps plan summaries and noncurrent month views expanded', () => {
+		const input = {
+			selectedMonth: '2026-07',
+			currentMonth: '2026-07',
+			today: '2026-07-18',
+			hasPlanSummary: true,
+			days: weekDays()
+		};
+		expect(shouldCollapseEarlierCalendarWeek(input)).toBe(false);
+		expect(
+			shouldCollapseEarlierCalendarWeek({
+				...input,
+				selectedMonth: '2026-06',
+				hasPlanSummary: false
+			})
+		).toBe(false);
+	});
+
+	it('keeps the current week expanded even when it is quiet', () => {
+		const days = weekDays().map((day, index) => ({
+			...day,
+			date: `2026-07-${String(13 + index).padStart(2, '0')}`
+		}));
+		expect(
+			shouldCollapseEarlierCalendarWeek({
+				selectedMonth: '2026-07',
+				currentMonth: '2026-07',
+				today: '2026-07-18',
+				hasPlanSummary: false,
+				days
+			})
+		).toBe(false);
+	});
+
+	it('treats open placeholders as quiet without hiding meaningful events', () => {
+		expect(isQuietCalendarDay({ events: [] })).toBe(true);
+		expect(
+			isQuietCalendarDay({ events: [calendarEvent({ kind: 'open', isRecordable: false })] })
+		).toBe(true);
+		expect(isQuietCalendarDay({ events: [calendarEvent({ kind: 'actual' })] })).toBe(false);
+		expect(
+			isQuietCalendarDay({
+				events: [calendarEvent({ kind: 'open', isRecordable: true })]
+			})
 		).toBe(false);
 	});
 });

@@ -22,7 +22,7 @@ The app and preview bind to `0.0.0.0:4100`; the default local review URL is `htt
 - `/app/onboarding` — Goal, Starting point, Schedule, Review.
 - `/app` — calendar and bounded day inspector/sheet actions.
 - `/app/import` — activity ledger, manual GPX upload, share/device-folder/Nextcloud sources.
-- `/app/stats` — plan risk, generated/current/actual traces, exact values, and descriptive trends.
+- `/app/stats` — ramp assessments, generated/current/actual traces, exact values, and descriptive trends.
 - `/app/history` — plan lifecycle and plan records.
 - `/app/history/[planId]` — phase, adjustment, reversal, workout, and result timeline.
 - `/app/settings` — training profile, time zone, security, appearance, export, and privacy controls.

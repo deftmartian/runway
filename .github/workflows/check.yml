@@ -22,6 +22,17 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/app/*.gradle.kts
+      - name: Install Android SDK platform
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@10.32.0 --activate
       - name: Install dependencies
@@ -36,5 +47,7 @@ jobs:
         run: corepack pnpm verify:compose && corepack pnpm verify:compose:production
       - name: Android TWA static contract
         run: corepack pnpm verify:android
+      - name: Android lint, unit, and debug build
+        run: corepack pnpm verify:android:build
       - name: Caddy edge contract
         run: corepack pnpm verify:caddy

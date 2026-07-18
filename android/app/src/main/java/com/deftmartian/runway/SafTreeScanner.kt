@@ -13,9 +13,11 @@ data class GpxTreeCandidate(
 data class TreeScanSummary(
     val entriesScanned: Int,
     val candidates: List<GpxTreeCandidate>,
-    val truncated: Boolean,
+    val startOffset: Int,
+    val nextOffset: Int?,
 ) {
     val gpxCandidates: Int = candidates.size
+    val truncated: Boolean = nextOffset != null
 }
 
 sealed interface TreeScanResult {
@@ -25,7 +27,8 @@ sealed interface TreeScanResult {
 }
 
 class SafTreeScanner(private val contentResolver: ContentResolver) {
-    fun scan(state: TreeAccessState): TreeScanResult {
+    fun scan(state: TreeAccessState, startOffset: Int = 0): TreeScanResult {
+        require(startOffset >= 0) { "startOffset must not be negative" }
         if (state !is TreeAccessState.Connected) return TreeScanResult.PermissionRequired
 
         return try {
@@ -52,13 +55,19 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
                 val modifiedColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                 var entries = 0
                 val candidates = mutableListOf<GpxTreeCandidate>()
-                var truncated = false
 
-                while (it.moveToNext()) {
-                    if (entries >= MAX_ENTRIES_PER_SCAN) {
-                        truncated = true
-                        break
-                    }
+                if (startOffset > 0 && !it.moveToPosition(startOffset - 1)) {
+                    return TreeScanResult.Success(
+                        TreeScanSummary(
+                            entriesScanned = 0,
+                            candidates = emptyList(),
+                            startOffset = startOffset,
+                            nextOffset = null,
+                        ),
+                    )
+                }
+
+                while (entries < MAX_ENTRIES_PER_SCAN && it.moveToNext()) {
                     entries += 1
                     val displayName = if (nameColumn >= 0 && !it.isNull(nameColumn)) {
                         it.getString(nameColumn)
@@ -92,7 +101,15 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
                     }
                 }
 
-                TreeScanResult.Success(TreeScanSummary(entries, candidates, truncated))
+                val hasMore = entries == MAX_ENTRIES_PER_SCAN && it.moveToNext()
+                TreeScanResult.Success(
+                    TreeScanSummary(
+                        entriesScanned = entries,
+                        candidates = candidates,
+                        startOffset = startOffset,
+                        nextOffset = if (hasMore) startOffset + entries else null,
+                    ),
+                )
             }
         } catch (_: SecurityException) {
             TreeScanResult.PermissionRequired

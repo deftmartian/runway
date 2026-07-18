@@ -40,7 +40,10 @@ That fallback is a security property and must not be replaced by WebView.
 
 The TWA contains the full runway product: onboarding, plan, calendar, run detail, import review,
 history, stats, settings, and authentication. The native folder activity is only a system-capability
-sheet. It does not duplicate accounts, plans, runs, history, or navigation.
+sheet. It does not duplicate accounts, plans, runs, history, or navigation. Its resource-backed
+layout follows the system light/dark theme, scales with Android font settings, exposes headings and
+live status regions to accessibility services, and keeps one primary action that changes from
+account connection to folder selection to **Check now**.
 
 After the first launch, Android publishes a **Folder** launcher shortcut. The folder sheet is also
 registered for `runway-native://folder`. When the server's Android application id and certificate are
@@ -135,3 +138,20 @@ The Android app is not ready for external release until there is evidence for:
 The mobile API now supports real review-only imports. External distribution still waits on the
 remaining signing, device-matrix, upgrade, accessibility, incident-response, and release-evidence
 gates above.
+
+## Local and continuous verification
+
+The static contract and the real Android build are separate gates. Run both after any native,
+manifest, Android resource, pairing/import API, or Digital Asset Links change:
+
+```sh
+corepack pnpm verify:android
+corepack pnpm verify:android:build
+```
+
+The build command runs Gradle `lint`, `test`, and `assembleDebug` against the non-routable
+`https://runway.example.test` build origin. It proves the Kotlin and resources compile without
+requiring a real instance or signing identity; it does not produce a distributable release. The
+repository check workflow runs the same commands with JDK 17, Android platform 36, and build tools
+36.0.0. Emulator, physical-device, TWA association, and accessibility evidence remain explicit
+release gates rather than being implied by a successful debug build.

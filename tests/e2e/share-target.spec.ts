@@ -203,6 +203,7 @@ test('approved device folder imports once on foreground and stays account-scoped
 	await setTrainingTimeZone(email);
 	await page.goto('/app/import');
 	await page.getByText('Add import source', { exact: true }).click();
+	await page.getByRole('button', { name: /^Browser folder/ }).click();
 	await page.getByRole('button', { name: 'Allow device folder' }).click();
 	await expect(
 		page.getByText(/GPX added to the activity inbox\. 1 more file is waiting/)
@@ -276,6 +277,7 @@ test('approved device folder imports once on foreground and stays account-scoped
 	await createAccount(page);
 	await page.goto('/app/import');
 	await page.getByText('Add import source', { exact: true }).click();
+	await page.getByRole('button', { name: /^Browser folder/ }).click();
 	await expect(page.getByRole('button', { name: 'Allow device folder' })).toBeVisible();
 	await expect(page.getByText('Connected on this browser')).not.toBeVisible();
 });
@@ -289,6 +291,7 @@ const nativeShareHeaders = {
 async function createAccount(page: Page): Promise<string> {
 	const email = `share-target-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`;
 	await page.goto('/login');
+	await page.getByRole('button', { name: 'Create account', exact: true }).click();
 	const signup = page.locator('#create-account');
 	await signup.getByLabel('Email').fill(email);
 	await signup.getByLabel('Password').fill('correct horse battery staple 2026');

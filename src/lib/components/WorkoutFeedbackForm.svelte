@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { presentConsequence } from '$lib/training/consequence-presentation';
 	import { calculateConsequence } from '$lib/training/consequences';
+	import { presentLoadChangeAssessment } from '$lib/training/training-assessment';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
 	type Status = 'done' | 'skipped';
@@ -109,6 +110,9 @@
 		return `${rounded > 0 ? '+' : ''}${rounded} km`;
 	};
 	const consequencePresentation = $derived(consequence ? presentConsequence(consequence) : null);
+	const consequenceAssessment = $derived(
+		consequence ? presentLoadChangeAssessment(consequence.risk) : null
+	);
 	const weekImpact = $derived(
 		!consequence || consequence.weeklyDistanceDeltaMeters === 0
 			? 'No weekly distance change'
@@ -194,7 +198,7 @@
 			>
 		</div>
 		<p class="muted">
-			Hard effort changes load advice. Pain triggers the safety path. Select both when both were
+			Hard effort changes the next-run advice. Pain adds health guidance. Select both when both were
 			true.
 		</p>
 		<input type="hidden" name="choice" value="skip_continue" />
@@ -208,7 +212,7 @@
 				<span class="consequence-facts">
 					<strong>{weekImpact}</strong>
 					<strong>{nextRunImpact}</strong>
-					<strong>{consequence.risk} risk</strong>
+					{#if consequenceAssessment}<strong>{consequenceAssessment.label}</strong>{/if}
 				</span>
 			</div>
 		{/if}

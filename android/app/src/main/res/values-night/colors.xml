@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="runway_background">#091716</color>
+    <color name="runway_surface">#112421</color>
+    <color name="runway_surface_variant">#18322E</color>
+    <color name="runway_surface_dark">#091716</color>
+    <color name="runway_primary">#72D5C4</color>
+    <color name="runway_on_primary">#08211D</color>
+    <color name="runway_text">#E7F2EF</color>
+    <color name="runway_muted">#AFC4BF</color>
+    <color name="runway_outline">#36534E</color>
+    <color name="runway_status">#72D5C4</color>
+    <color name="runway_attention">#E7A55C</color>
+    <color name="runway_disabled">#54716B</color>
+    <color name="runway_disabled_surface">#20332F</color>
+</resources>

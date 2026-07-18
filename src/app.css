@@ -2072,7 +2072,7 @@ button.command-readout.review:not(:disabled):hover {
 
 .event-detail-backdrop {
 	position: fixed;
-	z-index: 40;
+	z-index: 60;
 	inset: 0;
 	width: 100%;
 	height: 100%;
@@ -2086,7 +2086,7 @@ button.command-readout.review:not(:disabled):hover {
 
 .event-detail-panel {
 	position: fixed;
-	z-index: 41;
+	z-index: 61;
 	inset: max(14px, var(--safe-area-top)) max(14px, var(--safe-area-right))
 		max(14px, var(--safe-area-bottom)) max(14px, var(--safe-area-left));
 	transform: none;
@@ -2863,12 +2863,12 @@ details.setup-codes > summary {
 
 	.calendar-weekday-row,
 	.calendar-month-grid {
-		min-width: 26.25rem;
+		min-width: 21.875rem;
 	}
 
 	.calendar-month-day {
 		min-height: 76px;
-		padding: 6px;
+		padding: 6px 3px;
 	}
 
 	.calendar-month-day.compact-empty {

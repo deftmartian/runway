@@ -334,7 +334,7 @@ http://192.168.<VLAN_TAG>.10:4100
 
 Only the web container joins the VLAN; the worker, migration service, and PostgreSQL remain on the
 internal bridge. The VLAN parent interface must already exist on the Docker host. The firewall should
-allow either upstream only from the reverse-proxy path and intended operator networks. Never publish
+allow the upstream only from the reverse proxy's source address. Never publish
 PostgreSQL in production. Keep any CDN proxy ranges current at the firewall, enable strict
 trusted-proxy handling, and replace the upstream
 `X-Forwarded-For` value with the single derived client address. Compose configures adapter-node with

@@ -4,7 +4,7 @@ import {
 	maxGpxImportBytes,
 	maxGpxMultipartOverheadBytes
 } from '$lib/server/runway/gpx-review-import';
-import { getActivityImportGeneration } from '$lib/server/runway/repository';
+import { getActivityImportGeneration } from '$lib/server/runway/repositories/profiles';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async (event) => {

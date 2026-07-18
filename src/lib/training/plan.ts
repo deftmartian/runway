@@ -562,17 +562,17 @@ function getWarnings(
 	}
 	if (risk === 'aggressive' || risk === 'unsafe') {
 		warnings.push(
-			'The required weekly increase exceeds the conservative limit. Move the target date later or choose a shorter distance.'
+			"The required weekly increase is above runway's default. Move the target date later or choose a shorter distance."
 		);
 	}
 	if (hasInjuryRiskFlags(intake)) {
 		warnings.push(
-			'Injury recovery or recurring pain is included in plan risk checks. Get qualified guidance if pain persists, worsens, or changes how you move.'
+			'Injury recovery or recurring pain is included in the ramp assessment. Get qualified guidance if pain persists, worsens, or changes how you move.'
 		);
 	}
 	if (requiredWeeklyIncreasePercent > 10) {
 		warnings.push(
-			'Weekly distance growth above 10% is treated as elevated risk, not a normal target.'
+			"Weekly distance growth above 10% is outside runway's default, not a normal target."
 		);
 	}
 	if (

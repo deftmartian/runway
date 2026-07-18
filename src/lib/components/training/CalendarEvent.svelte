@@ -83,10 +83,83 @@
 		onselect(event, mouseEvent.currentTarget);
 	}}
 >
-	<span class="event-title">{event.title}</span>
-	<small class="event-meta">{distanceLabel} · {statusLabel}</small>
-	<span class="event-compact" aria-hidden="true">
-		<strong>{compactLabel}</strong>
-		<em>{compactStatusLabel}</em>
-	</span>
+	{#if event.kind === 'open'}
+		<span class="open-affordance" aria-hidden="true">
+			<strong>+</strong>
+			<em>{event.isFuture ? 'Add workout' : 'Record run'}</em>
+		</span>
+	{:else}
+		<span class="event-title">{event.title}</span>
+		<small class="event-meta">{distanceLabel} · {statusLabel}</small>
+		<span class="event-compact" aria-hidden="true">
+			<strong>{compactLabel}</strong>
+			<em>{compactStatusLabel}</em>
+		</span>
+	{/if}
 </button>
+
+<style>
+	.calendar-event.open {
+		place-items: center;
+		border-color: transparent;
+		border-style: solid;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.calendar-event.open::before {
+		content: none;
+	}
+
+	.open-affordance {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0;
+		max-width: 100%;
+		color: color-mix(in oklab, var(--muted), transparent 28%);
+	}
+
+	.open-affordance strong {
+		font-size: 1rem;
+		font-weight: 500;
+		line-height: 1;
+	}
+
+	.open-affordance em {
+		overflow: hidden;
+		max-width: 0;
+		opacity: 0;
+		font-size: 0.76rem;
+		font-style: normal;
+		font-weight: 680;
+		line-height: 1;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		transition:
+			max-width 140ms ease,
+			opacity 140ms ease,
+			margin-inline-start 140ms ease;
+	}
+
+	.calendar-event.open:is(:hover, :focus-visible, .selected) {
+		border-color: color-mix(in oklab, var(--accent), var(--line) 68%);
+		background: color-mix(in oklab, var(--accent), transparent 96%);
+	}
+
+	.calendar-event.open:is(:hover, :focus-visible, .selected) .open-affordance {
+		color: var(--text);
+	}
+
+	.calendar-event.open:is(:hover, :focus-visible, .selected) .open-affordance em {
+		max-width: 7.5rem;
+		margin-inline-start: 0.35rem;
+		opacity: 1;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.open-affordance em {
+			transition: none;
+		}
+	}
+</style>

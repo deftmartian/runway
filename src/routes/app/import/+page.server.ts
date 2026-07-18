@@ -4,14 +4,16 @@ import {
 	confirmActivityAsExtra,
 	deleteActivityRecord,
 	getActivityRecords,
-	getActivityImportGeneration,
-	getAthleteProfile,
 	getImportWorkoutCandidates,
 	linkActivityToWorkout,
 	recordImportedActivity,
 	unlinkActivityFromWorkout,
 	updateActivityFeedback
 } from '$lib/server/runway/repository';
+import {
+	getActivityImportGeneration,
+	getAthleteProfile
+} from '$lib/server/runway/repositories/profiles';
 import { buildAndroidAssetLinks } from '$lib/server/runway/android-asset-links';
 import { maxGpxImportBytes } from '$lib/import-limits';
 import {

@@ -1,8 +1,8 @@
 # training sources
 
-Reviewed: 2026-07-16.
+Reviewed: 2026-07-18.
 
-runway uses these sources as conservative guardrails, not as medical advice. The app should explain risk and tradeoffs, then recommend seeing a qualified professional for pain, injury, or medical concerns.
+runway uses these sources as guardrails for its planning defaults, not as medical advice. The app should explain the plan arithmetic and tradeoffs, keep health warnings separate, and recommend seeing a qualified professional for pain, injury, or medical concerns.
 
 The established distance planner's minimum repeatable week (3 km, two runs, and a positive longest run) is an input limitation for distance-based ramp arithmetic. It is not health advice, a readiness diagnosis, or a claim that shorter/less frequent activity has no value. Runners below that input use a timed foundation or calibration phase so runway does not fabricate distance.
 
@@ -11,12 +11,12 @@ The established distance planner's minimum repeatable week (3 km, two runs, and 
 Sources below support the direction of conservative progression, rest, run/walk work, tapering, and pain-aware guidance. They do not validate every numeric boundary in runway. The following values are explicit, reviewable product heuristics:
 
 - The distance generator caps its ordinary build at 7.5% per week for `finish_healthy` and 10% for other priorities. A recent-injury or recurring-pain flag lowers that cap by 2 percentage points, with a 4% floor.
-- Ramp labels use 8%, 12%, and 18% boundaries for conservative, moderate, aggressive, and unsafe. An injury flag lowers each boundary by 2 percentage points. A plan under eight weeks also starts unsafe when its baseline is below 55% of the product's goal-volume target.
+- Ramp assessments use 8%, 12%, and 18% internal boundaries. The interface presents the four bands as `Within default`, `Above default`, `High increase`, and `Unsupported`. An injury flag lowers each boundary by 2 percentage points. A plan under eight weeks is also unsupported when its baseline is below 55% of the product's goal-volume target.
 - Goal-volume targets (weekly/long run) are 14/5 km for 5K, 22/9 km for 10K, 34/18 km for half-marathon, and 58/32 km for marathon. Long-run warning floors are 4, 8, 16, and 28 km. The marathon-specific baseline warning uses 32 km weekly and a 20 km longest recent run.
-- A workout edit is moderate above a 10% load share, aggressive above 15%, and unsafe above 25%. These labels trigger explanation and confirmation; valid user edits remain available.
+- A workout edit is above the default range when it changes more than 10% of the week's load, a high change above 15%, and outside the default range above 25%. These bands trigger explanation and confirmation; valid user edits remain available.
 - Plan-versus-actual material thresholds are `max(500 m, 15%)` for distance and `max(5 minutes, 15%)` for duration. Consequence ranking additionally treats a greater-than-10% overrun against its guardrail base, a two-times prescription, and a greater-than-40% shortfall as proposal inputs.
 
-These values are not diagnoses, physiological measurements, or universal safe/unsafe boundaries. They exist to make a conservative default and its tradeoffs inspectable. Changing one requires domain tests, copy review, and an update here; heart-rate data never changes these labels by itself.
+These values are not diagnoses, physiological measurements, or universal safety boundaries. `Within default` means only that the arithmetic stays inside runway's configured default; it does not mean that running is medically safe for an individual. `Unsupported` means that runway will not generate that distance phase as a default, not that the app has diagnosed danger. Changing a boundary requires domain tests, copy review, and an update here; heart-rate data never changes these assessments by itself.
 
 ## NHS Couch to 5K
 
@@ -87,7 +87,7 @@ Foundation generation requires the selected three weekdays to leave at least one
 - Source: Mayo Clinic Health System, "Become a better runner, avoid injury"
 - URL: https://www.mayoclinichealthsystem.org/hometown-health/speaking-of-health/how-can-i-become-a-better-runner-and-avoid-injury
 - Relevant claims: New runners should generally run 3 to 4 times per week, increase slowly, avoid increasing mileage more than 10% per week, include at least one easy/rest day after every heavy day, and stop if pain affects gait or does not improve early in the run.
-- Product rule: runway caps normal weekly ramp near 10%, marks steeper ramps as moderate/aggressive/unsafe, spaces hard/long work away from each other, and treats pain feedback as a reason to reduce pressure.
+- Product rule: runway caps its default weekly ramp near 10%, presents steeper calculated ramps as above default, high increase, or unsupported, spaces hard/long work away from each other, and treats pain feedback as a reason to reduce pressure.
 - Limits: The 10% rule is treated as a conservative heuristic, not a law. User baseline and recent history still matter.
 
 ## Mayo Clinic Health System taper guidance
@@ -127,7 +127,7 @@ Foundation generation requires the selected three weekdays to leave at least one
 - Source: REI Expert Advice, "Training For a Marathon: How To Prepare"
 - URL: https://www.rei.com/learn/expert-advice/training-for-your-first-marathon.html
 - Relevant claims: A first marathon needs a longer base and more serious preparation than shorter races. The article recommends at least a year of consistent running before a first marathon and frames the work around endurance, recovery, fueling, and qualified healthcare guidance.
-- Product rule: runway allows marathon as a goal but should mark unrealistic marathon ramps aggressively and clearly when baseline, weeks, or long-run readiness are not enough.
+- Product rule: runway allows marathon as a goal but should clearly mark the ramp as unsupported when baseline, available weeks, or long-run readiness do not fit the product's generation limits.
 - Limits: runway is a conservative planner, not a marathon coaching program. It must not imply that a short generated plan makes an underprepared marathon attempt safe.
 
 ## Road Runners Club of America runner guidance

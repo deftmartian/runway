@@ -15,7 +15,11 @@ class ReconciliationWorker(
         val credential = credentialStore.load()
             ?: return success(STATE_PAIRING_REQUIRED)
         val treeStore = TreeAccessStore(applicationContext)
-        val scan = SafTreeScanner(applicationContext.contentResolver).scan(treeStore.currentState())
+        val treeState = treeStore.currentState()
+        if (treeState !is TreeAccessState.Connected) return success(STATE_PERMISSION_REQUIRED)
+        val scanProgressStore = ScanProgressStore(applicationContext)
+        val scanOffset = scanProgressStore.offsetFor(credential.deviceId, treeState.uri)
+        val scan = SafTreeScanner(applicationContext.contentResolver).scan(treeState, scanOffset)
         if (scan !is TreeScanResult.Success) {
             return when (scan) {
                 TreeScanResult.PermissionRequired -> success(STATE_PERMISSION_REQUIRED)
@@ -25,19 +29,29 @@ class ReconciliationWorker(
         }
 
         val handledStore = HandledImportStore(applicationContext)
-        val unhandled = scan.summary.candidates
-            .filter { !handledStore.isHandled(credential.deviceId, it.uri) }
+        val unhandled = handledStore
+            .filterUnhandled(credential.deviceId, scan.summary.candidates)
             .sortedByDescending { it.lastModifiedEpochMs ?: Long.MIN_VALUE }
         val settleBefore = System.currentTimeMillis() - FILE_SETTLE_MS
         val candidate = unhandled.firstOrNull {
             it.lastModifiedEpochMs == null || it.lastModifiedEpochMs <= settleBefore
         }
         if (candidate == null && unhandled.isNotEmpty()) return Result.retry()
-        candidate ?: return success(
-            state = STATE_NO_CANDIDATES,
-            candidateCount = scan.summary.gpxCandidates,
-            truncated = scan.summary.truncated,
-        )
+        if (candidate == null) {
+            val nextOffset = scan.summary.nextOffset
+            if (nextOffset != null) {
+                scanProgressStore.advance(credential.deviceId, treeState.uri, nextOffset)
+                return Result.retry()
+            }
+            scanProgressStore.reset(credential.deviceId)
+            return success(
+                state = STATE_NO_CANDIDATES,
+                candidateCount = scan.summary.gpxCandidates,
+                truncated = false,
+            )
+        }
+
+        if (isStopped) return Result.retry()
 
         val bytes = try {
             applicationContext.contentResolver.openInputStream(candidate.uri)?.use {
@@ -45,6 +59,13 @@ class ReconciliationWorker(
             } ?: return success(STATE_PROVIDER_ERROR)
         } catch (_: PayloadTooLargeException) {
             handledStore.markHandled(credential.deviceId, candidate.uri)
+            advanceAfterLastCandidate(
+                remainingCandidates = unhandled.size - 1,
+                summary = scan.summary,
+                deviceId = credential.deviceId,
+                treeUri = treeState.uri,
+                progressStore = scanProgressStore,
+            )
             return success(STATE_QUARANTINED)
         } catch (_: SecurityException) {
             return success(STATE_PERMISSION_REQUIRED)
@@ -55,13 +76,28 @@ class ReconciliationWorker(
         }
         if (bytes.isEmpty()) {
             handledStore.markHandled(credential.deviceId, candidate.uri)
+            advanceAfterLastCandidate(
+                remainingCandidates = unhandled.size - 1,
+                summary = scan.summary,
+                deviceId = credential.deviceId,
+                treeUri = treeState.uri,
+                progressStore = scanProgressStore,
+            )
             return success(STATE_QUARANTINED)
         }
 
+        if (isStopped) return Result.retry()
         val requestId = handledStore.requestIdFor(credential.deviceId, candidate.uri)
         return when (val imported = RunwayApiClient().importGpx(credential, bytes, requestId)) {
             is ImportApiResult.Handled -> {
                 handledStore.markHandled(credential.deviceId, candidate.uri)
+                advanceAfterLastCandidate(
+                    remainingCandidates = unhandled.size - 1,
+                    summary = scan.summary,
+                    deviceId = credential.deviceId,
+                    treeUri = treeState.uri,
+                    progressStore = scanProgressStore,
+                )
                 success(
                     state = when (imported.result) {
                         "imported" -> STATE_IMPORTED
@@ -74,6 +110,7 @@ class ReconciliationWorker(
             }
             ImportApiResult.Unauthorized -> {
                 handledStore.clearForDevice(credential.deviceId)
+                scanProgressStore.reset(credential.deviceId)
                 credentialStore.clear()
                 success(STATE_PAIRING_REQUIRED)
             }
@@ -82,6 +119,22 @@ class ReconciliationWorker(
                 Result.retry()
             }
             ImportApiResult.Retryable -> Result.retry()
+        }
+    }
+
+    private fun advanceAfterLastCandidate(
+        remainingCandidates: Int,
+        summary: TreeScanSummary,
+        deviceId: String,
+        treeUri: android.net.Uri,
+        progressStore: ScanProgressStore,
+    ) {
+        if (remainingCandidates != 0) return
+        val nextOffset = summary.nextOffset
+        if (nextOffset == null) {
+            progressStore.reset(deviceId)
+        } else {
+            progressStore.advance(deviceId, treeUri, nextOffset)
         }
     }
 

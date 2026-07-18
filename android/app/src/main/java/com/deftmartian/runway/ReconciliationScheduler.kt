@@ -1,6 +1,7 @@
 package com.deftmartian.runway
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -17,10 +18,11 @@ object ReconciliationScheduler {
     fun runOnce(context: Context) {
         val request = OneTimeWorkRequest.Builder(ReconciliationWorker::class.java)
             .setConstraints(reconciliationConstraints())
+            .setBackoffCriteria(BackoffPolicy.LINEAR, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             ONE_TIME_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             request,
         )
     }
@@ -30,7 +32,10 @@ object ReconciliationScheduler {
             ReconciliationWorker::class.java,
             15,
             TimeUnit.MINUTES,
-        ).setConstraints(reconciliationConstraints()).build()
+        )
+            .setConstraints(reconciliationConstraints())
+            .setBackoffCriteria(BackoffPolicy.LINEAR, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,
@@ -47,4 +52,6 @@ object ReconciliationScheduler {
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .setRequiresStorageNotLow(true)
         .build()
+
+    private const val RETRY_BACKOFF_SECONDS = 15L
 }

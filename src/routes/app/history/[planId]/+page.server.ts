@@ -1,5 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
-import { getPlanDetail } from '$lib/server/runway/repository';
+import { getPlanDetail } from '$lib/server/runway/repositories/plan-queries';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {

@@ -126,6 +126,16 @@ val verifyReleaseInstance by tasks.registering {
         if (
             runwayScheme != "https" ||
             runwayHost.endsWith(".invalid") ||
+            runwayHost.endsWith(".test") ||
+            runwayHost.endsWith(".localhost") ||
+            runwayHost == "localhost" ||
+            runwayHost.endsWith(".example") ||
+            runwayHost == "example.com" ||
+            runwayHost.endsWith(".example.com") ||
+            runwayHost == "example.net" ||
+            runwayHost.endsWith(".example.net") ||
+            runwayHost == "example.org" ||
+            runwayHost.endsWith(".example.org") ||
             (runwayPort != -1 && runwayPort != 443)
         ) {
             throw GradleException(
@@ -135,6 +145,11 @@ val verifyReleaseInstance by tasks.registering {
     }
 }
 
-tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+tasks.matching {
+    it.name == "assembleRelease" ||
+        it.name == "bundleRelease" ||
+        it.name == "packageRelease" ||
+        it.name == "installRelease"
+}.configureEach {
     dependsOn(verifyReleaseInstance)
 }

@@ -8,6 +8,7 @@ const errors = [];
 const requiredFiles = [
 	'android/app/build.gradle.kts',
 	'android/app/src/main/AndroidManifest.xml',
+	'android/app/src/main/res/layout/activity_native_folder_settings.xml',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt',
@@ -21,7 +22,8 @@ const requiredFiles = [
 	'android/docs/RELEASE.md',
 	'src/routes/[...wellKnown]/+server.ts',
 	'src/routes/app/import/+page.server.ts',
-	'src/routes/app/import/+page.svelte'
+	'src/routes/app/import/+page.svelte',
+	'src/lib/components/import/ImportSourceSetup.svelte'
 ];
 
 for (const file of requiredFiles) {
@@ -69,6 +71,7 @@ for (const required of [
 	'targetSdk = 36',
 	'androidbrowserhelper:2.7.2',
 	'verifyReleaseInstance',
+	'assembleRelease',
 	'runwayOrigin',
 	'runwayApplicationId'
 ]) {
@@ -95,13 +98,34 @@ for (const required of [
 	if (!launcher.includes(required)) errors.push(`Android TWA launcher is missing ${required}`);
 }
 
+const folderSettings = read(
+	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt'
+);
+for (const required of [
+	'setContentView(R.layout.activity_native_folder_settings)',
+	'R.id.primary_action',
+	'R.id.background_status',
+	'getWorkInfosForUniqueWork'
+]) {
+	if (!folderSettings.includes(required)) {
+		errors.push(
+			`Android folder settings are missing the resource-backed state contract: ${required}`
+		);
+	}
+}
+if (folderSettings.includes('private fun buildContent()')) {
+	errors.push(
+		'Android folder settings must use the reviewed resource layout, not a programmatic stack'
+	);
+}
+
 const importPageServer = read('src/routes/app/import/+page.server.ts');
-const importPage = read('src/routes/app/import/+page.svelte');
+const importSourceSetup = read('src/lib/components/import/ImportSourceSetup.svelte');
 if (!importPageServer.includes('androidApplicationId: androidApplicationId ?? null')) {
 	errors.push('Android folder link must fail closed without a configured release identity');
 }
-for (const required of ['intent://folder#Intent', 'package=${data.androidApplicationId};end']) {
-	if (!importPage.includes(required)) {
+for (const required of ['intent://folder#Intent', 'package=${androidApplicationId};end']) {
+	if (!importSourceSetup.includes(required)) {
 		errors.push(`Android folder link is missing package binding: ${required}`);
 	}
 }

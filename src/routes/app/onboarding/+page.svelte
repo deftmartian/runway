@@ -668,8 +668,9 @@
 						<div class="health-context-heading">
 							<h3 id="health-context-heading">Health and running limits</h3>
 							<p>
-								Select what is true now. These answers change plan risk or whether workouts can be
-								scheduled. Effort that merely feels hard is recorded after a run, not here.
+								Select what is true now. These answers change the ramp assessment or whether
+								workouts can be scheduled. Effort that merely feels hard is recorded after a run,
+								not here.
 							</p>
 						</div>
 						<div class="health-flags">
@@ -677,7 +678,9 @@
 								<input type="checkbox" name="recentInjury" bind:checked={recentInjury} />
 								<span>
 									<strong>Recovering from an injury</strong>
-									<small>Adds caution to plan risk; workouts can still be scheduled.</small>
+									<small
+										>Adds caution to the ramp assessment; workouts can still be scheduled.</small
+									>
 								</span>
 							</label>
 							<label>
@@ -691,7 +694,9 @@
 								<input type="checkbox" name="recurringPain" bind:checked={recurringPain} />
 								<span>
 									<strong>Pain returns when I run</strong>
-									<small>Adds caution to plan risk; workouts can still be scheduled.</small>
+									<small
+										>Adds caution to the ramp assessment; workouts can still be scheduled.</small
+									>
 								</span>
 							</label>
 							<label>
@@ -837,7 +842,7 @@
 					<div class="decision-note warning" role="status">
 						<strong>Health caution included</strong>
 						<span>
-							Recovery or recurring pain will be carried into plan warnings and risk checks. It does
+							Recovery or recurring pain will be carried into plan warnings and load checks. It does
 							not pause workout scheduling by itself.
 						</span>
 					</div>

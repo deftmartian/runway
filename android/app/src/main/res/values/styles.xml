@@ -2,15 +2,102 @@
 <resources>
     <style name="Theme.Runway" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#08798E</item>
-        <item name="android:navigationBarColor">#F6F8F9</item>
-        <item name="android:statusBarColor">#F6F8F9</item>
+        <item name="android:windowBackground">@color/runway_background</item>
+        <item name="android:colorAccent">@color/runway_primary</item>
+        <item name="android:navigationBarColor">@color/runway_background</item>
+        <item name="android:statusBarColor">@color/runway_background</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
     </style>
 
     <style name="Theme.Runway.Launcher" parent="android:style/Theme.Translucent.NoTitleBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+
+    <style name="TextAppearance.Runway.Title" parent="android:style/TextAppearance.Material.Headline">
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Runway.SectionTitle" parent="android:style/TextAppearance.Material.Title">
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Runway.Body" parent="android:style/TextAppearance.Material.Body1">
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:lineSpacingMultiplier">1.1</item>
+    </style>
+
+    <style name="TextAppearance.Runway.Supporting" parent="android:style/TextAppearance.Material.Body1">
+        <item name="android:textColor">@color/runway_muted</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:lineSpacingMultiplier">1.1</item>
+    </style>
+
+    <style name="TextAppearance.Runway.Label" parent="android:style/TextAppearance.Material.Body1">
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Runway.Status" parent="android:style/TextAppearance.Material.Body1">
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.Runway.Section" parent="android:style/Widget">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/runway_section_background</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">18dp</item>
+    </style>
+
+    <style name="Widget.Runway.Input" parent="android:style/Widget.Material.EditText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textColorHint">@color/runway_muted</item>
+        <item name="android:backgroundTint">@color/runway_primary</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+    </style>
+
+    <style name="Widget.Runway.Button.Primary" parent="android:style/Widget.Material.Button">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:backgroundTint">@color/runway_primary_button_tint</item>
+        <item name="android:textColor">@color/runway_on_primary</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.Runway.Button.Secondary" parent="android:style/Widget.Material.Button">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:backgroundTint">@color/runway_secondary_button_tint</item>
+        <item name="android:textColor">@color/runway_text</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="Widget.Runway.Button.Text" parent="android:style/Widget.Material.Button.Borderless">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textColor">@color/runway_primary</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
     </style>
 </resources>

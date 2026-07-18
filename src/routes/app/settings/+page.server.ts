@@ -9,13 +9,13 @@ import {
 	consumeSecurityRateLimit
 } from '$lib/server/runway/security-rate-limit';
 import { revokeTrustedDevices } from '$lib/server/runway/trusted-devices';
+import { deleteActivityData } from '$lib/server/runway/repository';
 import {
-	deleteActivityData,
 	getAthleteProfile,
 	updateAthleteTimeZone,
 	updateRouteDataMode,
 	updateTrainingProfile
-} from '$lib/server/runway/repository';
+} from '$lib/server/runway/repositories/profiles';
 import { defaultHeartRateSettings, zoneFloors } from '$lib/training/heart-rate';
 import {
 	formDataToObject,

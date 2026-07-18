@@ -1,11 +1,11 @@
 import { redirect } from '@sveltejs/kit';
+import { getHistory } from '$lib/server/runway/repository';
 import {
 	getActivePlan,
-	getAthleteTimeZone,
-	getHistory,
 	getPlanTrace,
 	getPlanWeeks
-} from '$lib/server/runway/repository';
+} from '$lib/server/runway/repositories/plan-queries';
+import { getAthleteTimeZone } from '$lib/server/runway/repositories/profiles';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {

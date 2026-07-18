@@ -24,6 +24,32 @@
 				Plan toward a running goal, record completed work, and see how missed or extra runs change
 				what comes next.
 			</p>
+			<ol class="product-loop" aria-label="How runway works">
+				<li>
+					<span>01</span>
+					<strong>Plan</strong>
+					<small>Start from the week you can run now.</small>
+				</li>
+				<li>
+					<span>02</span>
+					<strong>Run</strong>
+					<small>Follow the workout or change it.</small>
+				</li>
+				<li>
+					<span>03</span>
+					<strong>Compare</strong>
+					<small>Record what you actually did.</small>
+				</li>
+				<li>
+					<span>04</span>
+					<strong>Decide</strong>
+					<small>See whether the plan should change.</small>
+				</li>
+			</ol>
+			<p class="product-boundary">
+				<strong>Self-hosted on your server.</strong>
+				<span>No live GPS tracking. No social feed.</span>
+			</p>
 			<div class="check-row landing-actions">
 				<a class="button primary" href={loginHref}>Sign in</a>
 				{#if data.localSignupsEnabled}
@@ -66,3 +92,79 @@
 		</div>
 	</section>
 </main>
+
+<style>
+	.product-loop {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0;
+		max-width: 680px;
+		margin: clamp(16px, 3vw, 28px) 0 4px;
+		padding: 0;
+		border-block: 1px solid var(--line);
+		list-style: none;
+	}
+
+	.product-loop li {
+		display: grid;
+		align-content: start;
+		gap: 5px;
+		min-width: 0;
+		padding: 15px 12px 17px 0;
+	}
+
+	.product-loop li + li {
+		padding-left: 12px;
+		border-left: 1px solid var(--line);
+	}
+
+	.product-loop span {
+		color: color-mix(in oklab, var(--accent), var(--muted) 34%);
+		font-size: 0.72rem;
+		font-weight: 780;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.08em;
+	}
+
+	.product-loop strong {
+		font-size: 1rem;
+	}
+
+	.product-loop small {
+		color: var(--muted);
+		font-size: 0.8rem;
+		line-height: 1.35;
+	}
+
+	.product-boundary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px 12px;
+		margin: 0;
+		font-size: 0.9rem;
+	}
+
+	.product-boundary span {
+		color: var(--muted);
+	}
+
+	.landing-copy::after {
+		display: none;
+	}
+
+	@media (max-width: 760px) {
+		.product-loop {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.product-loop li:nth-child(3) {
+			padding-left: 0;
+			border-top: 1px solid var(--line);
+			border-left: 0;
+		}
+
+		.product-loop li:nth-child(4) {
+			border-top: 1px solid var(--line);
+		}
+	}
+</style>

@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import StateMarker from '$lib/components/visual/StateMarker.svelte';
+	import { presentRampAssessment } from '$lib/training/training-assessment';
 	import { flushSync } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -84,7 +85,7 @@
 					<p class="muted">
 						{formatDate(active.plan.startDate)}–{formatDate(active.plan.targetDate)} · {active.plan
 							.weeks}
-						weeks · {active.plan.risk} ramp
+						weeks · {presentRampAssessment(active.plan.risk).label}
 					</p>
 				</div>
 				<StateMarker
@@ -165,7 +166,9 @@
 							<h4>Proposed race phase</h4>
 							<p>
 								{phaseReview.racePlan.weeks} weeks from {formatDate(phaseReview.racePlan.startDate)} to
-								{formatDate(phaseReview.racePlan.targetDate)} · {phaseReview.racePlan.risk} ramp
+								{formatDate(phaseReview.racePlan.targetDate)} · {presentRampAssessment(
+									phaseReview.racePlan.risk
+								).label}
 							</p>
 							{#if phaseReview.racePlan.warnings.length > 0}
 								<ul>

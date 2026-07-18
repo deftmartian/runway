@@ -98,5 +98,19 @@ When deliberately upgrading Gradle, regenerate the scripts and JAR together, rev
 change, and replace `distributionSha256Sum` with the checksum published for that exact distribution.
 Do not commit `local.properties`, signing keys, or signing passwords.
 
+From the repository root, the normal development gate is:
+
+```sh
+corepack pnpm verify:android
+corepack pnpm verify:android:build
+```
+
+The first command reviews the static Android/TWA/security contract. The second runs Gradle `lint`,
+`test`, and `assembleDebug` with a non-routable HTTPS test origin. CI runs these exact commands; a
+green build does not replace emulator, device, App Link, TWA, large-text, or TalkBack checks.
+
+Plain `./gradlew test` also works with the non-distributable placeholder origin. Tasks that create or
+install a release artifact still fail closed until `-PrunwayOrigin` names a real HTTPS instance.
+
 See [Android architecture and production gates](../docs/ANDROID.md) and
 [release guidance](docs/RELEASE.md).

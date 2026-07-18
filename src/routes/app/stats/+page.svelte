@@ -2,6 +2,10 @@
 	import { resolve } from '$app/paths';
 	import PlanTrace from '$lib/components/visual/PlanTrace.svelte';
 	import { formatPace } from '$lib/training/format';
+	import {
+		presentLoadChangeAssessment,
+		presentRampAssessment
+	} from '$lib/training/training-assessment';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -14,6 +18,12 @@
 		const minutes = totalMinutes % 60;
 		return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 	};
+	const calendarDate = (value: string) =>
+		new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric'
+		}).format(new Date(`${value}T12:00:00`));
 	const weeksToDate = $derived(data.history.weeklySummaries);
 	const completedRuns = $derived(weeksToDate.reduce((sum, week) => sum + week.completedRuns, 0));
 	const plannedRuns = $derived(weeksToDate.reduce((sum, week) => sum + week.plannedRuns, 0));
@@ -50,7 +60,15 @@
 			? data.active.plan.summary.requiredWeeklyIncreasePercent
 			: null
 	);
-	const currentRisk = $derived(data.history.currentSignal?.risk ?? 'none');
+	const currentRisk = $derived(
+		data.history.currentSignal?.risk ?? data.active?.plan.risk ?? 'conservative'
+	);
+	const currentAssessment = $derived(
+		data.history.currentSignal?.source === 'feedback' ||
+			data.history.currentSignal?.source === 'activity'
+			? presentLoadChangeAssessment(currentRisk)
+			: presentRampAssessment(currentRisk)
+	);
 	const currentRiskReasons = $derived(data.history.currentSignal?.reasons ?? []);
 	const currentRiskSource = $derived(
 		data.history.currentSignal?.source === 'feedback'
@@ -123,6 +141,10 @@
 			data.history.hasAcceptedActivities ||
 			data.history.recentFeedback.length > 0
 	);
+	const planHasStarted = $derived(
+		Boolean(data.active && data.active.plan.startDate <= data.history.todayIso)
+	);
+	const activePlanWeeks = $derived(data.detail?.weeks.length ?? data.active?.plan.weeks ?? 0);
 	const heartRateSample = $derived(data.history.heartRateSample);
 	const averageHeartRate = $derived(heartRateSample.averageHeartRate);
 	const hasHeartRateSample = $derived(heartRateSample.sampleCount > 0 && averageHeartRate !== null);
@@ -146,22 +168,64 @@
 			<h1 class="section-title">Stats</h1>
 			<p>{data.active ? 'Current plan and recorded runs.' : 'Recorded runs and past plans.'}</p>
 		</div>
-		<div class="stats-signal" aria-label="Current plan status">
-			<span>Plan status</span>
-			<strong>{data.active ? currentRisk : 'no active plan'}</strong>
-			{#if data.active}<small>{currentRiskSource}</small>{/if}
-		</div>
+		{#if !data.active || hasRecordedHistory}
+			<div class="stats-signal" aria-label="Current plan assessment">
+				<span>Plan assessment</span>
+				<strong>{data.active ? currentAssessment.label : 'No active plan'}</strong>
+				{#if data.active}<small>{currentRiskSource}</small>{/if}
+			</div>
+		{/if}
 	</header>
 
-	{#if data.active}
+	{#if data.active && !hasRecordedHistory}
+		<section class="stats-section first-run" aria-labelledby="first-run-title">
+			<div class="first-run-copy">
+				<span class="eyebrow">Nothing to compare yet</span>
+				<h2 id="first-run-title">
+					{planHasStarted ? 'Start with the next workout' : 'Your plan is ready'}
+				</h2>
+				<p>
+					{planHasStarted
+						? 'Open Calendar to see what is planned next, or record a run you already completed.'
+						: `Your plan starts ${calendarDate(data.active.plan.startDate)}. Open Calendar to see the first workout.`}
+				</p>
+				<a class="button primary" href={resolve('/app')}>Open calendar</a>
+			</div>
+			<dl class="first-run-plan" aria-label="Current plan dates">
+				<div>
+					<dt>Starts</dt>
+					<dd>
+						<time datetime={data.active.plan.startDate}
+							>{calendarDate(data.active.plan.startDate)}</time
+						>
+					</dd>
+				</div>
+				<div>
+					<dt>Target date</dt>
+					<dd>
+						<time datetime={data.active.plan.targetDate}
+							>{calendarDate(data.active.plan.targetDate)}</time
+						>
+					</dd>
+				</div>
+				<div>
+					<dt>Plan length</dt>
+					<dd>{activePlanWeeks} weeks</dd>
+				</div>
+			</dl>
+		</section>
+	{/if}
+
+	{#if data.active && hasRecordedHistory}
 		<section class="stats-section plan-attention" aria-labelledby="plan-attention-title">
 			<header class="section-heading">
-				<h2 id="plan-attention-title">Does the current plan need attention?</h2>
+				<h2 id="plan-attention-title">Current assessment</h2>
 				<strong
 					class="risk-value"
-					class:moderate={currentRisk === 'moderate'}
-					class:aggressive={currentRisk === 'aggressive'}
-					class:unsafe={currentRisk === 'unsafe'}>{currentRisk}</strong
+					class:review={currentAssessment.attention === 'review'}
+					class:high={currentAssessment.attention === 'high'}
+					class:blocked={currentAssessment.attention === 'blocked'}
+					>{currentAssessment.label}</strong
 				>
 			</header>
 
@@ -172,7 +236,7 @@
 					{/each}
 				</ul>
 			{:else}
-				<p class="plain-status">No current warnings.</p>
+				<p class="plain-status">{currentAssessment.description}</p>
 			{/if}
 
 			<dl class="data-strip plan-measures">
@@ -421,7 +485,9 @@
 									{:else}
 										<div>
 											<dt>Distance</dt>
-											<dd>{km(week.completedDistanceMeters)} / {km(week.targetDistanceMeters)}</dd>
+											<dd>
+												{km(week.completedDistanceMeters)} / {km(week.targetDistanceMeters)}
+											</dd>
 										</div>
 									{/if}
 									{#if week.eventDistanceMeters > 0}
@@ -485,11 +551,6 @@
 				</div>
 			{/if}
 		</section>
-	{:else}
-		<section class="stats-section empty-recent" aria-labelledby="recent-changes-title">
-			<h2 id="recent-changes-title">What changed across recent runs?</h2>
-			<p>No runs have been recorded yet.</p>
-		</section>
 	{/if}
 </main>
 
@@ -513,15 +574,12 @@
 	.section-heading h2,
 	.weekly-breakdown h3,
 	.no-plan h2,
-	.no-plan p,
-	.empty-recent h2,
-	.empty-recent p {
+	.no-plan p {
 		margin: 0;
 	}
 
 	.stats-page-header p,
-	.no-plan p,
-	.empty-recent p {
+	.no-plan p {
 		margin-top: 8px;
 		color: var(--muted);
 	}
@@ -559,6 +617,73 @@
 		border-top: 1px solid var(--line);
 	}
 
+	.first-run {
+		grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
+		gap: clamp(32px, 7vw, 84px);
+		align-items: start;
+		padding-block: clamp(36px, 7vw, 72px);
+	}
+
+	.first-run-copy {
+		display: grid;
+		justify-items: start;
+		gap: 14px;
+	}
+
+	.first-run-copy h2,
+	.first-run-copy p {
+		margin: 0;
+	}
+
+	.first-run-copy h2 {
+		font-size: clamp(1.5rem, 3vw, 2.15rem);
+		letter-spacing: -0.035em;
+	}
+
+	.first-run-copy p {
+		max-width: 54ch;
+		color: var(--muted);
+		line-height: 1.55;
+	}
+
+	.eyebrow {
+		color: var(--muted);
+		font-size: 0.78rem;
+		font-weight: 760;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.first-run-plan {
+		margin: 0;
+		border-block: 1px solid var(--line);
+	}
+
+	.first-run-plan > div {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 24px;
+		padding: 15px 0;
+		border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+	}
+
+	.first-run-plan > div:first-child {
+		border-top: 0;
+	}
+
+	.first-run-plan dt {
+		color: var(--muted);
+		font-size: 0.82rem;
+		font-weight: 650;
+	}
+
+	.first-run-plan dd {
+		margin: 0;
+		font-weight: 720;
+		text-align: right;
+	}
+
 	.section-heading {
 		display: flex;
 		gap: 20px;
@@ -581,12 +706,12 @@
 		color: var(--completed);
 	}
 
-	.section-heading > .risk-value.moderate {
+	.section-heading > .risk-value.review {
 		color: var(--review);
 	}
 
-	.section-heading > .risk-value.aggressive,
-	.section-heading > .risk-value.unsafe {
+	.section-heading > .risk-value.high,
+	.section-heading > .risk-value.blocked {
 		color: var(--danger);
 	}
 
@@ -744,6 +869,11 @@
 	}
 
 	@media (max-width: 760px) {
+		.first-run {
+			grid-template-columns: 1fr;
+			gap: 30px;
+		}
+
 		.stats-page-header {
 			grid-template-columns: 1fr;
 			gap: 18px;

@@ -1,10 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
-import {
-	createGoalAndPlan,
-	getActivePlan,
-	getAthleteProfile,
-	getCurrentGoal
-} from '$lib/server/runway/repository';
+import { createGoalAndPlan } from '$lib/server/runway/repositories/plan-lifecycle';
+import { getActivePlan, getCurrentGoal } from '$lib/server/runway/repositories/plan-queries';
+import { getAthleteProfile } from '$lib/server/runway/repositories/profiles';
 import { formString } from '$lib/server/runway/validation';
 import { addDays, isValidTimeZone, todayIsoInTimeZone } from '$lib/training/date';
 import type {

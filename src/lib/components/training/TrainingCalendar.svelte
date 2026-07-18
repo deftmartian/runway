@@ -3,7 +3,12 @@
 	import { tick } from 'svelte';
 	import CalendarEventButton from './CalendarEvent.svelte';
 	import EventDetailPanel from './EventDetailPanel.svelte';
-	import { presentCalendarEvent } from './calendar-presentation';
+	import {
+		isQuietCalendarDay,
+		presentCalendarEvent,
+		shouldCollapseEarlierCalendarWeek
+	} from './calendar-presentation';
+	import { presentRampAssessment } from '$lib/training/training-assessment';
 	import type { ConsequenceResult, RiskRating } from '$lib/training/types';
 	import type {
 		TrainingCalendarActivity,
@@ -40,6 +45,7 @@
 		label: string;
 		load: WeekLoad | null;
 		days: CalendarDay[];
+		isQuietEarlier: boolean;
 	};
 
 	let {
@@ -164,6 +170,9 @@
 				: 'Not in this view'
 	);
 	const currentSignalReasons = $derived(currentSignal?.reasons?.filter(Boolean) ?? []);
+	const currentSignalAssessment = $derived(
+		currentSignal ? presentRampAssessment(currentSignal.risk) : null
+	);
 	const currentSignalSourceLabel = $derived(
 		currentSignal?.source === 'feedback'
 			? 'Recent feedback'
@@ -176,6 +185,18 @@
 		day.isToday
 			? 'Today. No training scheduled.'
 			: `${day.weekday}, ${day.date}. No training scheduled.`;
+	const quietWeekLabel = (row: CalendarWeekRow) => {
+		const selectedDays = row.days.filter((day) => day.inSelectedMonth);
+		const first = selectedDays[0]?.date ?? row.days[0]?.date;
+		const last = selectedDays.at(-1)?.date ?? row.days.at(-1)?.date;
+		if (!first || !last) return 'Earlier quiet week';
+		const format = (date: string, includeMonth: boolean) =>
+			new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+				month: includeMonth ? 'short' : undefined,
+				day: 'numeric'
+			});
+		return `${format(first, true)}–${format(last, first.slice(0, 7) !== last.slice(0, 7))}`;
+	};
 
 	$effect(() => {
 		if (selectedEventId && !calendarEvents.some((event) => event.id === selectedEventId)) {
@@ -247,9 +268,34 @@
 
 	function focusCalendarEvent(eventId: string | null) {
 		if (!eventId) return;
-		document
-			.querySelector<HTMLElement>(`[data-calendar-event-id="${CSS.escape(eventId)}"]`)
-			?.focus();
+		const target = document.querySelector<HTMLElement>(
+			`[data-calendar-event-id="${CSS.escape(eventId)}"]`
+		);
+		const disclosure = target?.closest<HTMLDetailsElement>('details.quiet-calendar-week');
+		if (disclosure && !disclosure.open) disclosure.open = true;
+		target?.focus();
+	}
+
+	function handleQuietWeekToggle(row: CalendarWeekRow, toggleEvent: Event) {
+		const disclosure = toggleEvent.currentTarget;
+		if (!(disclosure instanceof HTMLDetailsElement)) return;
+		const rowEvents = row.days.flatMap((day) => day.events);
+		if (disclosure.open) {
+			if (!rowEvents.some((event) => event.id === focusedEventId)) {
+				focusedEventId = rowEvents[0]?.id ?? focusedEventId;
+			}
+			return;
+		}
+		if (!rowEvents.some((event) => event.id === focusedEventId)) return;
+		focusedEventId =
+			calendarEvents.find((event) => event.isToday)?.id ??
+			calendarEvents.find((event) => {
+				const eventRow = calendarRows.find((candidate) =>
+					candidate.days.some((day) => day.date === event.date)
+				);
+				return !eventRow?.isQuietEarlier;
+			})?.id ??
+			null;
 	}
 
 	function openDayEvent(date: string, payload: TrainingCalendarPayload): CalendarEvent {
@@ -395,7 +441,14 @@
 				id: startDate,
 				label: load?.label ?? `Week of ${startDate}`,
 				load,
-				days: rowDays
+				days: rowDays,
+				isQuietEarlier: shouldCollapseEarlierCalendarWeek({
+					selectedMonth: payload.month,
+					currentMonth: payload.currentMonth,
+					today: payload.today,
+					hasPlanSummary: Boolean(load),
+					days: rowDays
+				})
 			});
 		}
 		return rows;
@@ -448,12 +501,12 @@
 				{#if currentSignal}
 					<details
 						class="plan-assessment"
-						class:bad-message={currentSignal.risk === 'unsafe'}
-						open={currentSignal.risk === 'unsafe'}
+						class:bad-message={currentSignalAssessment?.attention === 'blocked'}
+						open={currentSignalAssessment?.attention === 'blocked'}
 					>
 						<summary>
-							<span>Plan risk · {currentSignalSourceLabel}</span>
-							<strong>{currentSignal.risk}</strong>
+							<span>Ramp assessment · {currentSignalSourceLabel}</span>
+							<strong>{currentSignalAssessment?.label}</strong>
 						</summary>
 						{#if currentSignalReasons.length > 0}
 							<ul>
@@ -565,124 +618,142 @@
 				aria-describedby="calendar-keyboard-help"
 			>
 				{#each calendarRows as row (row.id)}
-					<section class="calendar-month-week" aria-label={row.label}>
-						{#if row.load}
-							{@const load = row.load}
-							{@const durationLoad =
-								load.week.targetDurationSeconds > 0 && load.week.targetDistanceMeters === 0}
-							<div class="calendar-week-load" class:current={load.isCurrent}>
-								<div class="week-load-meta">
-									<span>{load.label}</span>
-									<strong
-										>{durationLoad
-											? `${minutes(load.week.completedDurationSeconds)} done of ${minutes(load.week.targetDurationSeconds)}`
-											: `${km(load.week.completedDistanceMeters)} done of ${km(load.week.targetDistanceMeters)}`}</strong
-									>
-									{#if load.week.eventDistanceMeters > 0}
-										<small>
-											Goal event {km(load.week.eventCompletedDistanceMeters)} of {km(
-												load.week.eventDistanceMeters
-											)}
-										</small>
-									{/if}
-								</div>
-								<div
-									class="week-load-track"
-									role="progressbar"
-									aria-label={`${load.label}: ${durationLoad ? minutes(load.week.completedDurationSeconds) : km(load.week.completedDistanceMeters)} done of ${durationLoad ? minutes(load.week.targetDurationSeconds) : km(load.week.targetDistanceMeters)}`}
-									aria-valuemin="0"
-									aria-valuemax={durationLoad
-										? load.week.targetDurationSeconds
-										: load.week.targetDistanceMeters}
-									aria-valuenow={Math.min(
-										durationLoad
-											? load.week.completedDurationSeconds
-											: load.week.completedDistanceMeters,
-										durationLoad ? load.week.targetDurationSeconds : load.week.targetDistanceMeters
-									)}
-								>
-									<svg
-										aria-hidden="true"
-										focusable="false"
-										viewBox="0 0 100 8"
-										preserveAspectRatio="none"
-									>
-										<rect
-											class="week-load-target"
-											x="0"
-											y="0"
-											width={load.rampValue}
-											height="8"
-											rx="4"
-										/>
-										<rect
-											class="week-load-completion"
-											x="0"
-											y="0"
-											width={load.completionValue}
-											height="8"
-											rx="4"
-										/>
-									</svg>
-								</div>
-								<div class="week-load-tags">
-									<span
-										class="badge"
-										class:warn={load.week.risk === 'aggressive'}
-										class:bad={load.week.risk === 'unsafe'}
-										class:good={load.week.risk === 'conservative'}
-										>{load.week.isTaper
-											? 'taper'
-											: load.week.isDownWeek
-												? 'down week'
-												: load.week.risk}</span
-									>
-									{#if load.week.painFlags > 0}<span class="badge bad"
-											>{load.week.painFlags} pain</span
-										>{/if}
-									{#if load.week.hardFlags > 0}<span class="badge warn"
-											>{load.week.hardFlags} hard</span
-										>{/if}
-								</div>
-							</div>
+					<svelte:element
+						this={row.isQuietEarlier ? 'details' : 'div'}
+						class:quiet-calendar-week={row.isQuietEarlier}
+						ontoggle={(toggleEvent: Event) => {
+							handleQuietWeekToggle(row, toggleEvent);
+						}}
+					>
+						{#if row.isQuietEarlier}
+							<summary>
+								<span>{quietWeekLabel(row)}</span>
+								<strong>Nothing recorded</strong>
+							</summary>
 						{/if}
-						<div class="calendar-month-row">
-							{#each row.days as day (day.date)}
-								<article
-									class="calendar-month-day"
-									class:outside-month={!day.inSelectedMonth}
-									class:today={day.isToday}
-									class:compact-empty={day.events.length === 0 && !day.isToday}
-									aria-label={`${day.weekday}, ${day.date}`}
-								>
-									<div class="calendar-day-heading">
-										<span>{day.weekday}</span>
-										<strong>{day.dayNumber}</strong>
+						<section class="calendar-month-week" aria-label={row.label}>
+							{#if row.load}
+								{@const load = row.load}
+								{@const durationLoad =
+									load.week.targetDurationSeconds > 0 && load.week.targetDistanceMeters === 0}
+								{@const rampAssessment = presentRampAssessment(load.week.risk)}
+								<div class="calendar-week-load" class:current={load.isCurrent}>
+									<div class="week-load-meta">
+										<span>{load.label}</span>
+										<strong
+											>{durationLoad
+												? `${minutes(load.week.completedDurationSeconds)} done of ${minutes(load.week.targetDurationSeconds)}`
+												: `${km(load.week.completedDistanceMeters)} done of ${km(load.week.targetDistanceMeters)}`}</strong
+										>
+										{#if load.week.eventDistanceMeters > 0}
+											<small>
+												Goal event {km(load.week.eventCompletedDistanceMeters)} of {km(
+													load.week.eventDistanceMeters
+												)}
+											</small>
+										{/if}
 									</div>
-									<div class="calendar-day-events">
-										{#each day.events as event (event.id)}
-											<CalendarEventButton
-												{event}
-												selected={event.id === selectedEventId}
-												tabindex={event.id === focusedEventId ? 0 : -1}
-												onfocus={(focused: CalendarEvent) => {
-													focusedEventId = focused.id;
-												}}
-												onkeydown={handleCalendarKeydown}
-												onselect={selectEvent}
+									<div
+										class="week-load-track"
+										role="progressbar"
+										aria-label={`${load.label}: ${durationLoad ? minutes(load.week.completedDurationSeconds) : km(load.week.completedDistanceMeters)} done of ${durationLoad ? minutes(load.week.targetDurationSeconds) : km(load.week.targetDistanceMeters)}`}
+										aria-valuemin="0"
+										aria-valuemax={durationLoad
+											? load.week.targetDurationSeconds
+											: load.week.targetDistanceMeters}
+										aria-valuenow={Math.min(
+											durationLoad
+												? load.week.completedDurationSeconds
+												: load.week.completedDistanceMeters,
+											durationLoad
+												? load.week.targetDurationSeconds
+												: load.week.targetDistanceMeters
+										)}
+									>
+										<svg
+											aria-hidden="true"
+											focusable="false"
+											viewBox="0 0 100 8"
+											preserveAspectRatio="none"
+										>
+											<rect
+												class="week-load-target"
+												x="0"
+												y="0"
+												width={load.rampValue}
+												height="8"
+												rx="4"
 											/>
-										{:else}
-											{#if day.isToday}
-												<span class="calendar-empty current-day-empty">Today</span>
-											{:else}
-												<span class="sr-only">{emptyDayLabel(day)}</span>
-											{/if}
-										{/each}
+											<rect
+												class="week-load-completion"
+												x="0"
+												y="0"
+												width={load.completionValue}
+												height="8"
+												rx="4"
+											/>
+										</svg>
 									</div>
-								</article>
-							{/each}
-						</div>
-					</section>
+									<div class="week-load-tags">
+										<span
+											class="badge"
+											class:warn={rampAssessment.attention === 'high' ||
+												rampAssessment.attention === 'review'}
+											class:bad={rampAssessment.attention === 'blocked'}
+											class:good={rampAssessment.attention === 'none'}
+											>{load.week.isTaper
+												? 'taper'
+												: load.week.isDownWeek
+													? 'down week'
+													: rampAssessment.label}</span
+										>
+										{#if load.week.painFlags > 0}<span class="badge bad"
+												>{load.week.painFlags} pain</span
+											>{/if}
+										{#if load.week.hardFlags > 0}<span class="badge warn"
+												>{load.week.hardFlags} hard</span
+											>{/if}
+									</div>
+								</div>
+							{/if}
+							<div class="calendar-month-row">
+								{#each row.days as day (day.date)}
+									<article
+										class="calendar-month-day"
+										class:outside-month={!day.inSelectedMonth}
+										class:today={day.isToday}
+										class:compact-empty={isQuietCalendarDay(day) && !day.isToday}
+										aria-label={`${day.weekday}, ${day.date}`}
+									>
+										<div class="calendar-day-heading">
+											<span>{day.weekday}</span>
+											<strong>{day.dayNumber}</strong>
+										</div>
+										<div class="calendar-day-events">
+											{#each day.events as event (event.id)}
+												<CalendarEventButton
+													{event}
+													selected={event.id === selectedEventId}
+													tabindex={event.id === focusedEventId ? 0 : -1}
+													onfocus={(focused: CalendarEvent) => {
+														focusedEventId = focused.id;
+													}}
+													onkeydown={handleCalendarKeydown}
+													onselect={selectEvent}
+												/>
+											{:else}
+												{#if day.isToday}
+													<span class="calendar-empty current-day-empty">Today</span>
+												{:else}
+													<span class="sr-only">{emptyDayLabel(day)}</span>
+												{/if}
+											{/each}
+										</div>
+									</article>
+								{/each}
+							</div>
+						</section>
+					</svelte:element>
 				{/each}
 			</div>
 		</div>
@@ -701,3 +772,58 @@
 		/>
 	{/if}
 </section>
+
+<style>
+	.quiet-calendar-week {
+		min-width: 0;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.quiet-calendar-week > summary {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		min-height: 44px;
+		padding: 0.55rem 0.75rem;
+		color: var(--muted);
+		background: color-mix(in oklab, var(--surface-strong), transparent 30%);
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.quiet-calendar-week > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.quiet-calendar-week > summary::before {
+		content: '+';
+		font-size: 1rem;
+		font-weight: 500;
+	}
+
+	.quiet-calendar-week > summary span {
+		margin-inline-end: auto;
+		font-size: 0.8rem;
+		font-weight: 720;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+	}
+
+	.quiet-calendar-week > summary strong {
+		font-size: 0.82rem;
+		font-weight: 620;
+	}
+
+	.quiet-calendar-week > summary:hover,
+	.quiet-calendar-week > summary:focus-visible {
+		color: var(--text);
+		background: color-mix(in oklab, var(--accent), var(--surface-strong) 95%);
+	}
+
+	@media (max-width: 520px) {
+		.quiet-calendar-week > summary strong {
+			display: none;
+		}
+	}
+</style>

@@ -83,7 +83,10 @@ class ShareReceiverActivity : ComponentActivity() {
                             else -> R.string.share_quarantined
                         }
                         ImportApiResult.Unauthorized -> {
+                            HandledImportStore(this).clearForDevice(credential.deviceId)
+                            ScanProgressStore(this).reset(credential.deviceId)
                             credentialStore.clear()
+                            ReconciliationScheduler.disablePeriodic(this)
                             R.string.share_pairing_required
                         }
                         ImportApiResult.RequestConflict -> R.string.share_retryable

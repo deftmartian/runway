@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">runway</string>
-    <string name="folder_screen_title">Device folder</string>
+    <string name="folder_screen_title">Automatic GPX imports</string>
     <string name="folder_section_title">Gadgetbridge folder</string>
-    <string name="folder_screen_intro">Choose the folder where Gadgetbridge writes GPX files. Android keeps read access when runway is closed.</string>
+    <string name="folder_screen_intro">Connect this phone once, then choose the folder where Gadgetbridge saves your runs.</string>
     <string name="folder_shortcut_short">Folder</string>
     <string name="folder_shortcut_long">Device folder</string>
     <string name="choose_folder">Choose folder</string>
+    <string name="change_folder">Change folder</string>
+    <string name="restore_folder_access">Choose folder again</string>
     <string name="disconnect_folder">Disconnect folder</string>
     <string name="check_now">Check now</string>
     <string name="enable_background">Enable background checks</string>
     <string name="disable_background">Disable background checks</string>
     <string name="pairing_title">Account connection</string>
-    <string name="pairing_intro">Create a pairing code from Import sources in runway, then enter it here. The app never stores your password or browser session.</string>
+    <string name="pairing_intro">In runway, open Import and create a code for this phone.</string>
     <string name="pairing_code">Pairing code</string>
+    <string name="pairing_code_hint">Enter the code from runway</string>
     <string name="device_label">Device name</string>
     <string name="device_label_default">Android phone</string>
     <string name="pair_device">Connect account</string>
@@ -26,7 +29,11 @@
     <string name="pairing_store_failed">Android could not protect the connection on this device. Disconnect the device in runway before trying again.</string>
     <string name="forget_account">Forget account on this device</string>
     <string name="pairing_disconnected">Account connection removed from this device. Disconnect it in runway too if the phone is lost or no longer trusted.</string>
-    <string name="folder_upload_ready">Connected folders are checked in the background. Each new GPX enters the runway activity inbox for review.</string>
+    <string name="setup_connect_account">Connect this phone to continue.</string>
+    <string name="setup_choose_folder">Account connected. Choose a folder next.</string>
+    <string name="setup_restore_folder">Folder access needs to be restored.</string>
+    <string name="setup_ready">Ready to import new GPX files.</string>
+    <string name="folder_upload_ready">New files go to the runway activity inbox. You review them before they affect your plan.</string>
     <string name="folder_connected">Folder connected. Android read access is persisted.</string>
     <string name="folder_connected_background">Folder connected. Background checks are enabled.</string>
     <string name="folder_connected_pairing_needed">Folder connected. Connect the account above before enabling background checks.</string>
@@ -35,6 +42,8 @@
     <string name="folder_connection_failed">Android did not grant persistent read access to that folder.</string>
     <string name="folder_disconnected">Folder access removed.</string>
     <string name="check_queued">Folder check queued.</string>
+    <string name="background_title">Automatic checks</string>
+    <string name="background_setup_required">Connect the account and folder to turn on background checks.</string>
     <string name="background_enabled">Background checks enabled. Android schedules them inexactly.</string>
     <string name="background_disabled">Background checks disabled.</string>
     <string name="return_to_runway">Back to runway</string>

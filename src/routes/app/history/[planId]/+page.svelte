@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import StateMarker from '$lib/components/visual/StateMarker.svelte';
 	import { presentConsequence } from '$lib/training/consequence-presentation';
+	import { presentRampAssessment } from '$lib/training/training-assessment';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -148,8 +149,8 @@
 				<dd>{data.detail.goal.priority === 'finish_healthy' ? 'Finish healthy' : 'Consistency'}</dd>
 			</div>
 			<div>
-				<dt>Ramp</dt>
-				<dd>{data.detail.plan.risk}</dd>
+				<dt>Ramp assessment</dt>
+				<dd>{presentRampAssessment(data.detail.plan.risk).label}</dd>
 			</div>
 			<div>
 				<dt>{data.detail.plan.status === 'active' ? 'State' : 'Closed'}</dt>

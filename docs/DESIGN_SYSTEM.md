@@ -39,7 +39,7 @@ The app uses one token set, named by job:
 | `--completed`      | recorded/stable work                         |
 | `--review`         | unresolved, missed, or elevated attention    |
 | `--rest`           | recovery state                               |
-| `--danger`         | destructive actions and serious risk         |
+| `--danger`         | destructive actions and blocked states       |
 
 Do not introduce page-local aliases such as `--background`, `--panel`, `--good`, `--warn`, or `--bad`. State must remain legible without color.
 
@@ -57,6 +57,8 @@ Copy is calm, factual, and compact:
 - offer the next decision.
 
 Do not praise, shame, reassure, or make runway speak as a coach. Keep safety guidance separate from training arithmetic. Avoid vague terms such as “signal,” “shape,” “smarter,” “adaptive,” and “optimized” in user-facing copy.
+
+Ramp assessments describe product arithmetic, never medical safety. Pair the assessment label with the calculated increase and relevant runway default. Pain, injury, and clinician restrictions use separate factual guidance and must not inherit reassuring assessment colour or copy.
 
 ## Shared Visual Components
 
@@ -157,7 +159,8 @@ Use the same control geometry, SVG mark, and trace identity. Do not wrap every p
 - **Generated:** original recommendation retained in the ledger.
 - **Current:** runner-edited plan after active adjustments.
 - **Actual:** accepted recorded work.
-- **Plan risk:** Conservative, Moderate, Aggressive, or Unsafe.
+- **Ramp assessment:** Within default, Above default, High increase, or Unsupported. This describes runway's plan-generation arithmetic, not medical safety.
+- **Load-change assessment:** Within default, Above default, High change, or Outside default. A valid runner-controlled change remains available after explicit confirmation.
 - **Plan change:** explicit stored change to future workouts.
 
 ## Visual Verification

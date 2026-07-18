@@ -13,7 +13,7 @@ import {
 	maxGpxImportBytes,
 	type GpxReviewImportResult
 } from '$lib/server/runway/gpx-review-import';
-import { getActivityImportGeneration } from '$lib/server/runway/repository';
+import { getActivityImportGeneration } from '$lib/server/runway/repositories/profiles';
 import {
 	androidApiDeviceRateLimitBuckets,
 	androidApiPreAuthRateLimitBuckets,

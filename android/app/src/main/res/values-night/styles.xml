@@ -2,10 +2,12 @@
 <resources>
     <style name="Theme.Runway" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#67D4E8</item>
-        <item name="android:navigationBarColor">#07131D</item>
-        <item name="android:statusBarColor">#07131D</item>
+        <item name="android:windowBackground">@color/runway_background</item>
+        <item name="android:colorAccent">@color/runway_primary</item>
+        <item name="android:navigationBarColor">@color/runway_background</item>
+        <item name="android:statusBarColor">@color/runway_background</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
     </style>
 
     <style name="Theme.Runway.Launcher" parent="android:style/Theme.Translucent.NoTitleBar">

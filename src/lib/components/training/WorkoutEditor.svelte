@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { TrainingCalendarWorkout } from '$lib/training/calendar-view';
+	import { presentLoadChangeAssessment } from '$lib/training/training-assessment';
 	import type { WorkoutEditProposal, WorkoutEditWorkoutChange } from '$lib/training/workout-edit';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { CalendarFormState, WorkoutEditFormValues } from './calendar-types';
@@ -118,13 +119,14 @@
 	}
 
 	function workoutChangeImpact(change: WorkoutEditWorkoutChange) {
+		const assessment = presentLoadChangeAssessment(change.risk).label;
 		if (change.relativeChangePercent === null || change.changeShareOfWeekPercent === null) {
-			return `Prescription type changed · ${change.risk} risk`;
+			return `Prescription type changed · ${assessment}`;
 		}
 		if (change.relativeChangePercent === 0 && change.changeShareOfWeekPercent === 0) {
-			return `Load unchanged · ${change.risk} risk`;
+			return `Load unchanged · ${assessment}`;
 		}
-		return `${change.relativeChangePercent}% change to this workout · ${change.changeShareOfWeekPercent}% of its original week's load · ${change.risk} risk`;
+		return `${change.relativeChangePercent}% change to this workout · ${change.changeShareOfWeekPercent}% of its original week's load · ${assessment}`;
 	}
 
 	const preserveEditorValues: SubmitFunction = () => {
@@ -327,7 +329,10 @@
 					)} → {Math.round(week.durationAfterSeconds / 60)} min
 				</li>
 			{/each}
-			<li>Projected ramp {preview.projectedRampPercent}% · {preview.risk} risk</li>
+			<li>
+				Projected ramp {preview.projectedRampPercent}% · {presentLoadChangeAssessment(preview.risk)
+					.label}
+			</li>
 			{#if preview.spacingConflicts.length > 0}
 				<li>
 					Recovery spacing conflict with {preview.spacingConflicts

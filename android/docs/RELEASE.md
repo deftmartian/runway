@@ -57,6 +57,17 @@ assetlinks file must fall back to a Custom Tab with visible browser controls.
 
 ## Produce a release candidate
 
+Before using release signing material, run the same debug compilation gate used by CI from the
+repository root:
+
+```sh
+corepack pnpm verify:android
+corepack pnpm verify:android:build
+```
+
+This catches Kotlin, resource, lint, and unit-test failures using a non-routable HTTPS test origin.
+It is development evidence only and does not validate signing or Digital Asset Links.
+
 Generate the reviewed Gradle 8.13 wrapper described in [`android/README.md`](../README.md). Inject
 signing from protected CI secrets or an untracked local `signing.properties`, never from committed
 Gradle values, then run:

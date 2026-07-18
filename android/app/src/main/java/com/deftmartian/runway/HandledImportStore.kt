@@ -16,18 +16,34 @@ class HandledImportStore(context: Context) {
         PREFERENCES_NAME,
         Context.MODE_PRIVATE,
     )
+    private val markerDatabase = HandledMarkerDatabase(context)
 
     fun isHandled(deviceId: String, uri: Uri): Boolean {
-        return marker(deviceId, uri) in handledMarkers(deviceId)
+        synchronized(storeLock) {
+            migrateLegacyMarkers(deviceId)
+            return markerDatabase.contains(deviceKey(deviceId), marker(deviceId, uri))
+        }
+    }
+
+    fun filterUnhandled(
+        deviceId: String,
+        candidates: Collection<GpxTreeCandidate>,
+    ): List<GpxTreeCandidate> {
+        synchronized(storeLock) {
+            migrateLegacyMarkers(deviceId)
+            val markerByCandidate = candidates.associateWith { candidate ->
+                marker(deviceId, candidate.uri)
+            }
+            val handled = markerDatabase.findHandled(deviceKey(deviceId), markerByCandidate.values)
+            return markerByCandidate.filterValues { it !in handled }.keys.toList()
+        }
     }
 
     fun markHandled(deviceId: String, uri: Uri) {
         synchronized(storeLock) {
-            val markers = handledMarkers(deviceId).toMutableSet()
-            if (markers.size >= MAX_MARKERS) markers.clear()
-            markers += marker(deviceId, uri)
-            preferences.edit {
-                putStringSet(markersKey(deviceId), markers)
+            migrateLegacyMarkers(deviceId)
+            markerDatabase.record(deviceKey(deviceId), marker(deviceId, uri))
+            preferences.edit(commit = true) {
                 remove(pendingKey(deviceId, uri))
             }
         }
@@ -38,14 +54,14 @@ class HandledImportStore(context: Context) {
             val key = pendingKey(deviceId, uri)
             preferences.getString(key, null)?.let { return it }
             return UUID.randomUUID().toString().also { requestId ->
-                preferences.edit { putString(key, requestId) }
+                preferences.edit(commit = true) { putString(key, requestId) }
             }
         }
     }
 
     fun clearPendingRequest(deviceId: String, uri: Uri) {
         synchronized(storeLock) {
-            preferences.edit { remove(pendingKey(deviceId, uri)) }
+            preferences.edit(commit = true) { remove(pendingKey(deviceId, uri)) }
         }
     }
 
@@ -53,7 +69,8 @@ class HandledImportStore(context: Context) {
         synchronized(storeLock) {
             val pendingPrefix = "pending_${deviceKey(deviceId)}_"
             val pendingKeys = preferences.all.keys.filter { it.startsWith(pendingPrefix) }
-            preferences.edit {
+            markerDatabase.clearDevice(deviceKey(deviceId))
+            preferences.edit(commit = true) {
                 remove(markersKey(deviceId))
                 pendingKeys.forEach(::remove)
             }
@@ -62,12 +79,22 @@ class HandledImportStore(context: Context) {
 
     fun clearAll() {
         synchronized(storeLock) {
-            preferences.edit { clear() }
+            markerDatabase.clearAll()
+            preferences.edit(commit = true) { clear() }
         }
     }
 
-    private fun handledMarkers(deviceId: String): Set<String> =
-        preferences.getStringSet(markersKey(deviceId), emptySet())?.toSet() ?: emptySet()
+    private fun migrateLegacyMarkers(deviceId: String) {
+        val key = markersKey(deviceId)
+        val legacyMarkers = runCatching { preferences.getStringSet(key, emptySet()) }
+            .getOrNull()
+            ?.filterNotNull()
+            .orEmpty()
+        if (legacyMarkers.isEmpty()) return
+
+        markerDatabase.migrate(deviceKey(deviceId), legacyMarkers)
+        preferences.edit(commit = true) { remove(key) }
+    }
 
     private fun marker(deviceId: String, uri: Uri): String {
         val mac = Mac.getInstance("HmacSHA256")
@@ -90,7 +117,7 @@ class HandledImportStore(context: Context) {
                 secret,
                 Base64.NO_WRAP or Base64.NO_PADDING or Base64.URL_SAFE,
             )
-            preferences.edit { putString(MARKER_SECRET_KEY, encoded) }
+            preferences.edit(commit = true) { putString(MARKER_SECRET_KEY, encoded) }
             return secret
         }
     }
@@ -107,7 +134,6 @@ class HandledImportStore(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "runway_android_handled_imports"
         const val MARKER_SECRET_KEY = "marker_secret"
-        const val MAX_MARKERS = 10_000
         val storeLock = Any()
     }
 }

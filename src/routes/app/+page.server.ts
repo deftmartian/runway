@@ -6,7 +6,6 @@ import {
 	confirmActivityAsExtra,
 	deleteActivityRecord,
 	deleteWorkoutFeedback,
-	getAthleteTimeZone,
 	getImportWorkoutCandidates,
 	getTrainingCalendar,
 	linkActivityToWorkout,
@@ -23,6 +22,7 @@ import {
 	undoFutureWorkoutAdjustment,
 	updateActivityFeedback
 } from '$lib/server/runway/repository';
+import { getAthleteTimeZone } from '$lib/server/runway/repositories/profiles';
 import {
 	activityIdSchema,
 	activityLinkSchema,
@@ -453,7 +453,7 @@ function feedbackErrorMessage(error: unknown): string {
 		'Workout not found.',
 		'Workout is scheduled for the future.',
 		'Feedback has already been recorded for this workout.',
-		'Unsafe training plan rejected.',
+		"This goal is outside runway's plan-generation limits. Choose a later date or a shorter distance.",
 		'Training plans cannot exceed 52 weeks.'
 	]);
 	return knownMessages.has(message) ? message : 'Feedback could not be saved.';

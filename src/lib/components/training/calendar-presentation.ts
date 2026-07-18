@@ -1,4 +1,4 @@
-import type { CalendarEvent } from './calendar-types';
+import type { CalendarDay, CalendarEvent } from './calendar-types';
 
 export type CalendarPresentationState =
 	| 'planned'
@@ -23,6 +23,14 @@ export type CalendarEventPresentation = {
 	label: string;
 	compactLabel: string;
 	flags: CalendarStateFlag[];
+};
+
+type CalendarWeekVisibilityInput = {
+	selectedMonth: string;
+	currentMonth: string;
+	today: string;
+	hasPlanSummary: boolean;
+	days: Pick<CalendarDay, 'date' | 'inSelectedMonth' | 'events'>[];
 };
 
 const stateLabels: Record<CalendarPresentationState, { label: string; compactLabel: string }> = {
@@ -78,6 +86,41 @@ export function presentCalendarEvent(event: CalendarEvent): CalendarEventPresent
 
 export function canRecordUnplannedRun(event: CalendarEvent, today: string): boolean {
 	return event.date <= today;
+}
+
+export function isQuietCalendarDay(day: Pick<CalendarDay, 'events'>): boolean {
+	return (
+		day.events.length === 0 ||
+		day.events.every(
+			(event) =>
+				event.kind === 'open' &&
+				!event.workout &&
+				!event.activity &&
+				!event.feedback &&
+				!event.isRecordable
+		)
+	);
+}
+
+export function shouldCollapseEarlierCalendarWeek({
+	selectedMonth,
+	currentMonth,
+	today,
+	hasPlanSummary,
+	days
+}: CalendarWeekVisibilityInput): boolean {
+	if (selectedMonth !== currentMonth || hasPlanSummary) return false;
+	if (!days.some((day) => day.inSelectedMonth)) return false;
+
+	const todayIndex = new Date(`${today}T00:00:00.000Z`).getUTCDay();
+	const daysSinceMonday = (todayIndex + 6) % 7;
+	const currentWeekStart = new Date(
+		Date.parse(`${today}T00:00:00.000Z`) - daysSinceMonday * 24 * 60 * 60 * 1000
+	)
+		.toISOString()
+		.slice(0, 10);
+
+	return days.every((day) => day.date < currentWeekStart) && days.every(isQuietCalendarDay);
 }
 
 export function calendarFlagLabel(flag: CalendarStateFlag): string {

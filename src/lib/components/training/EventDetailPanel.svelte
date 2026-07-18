@@ -6,6 +6,7 @@
 	import { decisionLabel, presentConsequence } from '$lib/training/consequence-presentation';
 	import { formatPace } from '$lib/training/format';
 	import { trainingSourceDetails, type TrainingSourceRef } from '$lib/training/sources';
+	import { presentLoadChangeAssessment } from '$lib/training/training-assessment';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { onMount, tick } from 'svelte';
 	import type { CalendarEvent, CalendarFormState, WorkoutCandidate } from './calendar-types';
@@ -278,8 +279,14 @@
 	const feedbackConsequence = $derived(
 		event.feedback ? presentConsequence(event.feedback.consequence) : null
 	);
+	const feedbackAssessment = $derived(
+		event.feedback ? presentLoadChangeAssessment(event.feedback.consequence.risk) : null
+	);
 	const formConsequence = $derived(
 		eventForm?.consequence ? presentConsequence(eventForm.consequence) : null
+	);
+	const formAssessment = $derived(
+		eventForm?.consequence ? presentLoadChangeAssessment(eventForm.consequence.risk) : null
 	);
 
 	let panel: HTMLDivElement | undefined;
@@ -407,6 +414,103 @@
 			Close
 		</button>
 	</div>
+
+	{#if timedSteps.length > 0}
+		<section class="interval-prescription" aria-labelledby={`intervals-${event.id}`}>
+			<h3 id={`intervals-${event.id}`}>Run/walk instructions</h3>
+			<ol>
+				{#each timedSteps as step (step)}
+					<li>{step}</li>
+				{/each}
+			</ol>
+		</section>
+	{/if}
+
+	{#if event.workout?.reason}
+		<p class="message compact-message">{event.workout.reason}</p>
+	{:else if event.kind === 'rest'}
+		<p class="message compact-message">Scheduled recovery.</p>
+	{/if}
+
+	{#if workoutSources.length > 0}
+		<details class="training-source-details">
+			<summary>Why this workout?</summary>
+			<ul>
+				{#each workoutSources as source (source.id)}
+					<li>
+						<span>{source.rule}</span>
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external evidence source -->
+						<a href={source.url} target="_blank" rel="noreferrer">{source.label}</a>
+					</li>
+				{/each}
+			</ul>
+		</details>
+	{/if}
+
+	{#if event.workout?.adjustment}
+		<div class="message compact-message adjustment-message">
+			<strong>Plan change.</strong>
+			<span>{event.workout.adjustment.reason}</span>
+			<span class="consequence-facts">
+				<strong>{adjustmentDistance}</strong>
+				{#if adjustmentSchedule}<strong>{adjustmentSchedule}</strong>{/if}
+			</span>
+		</div>
+	{/if}
+
+	<dl class="event-detail-grid" class:planned-only={!event.activity && !event.feedback}>
+		<div>
+			<dt>Planned</dt>
+			<dd>
+				<strong>{plannedPrescription}</strong>
+				{#if event.workout}<small>{event.workout.type}</small>{/if}
+			</dd>
+		</div>
+		{#if event.activity || event.feedback}
+			<div>
+				<dt>Actual</dt>
+				<dd>
+					<strong>{actualDistance}</strong>
+					{#if actualPace}<small>{actualPace}</small>{/if}
+				</dd>
+			</div>
+			<div>
+				<dt>Heart rate</dt>
+				<dd>
+					<strong>{event.activity ? bpm(event.activity.averageHeartRate) : '—'}</strong>
+					{#if event.activity?.maxHeartRate}<small>max {event.activity.maxHeartRate}</small>{/if}
+				</dd>
+			</div>
+			<div>
+				<dt>{event.activity?.source === 'gpx' ? 'Elapsed time' : 'Duration'}</dt>
+				<dd>
+					<strong>{duration(actualDurationSeconds)}</strong>
+					{#if event.activity?.heartRateSummary}
+						<small
+							>{Math.round(event.activity.heartRateSummary.highShare * 100)}% in zones 4–5</small
+						>
+					{/if}
+				</dd>
+			</div>
+		{/if}
+	</dl>
+
+	{#if event.activity}
+		<ActivityVisuals
+			id={`calendar-${event.activity.id}`}
+			routeTrace={event.activity.routeTrace}
+			heartRateSeries={event.activity.heartRateSeries}
+			heartRateSummary={event.activity.heartRateSummary}
+			averageHeartRate={event.activity.averageHeartRate}
+			maxHeartRate={event.activity.maxHeartRate}
+			durationSeconds={event.activity.durationSeconds}
+		/>
+		{#if event.activity.source === 'gpx' && !event.activity.routeTrace}
+			<p class="muted activity-trace-note">
+				This import predates saved route traces. Future GPX imports can include the route map.
+			</p>
+		{/if}
+	{/if}
 
 	{#if canEditFutureWorkout}
 		<details
@@ -560,99 +664,6 @@
 				</fieldset>
 			</form>
 		</details>
-	{/if}
-
-	<dl class="event-detail-grid">
-		<div>
-			<dt>Planned</dt>
-			<dd>
-				<strong>{plannedPrescription}</strong>
-				{#if event.workout}<small>{event.workout.type}</small>{/if}
-			</dd>
-		</div>
-		<div>
-			<dt>Actual</dt>
-			<dd>
-				<strong>{actualDistance}</strong>
-				{#if actualPace}<small>{actualPace}</small>{/if}
-			</dd>
-		</div>
-		<div>
-			<dt>Heart rate</dt>
-			<dd>
-				<strong>{event.activity ? bpm(event.activity.averageHeartRate) : '—'}</strong>
-				{#if event.activity?.maxHeartRate}<small>max {event.activity.maxHeartRate}</small>{/if}
-			</dd>
-		</div>
-		<div>
-			<dt>{event.activity?.source === 'gpx' ? 'Elapsed time' : 'Duration'}</dt>
-			<dd>
-				<strong>{duration(actualDurationSeconds)}</strong>
-				{#if event.activity?.heartRateSummary}
-					<small>{Math.round(event.activity.heartRateSummary.highShare * 100)}% in zones 4–5</small>
-				{/if}
-			</dd>
-		</div>
-	</dl>
-
-	{#if event.activity}
-		<ActivityVisuals
-			id={`calendar-${event.activity.id}`}
-			routeTrace={event.activity.routeTrace}
-			heartRateSeries={event.activity.heartRateSeries}
-			heartRateSummary={event.activity.heartRateSummary}
-			averageHeartRate={event.activity.averageHeartRate}
-			maxHeartRate={event.activity.maxHeartRate}
-			durationSeconds={event.activity.durationSeconds}
-		/>
-		{#if event.activity.source === 'gpx' && !event.activity.routeTrace}
-			<p class="muted activity-trace-note">
-				This import predates saved route traces. Future GPX imports can include the route map.
-			</p>
-		{/if}
-	{/if}
-
-	{#if timedSteps.length > 0}
-		<section class="interval-prescription" aria-labelledby={`intervals-${event.id}`}>
-			<h3 id={`intervals-${event.id}`}>Run/walk instructions</h3>
-			<ol>
-				{#each timedSteps as step (step)}
-					<li>{step}</li>
-				{/each}
-			</ol>
-		</section>
-	{/if}
-
-	{#if event.workout?.reason}
-		<p class="message compact-message">{event.workout.reason}</p>
-	{:else if event.kind === 'rest'}
-		<p class="message compact-message">Scheduled recovery.</p>
-	{/if}
-
-	{#if workoutSources.length > 0}
-		<details class="training-source-details">
-			<summary>Why this workout?</summary>
-			<ul>
-				{#each workoutSources as source (source.id)}
-					<li>
-						<span>{source.rule}</span>
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external evidence source -->
-						<a href={source.url} target="_blank" rel="noreferrer">{source.label}</a>
-					</li>
-				{/each}
-			</ul>
-		</details>
-	{/if}
-
-	{#if event.workout?.adjustment}
-		<div class="message compact-message adjustment-message">
-			<strong>Plan change.</strong>
-			<span>{event.workout.adjustment.reason}</span>
-			<span class="consequence-facts">
-				<strong>{adjustmentDistance}</strong>
-				{#if adjustmentSchedule}<strong>{adjustmentSchedule}</strong>{/if}
-			</span>
-		</div>
 	{/if}
 
 	{#if event.activity}
@@ -817,6 +828,7 @@
 				<span class="consequence-facts">
 					<strong>Week {kmChange(event.feedback.consequence.weeklyDistanceDeltaMeters)}</strong>
 					<strong>Next run {kmChange(event.feedback.consequence.nextRunAdjustmentMeters)}</strong>
+					{#if feedbackAssessment}<strong>{feedbackAssessment.label}</strong>{/if}
 				</span>
 			</div>
 		{/if}
@@ -838,7 +850,7 @@
 							`decision-${decision}`,
 							decisionRecord.consequence.risk === 'unsafe' ||
 								decisionRecord.consequence.risk === 'aggressive'
-								? `Apply this ${decisionLabel(decision)} option despite the elevated plan risk?`
+								? `Apply this ${decisionLabel(decision)} option despite the ${presentLoadChangeAssessment(decisionRecord.consequence.risk).label.toLowerCase()} assessment?`
 								: undefined
 						)}
 					>
@@ -883,6 +895,7 @@
 			<span class="consequence-facts">
 				<strong>Week {kmChange(eventForm.consequence.weeklyDistanceDeltaMeters)}</strong>
 				<strong>Next run {kmChange(eventForm.consequence.nextRunAdjustmentMeters)}</strong>
+				{#if formAssessment}<strong>{formAssessment.label}</strong>{/if}
 			</span>
 		</div>
 	{/if}

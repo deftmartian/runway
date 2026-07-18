@@ -55,6 +55,14 @@ At foundation or calibration completion, runway derives completed activity count
 
 Current pain or a medical restriction can save a pending goal and profile, but creates no active workout phase.
 
+## Ramp Assessments
+
+runway describes its plan arithmetic with four assessment bands: `Within default`, `Above default`, `High increase`, and `Unsupported`. Every assessment must identify the measured change and the relevant runway default or explain the specific generation limit. These are product boundaries, not medical safety ratings.
+
+`Within default` means only that the calculated ramp stays inside runway's configured planning range. `Unsupported` means that runway will not generate that distance phase as a default. Pain, injury history, and clinician restrictions remain separate health inputs and must never be collapsed into a reassuring ramp label.
+
+Runner-controlled changes use `Within default`, `Above default`, `High change`, and `Outside default`. A valid outside-default edit remains available after its exact load effect and conflicts are shown and the runner explicitly confirms it.
+
 ## Recommendations And User Control
 
 Generated recommendations are defaults, not locks.
@@ -71,7 +79,7 @@ For future non-race workouts, the runner can:
 
 Race events are changed through goal setup. Past and completed prescriptions are immutable; their activity/result records can be corrected, unlinked, or deleted independently.
 
-Every edit preview shows generated, current, and proposed prescriptions, source/destination week load, recovery-spacing conflicts, projected ramp and risk, and every affected workout. Elevated changes require explicit confirmation. Invalid values, cross-user access, and dates outside the active goal are blocked; a valid risky choice remains available.
+Every edit preview shows generated, current, and proposed prescriptions, source/destination week load, recovery-spacing conflicts, the projected ramp assessment, and every affected workout. Above-default and high changes require explicit confirmation. Invalid values, cross-user access, and dates outside the active goal are blocked; a valid outside-default choice remains available.
 
 ## Plan Versus Actual
 
@@ -81,7 +89,7 @@ Distance prescriptions use a material threshold of `max(500 m, 15% of target)`. 
 
 A manually recorded unplanned run immediately counts in actual load. An imported activity stays in Review until confirmed. Possible matches within three days can be suggested, but ambiguous records are never auto-linked. A run on a rest day appears beside the rest prescription; the rest day is not silently deleted. Multiple activities on one day remain separate records.
 
-`Review` is a data boundary, not just a label. Review-only imports remain visible in the activity ledger but do not enter calendar actuals, weekly totals, traces, history results, heart-rate summaries, or current training risk until the runner accepts their role.
+`Review` is a data boundary, not just a label. Review-only imports remain visible in the activity ledger but do not enter calendar actuals, weekly totals, traces, history results, heart-rate summaries, or the current training assessment until the runner accepts their role.
 
 Factual actual-load changes happen immediately. Future-plan changes do not. After a material shortfall, overrun, unplanned run, hard effort, or pain report, runway offers explicit decisions such as:
 
@@ -106,7 +114,7 @@ Public and authentication routes use the same control geometry and runway trace 
 
 ## Privacy Model
 
-Route data, schedule patterns, pain/load-risk notes, pace and heart-rate history, Nextcloud share credentials, and authentication secrets are sensitive.
+Route data, schedule patterns, pain/load-assessment notes, pace and heart-rate history, Nextcloud share credentials, and authentication secrets are sensitive.
 
 - Authenticated pages are private and are not stored by the service worker.
 - Raw GPX content and coordinates are not logged or committed.
