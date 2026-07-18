@@ -57,9 +57,33 @@ jobs:
       - name: Android TWA static contract
         run: corepack pnpm verify:android
       - name: Android lint
-        run: >-
-          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
-          -PrunwayOrigin=https://runway.example.test lint
+        id: android-lint
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict \
+            -PrunwayOrigin=https://runway.example.test lint 2>&1 | tee "$RUNNER_TEMP/android-lint.log"
+      - name: Publish Android lint diagnostics
+        if: steps.android-lint.outcome == 'failure'
+        run: |
+          {
+            echo '## Android lint failed'
+            echo
+            echo '### Lint report'
+            echo '```text'
+            if [ -f android/app/build/reports/lint-results-debug.txt ]; then
+              tail -n 160 android/app/build/reports/lint-results-debug.txt
+            else
+              echo 'No Android lint text report was generated.'
+            fi
+            echo '```'
+            echo
+            echo '### Gradle output tail'
+            echo '```text'
+            tail -n 120 "$RUNNER_TEMP/android-lint.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
       - name: Android unit tests
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
