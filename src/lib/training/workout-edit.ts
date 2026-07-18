@@ -30,6 +30,7 @@ export type WorkoutEditPreview = {
 	recommended: WorkoutEditProposal | null;
 	current: WorkoutEditProposal;
 	proposed: WorkoutEditProposal;
+	workoutChanges: WorkoutEditWorkoutChange[];
 	weekChanges: {
 		weekId: string;
 		weekNumber: number;
@@ -43,6 +44,16 @@ export type WorkoutEditPreview = {
 	projectedRampPercent: number;
 	risk: RiskRating;
 	requiresConfirmation: boolean;
+};
+
+export type WorkoutEditWorkoutChange = {
+	workoutId: string;
+	isSelected: boolean;
+	before: WorkoutEditProposal;
+	after: WorkoutEditProposal;
+	relativeChangePercent: number | null;
+	changeShareOfWeekPercent: number | null;
+	risk: RiskRating;
 };
 
 export function previewWorkoutEdit(input: {
@@ -72,6 +83,14 @@ export function previewWorkoutEdit(input: {
 		const changed = rebalancedById.get(candidate.id);
 		return changed ? { ...candidate, ...changed } : candidate;
 	});
+	const changedIds = new Set([input.current.id, ...rebalanced.map((change) => change.workoutId)]);
+	const workoutChanges = before
+		.filter((candidate) => changedIds.has(candidate.id))
+		.map((candidate) => {
+			const updated = after.find((afterCandidate) => afterCandidate.id === candidate.id);
+			if (!updated) throw new Error('An affected workout is missing from the edit preview.');
+			return workoutChangePreview(candidate, updated, before, candidate.id === input.current.id);
+		});
 	const affectedWeekIds = new Set([input.current.weekId, input.proposed.weekId]);
 	for (const change of rebalanced) affectedWeekIds.add(change.proposed.weekId);
 	const weekChanges = input.weeks
@@ -95,6 +114,8 @@ export function previewWorkoutEdit(input: {
 					.filter(
 						(candidate) =>
 							candidate.id !== input.current.id &&
+							candidate.status === 'planned' &&
+							candidate.scheduledDate >= input.today &&
 							!candidate.isRemoved &&
 							candidate.type !== 'rest' &&
 							candidate.type !== 'race' &&
@@ -120,17 +141,25 @@ export function previewWorkoutEdit(input: {
 		? Math.max(destinationBefore.durationSeconds, 1)
 		: Math.max(destinationBefore.distanceMeters, 1);
 	const projectedRampPercent = finitePercent(projected - prior, prior > 0 ? prior : fallback);
-	const largestChangeShare = weekChanges.reduce((largest, change) => {
+	const largestWeekChangeShare = weekChanges.reduce((largest, change) => {
 		const beforeValue = usesDuration ? change.durationBeforeSeconds : change.distanceBeforeMeters;
 		const afterValue = usesDuration ? change.durationAfterSeconds : change.distanceAfterMeters;
 		return Math.max(largest, Math.abs(afterValue - beforeValue) / Math.max(beforeValue, 1));
 	}, 0);
-	const risk = riskFromShare(Math.max(largestChangeShare, Math.max(0, projectedRampPercent / 100)));
+	const workoutChangeRisk = workoutChanges.reduce<RiskRating>(
+		(highest, change) => highestRisk(highest, change.risk),
+		'conservative'
+	);
+	const loadRisk = riskFromShare(
+		Math.max(largestWeekChangeShare, Math.max(0, projectedRampPercent / 100))
+	);
+	const risk = highestRisk(loadRisk, workoutChangeRisk);
 
 	return {
 		recommended: input.recommended,
 		current: currentProposal,
 		proposed: input.proposed,
+		workoutChanges,
 		weekChanges,
 		spacingConflicts,
 		affectedFutureWorkoutIds: rebalanced.map((change) => change.workoutId),
@@ -138,6 +167,83 @@ export function previewWorkoutEdit(input: {
 		risk,
 		requiresConfirmation: risk === 'aggressive' || risk === 'unsafe' || spacingConflicts.length > 0
 	};
+}
+
+function workoutChangePreview(
+	before: EditableWorkoutState,
+	after: EditableWorkoutState,
+	workoutsBefore: EditableWorkoutState[],
+	isSelected: boolean
+): WorkoutEditWorkoutChange {
+	const beforeProposal = proposalFromWorkout(before);
+	const afterProposal = proposalFromWorkout(after);
+	const beforeMetric = loadMetric(beforeProposal);
+	const afterMetric = loadMetric(afterProposal);
+	if (beforeMetric.kind === 'rest' || afterMetric.kind === 'rest') {
+		if (beforeMetric.kind === 'rest' && afterMetric.kind === 'rest') {
+			return {
+				workoutId: before.id,
+				isSelected,
+				before: beforeProposal,
+				after: afterProposal,
+				relativeChangePercent: 0,
+				changeShareOfWeekPercent: 0,
+				risk: 'conservative'
+			};
+		}
+		return {
+			workoutId: before.id,
+			isSelected,
+			before: beforeProposal,
+			after: afterProposal,
+			relativeChangePercent: null,
+			changeShareOfWeekPercent: null,
+			risk: 'unsafe'
+		};
+	}
+	if (beforeMetric.kind !== afterMetric.kind) {
+		return {
+			workoutId: before.id,
+			isSelected,
+			before: beforeProposal,
+			after: afterProposal,
+			relativeChangePercent: null,
+			changeShareOfWeekPercent: null,
+			risk: 'unsafe'
+		};
+	}
+
+	const beforeValue = beforeMetric.value;
+	const afterValue = afterMetric.value;
+	const absoluteChange = Math.abs(afterValue - beforeValue);
+	const relativeBase = beforeValue > 0 ? beforeValue : Math.max(afterValue, 1);
+	const weekBefore = weekLoad(workoutsBefore, before.weekId);
+	const weekValue =
+		beforeMetric.kind === 'timed' ? weekBefore.durationSeconds : weekBefore.distanceMeters;
+	const weekBase = weekValue > 0 ? weekValue : relativeBase;
+	const relativeChangePercent = finitePercent(absoluteChange, relativeBase);
+	const changeShareOfWeekPercent = finitePercent(absoluteChange, weekBase);
+
+	return {
+		workoutId: before.id,
+		isSelected,
+		before: beforeProposal,
+		after: afterProposal,
+		relativeChangePercent,
+		changeShareOfWeekPercent,
+		risk: riskFromShare(Math.max(relativeChangePercent, changeShareOfWeekPercent) / 100)
+	};
+}
+
+function loadMetric(
+	proposal: WorkoutEditProposal
+): { kind: 'distance' | 'timed'; value: number } | { kind: 'rest' } {
+	if (proposal.isRemoved || proposal.prescriptionKind === 'rest' || proposal.type === 'rest') {
+		return { kind: 'rest' };
+	}
+	return proposal.prescriptionKind === 'timed'
+		? { kind: 'timed', value: proposal.targetDurationSeconds ?? 0 }
+		: { kind: 'distance', value: proposal.targetDistanceMeters };
 }
 
 export function rebalanceWorkoutStates(input: {
@@ -365,4 +471,9 @@ function riskFromShare(share: number): RiskRating {
 	if (share > 0.15) return 'aggressive';
 	if (share > 0.1) return 'moderate';
 	return 'conservative';
+}
+
+function highestRisk(left: RiskRating, right: RiskRating): RiskRating {
+	const order: RiskRating[] = ['conservative', 'moderate', 'aggressive', 'unsafe'];
+	return order.indexOf(left) >= order.indexOf(right) ? left : right;
 }

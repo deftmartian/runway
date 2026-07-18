@@ -211,12 +211,21 @@ export function generateTrainingPlan(intake: TrainingIntake): GeneratedDistanceP
 			'Marathon goals need a stronger recent base than shorter races. Build consistency first or move the date.'
 		);
 	}
+	const concentratedSchedule =
+		(intake.raceDistance === 'half' || intake.raceDistance === 'marathon') &&
+		plannedRunCount(intake) < 3;
+	if (concentratedSchedule) {
+		warnings.push(
+			'Two run days concentrate a high-volume goal into unusually large sessions. Add a third available day, choose a shorter goal, or explicitly accept the higher load concentration.'
+		);
+	}
 	const localRisk = highestRisk(weeks.map((week) => week.risk));
-	const risk = marathonBaseShortfall
+	const baselineRisk = marathonBaseShortfall
 		? elevateRisk(highestRisk([initialRisk, localRisk]), 'unsafe')
 		: readinessShortfall
 			? elevateRisk(highestRisk([initialRisk, localRisk]), 'aggressive')
 			: highestRisk([initialRisk, localRisk]);
+	const risk = concentratedSchedule ? elevateRisk(baselineRisk, 'aggressive') : baselineRisk;
 
 	return {
 		phase: 'distance',
@@ -520,10 +529,9 @@ function walk(durationSeconds: number) {
 }
 
 function assertPhaseCanStart(flags: TrainingIntake['injuryFlags']): void {
-	if (flags.currentPain)
-		throw new Error('A workout phase cannot start while current pain is reported.');
+	if (flags.currentPain) throw new Error('A workout phase cannot start while pain is present now.');
 	if (flags.medicalRestriction) {
-		throw new Error('A workout phase cannot start with a current medical restriction.');
+		throw new Error('A workout phase cannot start while a clinician has limited running.');
 	}
 }
 
@@ -559,7 +567,7 @@ function getWarnings(
 	}
 	if (hasInjuryRiskFlags(intake)) {
 		warnings.push(
-			'Recent pain, injury, or medical limits mean hard days and distance jumps should be handled conservatively. Get qualified guidance if pain persists, worsens, changes gait, or comes with medical restrictions.'
+			'Injury recovery or recurring pain is included in plan risk checks. Get qualified guidance if pain persists, worsens, or changes how you move.'
 		);
 	}
 	if (requiredWeeklyIncreasePercent > 10) {
@@ -791,10 +799,10 @@ function assertSupportedBaseline(intake: TrainingIntake): void {
 		throw new Error('The planner requires a positive recent long-run distance.');
 	}
 	if (intake.injuryFlags.currentPain) {
-		throw new Error('A running ramp cannot be created while current pain is reported.');
+		throw new Error('A running ramp cannot be created while pain is present now.');
 	}
 	if (intake.injuryFlags.medicalRestriction) {
-		throw new Error('A running ramp cannot be created with a current medical restriction.');
+		throw new Error('A running ramp cannot be created while a clinician has limited running.');
 	}
 }
 

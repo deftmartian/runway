@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { TrainingCalendarWorkout } from '$lib/training/calendar-view';
-	import type { WorkoutEditProposal } from '$lib/training/workout-edit';
+	import type { WorkoutEditProposal, WorkoutEditWorkoutChange } from '$lib/training/workout-edit';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { CalendarFormState, WorkoutEditFormValues } from './calendar-types';
 
@@ -89,12 +89,42 @@
 
 	function prescriptionLabel(proposal: WorkoutEditProposal | null) {
 		if (!proposal) return 'No generated recommendation; this is a runner-added workout.';
-		if (proposal.isRemoved) return 'Removed from the current plan';
+		if (proposal.isRemoved) return `${proposal.scheduledDate} · Removed from the current plan`;
 		if (proposal.prescriptionKind === 'rest') return `${proposal.scheduledDate} · Rest`;
 		if (proposal.prescriptionKind === 'timed') {
-			return `${proposal.scheduledDate} · ${Math.round((proposal.targetDurationSeconds ?? 0) / 60)} min · ${proposal.purpose}`;
+			const structure = proposal.intervalStructure;
+			const blocks = structure?.blocks
+				.map(
+					(block) =>
+						`${block.repetitions} × ${block.segments.map((segment) => `${durationLabel(segment.durationSeconds)} ${segment.kind}`).join(' + ')}`
+				)
+				.join('; ');
+			const intervals = [
+				structure?.warmupSeconds ? `${durationLabel(structure.warmupSeconds)} warm-up` : '',
+				blocks ?? '',
+				structure?.cooldownSeconds ? `${durationLabel(structure.cooldownSeconds)} cool-down` : ''
+			]
+				.filter(Boolean)
+				.join('; ');
+			return `${proposal.scheduledDate} · ${durationLabel(proposal.targetDurationSeconds ?? 0)}${intervals ? ` · ${intervals}` : ''} · ${proposal.purpose} · ${proposal.intensity}`;
 		}
-		return `${proposal.scheduledDate} · ${Math.round((proposal.targetDistanceMeters / 1_000) * 10) / 10} km · ${proposal.purpose}`;
+		return `${proposal.scheduledDate} · ${Math.round((proposal.targetDistanceMeters / 1_000) * 10) / 10} km · ${proposal.purpose} · ${proposal.intensity}`;
+	}
+
+	function durationLabel(totalSeconds: number) {
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} sec`;
+	}
+
+	function workoutChangeImpact(change: WorkoutEditWorkoutChange) {
+		if (change.relativeChangePercent === null || change.changeShareOfWeekPercent === null) {
+			return `Prescription type changed · ${change.risk} risk`;
+		}
+		if (change.relativeChangePercent === 0 && change.changeShareOfWeekPercent === 0) {
+			return `Load unchanged · ${change.risk} risk`;
+		}
+		return `${change.relativeChangePercent}% change to this workout · ${change.changeShareOfWeekPercent}% of its original week's load · ${change.risk} risk`;
 	}
 
 	const preserveEditorValues: SubmitFunction = () => {
@@ -269,6 +299,25 @@
 				<dd>{prescriptionLabel(preview.proposed)}</dd>
 			</div>
 		</dl>
+		<div class="workout-change-list">
+			<h4>Workouts changed</h4>
+			{#each preview.workoutChanges as change (change.workoutId)}
+				<article>
+					<strong>{change.isSelected ? 'Selected workout' : 'Rebalanced workout'}</strong>
+					<dl>
+						<div>
+							<dt>Before</dt>
+							<dd>{prescriptionLabel(change.before)}</dd>
+						</div>
+						<div>
+							<dt>After</dt>
+							<dd>{prescriptionLabel(change.after)}</dd>
+						</div>
+					</dl>
+					<p>{workoutChangeImpact(change)}</p>
+				</article>
+			{/each}
+		</div>
 		<ul class="preview-effects">
 			{#each preview.weekChanges as week (week.weekId)}
 				<li>
@@ -285,9 +334,6 @@
 						.map((conflict) => `${conflict.purpose} on ${conflict.scheduledDate}`)
 						.join(', ')}.
 				</li>
-			{/if}
-			{#if preview.affectedFutureWorkoutIds.length > 0}
-				<li>{preview.affectedFutureWorkoutIds.length} other workout(s) will be rebalanced.</li>
 			{/if}
 		</ul>
 		{#if editValues}
@@ -381,6 +427,42 @@
 	}
 
 	.ledger-comparison dt {
+		color: var(--muted);
+	}
+
+	.workout-change-list {
+		display: grid;
+		gap: 8px;
+	}
+
+	.workout-change-list h4,
+	.workout-change-list dl,
+	.workout-change-list dd,
+	.workout-change-list p {
+		margin: 0;
+	}
+
+	.workout-change-list article {
+		display: grid;
+		gap: 8px;
+		padding: 10px;
+		border: 1px solid var(--line);
+		background: var(--surface);
+	}
+
+	.workout-change-list dl {
+		display: grid;
+		gap: 4px;
+	}
+
+	.workout-change-list dl > div {
+		display: grid;
+		grid-template-columns: 58px 1fr;
+		gap: 8px;
+	}
+
+	.workout-change-list dt,
+	.workout-change-list p {
 		color: var(--muted);
 	}
 

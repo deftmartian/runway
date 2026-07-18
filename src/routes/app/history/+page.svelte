@@ -129,8 +129,8 @@
 					<div>
 						<h3 id="phase-review-heading">Confirm the recorded starting point</h3>
 						<p>
-							These are observations from accepted activities in the completed {phaseReview.phase}
-							phase. They have not been turned into a distance baseline.
+							These values use accepted activities from the final two weeks of the completed
+							{phaseReview.phase} phase. Earlier run/walk weeks do not dilute the current starting point.
 						</p>
 					</div>
 					<dl class="history-summary-grid compact phase-measures">
@@ -151,7 +151,7 @@
 							<dd>{km(phaseReview.baseline.longestActivityMeters)}</dd>
 						</div>
 						<div>
-							<dt>Observed week</dt>
+							<dt>Recent weekly average</dt>
 							<dd>{km(phaseReview.baseline.weeklyDistanceMeters)}</dd>
 						</div>
 						<div>

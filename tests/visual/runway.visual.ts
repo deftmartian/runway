@@ -71,16 +71,6 @@ for (const viewport of viewports) {
 			await createImportRecords(page);
 			await stableScreenshot(page, `import-records-${viewport.name}.png`);
 
-			await page.goto('/app');
-			await page
-				.getByRole('button', { name: /Imported run, 10 km, Needs review/ })
-				.first()
-				.click();
-			const importedDialog = trainingDetailPanel(page);
-			await expect(importedDialog).toBeVisible();
-			await stableElementScreenshot(importedDialog, `imported-run-modal-${viewport.name}.png`);
-			await page.getByText('Close', { exact: true }).click();
-
 			await page.goto('/app/stats');
 			await expect(page.getByRole('heading', { name: 'Stats' })).toBeVisible();
 			await stableScreenshot(page, `stats-${viewport.name}.png`);

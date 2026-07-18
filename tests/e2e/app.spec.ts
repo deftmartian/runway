@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -710,6 +710,47 @@ async function openImportSourceSetup(page: Page) {
 	}
 }
 
+async function startHeldShareImport(url: URL, cookie: string, gpx: Buffer) {
+	const boundary = `runway-test-${randomBytes(12).toString('hex')}`;
+	const prefix = Buffer.from(
+		`--${boundary}\r\nContent-Disposition: form-data; name="gpx"; filename="activity.gpx"\r\nContent-Type: application/gpx+xml\r\n\r\n`
+	);
+	const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+	let finish!: () => void;
+	const response = new Promise<{ status: number; location: string }>((resolve, reject) => {
+		const request = httpRequest(
+			url,
+			{
+				method: 'POST',
+				headers: {
+					'content-type': `multipart/form-data; boundary=${boundary}`,
+					'content-length': prefix.length + gpx.length + suffix.length,
+					cookie,
+					origin: url.origin
+				}
+			},
+			(incoming) => {
+				incoming.resume();
+				incoming.once('end', () => {
+					resolve({
+						status: incoming.statusCode ?? 0,
+						location: incoming.headers.location ?? ''
+					});
+				});
+			}
+		);
+		request.once('error', reject);
+		request.flushHeaders();
+		request.write(prefix);
+		finish = () => request.end(Buffer.concat([gpx, suffix]));
+	});
+
+	// Leave the multipart body incomplete long enough for the route to capture
+	// the generation and block in formData(). The deletion request can then win.
+	await new Promise((resolve) => setTimeout(resolve, 250));
+	return { finish, response };
+}
+
 function gpxForDistance(date: string, distanceMeters: number): Buffer {
 	const latitude = 45;
 	const startLongitude = -63;
@@ -1017,6 +1058,7 @@ test('a two-run established baseline can create a plan from two available days o
 	await page.getByLabel('Weekly distance (km)').fill('6');
 	await page.getByLabel('Runs per week').fill('2');
 	await page.getByLabel('Longest recent run (km)').fill('3');
+	await page.getByLabel('Running experience').selectOption('new');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Tue', 'Sat']);
 	await page.getByLabel('Training time zone').fill('America/Halifax');
@@ -1046,6 +1088,7 @@ test('foundation-first onboarding keeps the race goal and creates the exact time
 	await page.getByLabel('Target date').fill(target);
 	await goToOnboardingStep(page, 'Starting point');
 	await page.getByLabel(/Foundation first/).check();
+	await page.getByLabel('Running experience').selectOption('new');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Mon', 'Wed', 'Sat']);
 	await page.getByLabel('Training time zone').fill('America/Halifax');
@@ -1065,6 +1108,23 @@ test('foundation-first onboarding keeps the race goal and creates the exact time
 		timedWorkoutCount: 27,
 		totalTargetDistanceMeters: 0
 	});
+
+	await makeFirstPlanWeekCurrent(await getUserId(email));
+	await page.goto('/app/stats');
+	const planAttention = page.getByRole('region', {
+		name: 'Does the current plan need attention?'
+	});
+	await expect(planAttention).toContainText('Program length');
+	await expect(planAttention).toContainText('9 weeks');
+	await expect(planAttention).toContainText('Peak planned week');
+	await expect(planAttention).not.toContainText('Required weekly increase');
+	await expect(planAttention).not.toContainText('Peak planned long run');
+	const planActual = page.getByRole('region', { name: 'Plan versus actual' });
+	await expect(planActual).toContainText('Training time');
+	await expect(planActual).toContainText('0 min of 1h 26m through this week');
+	await expect(planActual).toContainText('Sessions');
+	await expect(planActual).toContainText('0 of 2 scheduled');
+	await expect(planActual).not.toContainText('0 km of 0 km');
 });
 
 test('completed foundation work requires confirmation before the retained race phase starts', async ({
@@ -1075,6 +1135,7 @@ test('completed foundation work requires confirmation before the retained race p
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
 	await goToOnboardingStep(page, 'Starting point');
 	await page.getByLabel(/Foundation first/).check();
+	await page.getByLabel('Running experience').selectOption('new');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Mon', 'Wed', 'Sat']);
 	await page.getByLabel('Training time zone').fill('America/Halifax');
@@ -1088,8 +1149,9 @@ test('completed foundation work requires confirmation before the retained race p
 	await expect(
 		page.getByRole('heading', { name: 'Confirm the recorded starting point' })
 	).toBeVisible();
-	await expect(page.locator('.phase-measures')).toContainText('27');
-	await expect(page.locator('.phase-measures')).toContainText('54 km');
+	await expect(page.locator('.phase-measures')).toContainText('Activities 6');
+	await expect(page.locator('.phase-measures')).toContainText('Total distance 12 km');
+	await expect(page.locator('.phase-measures')).toContainText('Recent weekly average 6 km');
 	await expect(page.getByRole('heading', { name: 'Proposed race phase' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Mark plan complete' })).toHaveCount(0);
 
@@ -1108,6 +1170,7 @@ test('a completed beginner phase can be continued without inventing a baseline',
 	const email = await createAccount(page);
 	await page.getByLabel(/30-minute foundation/).check();
 	await goToOnboardingStep(page, 'Starting point');
+	await page.getByLabel('Running experience').selectOption('new');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Mon', 'Wed', 'Sat']);
 	await page.getByLabel('Training time zone').fill('America/Halifax');
@@ -1141,6 +1204,7 @@ test('foundation-only onboarding works at a mobile viewport without inventing di
 	const email = await createAccount(page);
 	await page.getByLabel(/30-minute foundation/).check();
 	await goToOnboardingStep(page, 'Starting point');
+	await page.getByLabel('Running experience').selectOption('new');
 	await expect(page.getByText('NHS Couch to 5K foundation')).toBeVisible();
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Tue', 'Thu', 'Sat']);
@@ -1184,6 +1248,7 @@ test('short calibration creates two identical timed sessions per week', async ({
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 12 * 7));
 	await goToOnboardingStep(page, 'Starting point');
 	await page.getByLabel(/Short calibration/).check();
+	await page.getByLabel('Running experience').selectOption('new');
 	await page.getByLabel('Comfortable total duration').selectOption('20');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Tue', 'Sat']);
@@ -1216,9 +1281,8 @@ test('onboarding surfaces a hidden six-week date error and prevents duplicate su
 	const targetInput = page.getByLabel('Target date');
 	await targetInput.fill(addIsoDays(testDate, 6 * 7));
 	await goToOnboardingStep(page, 'Review');
-	await page.getByRole('button', { name: 'Create plan' }).click();
 	await expect(page.getByRole('heading', { name: 'Goal' })).toBeVisible();
-	await expect(page.getByText(/Choose a date from .* to .*\./)).toBeVisible();
+	await expect(page.getByText('Choose a race date 8 to 52 weeks away.')).toBeVisible();
 	await expect(targetInput).toHaveValue(addIsoDays(testDate, 6 * 7));
 
 	await targetInput.fill(addIsoDays(testDate, 20 * 7));
@@ -1264,7 +1328,6 @@ test('onboarding enforces the chosen schedule and preserves the submitted values
 	await setAvailability(page, ['Mon', 'Wed']);
 	await expect(page.locator('select[name="preferredLongRunDay"] option[value="6"]')).toHaveCount(0);
 	await goToOnboardingStep(page, 'Review');
-	await page.getByRole('button', { name: 'Create plan' }).click();
 	await expect(page.getByRole('heading', { name: 'Schedule' })).toBeVisible();
 	await expect(
 		page.getByText('Choose at least as many available days as current weekly runs.')
@@ -1283,24 +1346,88 @@ test('onboarding enforces the chosen schedule and preserves the submitted values
 	).toBeVisible();
 });
 
-test('onboarding returns hidden required fields to the visible step before submission', async ({
+test('onboarding does not allow forward navigation past an incomplete step', async ({ page }) => {
+	await createAccount(page);
+	await expect(page.getByLabel('Running experience')).toHaveValue('');
+	await goToOnboardingStep(page, 'Review');
+	await expect(page.getByRole('heading', { name: 'Goal' })).toBeVisible();
+	await expect(page.getByText('Complete this step before continuing.')).toBeVisible();
+	await expect(page.getByLabel('Race distance')).toBeFocused();
+});
+
+test('onboarding requires an explicit experience choice before schedule setup', async ({
 	page
 }) => {
 	await createAccount(page);
-	await goToOnboardingStep(page, 'Review');
-	await page.getByRole('button', { name: 'Create plan' }).click();
+	await page.getByLabel('Race distance').selectOption('5k');
+	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
+	await goToOnboardingStep(page, 'Starting point');
+	await page.getByLabel('Weekly distance (km)').fill('6');
+	await page.getByLabel('Runs per week').fill('2');
+	await page.getByLabel('Longest recent run (km)').fill('3');
+	await goToOnboardingStep(page, 'Schedule');
+	await expect(page.getByRole('heading', { name: 'Starting point' })).toBeVisible();
+	await expect(page.getByText('Complete this step before continuing.')).toBeVisible();
+	await expect(page.getByLabel('Running experience')).toBeFocused();
+});
+
+test('foundation-first onboarding reserves time for foundation and race phases', async ({
+	page
+}) => {
+	await createAccount(page);
+	await page.getByLabel('Race distance').selectOption('5k');
+	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
+	await goToOnboardingStep(page, 'Starting point');
+	await page.getByLabel(/Foundation first/).check();
+	await page.getByLabel('Running experience').selectOption('new');
+	await goToOnboardingStep(page, 'Goal');
+
+	const targetDate = page.getByLabel('Target date');
+	const minimum = await targetDate.getAttribute('min');
+	if (!minimum) throw new Error('Foundation target-date minimum was not rendered.');
+	await expect(page.getByText(/17–52 weeks ahead/)).toBeVisible();
+	await targetDate.fill(addIsoDays(minimum, -1));
+	await goToOnboardingStep(page, 'Starting point');
 	await expect(page.getByRole('heading', { name: 'Goal' })).toBeVisible();
 	await expect(
-		page.getByText('Complete the required fields before reviewing this plan.')
+		page.getByText('Foundation first needs a race date 17 to 52 weeks away.')
 	).toBeVisible();
-	await expect(page.getByLabel('Race distance')).toBeFocused();
+
+	const response = await page.request.post('/app/onboarding?/createPlan', {
+		headers: {
+			origin: new URL(page.url()).origin,
+			accept: 'application/json',
+			'x-sveltekit-action': 'true'
+		},
+		form: {
+			goalKind: 'race',
+			startMode: 'foundation_to_goal',
+			raceDistance: '5k',
+			targetDate: addIsoDays(minimum, -1),
+			priority: 'finish_healthy',
+			experience: 'new',
+			availability: '1',
+			timeZone: 'America/Halifax'
+		}
+	});
+	expect(response.status()).toBe(200);
+	expect(await response.text()).toContain('Choose a date from');
 });
 
 test('current pain saves a pending goal without creating workouts', async ({ page }) => {
 	const email = await createAccount(page);
 	await fillValidPlanIntake(page);
 	await goToOnboardingStep(page, 'Starting point');
-	await page.getByLabel('Current pain').check();
+	await expect(page.getByLabel('Recovering from an injury').locator('..')).toContainText(
+		'workouts can still be scheduled'
+	);
+	await expect(page.getByLabel('Pain is present now').locator('..')).toContainText(
+		'without workouts'
+	);
+	await expect(
+		page.getByLabel('A clinician has limited or paused my running').locator('..')
+	).toContainText('without workouts');
+	await page.getByLabel('Pain is present now').check();
 	await goToOnboardingStep(page, 'Review');
 	await expect(page.getByText('Goal saved without workouts')).toBeVisible();
 	await page.getByRole('button', { name: 'Save pending goal' }).click();
@@ -1608,7 +1735,7 @@ test('heart-rate imports stay descriptive while stats show the measured zones', 
 	await expect(page.getByText('Heart-rate zone time was included.')).toBeVisible();
 	await page.getByText('Manage', { exact: true }).click();
 	await expect(
-		page.getByRole('checkbox', { name: 'Felt harder than expected' }).first()
+		page.getByRole('checkbox', { name: 'Effort was unusually hard' }).first()
 	).not.toBeChecked();
 	await expect(page.getByRole('heading', { name: 'Route map' })).toBeVisible();
 	await expect(page.locator('svg.route-map')).toBeVisible();
@@ -1896,21 +2023,48 @@ test('review-only imports do not enter actual totals until the runner accepts th
 	await page.getByRole('button', { name: 'Import', exact: true }).click();
 	const record = page.locator('.activity-record').first();
 	await expect(record.locator('.state-marker')).toContainText('Needs review');
+	await page.getByRole('link', { name: 'Calendar' }).click();
+	await expect(page.locator('.calendar-event.actual')).toHaveCount(0);
 
 	await page.getByRole('link', { name: 'Stats' }).click();
 	const recordedDistance = page.getByText('Recorded distance', { exact: true }).locator('..');
 	await expect(recordedDistance).toContainText('0 km');
 
 	await page.getByRole('link', { name: 'Inbox', exact: true }).click();
-	await record.getByText('Review', { exact: true }).click();
+	const reviewRecord = page.locator('.activity-record').first();
+	await reviewRecord.getByText('Review', { exact: true }).click();
 	page.once('dialog', (dialog) => dialog.accept());
-	await record.getByRole('button', { name: 'Count as extra training' }).click();
-	await expect(record.getByText('Included in training load')).toBeVisible();
+	await reviewRecord.getByRole('button', { name: 'Count as extra training' }).click();
+	await expect(reviewRecord.getByText('Included in training load')).toBeVisible();
 
 	await page.getByRole('link', { name: 'Stats' }).click();
 	await expect(page.getByText('Recorded distance', { exact: true }).locator('..')).toContainText(
 		'10 km'
 	);
+});
+
+test('auto-match completes a single close planned workout without a no-op adjustment', async ({
+	page
+}) => {
+	const email = await createPlan(page);
+	const userId = await getUserId(email);
+	const [targetRun] = await getPlannedRuns(userId);
+	if (!targetRun) throw new Error('Plan did not create an auto-match candidate.');
+
+	await page.getByRole('link', { name: 'Inbox', exact: true }).click();
+	await openImportSourceSetup(page);
+	await page.getByLabel('Auto-match by date and distance').check();
+	await page.getByLabel('GPX file').setInputFiles({
+		name: 'single-close-match.gpx',
+		mimeType: 'application/gpx+xml',
+		buffer: gpxForDistance(targetRun.scheduledDate, targetRun.targetDistanceMeters)
+	});
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+
+	await expect(page.getByText(/Auto-matched to a planned workout\./)).toBeVisible();
+	await expect(page.locator('.state-marker').filter({ hasText: 'Linked' })).toBeVisible();
+	await expect.poll(async () => (await getWorkout(targetRun.id)).status).toBe('done');
+	await expect.poll(() => hasDistanceAdjustment(userId, 'import_match')).toBe(false);
 });
 
 test('ambiguous auto-match leaves the activity and plan unchanged for review', async ({ page }) => {
@@ -1991,14 +2145,14 @@ test('editing extra-activity pain never changes the current plan without a decis
 		.toBe(futureRun.targetDistanceMeters);
 	const countedExtraTarget = (await getWorkout(futureRun.id)).targetDistanceMeters;
 
-	await record.getByRole('checkbox', { name: 'Pain affected this run' }).check();
+	await record.getByRole('checkbox', { name: 'Pain changed or limited this run' }).check();
 	await record.getByRole('button', { name: 'Save feedback' }).click();
 	await expect(page.getByText('Activity feedback updated.')).toBeVisible();
 	await expect
 		.poll(async () => (await getWorkout(futureRun.id)).targetDistanceMeters)
 		.toBe(countedExtraTarget);
 
-	await record.getByRole('checkbox', { name: 'Pain affected this run' }).uncheck();
+	await record.getByRole('checkbox', { name: 'Pain changed or limited this run' }).uncheck();
 	await record.getByRole('button', { name: 'Save feedback' }).click();
 	await expect
 		.poll(async () => (await getWorkout(futureRun.id)).targetDistanceMeters)
@@ -2103,7 +2257,7 @@ test('today keeps saved unsafe feedback visible after reload', async ({ page }) 
 		.first()
 		.click();
 	await page.getByText('Record run').first().click();
-	await page.getByRole('checkbox', { name: 'Pain affected this run' }).first().check();
+	await page.getByRole('checkbox', { name: 'Pain changed or limited this run' }).first().check();
 	await page
 		.getByRole('button', { name: /Save feedback/ })
 		.first()
@@ -2269,6 +2423,7 @@ test('cross-user activity and workout tampering is rejected server-side', async 
 	const ownerActivityId = await getFirstActivityId(ownerId);
 
 	await page.getByRole('button', { name: 'Sign out' }).click();
+	await page.waitForURL((url) => url.pathname === '/' || url.pathname === '/login');
 	await createPlan(page);
 
 	const deleteResponse = await page.request.post('/app/import?/deleteActivity', {
@@ -2429,6 +2584,31 @@ test('Nextcloud share sync backfills files, tracks revisions, and honors deletio
 	} finally {
 		await share.close();
 	}
+});
+
+test('privacy deletion cancels a Share import that is still uploading', async ({ page }) => {
+	const email = await createAccount(page);
+	await setTrainingTimeZone(email);
+	await page.goto('/app/settings');
+
+	const cookies = await page.context().cookies();
+	const heldShare = await startHeldShareImport(
+		new URL('/app/import/share', page.url()),
+		cookies.map(({ name, value }) => `${name}=${value}`).join('; '),
+		gpxForDistance('2026-05-12', 5_000)
+	);
+
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
+	await expect(page.getByText('Deleted 0 imported GPX activities.')).toBeVisible();
+
+	heldShare.finish();
+	const shareResponse = await heldShare.response;
+	expect(shareResponse.status).toBe(303);
+	expect(shareResponse.location).toContain('/app/import?share=deleted');
+
+	await page.goto('/app/import');
+	await expect(page.locator('.activity-record')).toHaveCount(0);
 });
 
 test('Nextcloud share sync backfills past a failed revision and retries it only after change', async ({

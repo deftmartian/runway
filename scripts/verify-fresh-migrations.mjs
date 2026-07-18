@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import postgres from 'postgres';
 
 const defaultDatabasePassword = process.env['POSTGRES_PASSWORD'] ?? 'runway_dev_password';
@@ -10,6 +11,7 @@ const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'))
 const expectedMigration = journal.entries.at(-1);
 
 if (!expectedMigration) throw new Error('The Drizzle migration journal is empty.');
+await verifySnapshotParity();
 if (baseDatabaseUrl === defaultDatabaseUrl) {
 	await run('docker', ['compose', 'up', '-d', '--wait', 'db']);
 }
@@ -24,7 +26,7 @@ databaseUrl.pathname = `/${databaseName}`;
 await withSql(adminUrl, (sql) => sql`create database ${sql(databaseName)}`);
 
 try {
-	await run('corepack', ['pnpm', 'db:migrate'], {
+	await run('node', ['scripts/run-migrations.mjs'], {
 		...process.env,
 		DATABASE_URL: databaseUrl.toString()
 	});
@@ -61,6 +63,49 @@ try {
 		const missing = requiredTables.filter((table) => !existing.has(table));
 		if (missing.length > 0)
 			throw new Error(`Fresh database is missing tables: ${missing.join(', ')}`);
+
+		const requiredColumns = {
+			activity: ['consequence_plan_id', 'heart_rate_series', 'route_trace'],
+			athlete_profile: ['activity_import_generation', 'route_data_mode'],
+			workout: ['interval_structure', 'prescription_kind']
+		};
+		const columns = await sql`
+			select table_name as "tableName", column_name as "columnName"
+			from information_schema.columns
+			where table_schema = 'public'
+		`;
+		const columnKeys = new Set(columns.map((row) => `${row.tableName}.${row.columnName}`));
+		const missingColumns = Object.entries(requiredColumns).flatMap(([table, names]) =>
+			names.flatMap((name) => (columnKeys.has(`${table}.${name}`) ? [] : [`${table}.${name}`]))
+		);
+		if (missingColumns.length > 0) {
+			throw new Error(`Fresh database is missing columns: ${missingColumns.join(', ')}`);
+		}
+
+		const requiredConstraints = [
+			'activity_consequence_plan_user_fk',
+			'activity_workout_user_fk',
+			'plan_adjustment_workout_user_plan_fk'
+		];
+		const constraints = await sql`
+			select constraint_name as "constraintName"
+			from information_schema.table_constraints
+			where constraint_schema = 'public'
+		`;
+		const constraintNames = new Set(constraints.map((row) => row.constraintName));
+		const missingConstraints = requiredConstraints.filter((name) => !constraintNames.has(name));
+		if (missingConstraints.length > 0) {
+			throw new Error(`Fresh database is missing constraints: ${missingConstraints.join(', ')}`);
+		}
+
+		const [decisionIndex] = await sql`
+			select indexdef as "indexDefinition"
+			from pg_indexes
+			where schemaname = 'public' and indexname = 'plan_adjustment_active_decision_unique'
+		`;
+		if (!decisionIndex?.indexDefinition?.includes('UNIQUE')) {
+			throw new Error('Fresh database is missing the active-decision uniqueness guard.');
+		}
 	});
 
 	console.log(
@@ -68,6 +113,36 @@ try {
 	);
 } finally {
 	await withSql(adminUrl, (sql) => sql`drop database if exists ${sql(databaseName)} with (force)`);
+}
+
+async function verifySnapshotParity() {
+	const temporaryRoot = await mkdtemp('.runway-drizzle-');
+	const temporaryOutput = join(temporaryRoot, 'drizzle');
+	const temporaryConfig = join(temporaryRoot, 'drizzle.config.mjs');
+	try {
+		await cp('drizzle', temporaryOutput, { recursive: true });
+		await writeFile(
+			temporaryConfig,
+			`export default ${JSON.stringify({
+				schema: resolve('src/lib/server/db/schema.ts'),
+				out: temporaryOutput,
+				dialect: 'postgresql',
+				dbCredentials: { url: baseDatabaseUrl },
+				strict: true
+			})};\n`
+		);
+		await run('corepack', ['pnpm', 'exec', 'drizzle-kit', 'generate', '--config', temporaryConfig]);
+		const generatedJournal = JSON.parse(
+			await readFile(join(temporaryOutput, 'meta', '_journal.json'), 'utf8')
+		);
+		if (generatedJournal.entries.length !== journal.entries.length) {
+			throw new Error(
+				'The Drizzle snapshot is stale. Generate and review a migration before continuing.'
+			);
+		}
+	} finally {
+		await rm(temporaryRoot, { recursive: true, force: true });
+	}
 }
 
 async function withSql(url, callback) {

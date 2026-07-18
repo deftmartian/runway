@@ -7,6 +7,8 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	const initial = readInitialValues();
 	const initialMinimumTargetDate = readMinimumTargetDate();
+	const initialMinimumCalibrationTargetDate = readMinimumCalibrationTargetDate();
+	const initialMinimumFoundationTargetDate = readMinimumFoundationTargetDate();
 	const initialMaximumTargetDate = readMaximumTargetDate();
 	const steps = ['Goal', 'Starting point', 'Schedule', 'Review'] as const;
 	const weekdays = [
@@ -39,7 +41,9 @@
 	let medicalRestriction = $state(initial.medicalRestriction);
 	let injuryNotes = $state(initial.injuryNotes);
 	let confirmReplace = $state(initial.confirmReplace);
-	let minimumTargetDate = $state(initialMinimumTargetDate);
+	let minimumEstablishedTargetDate = $state(initialMinimumTargetDate);
+	let minimumCalibrationTargetDate = $state(initialMinimumCalibrationTargetDate);
+	let minimumFoundationTargetDate = $state(initialMinimumFoundationTargetDate);
 	let maximumTargetDate = $state(initialMaximumTargetDate);
 	let isSubmitting = $state(false);
 	let hydrated = $state(false);
@@ -53,14 +57,37 @@
 		return data.minimumTargetDate;
 	}
 
+	function readMinimumCalibrationTargetDate() {
+		return data.minimumCalibrationTargetDate;
+	}
+
+	function readMinimumFoundationTargetDate() {
+		return data.minimumFoundationTargetDate;
+	}
+
 	function readMaximumTargetDate() {
 		return data.maximumTargetDate;
 	}
 
 	const fieldErrors = $derived(form?.fieldErrors ?? {});
 	const healthBlocked = $derived(currentPain || medicalRestriction);
+	const healthCaution = $derived(recentInjury || recurringPain);
 	const selectedDays = $derived(
 		weekdays.filter((day) => availability.includes(day.value)).map((day) => day.short)
+	);
+	const minimumTargetDate = $derived(
+		startMode === 'foundation_to_goal'
+			? minimumFoundationTargetDate
+			: startMode === 'calibration'
+				? minimumCalibrationTargetDate
+				: minimumEstablishedTargetDate
+	);
+	const targetWindowHelp = $derived(
+		startMode === 'foundation_to_goal'
+			? `17–52 weeks ahead in ${timeZone || 'your time zone'}: nine foundation weeks, then at least eight race-plan weeks.`
+			: startMode === 'calibration'
+				? `10–52 weeks ahead in ${timeZone || 'your time zone'}: two calibration weeks, then at least eight race-plan weeks.`
+				: `8–52 weeks ahead in ${timeZone || 'your time zone'}.`
 	);
 	const modeLabel = $derived.by(() => {
 		switch (startMode) {
@@ -94,8 +121,7 @@
 	}
 
 	function nextStep() {
-		step = Math.min(steps.length - 1, step + 1);
-		requestAnimationFrame(focusStep);
+		goToStep(Math.min(steps.length - 1, step + 1));
 	}
 
 	function previousStep() {
@@ -104,6 +130,15 @@
 	}
 
 	function goToStep(index: number) {
+		if (index > step) {
+			const targetStep = validationStep();
+			if (targetStep !== null && targetStep < index) {
+				clientMessage = validationMessage(targetStep);
+				void focusProblem(targetStep);
+				return;
+			}
+		}
+		clientMessage = '';
 		step = index;
 		requestAnimationFrame(focusStep);
 	}
@@ -125,8 +160,10 @@
 			const day = parts.find((part) => part.type === 'day')?.value;
 			if (!year || !month || !day) return;
 			const today = `${year}-${month}-${day}`;
-			minimumTargetDate = shiftDate(today, 56);
-			maximumTargetDate = shiftDate(today, 364);
+			minimumEstablishedTargetDate = shiftDate(today, 8 * 7);
+			minimumCalibrationTargetDate = shiftDate(today, 10 * 7);
+			minimumFoundationTargetDate = shiftDate(today, 17 * 7);
+			maximumTargetDate = shiftDate(today, 52 * 7 - 1);
 		} catch {
 			// The server supplies the field-scoped time-zone error.
 		}
@@ -143,18 +180,76 @@
 	}
 
 	function validationStep(): number | null {
-		if (goalKind === 'race' && (!raceDistance || !targetDate)) return 0;
+		if (
+			goalKind === 'race' &&
+			(!raceDistance ||
+				!targetDate ||
+				targetDate < minimumTargetDate ||
+				targetDate > maximumTargetDate)
+		) {
+			return 0;
+		}
+		if (!experience) return 1;
 		if (
 			startMode === 'established' &&
 			!healthBlocked &&
-			(!currentWeeklyDistanceKm || !currentRunsPerWeek || !longestRecentRunKm)
+			(!numberInRange(currentWeeklyDistanceKm, 3, 250) ||
+				!integerInRange(currentRunsPerWeek, 2, 5) ||
+				!numberInRange(longestRecentRunKm, Number.EPSILON, 80))
 		) {
 			return 1;
 		}
-		if (availability.length === 0 || !timeZone) return 2;
-		if (startMode === 'established' && !preferredLongRunDay) return 2;
+		if (startMode === 'calibration' && !integerInRange(calibrationDurationMinutes, 10, 30)) {
+			return 1;
+		}
+		const requiredDays =
+			startMode === 'foundation_to_goal' || startMode === 'foundation_only' ? 3 : 2;
+		if (new Set(availability).size < requiredDays || !timeZone) return 2;
+		if (
+			startMode === 'established' &&
+			(!preferredLongRunDay ||
+				!availability.includes(Number(preferredLongRunDay)) ||
+				availability.length < Number(currentRunsPerWeek))
+		) {
+			return 2;
+		}
 		if (data.activeGoal && !confirmReplace) return 3;
 		return null;
+	}
+
+	function numberInRange(value: string | number, minimum: number, maximum: number) {
+		const rawValue = String(value).trim();
+		if (!rawValue) return false;
+		const parsed = Number(rawValue);
+		return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum;
+	}
+
+	function integerInRange(value: string | number, minimum: number, maximum: number) {
+		if (!numberInRange(value, minimum, maximum)) return false;
+		return Number.isInteger(Number(value));
+	}
+
+	function validationMessage(targetStep: number) {
+		if (
+			targetStep === 0 &&
+			goalKind === 'race' &&
+			targetDate &&
+			(targetDate < minimumTargetDate || targetDate > maximumTargetDate)
+		) {
+			return startMode === 'foundation_to_goal'
+				? 'Foundation first needs a race date 17 to 52 weeks away.'
+				: startMode === 'calibration'
+					? 'Calibration needs a race date 10 to 52 weeks away.'
+					: 'Choose a race date 8 to 52 weeks away.';
+		}
+		if (
+			targetStep === 2 &&
+			startMode === 'established' &&
+			availability.length < Number(currentRunsPerWeek)
+		) {
+			return 'Choose at least as many available days as current weekly runs.';
+		}
+		return 'Complete this step before continuing.';
 	}
 
 	function errorStep(): number | null {
@@ -163,6 +258,7 @@
 			errorFor('currentWeeklyDistanceKm') ||
 			errorFor('currentRunsPerWeek') ||
 			errorFor('longestRecentRunKm') ||
+			errorFor('experience') ||
 			errorFor('calibrationDurationMinutes') ||
 			errorFor('injuryNotes') ||
 			errorFor('healthFlags')
@@ -182,6 +278,7 @@
 		const container = document.querySelector<HTMLElement>(`#onboarding-step-${targetStep + 1}`);
 		(
 			container?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+			container?.querySelector<HTMLElement>(':invalid') ??
 			container?.querySelector<HTMLElement>('input:required, select:required') ??
 			container
 		)?.focus();
@@ -194,7 +291,7 @@
 			return;
 		}
 		event.preventDefault();
-		clientMessage = 'Complete the required fields before reviewing this plan.';
+		clientMessage = validationMessage(targetStep);
 		void focusProblem(targetStep);
 	}
 
@@ -221,8 +318,8 @@
 		</div>
 		{#if data.activeGoal?.state === 'pending'}
 			<p class="pending-note" role="status">
-				Goal saved. No workouts will be created while current pain or a medical restriction is
-				selected.
+				Goal saved. No workouts will be created while pain is present now or a clinician has limited
+				running.
 			</p>
 		{/if}
 	</header>
@@ -336,9 +433,11 @@
 								bind:value={targetDate}
 								required={step === 0}
 								aria-invalid={Boolean(errorFor('targetDate'))}
-								aria-describedby={errorFor('targetDate') ? 'target-date-error' : undefined}
+								aria-describedby={errorFor('targetDate')
+									? 'target-window-help target-date-error'
+									: 'target-window-help'}
 							/>
-							<span class="field-help">8–52 weeks ahead in {timeZone || 'your time zone'}.</span>
+							<span id="target-window-help" class="field-help">{targetWindowHelp}</span>
 							{#if errorFor('targetDate')}<span id="target-date-error" class="field-error"
 									>{errorFor('targetDate')}</span
 								>{/if}
@@ -386,13 +485,17 @@
 							/>
 							<strong>Foundation first</strong>
 							<span
-								>Complete the NHS nine-week run/walk phase, then confirm the observed baseline.</span
+								>Complete the NHS nine-week run/walk phase, then keep at least eight weeks for the
+								race plan.</span
 							>
 						</label>
 						<label class:selected={startMode === 'calibration'}>
 							<input type="radio" name="startMode" value="calibration" bind:group={startMode} />
 							<strong>Short calibration</strong>
-							<span>Repeat the same comfortable timed session twice weekly for two weeks.</span>
+							<span
+								>Repeat a comfortable timed session for two weeks, then keep at least eight weeks
+								for the race plan.</span
+							>
 						</label>
 					</div>
 				{:else}
@@ -481,31 +584,70 @@
 				<div class="field-grid health-grid">
 					<label>
 						Running experience
-						<select name="experience" bind:value={experience}>
+						<select
+							name="experience"
+							bind:value={experience}
+							required={step === 1}
+							aria-invalid={Boolean(errorFor('experience'))}
+							aria-describedby={errorFor('experience') ? 'experience-error' : undefined}
+						>
+							<option value="" disabled>Choose experience</option>
 							<option value="new">New runner</option>
 							<option value="returning">Returning runner</option>
 							<option value="comfortable">Comfortable with regular running</option>
 						</select>
+						{#if errorFor('experience')}<span id="experience-error" class="field-error"
+								>{errorFor('experience')}</span
+							>{/if}
 					</label>
-					<div class="health-flags" aria-label="Current health context">
-						<label
-							><input type="checkbox" name="recentInjury" bind:checked={recentInjury} /> Recent injury</label
-						>
-						<label
-							><input type="checkbox" name="currentPain" bind:checked={currentPain} /> Current pain</label
-						>
-						<label
-							><input type="checkbox" name="recurringPain" bind:checked={recurringPain} /> Recurring pain</label
-						>
-						<label
-							><input type="checkbox" name="medicalRestriction" bind:checked={medicalRestriction} /> Medical
-							restriction</label
-						>
-					</div>
+					<section class="health-context-panel" aria-labelledby="health-context-heading">
+						<div class="health-context-heading">
+							<h3 id="health-context-heading">Health and running limits</h3>
+							<p>
+								Select what is true now. These answers change plan risk or whether workouts can be
+								scheduled. Effort that merely feels hard is recorded after a run, not here.
+							</p>
+						</div>
+						<div class="health-flags">
+							<label>
+								<input type="checkbox" name="recentInjury" bind:checked={recentInjury} />
+								<span>
+									<strong>Recovering from an injury</strong>
+									<small>Adds caution to plan risk; workouts can still be scheduled.</small>
+								</span>
+							</label>
+							<label>
+								<input type="checkbox" name="currentPain" bind:checked={currentPain} />
+								<span>
+									<strong>Pain is present now</strong>
+									<small>Saves the goal without workouts until this is cleared.</small>
+								</span>
+							</label>
+							<label>
+								<input type="checkbox" name="recurringPain" bind:checked={recurringPain} />
+								<span>
+									<strong>Pain returns when I run</strong>
+									<small>Adds caution to plan risk; workouts can still be scheduled.</small>
+								</span>
+							</label>
+							<label>
+								<input
+									type="checkbox"
+									name="medicalRestriction"
+									bind:checked={medicalRestriction}
+								/>
+								<span>
+									<strong>A clinician has limited or paused my running</strong>
+									<small>Saves the goal without workouts until the limit is removed.</small>
+								</span>
+							</label>
+						</div>
+					</section>
 				</div>
 				<label class="single-field">
-					Health context <span class="optional">Optional</span>
+					Anything the plan should account for <span class="optional">Optional</span>
 					<textarea name="injuryNotes" maxlength="240" rows="3" bind:value={injuryNotes}></textarea>
+					<span class="field-help">Stored privately with the training profile.</span>
 					{#if errorFor('injuryNotes')}<span class="field-error">{errorFor('injuryNotes')}</span
 						>{/if}
 				</label>
@@ -622,10 +764,18 @@
 				{#if healthBlocked}
 					<div class="decision-note warning" role="status">
 						<strong>Goal saved without workouts</strong>
-						<span
-							>Current pain or a medical restriction prevents an active workout phase. Nothing will
-							be scheduled until the profile is updated.</span
-						>
+						<span>
+							Pain that is present now or a clinician-imposed running limit pauses workout
+							scheduling. Update these answers when that changes.
+						</span>
+					</div>
+				{:else if healthCaution}
+					<div class="decision-note warning" role="status">
+						<strong>Health caution included</strong>
+						<span>
+							Recovery or recurring pain will be carried into plan warnings and risk checks. It does
+							not pause workout scheduling by itself.
+						</span>
 					</div>
 				{:else if startMode === 'foundation_to_goal' || startMode === 'foundation_only'}
 					<div class="decision-note">
@@ -918,19 +1068,67 @@
 		align-items: start;
 	}
 
+	.health-context-panel {
+		grid-column: 1 / -1;
+		display: grid;
+		gap: 14px;
+		padding-top: 4px;
+	}
+
+	.health-context-heading {
+		display: grid;
+		gap: 5px;
+	}
+
+	.health-context-heading h3,
+	.health-context-heading p {
+		margin: 0;
+	}
+
+	.health-context-heading p {
+		max-width: 72ch;
+		color: var(--muted);
+		font-size: 0.88rem;
+	}
+
 	.health-flags {
 		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 10px;
-		padding-top: 26px;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1px;
+		border: 1px solid var(--line);
+		background: var(--line);
 	}
 
 	.health-flags label {
 		display: flex;
-		align-items: center;
-		gap: 8px;
+		align-items: flex-start;
+		gap: 12px;
+		min-height: 88px;
+		padding: 15px;
+		background: var(--surface);
 		font-size: 0.9rem;
-		font-weight: 570;
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	.health-flags input {
+		flex: 0 0 auto;
+		margin-top: 3px;
+	}
+
+	.health-flags span {
+		display: grid;
+		gap: 5px;
+	}
+
+	.health-flags strong {
+		font-weight: 680;
+	}
+
+	.health-flags small {
+		color: var(--muted);
+		font-size: 0.8rem;
+		line-height: 1.4;
 	}
 
 	.day-choices {
@@ -1045,6 +1243,10 @@
 		.choice-track.mode-track,
 		.field-grid,
 		.field-grid.three-up {
+			grid-template-columns: 1fr;
+		}
+
+		.health-flags {
 			grid-template-columns: 1fr;
 		}
 

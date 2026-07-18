@@ -20,6 +20,7 @@ export type CalendarEvent = {
 	week: TrainingCalendarWeek | null;
 	isRecordable: boolean;
 	isToday: boolean;
+	isFuture: boolean;
 };
 
 export type WorkoutCandidate = {

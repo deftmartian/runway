@@ -116,13 +116,13 @@ describe('foundation planning', () => {
 				...foundationOnly,
 				injuryFlags: { ...healthyFlags, currentPain: true }
 			})
-		).toThrow(/current pain/i);
+		).toThrow(/pain is present now/i);
 		expect(() =>
 			generateFoundationPlan({
 				...foundationOnly,
 				injuryFlags: { ...healthyFlags, medicalRestriction: true }
 			})
-		).toThrow(/medical restriction/i);
+		).toThrow(/clinician has limited running/i);
 	});
 });
 

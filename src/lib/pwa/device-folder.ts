@@ -1,3 +1,5 @@
+import { maxGpxImportBytes } from '$lib/import-limits';
+
 const databaseName = 'runway-device-folders';
 const databaseVersion = 1;
 const configStoreName = 'folders';
@@ -5,7 +7,6 @@ const seenStoreName = 'seen-files';
 const seenUserIndexName = 'user-id';
 const maxDirectoryEntries = 2_000;
 const maxGpxCandidates = 500;
-const fingerprintSampleBytes = 4 * 1024;
 const activeScans = new Map<string, Promise<DeviceFolderScanResult>>();
 const blockedUsers = new Set<string>();
 let blockAllScans = false;
@@ -50,6 +51,8 @@ export type DeviceFolderScanResult =
 	| { result: 'unsupported' }
 	| { result: 'unlinked' }
 	| { result: 'permission-required' }
+	| { result: 'folder-missing' }
+	| { result: 'folder-unavailable' }
 	| { result: 'none' }
 	| { result: 'imported' }
 	| { result: 'duplicate' }
@@ -115,8 +118,40 @@ export async function connectDeviceFolder(userId: string): Promise<DeviceFolderC
 		await clearSeenFiles(userId);
 	}
 	await storeFolder({ userId, handle });
+	// A persisted storage bucket reduces the chance that Android evicts the
+	// IndexedDB record containing the handle. It does not grant file access.
+	void navigator.storage?.persist?.().catch(() => false);
 	blockedUsers.delete(userId);
 	return 'linked';
+}
+
+/**
+ * Re-authorizes the already selected handle from a direct user gesture. This
+ * avoids making the runner find and select the same folder again after the
+ * browser downgrades a persisted handle from granted to prompt.
+ */
+export async function restoreDeviceFolderPermission(
+	userId: string
+): Promise<DeviceFolderConnectionState> {
+	if (!supportsDeviceFolderImport()) return 'unsupported';
+	const handle = await getStoredFolder(userId);
+	if (!handle) return 'unlinked';
+	return (await requestDirectoryReadPermission(handle)) === 'granted'
+		? 'linked'
+		: 'permission-required';
+}
+
+export async function requestDirectoryReadPermission(
+	handle: FileSystemDirectoryHandle
+): Promise<PermissionState> {
+	const permissionHandle = handle as DirectoryPermissionHandle;
+	if ((await queryPermission(handle)) === 'granted') return 'granted';
+	if (!permissionHandle.requestPermission) return 'denied';
+	try {
+		return await permissionHandle.requestPermission({ mode: 'read' });
+	} catch {
+		return 'denied';
+	}
 }
 
 export async function disconnectDeviceFolder(userId: string): Promise<void> {
@@ -204,7 +239,17 @@ async function scanDeviceFolderOnce(userId: string): Promise<DeviceFolderScanRes
 		candidates = await listGpxCandidates(handle, userId);
 	} catch (error) {
 		if (error instanceof DeviceFolderLimitError) return { result: 'too-many-files' };
-		return { result: 'permission-required' };
+		const firstFailure = classifyDirectoryReadFailure(error);
+		if (firstFailure !== 'folder-unavailable') return { result: firstFailure };
+		// Android document providers can still be waking up immediately after the
+		// page resumes. Retry that transient state once before asking the runner to act.
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		try {
+			candidates = await listGpxCandidates(handle, userId);
+		} catch (retryError) {
+			if (retryError instanceof DeviceFolderLimitError) return { result: 'too-many-files' };
+			return { result: classifyDirectoryReadFailure(retryError) };
+		}
 	}
 	const seen = await getSeenDigests(userId);
 	const candidate = newestUnseenDeviceFile(candidates, seen);
@@ -221,6 +266,25 @@ async function scanDeviceFolderOnce(userId: string): Promise<DeviceFolderScanRes
 		await markSeen(userId, candidate.fingerprint);
 	}
 	return result;
+}
+
+export function classifyDirectoryReadFailure(
+	error: unknown
+): 'permission-required' | 'folder-missing' | 'folder-unavailable' | 'failed' {
+	if (!(error instanceof DOMException)) return 'failed';
+	if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+		return 'permission-required';
+	}
+	if (error.name === 'NotFoundError') return 'folder-missing';
+	if (
+		error.name === 'NotReadableError' ||
+		error.name === 'InvalidStateError' ||
+		error.name === 'AbortError' ||
+		error.name === 'UnknownError'
+	) {
+		return 'folder-unavailable';
+	}
+	return 'failed';
 }
 
 async function listGpxCandidates(
@@ -251,21 +315,15 @@ async function fingerprintFile(file: File, userId: string): Promise<string> {
 	const metadata = new TextEncoder().encode(
 		JSON.stringify([userId, file.name, file.size, file.lastModified])
 	);
-	const headEnd = Math.min(file.size, fingerprintSampleBytes);
-	const tailStart = Math.max(headEnd, file.size - fingerprintSampleBytes);
-	const [head, tail] = await Promise.all([
-		file.slice(0, headEnd).arrayBuffer(),
-		file.slice(tailStart).arrayBuffer()
-	]);
-	const fingerprintInput = new Uint8Array(metadata.length + head.byteLength + tail.byteLength);
-	fingerprintInput.set(metadata, 0);
-	fingerprintInput.set(new Uint8Array(head), metadata.length);
-	fingerprintInput.set(new Uint8Array(tail), metadata.length + head.byteLength);
-	const digest = await globalThis.crypto.subtle.digest('SHA-256', fingerprintInput);
+	// Folder scans run whenever the app regains focus. Fingerprint metadata here
+	// so hundreds of already-seen files do not require repeated content reads.
+	// The selected file is still fully hashed and deduplicated on the server.
+	const digest = await globalThis.crypto.subtle.digest('SHA-256', metadata);
 	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 async function uploadCandidate(file: File): Promise<DeviceFolderScanResult> {
+	if (file.size > maxGpxImportBytes) return { result: 'too-large' };
 	const formData = new FormData();
 	// Do not transmit Gadgetbridge's original filename. The server only needs
 	// bounded bytes for strict parsing and user-scoped content deduplication.

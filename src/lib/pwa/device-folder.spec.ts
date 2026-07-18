@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+	classifyDirectoryReadFailure,
 	isGpxFilename,
 	isTerminalDeviceImportResult,
-	newestUnseenDeviceFile
+	newestUnseenDeviceFile,
+	requestDirectoryReadPermission
 } from './device-folder';
 
 describe('device folder GPX selection', () => {
@@ -37,5 +39,46 @@ describe('device folder GPX selection', () => {
 		for (const result of ['failed', 'time-zone-required', 'too-many-files'] as const) {
 			expect(isTerminalDeviceImportResult(result)).toBe(false);
 		}
+	});
+
+	it('restores an existing handle without reopening the directory picker', async () => {
+		let requestCount = 0;
+		const handle = {
+			queryPermission: () => Promise.resolve('prompt' as PermissionState),
+			requestPermission: () => {
+				requestCount += 1;
+				return Promise.resolve('granted' as PermissionState);
+			}
+		} as unknown as FileSystemDirectoryHandle;
+
+		await expect(requestDirectoryReadPermission(handle)).resolves.toBe('granted');
+		expect(requestCount).toBe(1);
+	});
+
+	it('does not prompt again while the saved handle remains granted', async () => {
+		let requestCount = 0;
+		const handle = {
+			queryPermission: () => Promise.resolve('granted' as PermissionState),
+			requestPermission: () => {
+				requestCount += 1;
+				return Promise.resolve('granted' as PermissionState);
+			}
+		} as unknown as FileSystemDirectoryHandle;
+
+		await expect(requestDirectoryReadPermission(handle)).resolves.toBe('granted');
+		expect(requestCount).toBe(0);
+	});
+
+	it('separates revoked, missing, and temporarily unavailable folders', () => {
+		expect(classifyDirectoryReadFailure(new DOMException('', 'NotAllowedError'))).toBe(
+			'permission-required'
+		);
+		expect(classifyDirectoryReadFailure(new DOMException('', 'NotFoundError'))).toBe(
+			'folder-missing'
+		);
+		expect(classifyDirectoryReadFailure(new DOMException('', 'NotReadableError'))).toBe(
+			'folder-unavailable'
+		);
+		expect(classifyDirectoryReadFailure(new Error('provider failed'))).toBe('failed');
 	});
 });

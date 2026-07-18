@@ -9,12 +9,14 @@
 		disconnectDeviceFolder,
 		getDeviceFolderConnectionState,
 		retainDeviceFolderForUser,
+		restoreDeviceFolderPermission,
 		scanDeviceFolder,
 		supportsDeviceFolderImport,
 		type DeviceFolderConnectionState,
 		type DeviceFolderScanResult
 	} from '$lib/pwa/device-folder';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import type { ActivityRouteTrace, HeartRateSeries } from '$lib/training/types';
 	import { onMount } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -29,6 +31,14 @@
 	let deviceFolderState = $state<DeviceFolderConnectionState | 'loading'>('loading');
 	let deviceFolderBusy = $state(false);
 	let deviceFolderResult = $state<{ message: string; failed: boolean } | null>(null);
+	type ActivityTraceDetail = {
+		id: string;
+		routeTrace: ActivityRouteTrace | null;
+		heartRateSeries: HeartRateSeries | null;
+	};
+	let activityTraceDetails = $state<
+		Record<string, ActivityTraceDetail | 'loading' | 'failed' | undefined>
+	>({});
 
 	onMount(() => {
 		void initializeDeviceFolder();
@@ -96,6 +106,22 @@
 	const sectionResult = (section: ImportSection) =>
 		scopedResult?.section === section ? scopedResult : null;
 	const actionPending = (key: string) => activeAction === key;
+	const activityTraceDetail = (activityId: string) => activityTraceDetails[activityId];
+	async function loadActivityTrace(event: Event, activityId: string) {
+		const disclosure = event.currentTarget;
+		if (!(disclosure instanceof HTMLDetailsElement) || !disclosure.open) return;
+		if (activityTraceDetails[activityId]) return;
+		activityTraceDetails[activityId] = 'loading';
+		try {
+			const response = await fetch(resolve('/app/import/activity/[activityId]', { activityId }), {
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) throw new Error('Activity detail request failed.');
+			activityTraceDetails[activityId] = (await response.json()) as ActivityTraceDetail;
+		} catch {
+			activityTraceDetails[activityId] = 'failed';
+		}
+	}
 	const scopedEnhance =
 		(key: string, section: ImportSection): SubmitFunction =>
 		({ cancel }) => {
@@ -163,6 +189,28 @@
 		}
 	}
 
+	async function restoreDeviceFolder() {
+		if (deviceFolderBusy) return;
+		deviceFolderBusy = true;
+		deviceFolderResult = null;
+		try {
+			deviceFolderState = await restoreDeviceFolderPermission(data.user.id);
+			if (deviceFolderState === 'linked') {
+				await runDeviceFolderScan(true);
+			} else {
+				deviceFolderResult = deviceFolderMessage({ result: deviceFolderState });
+			}
+		} catch {
+			deviceFolderState = 'permission-required';
+			deviceFolderResult = {
+				message: 'Folder permission was not restored. Try again from this browser.',
+				failed: true
+			};
+		} finally {
+			deviceFolderBusy = false;
+		}
+	}
+
 	async function scanDeviceFolderNow() {
 		if (deviceFolderBusy) return;
 		deviceFolderBusy = true;
@@ -192,6 +240,7 @@
 		}
 		deviceFolderResult = deviceFolderMessage(result);
 		if (result.result === 'permission-required') deviceFolderState = 'permission-required';
+		if (result.result === 'folder-missing') deviceFolderState = 'unlinked';
 		if (result.result === 'imported') await invalidateAll();
 	}
 
@@ -231,6 +280,13 @@
 				return { message: 'No new GPX files found.', failed: false };
 			case 'permission-required':
 				return { message: 'Restore access to the Gadgetbridge folder.', failed: true };
+			case 'folder-missing':
+				return { message: 'The saved folder moved or was removed. Choose it again.', failed: true };
+			case 'folder-unavailable':
+				return {
+					message: 'The folder is temporarily unavailable. Unlock the device and try again.',
+					failed: true
+				};
 			case 'time-zone-required':
 				return { message: 'Set the training time zone before importing.', failed: true };
 			case 'future':
@@ -308,9 +364,11 @@
 		<div class="activity-list" aria-busy={activeSection === 'activities'}>
 			{#each data.activities.items as activity (activity.id)}
 				{@const candidates = candidatesForActivity(activity.activityDate)}
+				{@const traceDetail = activityTraceDetail(activity.id)}
 				<details
 					class="activity-record"
 					class:needs-review={!activity.workoutId && !activity.extraPlanImpactConfirmed}
+					ontoggle={(event) => loadActivityTrace(event, activity.id)}
 				>
 					<summary>
 						<StateMarker
@@ -346,17 +404,23 @@
 						</span>
 					</summary>
 
-					<div class="record-visuals">
-						<ActivityVisuals
-							id={`inbox-${activity.id}`}
-							routeTrace={activity.routeTrace}
-							heartRateSeries={activity.heartRateSeries}
-							heartRateSummary={activity.heartRateSummary}
-							averageHeartRate={activity.averageHeartRate}
-							maxHeartRate={activity.maxHeartRate}
-							durationSeconds={activity.durationSeconds}
-						/>
-						{#if activity.source === 'gpx' && !activity.routeTrace}
+					<div class="record-visuals" aria-live="polite">
+						{#if traceDetail && traceDetail !== 'loading' && traceDetail !== 'failed'}
+							<ActivityVisuals
+								id={`inbox-${activity.id}`}
+								routeTrace={traceDetail.routeTrace}
+								heartRateSeries={traceDetail.heartRateSeries}
+								heartRateSummary={activity.heartRateSummary}
+								averageHeartRate={activity.averageHeartRate}
+								maxHeartRate={activity.maxHeartRate}
+								durationSeconds={activity.durationSeconds}
+							/>
+						{:else if traceDetail === 'loading'}
+							<p class="muted activity-trace-note">Loading private activity detail…</p>
+						{:else if traceDetail === 'failed'}
+							<p class="message compact-message">Activity visuals could not be loaded.</p>
+						{/if}
+						{#if activity.source === 'gpx' && traceDetail && traceDetail !== 'loading' && traceDetail !== 'failed' && !traceDetail.routeTrace}
 							<p class="muted activity-trace-note">
 								This import predates saved route traces. Future GPX imports can include the route
 								map.
@@ -441,13 +505,14 @@
 								<fieldset>
 									<label>
 										<input type="checkbox" name="feltHard" checked={activity.feltHard} />
-										Felt harder than expected
+										Effort was unusually hard
 									</label>
 									<label>
 										<input type="checkbox" name="pain" checked={activity.pain} />
-										Pain affected this run
+										Pain changed or limited this run
 									</label>
 								</fieldset>
+								<p class="muted">Hard effort changes load advice. Pain triggers the safety path.</p>
 								<button disabled={activeAction !== null}>
 									{actionPending(`feedback-${activity.id}`) ? 'Saving…' : 'Save feedback'}
 								</button>
@@ -546,9 +611,9 @@
 								type="button"
 								class="primary"
 								disabled={deviceFolderBusy || !data.importTimeZoneConfigured}
-								onclick={allowDeviceFolder}
+								onclick={restoreDeviceFolder}
 							>
-								{deviceFolderBusy ? 'Opening…' : 'Restore access'}
+								{deviceFolderBusy ? 'Restoring…' : 'Restore access'}
 							</button>
 						{:else}
 							<button
@@ -634,7 +699,12 @@
 				<section class="setup-section" aria-labelledby="device-folder-heading">
 					<h3 id="device-folder-heading">Gadgetbridge folder</h3>
 					<p>Checks one new GPX when the app opens or returns to the foreground.</p>
-					<p class="privacy-note">Folder access stays in this browser. Files are not changed.</p>
+					<p class="privacy-note">
+						Folder access stays in this browser and files are not changed. New GPX files are
+						uploaded to runway; {data.routeDataMode === 'private'
+							? 'a bounded private route trace is retained.'
+							: 'route points are discarded after totals are calculated.'}
+					</p>
 					{#if deviceFolderState === 'unsupported'}
 						<p class="source-error">
 							This browser cannot retain folder access. Share or upload the GPX instead.
@@ -657,7 +727,12 @@
 
 				<section class="setup-section" aria-labelledby="nextcloud-heading">
 					<h3 id="nextcloud-heading">Nextcloud folder</h3>
-					<p>Reads GPX files from a password-protected folder share.</p>
+					<p>
+						Reads GPX files from a password-protected folder share. {data.routeDataMode ===
+						'private'
+							? 'A bounded private route trace is retained.'
+							: 'Route points are discarded after totals are calculated.'}
+					</p>
 					<form
 						method="post"
 						action="?/saveNextcloudSource"
@@ -687,7 +762,12 @@
 
 				<section class="setup-section" aria-labelledby="manual-gpx-heading">
 					<h3 id="manual-gpx-heading">Manual GPX upload</h3>
-					<p>The default leaves the activity in the inbox for review.</p>
+					<p>
+						The default leaves the activity in the inbox for review. Raw GPX bytes are discarded;
+						{data.routeDataMode === 'private'
+							? ' a bounded private route trace is retained.'
+							: ' route points are discarded after totals are calculated.'}
+					</p>
 					{#if sectionResult('gpx')}
 						<p
 							class="message compact-message"
@@ -891,7 +971,7 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-height: 42px;
+		min-height: 44px;
 		padding: 7px 13px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-small);

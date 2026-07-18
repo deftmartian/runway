@@ -2,6 +2,7 @@ import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { auth } from '$lib/server/auth';
+import { isBlockedBetterAuthHttpPath } from '$lib/server/runway/auth-http-boundary';
 import { startImportSourceWorker } from '$lib/server/runway/import-worker';
 import {
 	hasExactRequestOrigin,
@@ -97,6 +98,12 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/health/')) return resolve(event);
+	if (isBlockedBetterAuthHttpPath(event.url.pathname)) {
+		return new Response('Not found', {
+			status: 404,
+			headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+		});
+	}
 
 	const session = await auth.api.getSession({ headers: event.request.headers });
 

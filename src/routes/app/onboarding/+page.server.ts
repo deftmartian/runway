@@ -17,6 +17,7 @@ import type {
 import type { Actions, PageServerLoad } from './$types';
 
 type Experience = PlanIntake['experience'];
+type ExperienceField = Experience | '';
 
 type GoalFormValues = {
 	goalKind: GoalKind;
@@ -27,7 +28,7 @@ type GoalFormValues = {
 	currentWeeklyDistanceKm: string;
 	currentRunsPerWeek: string;
 	longestRecentRunKm: string;
-	experience: Experience;
+	experience: ExperienceField;
 	calibrationDurationMinutes: string;
 	availability: number[];
 	preferredLongRunDay: string;
@@ -57,7 +58,9 @@ export const load: PageServerLoad = async (event) => {
 			? valuesFromCurrentGoal(currentGoal, activePlan, profile)
 			: emptyGoalValues(profile?.timeZone ?? ''),
 		minimumTargetDate: addDays(today, 8 * 7),
-		maximumTargetDate: addDays(today, 52 * 7),
+		minimumCalibrationTargetDate: addDays(today, 10 * 7),
+		minimumFoundationTargetDate: addDays(today, 17 * 7),
+		maximumTargetDate: addDays(today, 52 * 7 - 1),
 		activeGoal: currentGoal
 			? {
 					title: currentGoal.title,
@@ -76,7 +79,7 @@ export const actions: Actions = {
 		const values = goalFormValues(formData);
 		const currentGoal = await getCurrentGoal(event.locals.user.id);
 		const targetBounds = isValidTimeZone(values.timeZone)
-			? targetDateBounds(values.timeZone)
+			? targetDateBounds(values.timeZone, values.startMode)
 			: null;
 		const fieldErrors = validatePlanIntake(values, targetBounds);
 
@@ -113,7 +116,7 @@ function planIntake(values: GoalFormValues): PlanIntake {
 	const common = {
 		priority: values.priority,
 		units: 'metric' as const,
-		experience: values.experience,
+		experience: values.experience as Experience,
 		availability: values.availability,
 		injuryFlags: {
 			recentInjury: values.recentInjury,
@@ -177,6 +180,7 @@ function validatePlanIntake(
 		values.startMode === 'foundation_to_goal' || values.startMode === 'foundation_only' ? 3 : 2;
 
 	if (!isValidTimeZone(values.timeZone)) errors.timeZone = 'Select a valid IANA time zone.';
+	if (!values.experience) errors.experience = 'Choose your current running experience.';
 	if (raceGoal && !values.raceDistance) errors.raceDistance = 'Choose a race distance.';
 	if (raceGoal && !values.targetDate) {
 		errors.targetDate = 'Choose a target date.';
@@ -241,7 +245,7 @@ function emptyGoalValues(timeZone: string): GoalFormValues {
 		currentWeeklyDistanceKm: '',
 		currentRunsPerWeek: '',
 		longestRecentRunKm: '',
-		experience: 'returning',
+		experience: '',
 		calibrationDurationMinutes: '20',
 		availability: [],
 		preferredLongRunDay: '',
@@ -271,7 +275,7 @@ function valuesFromCurrentGoal(
 			: '',
 		currentRunsPerWeek: profile ? String(profile.currentRunsPerWeek) : '',
 		longestRecentRunKm: profile ? formatDistanceInput(profile.longestRecentRunMeters) : '',
-		experience: isExperience(profile?.experience) ? profile.experience : 'returning',
+		experience: isExperience(profile?.experience) ? profile.experience : '',
 		calibrationDurationMinutes:
 			activePlan?.plan.summary.kind === 'calibration'
 				? String(activePlan.plan.summary.sessionDurationSeconds / 60)
@@ -308,8 +312,7 @@ function goalFormValues(formData: FormData): GoalFormValues {
 		currentWeeklyDistanceKm: formString(formData, 'currentWeeklyDistanceKm'),
 		currentRunsPerWeek: formString(formData, 'currentRunsPerWeek'),
 		longestRecentRunKm: formString(formData, 'longestRecentRunKm'),
-		experience:
-			enumValue(formData, 'experience', ['new', 'returning', 'comfortable']) || 'returning',
+		experience: enumValue(formData, 'experience', ['new', 'returning', 'comfortable']),
 		calibrationDurationMinutes: formString(formData, 'calibrationDurationMinutes', '20'),
 		availability: Array.from(
 			new Set(
@@ -341,9 +344,11 @@ function strictNumber(value: string): number | null {
 	return Number.isFinite(parsed) ? parsed : null;
 }
 
-function targetDateBounds(timeZone: string) {
+function targetDateBounds(timeZone: string, startMode: StartMode) {
 	const today = todayIsoInTimeZone(timeZone);
-	return { minimum: addDays(today, 8 * 7), maximum: addDays(today, 52 * 7) };
+	const minimumWeeks =
+		startMode === 'foundation_to_goal' ? 17 : startMode === 'calibration' ? 10 : 8;
+	return { minimum: addDays(today, minimumWeeks * 7), maximum: addDays(today, 52 * 7 - 1) };
 }
 
 function nextPlanStartDate(timeZone: string): string {

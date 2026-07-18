@@ -24,12 +24,14 @@
 	let online = $state(true);
 	let reconnected = $state(false);
 	let updateAvailable = $state(false);
+	let newVersionActive = $state(false);
 	let updateBlockReason = $state<'unsaved-changes' | 'pending-action' | null>(null);
 	let activatingUpdate = $state(false);
+	let activationProblem = $state(false);
 	let registration: ServiceWorkerRegistration | null = null;
 	let waitingWorker: ServiceWorker | null = null;
-	let activationRequested = false;
 	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+	let activationTimer: ReturnType<typeof setTimeout> | undefined;
 	let serviceWorkerPolicy: TrustedTypesPolicy | null = null;
 	const dirtyForms = new SvelteSet<HTMLFormElement>();
 	const pendingForms = new SvelteMap<HTMLFormElement, PendingForm>();
@@ -42,6 +44,7 @@
 
 	onMount(() => {
 		online = navigator.onLine;
+		let hadServiceWorkerController = Boolean(navigator.serviceWorker?.controller);
 		const stopInstallPromptCapture = startInstallPromptCapture();
 
 		const handleOnline = () => {
@@ -56,7 +59,12 @@
 			clearTimeout(reconnectTimer);
 		};
 		const handleControllerChange = () => {
-			if (activationRequested) globalThis.location.reload();
+			const replacedExistingController = hadServiceWorkerController;
+			hadServiceWorkerController = true;
+			if (!replacedExistingController) return;
+
+			markNewVersionActive();
+			if (!updateBlockReason) globalThis.location.reload();
 		};
 		const handleFormEdit = (event: Event) => {
 			if (!event.isTrusted) return;
@@ -65,7 +73,7 @@
 			const form = target.closest('form');
 			if (!form) return;
 			dirtyForms.add(form);
-			updateBlockReason = null;
+			updateBlockReason = newVersionActive ? 'unsaved-changes' : null;
 		};
 		const handleFormButton = (event: MouseEvent) => {
 			if (!event.isTrusted || !(event.target instanceof Element)) return;
@@ -73,10 +81,12 @@
 			const form = button?.closest('form');
 			if (!form) return;
 			dirtyForms.add(form);
-			updateBlockReason = null;
+			updateBlockReason = newVersionActive ? 'unsaved-changes' : null;
 		};
 		const handleFormReset = (event: Event) => {
-			if (event.target instanceof HTMLFormElement) dirtyForms.delete(event.target);
+			if (!(event.target instanceof HTMLFormElement)) return;
+			dirtyForms.delete(event.target);
+			queueMicrotask(refreshActiveUpdateBlockReason);
 		};
 		const handleFormSubmit = (event: SubmitEvent) => {
 			if (!(event.target instanceof HTMLFormElement)) return;
@@ -84,6 +94,7 @@
 				submitter: event.submitter instanceof HTMLElement ? event.submitter : null,
 				observedBusy: false
 			});
+			if (newVersionActive) updateBlockReason = 'pending-action';
 			queueMicrotask(syncPendingForms);
 		};
 		const handleVisibilityChange = () => {
@@ -117,6 +128,7 @@
 
 		return () => {
 			clearTimeout(reconnectTimer);
+			clearTimeout(activationTimer);
 			stopInstallPromptCapture();
 			globalThis.removeEventListener('online', handleOnline);
 			globalThis.removeEventListener('offline', handleOffline);
@@ -153,9 +165,12 @@
 	}
 
 	function showWaitingUpdate(worker: ServiceWorker) {
+		clearTimeout(activationTimer);
 		waitingWorker = worker;
 		updateAvailable = true;
+		newVersionActive = false;
 		activatingUpdate = false;
+		activationProblem = false;
 	}
 
 	function syncPendingForms() {
@@ -170,20 +185,62 @@
 			if (busy) pending.observedBusy = true;
 			else if (pending.observedBusy) pendingForms.delete(form);
 		}
+		refreshActiveUpdateBlockReason();
 	}
 
 	function activateUpdate() {
 		syncPendingForms();
-		updateBlockReason = updateReloadBlockReason({
+		updateBlockReason = currentUpdateBlockReason();
+		if (updateBlockReason) return;
+		if (newVersionActive || waitingWorker?.state !== 'installed') {
+			markNewVersionActive();
+			globalThis.location.reload();
+			return;
+		}
+
+		activatingUpdate = true;
+		activationProblem = false;
+		try {
+			waitingWorker.postMessage({ type: 'ACTIVATE_UPDATE' });
+		} catch {
+			activatingUpdate = false;
+			activationProblem = true;
+			return;
+		}
+
+		clearTimeout(activationTimer);
+		activationTimer = setTimeout(() => {
+			activatingUpdate = false;
+			if (waitingWorker?.state === 'installed') {
+				activationProblem = true;
+				return;
+			}
+
+			markNewVersionActive();
+			if (!updateBlockReason) globalThis.location.reload();
+		}, 5_000);
+	}
+
+	function markNewVersionActive() {
+		clearTimeout(activationTimer);
+		waitingWorker = null;
+		updateAvailable = true;
+		newVersionActive = true;
+		activatingUpdate = false;
+		activationProblem = false;
+		updateBlockReason = currentUpdateBlockReason();
+	}
+
+	function refreshActiveUpdateBlockReason() {
+		if (newVersionActive) updateBlockReason = currentUpdateBlockReason();
+	}
+
+	function currentUpdateBlockReason() {
+		return updateReloadBlockReason({
 			hasDirtyForms: dirtyForms.size > 0,
 			hasPendingForms: pendingForms.size > 0,
 			hasBusyElement: Boolean(document.querySelector('[aria-busy="true"]'))
 		});
-		if (updateBlockReason) return;
-		if (!waitingWorker) return;
-		activatingUpdate = true;
-		activationRequested = true;
-		waitingWorker.postMessage({ type: 'ACTIVATE_UPDATE' });
 	}
 
 	function serviceWorkerUrl(): string {
@@ -207,18 +264,28 @@
 	{/if}
 
 	{#if updateAvailable}
-		<Notice title="Update ready" tone={updateBlockReason ? 'warning' : 'info'}>
-			<span>Apply it after finishing any edits.</span>
+		<Notice
+			title={newVersionActive ? 'New version active' : 'Update ready'}
+			tone={updateBlockReason || activationProblem ? 'warning' : 'info'}
+		>
+			<span>
+				{newVersionActive
+					? 'This tab is still on the previous version. Reload after finishing any edits.'
+					: 'Apply it after finishing any edits.'}
+			</span>
 			{#if updateBlockReason}
 				<span class="notice-error" role="alert">
 					{updateBlockReason === 'pending-action'
-						? 'Wait for the current action to finish before updating.'
-						: 'Save or discard the current form, then reload this page before updating.'}
+						? `Wait for the current action to finish before ${newVersionActive ? 'reloading' : 'updating'}.`
+						: `Save or discard the current form before ${newVersionActive ? 'reloading' : 'updating'}.`}
 				</span>
+			{/if}
+			{#if activationProblem}
+				<span class="notice-error" role="alert">The update did not start. Try again.</span>
 			{/if}
 			{#snippet actions()}
 				<button type="button" class="primary" onclick={activateUpdate} disabled={activatingUpdate}>
-					{activatingUpdate ? 'Updating…' : 'Update runway'}
+					{activatingUpdate ? 'Updating…' : newVersionActive ? 'Reload runway' : 'Update runway'}
 				</button>
 			{/snippet}
 		</Notice>

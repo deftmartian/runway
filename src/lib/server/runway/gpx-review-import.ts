@@ -1,9 +1,8 @@
 import { hashActivityFile, parseGpx } from '$lib/training/gpx';
+export { maxGpxImportBytes, maxGpxMultipartOverheadBytes } from '$lib/import-limits';
+import { maxGpxImportBytes } from '$lib/import-limits';
 import { importTimeZoneRequiredMessage } from './import-sources';
 import { recordImportedActivity } from './repository';
-
-export const maxGpxImportBytes = 10 * 1024 * 1024;
-export const maxGpxMultipartOverheadBytes = 64 * 1024;
 
 export type GpxReviewImportResult =
 	| { result: 'imported' }
@@ -16,14 +15,14 @@ export type GpxReviewImportResult =
 	| { result: 'failed' };
 
 /**
- * Parse one bounded GPX in memory and store only its user-scoped hash and
- * aggregate activity summary. All PWA ingestion paths use this review-only
- * function so a browser integration can never auto-match or adjust the plan.
+ * Parse one bounded GPX in memory and store a review-only activity. Raw GPX
+ * bytes are discarded; bounded route and heart-rate traces follow the user's
+ * saved privacy setting. Browser ingestion never auto-matches or adjusts a plan.
  */
 export async function importGpxIntoReviewInbox(
 	userId: string,
 	buffer: Buffer,
-	expectedImportGeneration?: number
+	expectedImportGeneration: number
 ): Promise<GpxReviewImportResult> {
 	if (buffer.length === 0) return { result: 'invalid' };
 	if (buffer.length > maxGpxImportBytes) return { result: 'too-large' };

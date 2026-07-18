@@ -90,9 +90,30 @@ describe('workout edit previews', () => {
 		});
 
 		expect(preview.affectedFutureWorkoutIds).toEqual(['workout-2']);
+		expect(preview.workoutChanges).toHaveLength(2);
+		expect(preview.workoutChanges[0]).toMatchObject({
+			workoutId: 'workout-1',
+			isSelected: true,
+			relativeChangePercent: 33.3,
+			changeShareOfWeekPercent: 16.7,
+			risk: 'unsafe'
+		});
+		expect(preview.workoutChanges[0]?.before.targetDistanceMeters).toBe(3_000);
+		expect(preview.workoutChanges[0]?.after.targetDistanceMeters).toBe(4_000);
+		expect(preview.workoutChanges[1]).toMatchObject({
+			workoutId: 'workout-2',
+			isSelected: false,
+			relativeChangePercent: 33.3,
+			changeShareOfWeekPercent: 16.7,
+			risk: 'unsafe'
+		});
+		expect(preview.workoutChanges[1]?.before.targetDistanceMeters).toBe(3_000);
+		expect(preview.workoutChanges[1]?.after.targetDistanceMeters).toBe(2_000);
 		expect(preview.weekChanges[0]).toEqual(
 			expect.objectContaining({ distanceBeforeMeters: 6_000, distanceAfterMeters: 6_000 })
 		);
+		expect(preview.risk).toBe('unsafe');
+		expect(preview.requiresConfirmation).toBe(true);
 	});
 
 	it('never creates infinite risk output from a zero baseline', () => {

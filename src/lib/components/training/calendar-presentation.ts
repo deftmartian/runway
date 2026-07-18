@@ -61,7 +61,12 @@ export function presentCalendarEvent(event: CalendarEvent): CalendarEventPresent
 	} else if (event.workout?.status === 'skipped') {
 		state = 'skipped';
 	} else if (event.kind === 'open') {
-		return { state: null, label: 'Open day', compactLabel: 'Add', flags };
+		return {
+			state: null,
+			label: 'Open day',
+			compactLabel: event.isFuture ? 'Plan' : 'Record',
+			flags
+		};
 	} else if (event.isRecordable && !event.isToday) {
 		state = 'missed';
 	} else {
@@ -69,6 +74,10 @@ export function presentCalendarEvent(event: CalendarEvent): CalendarEventPresent
 	}
 
 	return { state, ...stateLabels[state], flags };
+}
+
+export function canRecordUnplannedRun(event: CalendarEvent, today: string): boolean {
+	return event.date <= today;
 }
 
 export function calendarFlagLabel(flag: CalendarStateFlag): string {

@@ -12,6 +12,7 @@ import {
 	real,
 	text,
 	timestamp,
+	unique,
 	uniqueIndex,
 	uuid
 } from 'drizzle-orm/pg-core';
@@ -195,7 +196,7 @@ export const goal = pgTable(
 			.notNull()
 	},
 	(table) => [
-		uniqueIndex('goal_id_user_unique').on(table.id, table.userId),
+		unique('goal_id_user_unique').on(table.id, table.userId),
 		index('goal_user_id_idx').on(table.userId),
 		index('goal_user_target_date_idx').on(table.userId, table.targetDate),
 		uniqueIndex('goal_current_user_unique')
@@ -240,7 +241,7 @@ export const trainingPlan = pgTable(
 			.notNull()
 	},
 	(table) => [
-		uniqueIndex('training_plan_id_user_unique').on(table.id, table.userId),
+		unique('training_plan_id_user_unique').on(table.id, table.userId),
 		index('training_plan_user_status_idx').on(table.userId, table.status),
 		index('training_plan_goal_id_idx').on(table.goalId),
 		uniqueIndex('training_plan_active_user_unique')
@@ -298,7 +299,7 @@ export const trainingWeek = pgTable(
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
 	(table) => [
-		uniqueIndex('training_week_id_user_plan_unique').on(table.id, table.userId, table.planId),
+		unique('training_week_id_user_plan_unique').on(table.id, table.userId, table.planId),
 		uniqueIndex('training_week_plan_week_unique').on(table.planId, table.weekNumber),
 		index('training_week_user_start_idx').on(table.userId, table.startDate),
 		check('training_week_distance_nonnegative', sql`${table.targetDistanceMeters} >= 0`),
@@ -340,8 +341,8 @@ export const workout = pgTable(
 			.notNull()
 	},
 	(table) => [
-		uniqueIndex('workout_id_user_unique').on(table.id, table.userId),
-		uniqueIndex('workout_id_user_plan_unique').on(table.id, table.userId, table.planId),
+		unique('workout_id_user_unique').on(table.id, table.userId),
+		unique('workout_id_user_plan_unique').on(table.id, table.userId, table.planId),
 		index('workout_user_date_idx').on(table.userId, table.scheduledDate),
 		index('workout_user_plan_date_idx').on(table.userId, table.planId, table.scheduledDate),
 		index('workout_plan_week_idx').on(table.planId, table.weekId),
@@ -434,6 +435,7 @@ export const activity = pgTable(
 		deviation: deviationClassification('deviation').notNull().default('unplanned'),
 		appliedDecision: planDecision('applied_decision'),
 		consequence: jsonb('consequence').$type<ConsequenceResult | null>(),
+		consequencePlanId: uuid('consequence_plan_id'),
 		routeSummary: jsonb('route_summary')
 			.$type<{
 				pointCount: number;
@@ -445,9 +447,10 @@ export const activity = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
 	},
 	(table) => [
-		uniqueIndex('activity_id_user_unique').on(table.id, table.userId),
+		unique('activity_id_user_unique').on(table.id, table.userId),
 		index('activity_user_occurred_idx').on(table.userId, table.occurredAt),
 		index('activity_user_date_idx').on(table.userId, table.activityDate),
+		index('activity_consequence_plan_idx').on(table.consequencePlanId),
 		index('activity_workout_idx').on(table.workoutId),
 		uniqueIndex('activity_workout_unique')
 			.on(table.workoutId)
@@ -469,6 +472,11 @@ export const activity = pgTable(
 			name: 'activity_workout_user_fk',
 			columns: [table.workoutId, table.userId],
 			foreignColumns: [workout.id, workout.userId]
+		}),
+		foreignKey({
+			name: 'activity_consequence_plan_user_fk',
+			columns: [table.consequencePlanId, table.userId],
+			foreignColumns: [trainingPlan.id, trainingPlan.userId]
 		})
 	]
 );
@@ -534,6 +542,11 @@ export const planAdjustment = pgTable(
 		index('plan_adjustment_user_created_idx').on(table.userId, table.createdAt),
 		index('plan_adjustment_plan_created_idx').on(table.planId, table.createdAt),
 		index('plan_adjustment_workout_created_idx').on(table.workoutId, table.createdAt),
+		uniqueIndex('plan_adjustment_active_decision_unique')
+			.on(table.userId, table.triggerId, table.workoutId)
+			.where(
+				sql`${table.triggerType} = 'decision' and ${table.triggerId} is not null and ${table.reversedAt} is null`
+			),
 		check(
 			'plan_adjustment_previous_target_nonnegative',
 			sql`${table.previousTargetDistanceMeters} >= 0`
@@ -594,7 +607,7 @@ export const importSource = pgTable(
 			.notNull()
 	},
 	(table) => [
-		uniqueIndex('import_source_id_user_unique').on(table.id, table.userId),
+		unique('import_source_id_user_unique').on(table.id, table.userId),
 		index('import_source_user_enabled_idx').on(table.userId, table.enabled),
 		index('import_source_enabled_checked_idx').on(table.enabled, table.lastCheckedAt),
 		uniqueIndex('import_source_user_share_unique').on(

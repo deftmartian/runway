@@ -9,6 +9,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { onMount, tick } from 'svelte';
 	import type { CalendarEvent, CalendarFormState, WorkoutCandidate } from './calendar-types';
+	import { canRecordUnplannedRun } from './calendar-presentation';
 	import type { TrainingCalendarWorkout } from '$lib/training/calendar-view';
 	import type { PlanDecision } from '$lib/training/types';
 
@@ -100,7 +101,7 @@
 		const nextLabel = `${shortDay(next.scheduledDate)} · ${next.purpose}`;
 		if (decision === 'next_rest') return `${nextLabel} becomes rest.`;
 		if (decision === 'repeat_prescription') {
-			return `${nextLabel} becomes another ${plannedPrescription.toLowerCase()} ${event.workout?.purpose ?? 'run'}.`;
+			return `${nextLabel} changes from ${next.targetDurationSeconds ? duration(next.targetDurationSeconds) : km(next.targetDistanceMeters)} to the recorded ${plannedPrescription.toLowerCase()} prescription. Weekly load and run spacing are checked before it is applied.`;
 		}
 		if (decision === 'rebalance_week') {
 			const originTimestamp = Date.parse(`${originDate}T00:00:00.000Z`);
@@ -122,6 +123,21 @@
 		}
 		const reduction = Math.abs(decisionRecord?.consequence.nextRunAdjustmentMeters ?? 500) || 500;
 		return `${nextLabel} changes from ${km(next.targetDistanceMeters)} to ${km(Math.max(500, next.targetDistanceMeters - reduction))}.`;
+	};
+	const decisionUnavailable = (decision: PlanDecision) => {
+		if (decision === 'keep_plan') return false;
+		const candidates = futureWorkouts.filter((workout) => workout.scheduledDate > event.date);
+		if (candidates.length === 0) return true;
+		if (decision === 'repeat_prescription') return !event.workout;
+		if (decision !== 'rebalance_week') return false;
+		const originTimestamp = Date.parse(`${event.date}T00:00:00.000Z`);
+		const weekday = new Date(originTimestamp).getUTCDay();
+		const endDate = new Date(
+			originTimestamp + (weekday === 0 ? 0 : 7 - weekday) * 24 * 60 * 60 * 1_000
+		)
+			.toISOString()
+			.slice(0, 10);
+		return !candidates.some((workout) => workout.scheduledDate <= endDate);
 	};
 	const adjustmentDistance = $derived(
 		event.workout?.adjustment
@@ -186,7 +202,7 @@
 			return source ? [{ id: sourceRef, ...source }] : [];
 		})
 	);
-	const canEditPast = $derived(event.date <= today);
+	const canEditPast = $derived(canRecordUnplannedRun(event, today));
 	const canEditFutureWorkout = $derived(
 		event.workout?.status === 'planned' &&
 			event.workout.type !== 'race' &&
@@ -499,9 +515,12 @@
 				defaultStatus={defaultFeedbackStatus}
 			/>
 		</details>
-	{:else if (event.kind === 'rest' || event.kind === 'open') && canEditPast}
+	{/if}
+
+	{#if canEditPast}
 		<details
-			class="feedback-details event-feedback primary-event-action"
+			class="feedback-details event-feedback"
+			class:primary-event-action={!(event.workout && event.isRecordable)}
 			open={eventForm?.scope?.action === 'recordManualRun' && eventForm.message !== undefined}
 		>
 			<summary aria-label={`Record an unplanned run for ${day(event.date)}`}
@@ -525,10 +544,13 @@
 						<input name="durationMinutes" type="number" min="1" max="600" step="1" />
 					</label>
 					<div class="check-row">
-						<label><input type="checkbox" name="feltHard" /> Felt harder than expected</label>
-						<label><input type="checkbox" name="pain" /> Pain affected this run</label>
+						<label><input type="checkbox" name="feltHard" /> Effort was unusually hard</label>
+						<label><input type="checkbox" name="pain" /> Pain changed or limited this run</label>
 					</div>
-					<p class="muted">This run is outside the schedule and can reduce the next run.</p>
+					<p class="muted">
+						Hard effort changes load advice; pain triggers the safety path. This run is outside the
+						schedule and can reduce the next run.
+					</p>
 					<button
 						aria-label={`Save unplanned run for ${day(event.date)}`}
 						disabled={pendingAction !== null}
@@ -672,11 +694,12 @@
 				<fieldset>
 					<legend>How it felt</legend>
 					<label>
-						<input type="checkbox" name="feltHard" checked={event.activity.feltHard} /> Felt harder than
-						expected
+						<input type="checkbox" name="feltHard" checked={event.activity.feltHard} /> Effort was unusually
+						hard
 					</label>
 					<label
-						><input type="checkbox" name="pain" checked={event.activity.pain} /> Pain affected this run</label
+						><input type="checkbox" name="pain" checked={event.activity.pain} /> Pain changed or limited
+						this run</label
 					>
 				</fieldset>
 				<button disabled={pendingAction !== null}>
@@ -823,10 +846,16 @@
 						<input type="hidden" name="sourceId" value={decisionRecord.sourceId} />
 						<input type="hidden" name="decision" value={decision} />
 						<p>{decisionPreview(decision)}</p>
+						{#if decision === 'repeat_prescription' && !decisionUnavailable(decision)}
+							<label class="decision-confirmation">
+								<input type="checkbox" name="confirmRisk" required />
+								I reviewed the replacement prescription and its possible load and spacing change.
+							</label>
+						{/if}
 						<button
 							class:primary={decision === decisionRecord.consequence.recommendedDecision}
 							class:secondary={decision !== decisionRecord.consequence.recommendedDecision}
-							disabled={pendingAction !== null}
+							disabled={pendingAction !== null || decisionUnavailable(decision)}
 						>
 							{decisionLabel(decision)}{decision === decisionRecord.consequence.recommendedDecision
 								? ' · Recommended'

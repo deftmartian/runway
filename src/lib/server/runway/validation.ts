@@ -192,7 +192,8 @@ export const consequenceDecisionSchema = z.object({
 		'next_rest',
 		'repeat_prescription',
 		'rebalance_week'
-	])
+	]),
+	confirmRisk: z.coerce.boolean().default(false)
 });
 
 const workoutPrescriptionFields = {

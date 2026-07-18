@@ -43,6 +43,8 @@ import {
 import { calculateConsequence, withAppliedDecision } from '$lib/training/consequences';
 import { formatConsequenceAuditReason } from '$lib/training/consequence-presentation';
 import { buildActivityRouteTrace, buildHeartRateSeries } from '$lib/training/activity-trace';
+import { selectAutoWorkoutMatch } from '$lib/training/activity-match';
+import { calculateExtraActivityConsequence } from '$lib/training/extra-activity';
 import { buildHeartRateSettings, summarizeHeartRateEffort } from '$lib/training/heart-rate';
 import { generatePlan } from '$lib/training/plan';
 import {
@@ -667,6 +669,8 @@ async function phaseCompletionContext(
 		.where(eq(athleteProfile.userId, userId))
 		.limit(1);
 	if (!profile) throw new Error('Training profile not found.');
+	const baselineWindowWeeks = Math.min(2, plan.weeks);
+	const baselineWindowStart = addDays(plan.targetDate, -(baselineWindowWeeks * 7 - 1));
 	const acceptedActivities = await tx
 		.select({
 			workoutId: activity.workoutId,
@@ -678,7 +682,7 @@ async function phaseCompletionContext(
 			and(
 				eq(activity.userId, userId),
 				eq(activity.reviewState, 'accepted'),
-				gte(activity.activityDate, plan.startDate),
+				gte(activity.activityDate, baselineWindowStart),
 				lte(activity.activityDate, plan.targetDate)
 			)
 		);
@@ -697,6 +701,8 @@ async function phaseCompletionContext(
 			and(
 				eq(workoutFeedback.userId, userId),
 				eq(workout.planId, plan.id),
+				gte(workout.scheduledDate, baselineWindowStart),
+				lte(workout.scheduledDate, plan.targetDate),
 				...(linkedWorkoutIds.length > 0
 					? [notInArray(workoutFeedback.workoutId, linkedWorkoutIds)]
 					: [])
@@ -715,7 +721,7 @@ async function phaseCompletionContext(
 				completed: true
 			}))
 		],
-		plan.weeks
+		baselineWindowWeeks
 	);
 	const preferredLongRunDay = preferredBaselineLongRunDay(
 		profile.availability,
@@ -1251,6 +1257,7 @@ export async function getTrainingCalendar(userId: string, options?: { month?: st
 			.where(
 				and(
 					eq(activity.userId, userId),
+					eq(activity.reviewState, 'accepted'),
 					gte(activity.activityDate, rangeStart),
 					lte(activity.activityDate, rangeEnd)
 				)
@@ -1361,6 +1368,7 @@ export async function getTrainingCalendar(userId: string, options?: { month?: st
 		.where(
 			and(
 				eq(activity.userId, userId),
+				eq(activity.reviewState, 'accepted'),
 				gte(activity.activityDate, rangeStart),
 				lte(activity.activityDate, rangeEnd)
 			)
@@ -1978,6 +1986,30 @@ async function effectiveWeekTargetDistance(
 	return result?.targetDistanceMeters ?? 0;
 }
 
+async function effectiveWeekTargetDuration(
+	tx: RunwayTransaction,
+	userId: string,
+	planId: string,
+	date: string
+) {
+	const start = isoWeekStart(date);
+	const [result] = await tx
+		.select({
+			targetDurationSeconds: sql<number>`coalesce(sum(${workout.targetDurationSeconds}) filter (where ${workout.type} not in ('rest', 'race')), 0)::int`
+		})
+		.from(workout)
+		.where(
+			and(
+				eq(workout.userId, userId),
+				eq(workout.planId, planId),
+				eq(workout.isRemoved, false),
+				gte(workout.scheduledDate, start),
+				lte(workout.scheduledDate, addDays(start, 6))
+			)
+		);
+	return result?.targetDurationSeconds ?? 0;
+}
+
 async function planWeekIdForDate(
 	tx: RunwayTransaction,
 	userId: string,
@@ -2287,17 +2319,33 @@ export async function applyConsequenceDecision(
 		source: 'feedback' | 'activity';
 		sourceId: string;
 		decision: PlanDecision;
+		confirmRisk: boolean;
 	}
 ) {
 	return db.transaction(async (tx) => {
 		const timeZone = await requireAthleteTimeZoneInTransaction(tx, userId);
 		const today = todayIsoInTimeZone(timeZone);
+		const sourceLocked = await lockConsequenceDecisionSource(tx, userId, input);
+		if (!sourceLocked) throw new Error('Plan-change proposal not found.');
 		const source = await consequenceDecisionSource(tx, userId, input);
 		if (!source) throw new Error('Plan-change proposal not found.');
 		if (source.consequence.appliedDecision) {
 			throw new Error('A decision has already been applied to this result.');
 		}
 		const consequence = withAppliedDecision(source.consequence, input.decision);
+		const [lockedPlan] = await tx
+			.select({ id: trainingPlan.id })
+			.from(trainingPlan)
+			.where(
+				and(
+					eq(trainingPlan.userId, userId),
+					eq(trainingPlan.id, source.planId),
+					eq(trainingPlan.status, 'active')
+				)
+			)
+			.limit(1)
+			.for('update');
+		if (!lockedPlan) throw new Error('This plan-change proposal is no longer current.');
 
 		if (input.decision !== 'keep_plan') {
 			const candidates = await tx
@@ -2342,7 +2390,50 @@ export async function applyConsequenceDecision(
 							(candidate) => candidate.scheduledDate <= addDays(isoWeekStart(source.originDate), 6)
 						)
 					: [firstCandidate];
+			if (input.decision === 'rebalance_week' && affected.length === 0) {
+				throw new Error('No compatible workouts remain in this week. Choose another option.');
+			}
 			const workoutsToChange = affected.length > 0 ? affected : [firstCandidate];
+
+			if (input.decision === 'repeat_prescription') {
+				const [allWorkouts, weeks] = await Promise.all([
+					tx
+						.select()
+						.from(workout)
+						.where(and(eq(workout.userId, userId), eq(workout.planId, source.planId))),
+					tx
+						.select({
+							id: trainingWeek.id,
+							weekNumber: trainingWeek.weekNumber,
+							startDate: trainingWeek.startDate
+						})
+						.from(trainingWeek)
+						.where(and(eq(trainingWeek.userId, userId), eq(trainingWeek.planId, source.planId)))
+						.orderBy(asc(trainingWeek.weekNumber))
+				]);
+				const repeatedState = decisionWorkoutState({
+					candidate: firstCandidate,
+					originWorkout: source.originWorkout,
+					decision: input.decision,
+					consequence,
+					shareCount: 1,
+					index: 0
+				});
+				const preview = buildWorkoutEditPreview({
+					current: firstCandidate,
+					recommended: null,
+					proposed: proposalFromWorkout({ ...firstCandidate, ...repeatedState }),
+					workouts: allWorkouts.map(editableWorkout),
+					weeks,
+					today,
+					rebalance: false
+				});
+				if (preview.requiresConfirmation && !input.confirmRisk) {
+					throw new Error(
+						'Review and confirm the elevated repeated prescription before applying it.'
+					);
+				}
+			}
 
 			for (const [index, candidate] of workoutsToChange.entries()) {
 				const newState = decisionWorkoutState({
@@ -2396,6 +2487,29 @@ export async function applyConsequenceDecision(
 	});
 }
 
+async function lockConsequenceDecisionSource(
+	tx: RunwayTransaction,
+	userId: string,
+	input: { source: 'feedback' | 'activity'; sourceId: string }
+) {
+	if (input.source === 'feedback') {
+		const [record] = await tx
+			.select({ id: workoutFeedback.id })
+			.from(workoutFeedback)
+			.where(and(eq(workoutFeedback.userId, userId), eq(workoutFeedback.id, input.sourceId)))
+			.limit(1)
+			.for('update');
+		return Boolean(record);
+	}
+	const [record] = await tx
+		.select({ id: activity.id })
+		.from(activity)
+		.where(and(eq(activity.userId, userId), eq(activity.id, input.sourceId)))
+		.limit(1)
+		.for('update');
+	return Boolean(record);
+}
+
 async function consequenceDecisionSource(
 	tx: RunwayTransaction,
 	userId: string,
@@ -2430,6 +2544,7 @@ async function consequenceDecisionSource(
 	const [record] = await tx
 		.select({
 			consequence: activity.consequence,
+			consequencePlanId: activity.consequencePlanId,
 			originDate: activity.activityDate,
 			linkedWorkout: workout
 		})
@@ -2437,28 +2552,34 @@ async function consequenceDecisionSource(
 		.leftJoin(workout, and(eq(activity.workoutId, workout.id), eq(workout.userId, userId)))
 		.where(and(eq(activity.userId, userId), eq(activity.id, input.sourceId)))
 		.limit(1);
-	if (!record?.consequence) return null;
+	if (!record?.consequence || !record.consequencePlanId) return null;
+	const [active] = await tx
+		.select({ id: trainingPlan.id })
+		.from(trainingPlan)
+		.where(
+			and(
+				eq(trainingPlan.userId, userId),
+				eq(trainingPlan.id, record.consequencePlanId),
+				eq(trainingPlan.status, 'active')
+			)
+		)
+		.limit(1);
+	if (!active) return null;
 	if (record.linkedWorkout) {
+		if (record.linkedWorkout.planId !== active.id) return null;
 		return {
 			consequence: record.consequence,
-			planId: record.linkedWorkout.planId,
+			planId: active.id,
 			originDate: record.originDate,
 			originWorkout: record.linkedWorkout
 		};
 	}
-	const [active] = await tx
-		.select({ id: trainingPlan.id })
-		.from(trainingPlan)
-		.where(and(eq(trainingPlan.userId, userId), eq(trainingPlan.status, 'active')))
-		.limit(1);
-	return active
-		? {
-				consequence: record.consequence,
-				planId: active.id,
-				originDate: record.originDate,
-				originWorkout: null
-			}
-		: null;
+	return {
+		consequence: record.consequence,
+		planId: active.id,
+		originDate: record.originDate,
+		originWorkout: null
+	};
 }
 
 function decisionWorkoutState(input: {
@@ -2880,6 +3001,25 @@ type WorkoutEditContext = Awaited<ReturnType<typeof workoutEditContext>>;
 async function workoutEditContext(tx: RunwayTransaction, userId: string, workoutId: string) {
 	const timeZone = await requireAthleteTimeZoneInTransaction(tx, userId);
 	const today = todayIsoInTimeZone(timeZone);
+	const [workoutReference] = await tx
+		.select({ planId: workout.planId })
+		.from(workout)
+		.where(and(eq(workout.userId, userId), eq(workout.id, workoutId)))
+		.limit(1);
+	if (!workoutReference) throw new Error('Future workout not found.');
+	const [lockedPlan] = await tx
+		.select({ id: trainingPlan.id })
+		.from(trainingPlan)
+		.where(
+			and(
+				eq(trainingPlan.userId, userId),
+				eq(trainingPlan.id, workoutReference.planId),
+				eq(trainingPlan.status, 'active')
+			)
+		)
+		.limit(1)
+		.for('update');
+	if (!lockedPlan) throw new Error('Future workout not found.');
 	const [record] = await tx
 		.select({ current: workout, plan: trainingPlan })
 		.from(workout)
@@ -2959,7 +3099,8 @@ async function newWorkoutContext(tx: RunwayTransaction, userId: string, schedule
 		.select()
 		.from(trainingPlan)
 		.where(and(eq(trainingPlan.userId, userId), eq(trainingPlan.status, 'active')))
-		.limit(1);
+		.limit(1)
+		.for('update');
 	if (!plan) throw new Error('No active plan is available.');
 	if (scheduledDate < today || scheduledDate > plan.targetDate) {
 		throw new Error('Workout dates must be between today and the active goal date.');
@@ -3203,18 +3344,25 @@ export async function recordManualRun(
 			: [];
 
 		const consequence = nextRun
-			? calculateManualRunConsequence(
-					input,
-					nextRun.targetDistanceMeters,
-					Math.max(
+			? calculateExtraActivityConsequence(input, {
+					nextRunTargetDistanceMeters: nextRun.targetDistanceMeters,
+					nextRunTargetDurationSeconds: nextRun.targetDurationSeconds,
+					weekTargetDistanceMeters: Math.max(
 						nextRun.targetDistanceMeters,
 						await effectiveWeekTargetDistance(tx, userId, nextRun.planId, input.occurredDate)
+					),
+					weekTargetDurationSeconds: Math.max(
+						nextRun.targetDurationSeconds ?? 0,
+						await effectiveWeekTargetDuration(tx, userId, nextRun.planId, input.occurredDate)
 					)
-				)
+				})
 			: null;
 		await tx
 			.update(activity)
-			.set({ consequence })
+			.set({
+				consequence,
+				consequencePlanId: consequence && nextRun ? nextRun.planId : null
+			})
 			.where(and(eq(activity.userId, userId), eq(activity.id, createdActivity.id)));
 
 		await tx.insert(auditEvent).values({
@@ -3235,6 +3383,7 @@ type UnlinkedActivityPlanInput = {
 	source: 'manual' | 'gpx';
 	activityDate: string;
 	distanceMeters: number;
+	durationSeconds: number | null;
 	feltHard: boolean;
 	pain: boolean;
 	extraPlanImpactConfirmed: boolean;
@@ -3253,7 +3402,7 @@ async function applyConfirmedExtraActivity(
 	) {
 		await tx
 			.update(activity)
-			.set({ consequence: null })
+			.set({ consequence: null, consequencePlanId: null })
 			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 		return null;
 	}
@@ -3304,7 +3453,7 @@ async function applyConfirmedExtraActivity(
 	if (!nextRun) {
 		await tx
 			.update(activity)
-			.set({ consequence: null })
+			.set({ consequence: null, consequencePlanId: null })
 			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 		return null;
 	}
@@ -3313,14 +3462,19 @@ async function applyConfirmedExtraActivity(
 		nextRun.targetDistanceMeters,
 		await effectiveWeekTargetDistance(tx, userId, nextRun.planId, targetActivity.activityDate)
 	);
-	const consequence = calculateExtraRunConsequence(
-		targetActivity,
-		nextRun.targetDistanceMeters,
-		weekTargetDistanceMeters
+	const weekTargetDurationSeconds = Math.max(
+		nextRun.targetDurationSeconds ?? 0,
+		await effectiveWeekTargetDuration(tx, userId, nextRun.planId, targetActivity.activityDate)
 	);
+	const consequence = calculateExtraActivityConsequence(targetActivity, {
+		nextRunTargetDistanceMeters: nextRun.targetDistanceMeters,
+		nextRunTargetDurationSeconds: nextRun.targetDurationSeconds,
+		weekTargetDistanceMeters,
+		weekTargetDurationSeconds
+	});
 	await tx
 		.update(activity)
-		.set({ consequence })
+		.set({ consequence, consequencePlanId: nextRun.planId })
 		.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 	return consequence;
 }
@@ -3336,6 +3490,7 @@ export async function confirmActivityAsExtra(userId: string, activityId: string)
 				workoutId: activity.workoutId,
 				activityDate: activity.activityDate,
 				distanceMeters: activity.distanceMeters,
+				durationSeconds: activity.durationSeconds,
 				feltHard: activity.feltHard,
 				pain: activity.pain,
 				extraPlanImpactConfirmed: activity.extraPlanImpactConfirmed
@@ -3500,7 +3655,8 @@ export async function linkActivityToWorkout(
 				workoutId: targetWorkout.id,
 				reviewState: 'accepted',
 				deviation: calculatedConsequence.deviation,
-				consequence: planConsequence
+				consequence: planConsequence,
+				consequencePlanId: planConsequence ? targetWorkout.planId : null
 			})
 			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 		await tx
@@ -3559,6 +3715,7 @@ export async function unlinkActivityFromWorkout(userId: string, activityId: stri
 				workoutId: activity.workoutId,
 				activityDate: activity.activityDate,
 				distanceMeters: activity.distanceMeters,
+				durationSeconds: activity.durationSeconds,
 				feltHard: activity.feltHard,
 				pain: activity.pain,
 				extraPlanImpactConfirmed: activity.extraPlanImpactConfirmed
@@ -3589,7 +3746,8 @@ export async function unlinkActivityFromWorkout(userId: string, activityId: stri
 				workoutId: null,
 				deviation: 'unplanned',
 				appliedDecision: null,
-				consequence: null
+				consequence: null,
+				consequencePlanId: null
 			})
 			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 		const consequence = await applyConfirmedExtraActivity(tx, userId, targetActivity, today);
@@ -3644,7 +3802,8 @@ export async function updateActivityFeedback(
 					feltHard: input.feltHard,
 					pain: input.pain,
 					appliedDecision: null,
-					consequence: null
+					consequence: null,
+					consequencePlanId: null
 				})
 				.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 			const consequence = await applyConfirmedExtraActivity(
@@ -3731,7 +3890,8 @@ export async function updateActivityFeedback(
 				pain: input.pain,
 				deviation: calculatedConsequence.deviation,
 				appliedDecision: null,
-				consequence: planConsequence
+				consequence: planConsequence,
+				consequencePlanId: planConsequence ? linkedWorkout.planId : null
 			})
 			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 		await tx
@@ -3845,56 +4005,23 @@ export async function deleteActivityRecord(userId: string, activityId: string) {
 	});
 }
 
-export async function getHistory(
-	userId: string,
-	options: { activityLimit?: number; activityOffset?: number } = {}
-) {
+export async function getHistory(userId: string) {
 	const timeZone = await requireAthleteTimeZone(userId);
 	const today = todayIsoInTimeZone(timeZone);
-	const activityLimit = Math.min(200, Math.max(1, Math.trunc(options.activityLimit ?? 100)));
-	const activityOffset = Math.max(0, Math.trunc(options.activityOffset ?? 0));
-	const activities = await db
-		.select({
-			id: activity.id,
-			workoutId: activity.workoutId,
-			source: activity.source,
-			occurredAt: activity.occurredAt,
-			activityDate: activity.activityDate,
-			distanceMeters: activity.distanceMeters,
-			durationSeconds: activity.durationSeconds,
-			averagePaceSecondsPerKm: activity.averagePaceSecondsPerKm,
-			averageHeartRate: activity.averageHeartRate,
-			maxHeartRate: activity.maxHeartRate,
-			heartRateSummary: activity.heartRateSummary,
-			heartRateSeries: activity.heartRateSeries,
-			routeTrace: activity.routeTrace,
-			averageCadence: activity.averageCadence,
-			feltHard: activity.feltHard,
-			pain: activity.pain,
-			consequence: activity.consequence,
-			routeSummary: activity.routeSummary,
-			createdAt: activity.createdAt,
-			matchedWorkoutPurpose: workout.purpose,
-			matchedWorkoutDate: workout.scheduledDate
-		})
-		.from(activity)
-		.leftJoin(workout, and(eq(activity.workoutId, workout.id), eq(workout.userId, userId)))
-		.where(and(eq(activity.userId, userId), eq(activity.reviewState, 'accepted')))
-		.orderBy(desc(activity.occurredAt))
-		.limit(activityLimit + 1)
-		.offset(activityOffset);
-	const activityPage = activities.slice(0, activityLimit);
-
-	const [activePlan, recordedSummary, heartRateSample] = await Promise.all([
+	const [activePlan, recordedSummary, heartRateSample, [acceptedActivity]] = await Promise.all([
 		getActivePlan(userId),
 		getRecordedHistorySummary(userId),
-		getHeartRateSample(userId, today)
+		getHeartRateSample(userId, today),
+		db
+			.select({ id: activity.id })
+			.from(activity)
+			.where(and(eq(activity.userId, userId), eq(activity.reviewState, 'accepted')))
+			.limit(1)
 	]);
 	if (!activePlan) {
 		const recentFeedback = await getRecentFeedback(userId);
 		return {
-			activities: activityPage,
-			activityNextOffset: activities.length > activityLimit ? activityOffset + activityLimit : null,
+			hasAcceptedActivities: Boolean(acceptedActivity),
 			recentFeedback,
 			weeklySummaries: [],
 			recordedSummary,
@@ -4074,8 +4201,7 @@ export async function getHistory(
 	const currentSignal = await currentTrainingSignal(userId, activePlan.plan, today);
 
 	return {
-		activities: activityPage,
-		activityNextOffset: activities.length > activityLimit ? activityOffset + activityLimit : null,
+		hasAcceptedActivities: Boolean(acceptedActivity),
 		recentFeedback: planFeedback.slice(0, 100),
 		weeklySummaries,
 		recordedSummary,
@@ -4301,8 +4427,6 @@ export async function getActivityRecords(
 				averageHeartRate: activity.averageHeartRate,
 				maxHeartRate: activity.maxHeartRate,
 				heartRateSummary: activity.heartRateSummary,
-				heartRateSeries: activity.heartRateSeries,
-				routeTrace: activity.routeTrace,
 				feltHard: activity.feltHard,
 				pain: activity.pain,
 				extraPlanImpactConfirmed: activity.extraPlanImpactConfirmed,
@@ -4331,6 +4455,19 @@ export async function getActivityRecords(
 		total: count?.total ?? 0,
 		nextOffset: rows.length > limit ? offset + limit : null
 	};
+}
+
+export async function getActivityTraceDetail(userId: string, activityId: string) {
+	const [record] = await db
+		.select({
+			id: activity.id,
+			routeTrace: activity.routeTrace,
+			heartRateSeries: activity.heartRateSeries
+		})
+		.from(activity)
+		.where(and(eq(activity.userId, userId), eq(activity.id, activityId)))
+		.limit(1);
+	return record ?? null;
 }
 
 export async function exportUserData(userId: string) {
@@ -4566,7 +4703,7 @@ export async function recordImportedActivity(
 	fileHash: string,
 	parsed: ParsedGpxActivity,
 	matching: { mode: 'unlinked' } | { mode: 'auto' } | { mode: 'workout'; workoutId: string },
-	expectedImportGeneration?: number
+	expectedImportGeneration: number
 ) {
 	return db.transaction(async (tx) => {
 		const requestedWorkoutId = matching.mode === 'workout' ? matching.workoutId : undefined;
@@ -4582,10 +4719,7 @@ export async function recordImportedActivity(
 			.where(eq(athleteProfile.userId, userId))
 			.limit(1)
 			.for('update');
-		if (
-			expectedImportGeneration !== undefined &&
-			importProfile?.generation !== expectedImportGeneration
-		) {
+		if (importProfile?.generation !== expectedImportGeneration) {
 			throw new Error('Import was cancelled because activity data was deleted.');
 		}
 		const [[existingImport], [deletedImport]] = await Promise.all([
@@ -4624,7 +4758,7 @@ export async function recordImportedActivity(
 		}
 
 		const candidateWorkouts =
-			matching.mode !== 'workout'
+			matching.mode === 'unlinked'
 				? []
 				: await tx
 						.select({
@@ -4670,7 +4804,18 @@ export async function recordImportedActivity(
 							)
 						)
 						.limit(requestedWorkoutId ? 1 : 20);
-		const matchedWorkoutId = requestedWorkoutId ? candidateWorkouts[0]?.id : undefined;
+		const matchedWorkoutId = requestedWorkoutId
+			? candidateWorkouts[0]?.id
+			: matching.mode === 'auto'
+				? (selectAutoWorkoutMatch(
+						{
+							activityDate,
+							distanceMeters: parsed.distanceMeters,
+							durationSeconds: parsed.durationSeconds
+						},
+						candidateWorkouts
+					) ?? undefined)
+				: undefined;
 		const matchedWorkout = matchedWorkoutId
 			? candidateWorkouts.find((candidate) => candidate.id === matchedWorkoutId)
 			: undefined;
@@ -4804,7 +4949,11 @@ export async function recordImportedActivity(
 		}
 		await tx
 			.update(activity)
-			.set({ deviation: importDeviation, consequence: importConsequence })
+			.set({
+				deviation: importDeviation,
+				consequence: importConsequence,
+				consequencePlanId: importConsequence && matchedWorkout ? matchedWorkout.planId : null
+			})
 			.where(and(eq(activity.userId, userId), eq(activity.id, createdActivity.id)));
 
 		try {
@@ -4851,65 +5000,6 @@ function historicalLinkConsequence(calculated: ConsequenceResult): ConsequenceRe
 		risk: historicalPain ? 'unsafe' : 'conservative',
 		recommendedDecision: 'keep_plan',
 		options: ['keep_plan'],
-		appliedDecision: null
-	};
-}
-
-function calculateManualRunConsequence(
-	input: { distanceMeters: number; feltHard: boolean; pain: boolean },
-	nextRunTargetDistanceMeters: number,
-	weekTargetDistanceMeters: number
-): ConsequenceResult {
-	return calculateExtraRunConsequence(input, nextRunTargetDistanceMeters, weekTargetDistanceMeters);
-}
-
-function calculateExtraRunConsequence(
-	input: { distanceMeters: number; feltHard: boolean; pain: boolean },
-	nextRunTargetDistanceMeters: number,
-	weekTargetDistanceMeters: number
-): ConsequenceResult {
-	if (input.pain) {
-		return {
-			kind: 'pain_reported',
-			deviation: 'unplanned',
-			metric: 'distance',
-			actualDifference: input.distanceMeters,
-			weeklyDistanceDeltaMeters: input.distanceMeters,
-			nextRunAdjustmentMeters: -Math.max(
-				1_000,
-				nextRunTargetDistanceMeters,
-				Math.round(input.distanceMeters * 0.5)
-			),
-			risk: 'unsafe',
-			recommendedDecision: 'next_rest',
-			options: ['keep_plan', 'reduce_next', 'next_rest', 'rebalance_week'],
-			appliedDecision: null
-		};
-	}
-
-	const reduction = Math.min(
-		nextRunTargetDistanceMeters,
-		Math.max(1_000, Math.round(input.distanceMeters * (input.feltHard ? 0.6 : 0.5)))
-	);
-	const increaseShare = input.distanceMeters / Math.max(1, weekTargetDistanceMeters);
-	const risk: ConsequenceResult['risk'] =
-		input.feltHard && increaseShare > 0.2
-			? 'unsafe'
-			: increaseShare > 0.1
-				? 'aggressive'
-				: input.feltHard
-					? 'moderate'
-					: 'conservative';
-	return {
-		kind: 'extra_activity',
-		deviation: 'unplanned',
-		metric: 'distance',
-		actualDifference: input.distanceMeters,
-		weeklyDistanceDeltaMeters: input.distanceMeters,
-		nextRunAdjustmentMeters: -reduction,
-		risk,
-		recommendedDecision: increaseShare > 0.1 || input.feltHard ? 'reduce_next' : 'keep_plan',
-		options: ['keep_plan', 'reduce_next', 'next_rest', 'rebalance_week'],
 		appliedDecision: null
 	};
 }

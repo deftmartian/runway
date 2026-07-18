@@ -187,11 +187,16 @@
 		{/if}
 		<div class="check-row">
 			<label
-				><input type="checkbox" name="feltHard" bind:checked={feltHard} /> Felt harder than expected</label
+				><input type="checkbox" name="feltHard" bind:checked={feltHard} /> Effort was unusually hard</label
 			>
-			<label><input type="checkbox" name="pain" bind:checked={pain} /> Pain affected this run</label
+			<label
+				><input type="checkbox" name="pain" bind:checked={pain} /> Pain changed or limited this run</label
 			>
 		</div>
+		<p class="muted">
+			Hard effort changes load advice. Pain triggers the safety path. Select both when both were
+			true.
+		</p>
 		<input type="hidden" name="choice" value="skip_continue" />
 		{#if consequence && consequencePresentation}
 			<div class="message consequence-preview" aria-live="polite">

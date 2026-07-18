@@ -7,9 +7,19 @@
 	let { data }: { data: PageData } = $props();
 
 	const km = (meters: number) => `${Math.round((meters / 1000) * 10) / 10} km`;
+	const duration = (seconds: number) => {
+		const totalMinutes = Math.round(seconds / 60);
+		if (totalMinutes < 60) return `${totalMinutes} min`;
+		const hours = Math.floor(totalMinutes / 60);
+		const minutes = totalMinutes % 60;
+		return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+	};
 	const weeksToDate = $derived(data.history.weeklySummaries);
 	const completedRuns = $derived(weeksToDate.reduce((sum, week) => sum + week.completedRuns, 0));
 	const plannedRuns = $derived(weeksToDate.reduce((sum, week) => sum + week.plannedRuns, 0));
+	const completedDurationSeconds = $derived(
+		weeksToDate.reduce((sum, week) => sum + week.completedDurationSeconds, 0)
+	);
 	const completedMeters = $derived(
 		weeksToDate.reduce((sum, week) => sum + week.completedDistanceMeters, 0)
 	);
@@ -38,7 +48,7 @@
 	const rampPressure = $derived(
 		data.active?.plan.summary.kind === 'distance'
 			? data.active.plan.summary.requiredWeeklyIncreasePercent
-			: 0
+			: null
 	);
 	const currentRisk = $derived(data.history.currentSignal?.risk ?? 'none');
 	const currentRiskReasons = $derived(data.history.currentSignal?.reasons ?? []);
@@ -49,7 +59,24 @@
 				? 'Based on recent activity'
 				: 'Based on the current plan'
 	);
-	const traceUsesDuration = $derived(data.active?.plan.phase !== 'distance');
+	const traceUsesDuration = $derived(data.active?.plan.summary.kind !== 'distance');
+	const timedProgramWeeks = $derived(
+		data.active?.plan.summary.kind === 'foundation' ||
+			data.active?.plan.summary.kind === 'calibration'
+			? (data.detail?.weeks.length ?? data.active.plan.summary.programWeeks)
+			: 0
+	);
+	const plannedDurationThroughCurrentWeek = $derived(
+		data.planTrace
+			.filter((week) => week.startDate <= data.history.todayIso)
+			.reduce((sum, week) => sum + week.currentDurationSeconds, 0)
+	);
+	const peakPlannedDurationSeconds = $derived(
+		data.planTrace.reduce((peak, week) => Math.max(peak, week.currentDurationSeconds), 0)
+	);
+	const plannedDurationForWeek = (weekNumber: number, startDate: string) =>
+		data.planTrace.find((week) => week.weekNumber === weekNumber && week.startDate === startDate)
+			?.currentDurationSeconds ?? 0;
 	const planTracePoints = $derived(
 		data.planTrace.map((week) => {
 			const actual = weeksToDate.find(
@@ -93,7 +120,7 @@
 	);
 	const hasRecordedHistory = $derived(
 		recordedSummary.totalRuns > 0 ||
-			data.history.activities.length > 0 ||
+			data.history.hasAcceptedActivities ||
 			data.history.recentFeedback.length > 0
 	);
 	const heartRateSample = $derived(data.history.heartRateSample);
@@ -149,14 +176,29 @@
 			{/if}
 
 			<dl class="data-strip plan-measures">
-				<div>
-					<dt>Required weekly increase</dt>
-					<dd>{Math.round(rampPressure * 10) / 10}%</dd>
-				</div>
-				<div>
-					<dt>Peak planned long run</dt>
-					<dd>{km(longRunPeak)}</dd>
-				</div>
+				{#if traceUsesDuration}
+					<div>
+						<dt>Program length</dt>
+						<dd>{timedProgramWeeks} weeks</dd>
+					</div>
+					<div>
+						<dt>Peak planned week</dt>
+						<dd>
+							{peakPlannedDurationSeconds > 0
+								? duration(peakPlannedDurationSeconds)
+								: 'Not scheduled'}
+						</dd>
+					</div>
+				{:else}
+					<div>
+						<dt>Required weekly increase</dt>
+						<dd>{Math.round((rampPressure ?? 0) * 10) / 10}%</dd>
+					</div>
+					<div>
+						<dt>Peak planned long run</dt>
+						<dd>{km(longRunPeak)}</dd>
+					</div>
+				{/if}
 			</dl>
 		</section>
 
@@ -183,18 +225,51 @@
 			{/if}
 
 			<dl class="data-strip comparison-data">
-				<div>
-					<dt>Recorded distance</dt>
-					<dd>{km(completedMeters)} <small>of {km(plannedMeters)}</small></dd>
-				</div>
-				<div>
-					<dt>Runs</dt>
-					<dd>{completedRuns} <small>of {plannedRuns}</small></dd>
-				</div>
-				<div>
-					<dt>Longest completed run</dt>
-					<dd>{km(longestCompletedRun)}</dd>
-				</div>
+				{#if traceUsesDuration}
+					<div>
+						<dt>Training time</dt>
+						{#if plannedDurationThroughCurrentWeek > 0}
+							<dd>
+								{duration(completedDurationSeconds)}
+								<small>of {duration(plannedDurationThroughCurrentWeek)} through this week</small>
+							</dd>
+						{:else}
+							<dd>None due yet</dd>
+						{/if}
+					</div>
+					<div>
+						<dt>Sessions</dt>
+						{#if plannedRuns > 0}
+							<dd>{completedRuns} <small>of {plannedRuns} scheduled</small></dd>
+						{:else}
+							<dd>None due yet</dd>
+						{/if}
+					</div>
+					{#if completedMeters > 0}
+						<div>
+							<dt>Recorded distance</dt>
+							<dd>{km(completedMeters)}</dd>
+						</div>
+					{:else}
+						<div>
+							<dt>Changed sessions</dt>
+							<dd>{changedRuns}</dd>
+						</div>
+					{/if}
+				{:else}
+					<div>
+						<dt>Recorded distance</dt>
+						<dd>{km(completedMeters)} <small>of {km(plannedMeters)}</small></dd>
+					</div>
+					<div>
+						<dt>Runs</dt>
+						<dd>{completedRuns} <small>of {plannedRuns}</small></dd>
+					</div>
+					<div>
+						<dt>Longest completed run</dt>
+						<dd>{km(longestCompletedRun)}</dd>
+					</div>
+				{/if}
 				<div>
 					<dt>Missed</dt>
 					<dd>{missedRuns}</dd>
@@ -207,7 +282,7 @@
 		</section>
 	{/if}
 
-	{#if recordedSummary.totalRuns > 0}
+	{#if recordedSummary.totalDistanceMeters > 0 || (data.active?.plan.summary.kind === 'distance' && recordedSummary.totalRuns > 0)}
 		<section class="stats-section recorded-history" aria-label="Recorded history">
 			<header class="section-heading">
 				<h2>Recorded history</h2>
@@ -328,10 +403,27 @@
 									<time datetime={week.startDate}>{week.startDate}</time>
 								</header>
 								<dl>
-									<div>
-										<dt>Distance</dt>
-										<dd>{km(week.completedDistanceMeters)} / {km(week.targetDistanceMeters)}</dd>
-									</div>
+									{#if traceUsesDuration}
+										<div>
+											<dt>Training time</dt>
+											<dd>
+												{duration(week.completedDurationSeconds)} / {duration(
+													plannedDurationForWeek(week.weekNumber, week.startDate)
+												)}
+											</dd>
+										</div>
+										{#if week.completedDistanceMeters > 0}
+											<div>
+												<dt>Recorded distance</dt>
+												<dd>{km(week.completedDistanceMeters)}</dd>
+											</div>
+										{/if}
+									{:else}
+										<div>
+											<dt>Distance</dt>
+											<dd>{km(week.completedDistanceMeters)} / {km(week.targetDistanceMeters)}</dd>
+										</div>
+									{/if}
 									{#if week.eventDistanceMeters > 0}
 										<div>
 											<dt>Goal event</dt>
@@ -344,10 +436,12 @@
 										<dt>Workouts</dt>
 										<dd>{week.completedRuns} / {week.plannedRuns}</dd>
 									</div>
-									<div>
-										<dt>Longest</dt>
-										<dd>{km(week.longestRunMeters)}</dd>
-									</div>
+									{#if !traceUsesDuration || week.longestRunMeters > 0}
+										<div>
+											<dt>{traceUsesDuration ? 'Longest recorded' : 'Longest'}</dt>
+											<dd>{km(week.longestRunMeters)}</dd>
+										</div>
+									{/if}
 									{#if week.averagePaceSecondsPerKm !== null}
 										<div>
 											<dt>Recorded pace</dt>

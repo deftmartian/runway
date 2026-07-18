@@ -263,7 +263,8 @@
 			feedback: null,
 			week: weekForDate(date),
 			isRecordable: false,
-			isToday: date === payload.today
+			isToday: date === payload.today,
+			isFuture: date > payload.today
 		};
 	}
 
@@ -302,7 +303,8 @@
 				feedback,
 				week: weekForWorkout(workout),
 				isRecordable: canRecordWorkout(workout),
-				isToday: date === payload.today
+				isToday: date === payload.today,
+				isFuture: date > payload.today
 			};
 		});
 
@@ -319,7 +321,8 @@
 				feedback: null,
 				week,
 				isRecordable: false,
-				isToday: record.occurredDate === payload.today
+				isToday: record.occurredDate === payload.today,
+				isFuture: record.occurredDate > payload.today
 			});
 		}
 

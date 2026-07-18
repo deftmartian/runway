@@ -36,13 +36,17 @@
 
 		globalThis.addEventListener('focus', scanWhenActive);
 		globalThis.addEventListener('online', scanWhenActive);
+		globalThis.addEventListener('pageshow', scanWhenActive);
 		document.addEventListener('visibilitychange', handleVisibility);
+		document.addEventListener('resume', scanWhenActive);
 		scanWhenActive();
 
 		return () => {
 			globalThis.removeEventListener('focus', scanWhenActive);
 			globalThis.removeEventListener('online', scanWhenActive);
+			globalThis.removeEventListener('pageshow', scanWhenActive);
 			document.removeEventListener('visibilitychange', handleVisibility);
+			document.removeEventListener('resume', scanWhenActive);
 		};
 	});
 
@@ -71,6 +75,7 @@
 			};
 			return;
 		}
+		if (result.result !== 'permission-required') permissionNoticeShown = false;
 		if (result.result === 'permission-required' && !permissionNoticeShown) {
 			permissionNoticeShown = true;
 			notice = {
@@ -97,6 +102,20 @@
 		if (result.result === 'too-many-files') {
 			notice = {
 				message: 'The approved folder has too many entries. Choose a dedicated GPX export folder.',
+				failed: true
+			};
+			return;
+		}
+		if (result.result === 'folder-missing') {
+			notice = {
+				message: 'The saved device folder moved or was removed. Choose it again from Import.',
+				failed: true
+			};
+			return;
+		}
+		if (result.result === 'folder-unavailable') {
+			notice = {
+				message: 'The device folder is temporarily unavailable. Unlock the device and try again.',
 				failed: true
 			};
 			return;
@@ -171,8 +190,8 @@
 	}
 
 	.inbox-link {
-		min-height: 0;
-		padding: 0;
+		min-height: 44px;
+		padding: 10px 4px;
 		border: 0;
 		background: transparent;
 		color: var(--accent-strong);

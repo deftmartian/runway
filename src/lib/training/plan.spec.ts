@@ -97,7 +97,7 @@ describe('training plan generation', () => {
 		expect(plan.sourceRefs).toContain('mayo-running-injury-avoidance');
 		expect(plan.weeks.some((week) => week.isTaper)).toBe(true);
 		expect(plan.weeks[0]?.workouts.some((workout) => workout.type === 'rest')).toBe(true);
-		expect(plan.summary.warnings.some((warning) => warning.includes('Recent pain'))).toBe(true);
+		expect(plan.summary.warnings.some((warning) => warning.includes('Injury recovery'))).toBe(true);
 	});
 
 	test('schedules the preferred long run on the requested weekday', () => {
@@ -129,6 +129,21 @@ describe('training plan generation', () => {
 		).toBeGreaterThanOrEqual(
 			firstWeekRuns?.find((workout) => workout.type === 'easy')?.targetDistanceMeters ?? 0
 		);
+	});
+
+	test('makes the concentration cost of a two-day half-marathon schedule explicit', () => {
+		const plan = generateTrainingPlan({
+			...baseIntake,
+			raceDistance: 'half',
+			currentRunsPerWeek: 2,
+			availability: [2, 6]
+		});
+
+		expect(plan.weeks[0]?.workouts.filter((workout) => workout.type !== 'rest')).toHaveLength(2);
+		expect(plan.risk).toBe('aggressive');
+		expect(
+			plan.summary.warnings.some((warning) => warning.includes('concentrate a high-volume goal'))
+		).toBe(true);
 	});
 
 	test('starts new plans on the next full week instead of creating retroactive misses', () => {
@@ -332,13 +347,13 @@ describe('training plan generation', () => {
 				...baseIntake,
 				injuryFlags: { ...baseIntake.injuryFlags, currentPain: true }
 			})
-		).toThrow(/current pain/i);
+		).toThrow(/pain is present now/i);
 		expect(() =>
 			generateTrainingPlan({
 				...baseIntake,
 				injuryFlags: { ...baseIntake.injuryFlags, medicalRestriction: true }
 			})
-		).toThrow(/medical restriction/i);
+		).toThrow(/clinician has limited running/i);
 	});
 
 	test('neutral free-text health context does not silently change the plan', () => {

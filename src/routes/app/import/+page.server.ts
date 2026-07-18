@@ -4,12 +4,14 @@ import {
 	deleteActivityRecord,
 	getActivityRecords,
 	getActivityImportGeneration,
+	getAthleteProfile,
 	getImportWorkoutCandidates,
 	linkActivityToWorkout,
 	recordImportedActivity,
 	unlinkActivityFromWorkout,
 	updateActivityFeedback
 } from '$lib/server/runway/repository';
+import { maxGpxImportBytes } from '$lib/import-limits';
 import {
 	activityIdSchema,
 	activityLinkSchema,
@@ -29,19 +31,18 @@ import {
 } from '$lib/server/runway/import-sources';
 import type { Actions, PageServerLoad } from './$types';
 
-const maxUploadBytes = 10 * 1024 * 1024;
-
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) throw redirect(302, '/login');
 	const activityOffset = Math.max(
 		0,
 		Number.parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0
 	);
-	const [candidates, activities, sources, importTimeZoneConfigured] = await Promise.all([
+	const [candidates, activities, sources, importTimeZoneConfigured, profile] = await Promise.all([
 		getImportWorkoutCandidates(event.locals.user.id),
 		getActivityRecords(event.locals.user.id, { limit: 50, offset: activityOffset }),
 		listImportSources(event.locals.user.id),
-		isImportTimeZoneConfigured(event.locals.user.id)
+		isImportTimeZoneConfigured(event.locals.user.id),
+		getAthleteProfile(event.locals.user.id)
 	]);
 	return {
 		candidates,
@@ -49,6 +50,7 @@ export const load: PageServerLoad = async (event) => {
 		activityOffset,
 		sources,
 		importTimeZoneConfigured,
+		routeDataMode: profile?.routeDataMode ?? 'private',
 		shareNotice: shareNotice(event.url.searchParams.get('share'))
 	};
 };
@@ -90,7 +92,7 @@ export const actions: Actions = {
 		if (!(file instanceof File)) {
 			return fail(400, { message: 'Choose a GPX file.' });
 		}
-		if (file.size > maxUploadBytes) {
+		if (file.size > maxGpxImportBytes) {
 			return fail(400, { message: 'GPX file is too large for import.' });
 		}
 		const buffer = Buffer.from(await file.arrayBuffer());

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEvent } from './calendar-types';
-import { presentCalendarEvent } from './calendar-presentation';
+import { canRecordUnplannedRun, presentCalendarEvent } from './calendar-presentation';
 
 function calendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 	return {
@@ -14,6 +14,7 @@ function calendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 		week: null,
 		isRecordable: true,
 		isToday: false,
+		isFuture: false,
 		...overrides
 	};
 }
@@ -85,5 +86,21 @@ describe('presentCalendarEvent', () => {
 
 		expect(presentation.state).toBe('completed');
 		expect(presentation.flags).toEqual(['imported', 'counted_extra', 'hard_effort', 'pain']);
+	});
+
+	it('labels open days by the available action', () => {
+		expect(presentCalendarEvent(calendarEvent({ kind: 'open' })).compactLabel).toBe('Record');
+		expect(presentCalendarEvent(calendarEvent({ kind: 'open', isFuture: true })).compactLabel).toBe(
+			'Plan'
+		);
+	});
+
+	it('allows another unplanned run on any nonfuture event date', () => {
+		const today = '2026-07-14';
+		expect(canRecordUnplannedRun(calendarEvent({ kind: 'planned' }), today)).toBe(true);
+		expect(canRecordUnplannedRun(calendarEvent({ kind: 'actual' }), today)).toBe(true);
+		expect(
+			canRecordUnplannedRun(calendarEvent({ date: '2026-07-15', isFuture: true }), today)
+		).toBe(false);
 	});
 });

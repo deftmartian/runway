@@ -1,0 +1,58 @@
+import { expect, test, type Page } from '@playwright/test';
+
+test('a controller replacement reloads a clean client', async ({ page }) => {
+	await openControlledLogin(page);
+
+	await Promise.all([
+		page.waitForEvent('framenavigated'),
+		page.evaluate(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')))
+	]);
+
+	await expect(page).toHaveURL(/\/login$/);
+});
+
+test('a controller replacement protects edits and offers a working reload action', async ({
+	page
+}) => {
+	await openControlledLogin(page);
+	const signInForm = page.locator('form[action*="signInEmail"]');
+	await signInForm.getByLabel('Email').fill('unsaved@example.test');
+
+	await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')));
+	await expect(page.getByText('New version active', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('This tab is still on the previous version. Reload after finishing any edits.')
+	).toBeVisible();
+
+	await page.getByRole('button', { name: 'Reload runway' }).click();
+	await expect(page.getByText('Save or discard the current form before reloading.')).toBeVisible();
+	await expect(signInForm.getByLabel('Email')).toHaveValue('unsaved@example.test');
+
+	await signInForm.evaluate((form) => {
+		(form as HTMLFormElement).reset();
+	});
+	await Promise.all([
+		page.waitForEvent('framenavigated'),
+		page.getByRole('button', { name: 'Reload runway' }).click()
+	]);
+
+	await expect(page).toHaveURL(/\/login$/);
+});
+
+async function openControlledLogin(page: Page) {
+	await page.goto('/login');
+	await page.evaluate(async () => {
+		if (!('serviceWorker' in navigator)) throw new Error('Service workers are unavailable.');
+		await navigator.serviceWorker.ready;
+		if (navigator.serviceWorker.controller) return;
+		await new Promise<void>((resolve) => {
+			navigator.serviceWorker.addEventListener(
+				'controllerchange',
+				() => {
+					resolve();
+				},
+				{ once: true }
+			);
+		});
+	});
+}

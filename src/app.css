@@ -378,6 +378,9 @@ button.danger {
 }
 
 .landing-source a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
 	color: inherit;
 }
 
@@ -1574,6 +1577,8 @@ button.command-readout:hover:not(:disabled) {
 }
 
 .calendar-state-key > summary {
+	min-height: 44px;
+	padding: 12px 0;
 	color: var(--muted);
 	font-size: 0.84rem;
 	cursor: pointer;
@@ -1645,8 +1650,10 @@ button.command-readout:hover:not(:disabled) {
 
 .plan-assessment > summary {
 	display: flex;
+	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
+	min-height: 44px;
 	cursor: pointer;
 }
 
@@ -1705,7 +1712,7 @@ button.command-readout:hover:not(:disabled) {
 
 .calendar-month-scroll {
 	min-width: 0;
-	overflow-x: clip;
+	overflow-x: auto;
 	border-radius: var(--radius);
 	border: 1px solid color-mix(in oklab, var(--line), transparent 10%);
 	background:
@@ -2358,8 +2365,23 @@ button.command-readout:hover:not(:disabled) {
 }
 
 .history-stop-plan summary {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
 	cursor: pointer;
 	font-weight: 700;
+}
+
+details.source-setup > summary,
+details.estimate-sources > summary,
+details.setup-codes > summary {
+	min-height: 44px;
+}
+
+.estimate-sources li a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
 }
 
 .history-stop-plan[open] {
@@ -2817,6 +2839,11 @@ button.command-readout:hover:not(:disabled) {
 	.calendar-weekday {
 		padding: 8px 4px;
 		text-align: center;
+	}
+
+	.calendar-weekday-row,
+	.calendar-month-grid {
+		min-width: 26.25rem;
 	}
 
 	.calendar-month-day {
