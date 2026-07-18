@@ -13,6 +13,7 @@ on:
       - drizzle/**
       - src/**
       - static/**
+      - scripts/generate-secret.mjs
       - scripts/run-migrations.mjs
       - scripts/verify-image.mjs
       - scripts/verify-preview.mjs
@@ -36,6 +37,7 @@ on:
       - drizzle/**
       - src/**
       - static/**
+      - scripts/generate-secret.mjs
       - scripts/run-migrations.mjs
       - scripts/verify-image.mjs
       - scripts/verify-preview.mjs
@@ -70,11 +72,12 @@ jobs:
       RUNWAY_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
       APP_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
       POSTGRES_PASSWORD: runway_ci_database_password
-      BETTER_AUTH_SECRET: runway-ci-auth-secret-with-at-least-32-characters
       ORIGIN: https://runway.example.test
       PUBLIC_APP_ORIGIN: https://runway.example.test
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure ephemeral auth secret
+        run: echo "BETTER_AUTH_SECRET=$(node scripts/generate-secret.mjs)" >> "$GITHUB_ENV"
       - name: Set up QEMU for release tags
         if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
