@@ -65,6 +65,7 @@
 			: 'Not yet';
 
 	function chooseSource(source: ImportSourceKind) {
+		setupOpen = true;
 		chosenImportSource = source;
 	}
 

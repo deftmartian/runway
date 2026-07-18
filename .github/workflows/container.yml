@@ -169,18 +169,11 @@ jobs:
               target_commitish: context.sha,
               name: `runway ${tag.replace(/^v/, '')}`,
               body: [
-                'The initial public release of runway: a self-hosted running planner and activity decision ledger.',
-                '',
-                '### Highlights',
-                '- Four truthful starting paths: established baseline, foundation then goal, foundation only, and timed calibration.',
-                '- Generated recommendation, current edited plan, and actual recorded work remain distinct.',
-                '- Explicit workout edits and consequence choices without silent plan changes.',
-                '- Local auth, OIDC, 2FA, passkeys, GPX review, Nextcloud sync, history, and exact plan traces.',
-                '- One tested AMD64/ARM64 image for migrations, the web app, and the import worker.',
+                'runway is a self-hosted running planner and activity decision ledger.',
                 '',
                 `Container: ghcr.io/${context.repo.owner}/${context.repo.repo}:${tag}`,
                 '',
-                'See the README for container startup and the deployment guide for the production contract.'
+                'This tag passed the repository release checks. See the README for container startup and the deployment guide for the production contract.'
               ].join('\n'),
               generate_release_notes: true,
               make_latest: 'true'
