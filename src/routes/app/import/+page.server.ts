@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import {
 	confirmActivityAsExtra,
 	deleteActivityRecord,
@@ -11,10 +12,21 @@ import {
 	unlinkActivityFromWorkout,
 	updateActivityFeedback
 } from '$lib/server/runway/repository';
+import { buildAndroidAssetLinks } from '$lib/server/runway/android-asset-links';
 import { maxGpxImportBytes } from '$lib/import-limits';
+import {
+	createAndroidPairingRequest,
+	listAndroidDevices,
+	revokeAndroidDevice
+} from '$lib/server/runway/android-devices';
+import {
+	androidPairingCreateRateLimitBuckets,
+	consumeSecurityRateLimit
+} from '$lib/server/runway/security-rate-limit';
 import {
 	activityIdSchema,
 	activityLinkSchema,
+	androidDeviceIdSchema,
 	formDataToObject,
 	formString
 } from '$lib/server/runway/validation';
@@ -33,22 +45,30 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) throw redirect(302, '/login');
+	const androidApplicationId = buildAndroidAssetLinks(
+		env['ANDROID_APPLICATION_ID'],
+		env['ANDROID_CERTIFICATE_SHA256']
+	)?.[0]?.target.package_name;
 	const activityOffset = Math.max(
 		0,
 		Number.parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0
 	);
-	const [candidates, activities, sources, importTimeZoneConfigured, profile] = await Promise.all([
-		getImportWorkoutCandidates(event.locals.user.id),
-		getActivityRecords(event.locals.user.id, { limit: 50, offset: activityOffset }),
-		listImportSources(event.locals.user.id),
-		isImportTimeZoneConfigured(event.locals.user.id),
-		getAthleteProfile(event.locals.user.id)
-	]);
+	const [candidates, activities, sources, importTimeZoneConfigured, profile, androidDevices] =
+		await Promise.all([
+			getImportWorkoutCandidates(event.locals.user.id),
+			getActivityRecords(event.locals.user.id, { limit: 50, offset: activityOffset }),
+			listImportSources(event.locals.user.id),
+			isImportTimeZoneConfigured(event.locals.user.id),
+			getAthleteProfile(event.locals.user.id),
+			listAndroidDevices(event.locals.user.id)
+		]);
 	return {
 		candidates,
 		activities,
 		activityOffset,
 		sources,
+		androidDevices,
+		androidApplicationId: androidApplicationId ?? null,
 		importTimeZoneConfigured,
 		routeDataMode: profile?.routeDataMode ?? 'private',
 		shareNotice: shareNotice(event.url.searchParams.get('share'))
@@ -81,6 +101,40 @@ function shareNotice(value: string | null): { message: string; failed: boolean }
 }
 
 export const actions: Actions = {
+	createAndroidPairing: async (event) => {
+		if (!event.locals.user) throw redirect(302, '/login');
+		const rateLimit = await consumeSecurityRateLimit(
+			androidPairingCreateRateLimitBuckets(event.locals.user.id, event.getClientAddress())
+		);
+		if (!rateLimit.allowed) {
+			event.setHeaders({ 'retry-after': String(rateLimit.retryAfterSeconds) });
+			return fail(429, {
+				scope: 'android',
+				message: 'Too many pairing codes were requested. Try again later.'
+			});
+		}
+		const pairing = await createAndroidPairingRequest(event.locals.user.id);
+		return {
+			scope: 'android',
+			message: 'Pairing code created.',
+			pairingCode: pairing.code,
+			pairingExpiresAt: pairing.expiresAt.toISOString()
+		};
+	},
+	revokeAndroidDevice: async (event) => {
+		if (!event.locals.user) throw redirect(302, '/login');
+		const parsed = androidDeviceIdSchema.safeParse(
+			formDataToObject(await event.request.formData())
+		);
+		if (!parsed.success) {
+			return fail(400, { scope: 'android', message: 'Choose an Android device.' });
+		}
+		const revoked = await revokeAndroidDevice(event.locals.user.id, parsed.data.deviceId);
+		if (!revoked) {
+			return fail(404, { scope: 'android', message: 'That Android device is not connected.' });
+		}
+		return { scope: 'android', message: 'Android device disconnected.' };
+	},
 	importGpx: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
 		const importGeneration = await getActivityImportGeneration(event.locals.user.id);

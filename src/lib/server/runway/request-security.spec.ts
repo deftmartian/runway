@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
 	hasExactRequestOrigin,
+	isAndroidNativeApiRequest,
 	isMutationRequest,
 	isWebShareTargetNavigation
 } from './request-security';
@@ -60,5 +61,50 @@ describe('state-changing request origin checks', () => {
 			headers
 		});
 		expect(isWebShareTargetNavigation(request, '/app/import/share')).toBe(false);
+	});
+
+	test('allows only narrowly shaped no-origin Android API mutations', () => {
+		const pairing = new Request('https://runway.example.test/api/android/pair', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-runway-client': 'runway-android/1'
+			}
+		});
+		const upload = new Request('https://runway.example.test/api/android/import', {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer rwy1_device_secret',
+				'content-type': 'application/gpx+xml',
+				'x-runway-client': 'runway-android/1'
+			}
+		});
+		expect(isAndroidNativeApiRequest(pairing, '/api/android/pair')).toBe(true);
+		expect(isAndroidNativeApiRequest(upload, '/api/android/import')).toBe(true);
+	});
+
+	test.each([
+		['browser origin', { origin: 'https://attacker.example' }, '/api/android/pair'],
+		[
+			'form content type',
+			{ 'content-type': 'application/x-www-form-urlencoded' },
+			'/api/android/pair'
+		],
+		['missing client marker', { 'x-runway-client': '' }, '/api/android/pair'],
+		['missing bearer', { authorization: '' }, '/api/android/import'],
+		['generic binary', { 'content-type': 'application/octet-stream' }, '/api/android/import'],
+		['unlisted path', {}, '/api/android/other']
+	])('rejects Android mutation exception with %s', (_label, override, pathname) => {
+		const headers = new Headers({
+			authorization: 'Bearer rwy1_device_secret',
+			'content-type': pathname === '/api/android/pair' ? 'application/json' : 'application/gpx+xml',
+			'x-runway-client': 'runway-android/1',
+			...override
+		});
+		const request = new Request(`https://runway.example.test${pathname}`, {
+			method: 'POST',
+			headers
+		});
+		expect(isAndroidNativeApiRequest(request, pathname)).toBe(false);
 	});
 });

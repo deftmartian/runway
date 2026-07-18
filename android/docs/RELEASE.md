@@ -40,6 +40,11 @@ fingerprint is public and is not a secret. If debug builds need verified TWA beh
 statement for the debug application id and debug certificate temporarily; do not confuse either with
 the release statement.
 
+For the normal runway deployment, set `ANDROID_APPLICATION_ID` to the final package id and
+`ANDROID_CERTIFICATE_SHA256` to the colon-delimited signing fingerprint. runway serves and validates
+the statement itself. Multiple fingerprints can be comma-separated during an intentional signing-key
+transition; remove retired fingerprints after the installed-base migration is complete.
+
 After installing the signed release candidate, force and inspect Android App Link verification:
 
 ```sh

@@ -10,6 +10,7 @@ import {
 import { startImportSourceWorker } from '$lib/server/runway/import-worker';
 import {
 	hasExactRequestOrigin,
+	isAndroidNativeApiRequest,
 	isMutationRequest,
 	isWebShareTargetNavigation
 } from '$lib/server/runway/request-security';
@@ -46,7 +47,8 @@ const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 		const origin = event.request.headers.get('origin');
 		if (
 			!hasExactRequestOrigin(origin, event.url.origin) &&
-			!isWebShareTargetNavigation(event.request, event.url.pathname)
+			!isWebShareTargetNavigation(event.request, event.url.pathname) &&
+			!isAndroidNativeApiRequest(event.request, event.url.pathname)
 		) {
 			return applySecurityHeaders(
 				new Response('Cross-site requests are forbidden', { status: 403 }),
@@ -97,6 +99,7 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 		pathname.startsWith('/app') ||
 		pathname.startsWith('/login') ||
 		pathname.startsWith('/logout') ||
+		pathname.startsWith('/api/android/') ||
 		pathname.startsWith('/api/auth')
 	) {
 		response.headers.set('Cache-Control', 'private, no-store');

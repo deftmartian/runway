@@ -58,12 +58,21 @@ Passkey registration uses Better Auth's fresh-session middleware with a ten-minu
 Passkey removal applies the same recent-sign-in window and a persistent per-user/per-address limit.
 After that window the UI requires the user to sign out and sign in again before changing passkeys.
 
-State-changing requests require the exact public Origin. The only missing-Origin exception is the
-installed PWA's `POST /app/import/share` navigation because the Web Share Target algorithm does not
+State-changing browser requests require the exact public Origin. The installed PWA has one
+missing-Origin exception for its `POST /app/import/share` navigation because the Web Share Target algorithm does not
 attach an Origin header. That exception requires the exact path, multipart content, and browser-set
 top-level navigation Fetch Metadata (`site=none`, `mode=navigate`, `dest=document`). The route still
 requires an authenticated session before reading the body, accepts exactly one bounded GPX, and uses
 the same strict parser and review-only import path as manual upload.
+
+The Android app has two separate no-Origin API shapes. `POST /api/android/pair` requires JSON plus the
+versioned Android client header and exchanges a high-entropy, ten-minute, single-use code created by
+an authenticated browser session. `POST /api/android/import` requires that client header, a
+GPX-specific content type, a valid scoped bearer credential, a UUID request id, and a SHA-256 content
+digest. Cross-origin browser requests still fail because an explicit non-matching Origin is rejected,
+and browsers cannot set the custom headers cross-site without a CORS preflight that runway does not
+allow. Neither route accepts browser cookies as Android authentication. Rate limits apply before and
+after device authentication, and the import route authenticates before reading a bounded body.
 
 `BETTER_AUTH_SECRET` rotation is an operational migration, not a blind value replacement. Database
 backups must have separately protected matching key material, and an old key cannot be retired until
@@ -132,6 +141,13 @@ records an `account.export` event without export contents.
 
 Real GPX, FIT, and TCX samples must go in `samples/`, which is ignored by git.
 
+Android stores the server-issued import credential encrypted with AES-GCM under a non-exportable
+Android Keystore key. The server stores only its SHA-256 hash, a user/device binding, expiry,
+revocation state, and non-sensitive timestamps. The credential can call only Android status and GPX
+import routes. Raw content digests are not stored: receipt keys are user-scoped HMACs. Completed
+request ids make retries idempotent; deleting imported activity data revokes every active Android
+device in the same transaction before the activities are removed.
+
 Importer behavior should:
 
 - avoid logging raw coordinates;
@@ -191,19 +207,20 @@ Red-team this flow with expired shares, wrong passwords, unprotected shares, non
 
 ## Threat Model
 
-| Risk                         | Control                                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Account takeover             | Better Auth sessions, secure cookies, 2FA, passkeys, rate limiting, no custom password hashing.                  |
-| Password reset abuse         | Generic reset responses, hashed single-use tokens, short expiry, rate limiting, audit events, safe email errors. |
-| Cross-user data exposure     | Server-side user scoping on every query, no client-supplied ownership.                                           |
-| Route privacy leak           | Do not log raw GPX; no public feeds/maps; the current release stores aggregate import data before route display. |
-| Nextcloud share leak         | Seal tokens/passwords, blind-index remote state, allowlist exact origins, and do not log tokens/URLs/paths.      |
-| Duplicate or stale imports   | Claims, user-scoped hashes, deletion tombstones, unique constraints, and a locked generation check.              |
-| Health-adjacent overclaiming | Training logic flags risk and suggests conservative adjustments; it does not diagnose or treat.                  |
-| CSRF/session misuse          | SameSite cookies, exact-Origin mutations, and a narrowly gated authenticated native-share navigation exception.  |
-| Unsafe file upload           | GPX size limits, XML parsing without entity expansion features, aggregate extraction only.                       |
-| Open registration surprise   | Local signups controlled by configuration. Operators can disable local auth or OIDC signup.                      |
-| N+1 data leaks/perf collapse | Calendar, import, stats, settings, and history use bounded queries and aggregates.                               |
+| Risk                         | Control                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Account takeover             | Better Auth sessions, secure cookies, 2FA, passkeys, rate limiting, no custom password hashing.                   |
+| Password reset abuse         | Generic reset responses, hashed single-use tokens, short expiry, rate limiting, audit events, safe email errors.  |
+| Cross-user data exposure     | Server-side user scoping on every query, no client-supplied ownership.                                            |
+| Route privacy leak           | Do not log raw GPX; no public feeds/maps; the current release stores aggregate import data before route display.  |
+| Nextcloud share leak         | Seal tokens/passwords, blind-index remote state, allowlist exact origins, and do not log tokens/URLs/paths.       |
+| Android credential theft     | Hash server copies, encrypt the device copy with Android Keystore, scope routes, expire, rate-limit, and revoke.  |
+| Duplicate or stale imports   | Account-locked claims, device revalidation, scoped hashes, tombstones, unique constraints, and generation checks. |
+| Health-adjacent overclaiming | Training logic flags risk and suggests conservative adjustments; it does not diagnose or treat.                   |
+| CSRF/session misuse          | SameSite cookies, exact-Origin mutations, and a narrowly gated authenticated native-share navigation exception.   |
+| Unsafe file upload           | GPX size limits, XML parsing without entity expansion features, aggregate extraction only.                        |
+| Open registration surprise   | Local signups controlled by configuration. Operators can disable local auth or OIDC signup.                       |
+| N+1 data leaks/perf collapse | Calendar, import, stats, settings, and history use bounded queries and aggregates.                                |
 
 Trust boundaries:
 

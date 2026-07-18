@@ -18,4 +18,18 @@ class BoundedStreamInspectorTest {
 
         BoundedStreamInspector.countBytes(input, 512)
     }
+
+    @Test
+    fun `reads bytes at the exact bound`() {
+        val input = ByteArrayInputStream("12345".encodeToByteArray())
+
+        assertEquals("12345", BoundedStreamInspector.readBytes(input, 5).decodeToString())
+    }
+
+    @Test(expected = PayloadTooLargeException::class)
+    fun `byte reads fail immediately after the configured bound`() {
+        val input = ByteArrayInputStream("123456".encodeToByteArray())
+
+        BoundedStreamInspector.readBytes(input, 5)
+    }
 }

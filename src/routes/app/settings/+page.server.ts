@@ -298,9 +298,15 @@ export const actions: Actions = {
 				: result.disconnectedImportSources === 1
 					? ' Disconnected 1 import folder so it cannot sync the activity back.'
 					: ` Disconnected ${result.disconnectedImportSources} import folders so they cannot sync the activities back.`;
+		const androidMessage =
+			result.disconnectedAndroidDevices === 0
+				? ''
+				: result.disconnectedAndroidDevices === 1
+					? ' Disconnected 1 Android device so it cannot import the activity again.'
+					: ` Disconnected ${result.disconnectedAndroidDevices} Android devices so they cannot import the activities again.`;
 		return {
 			scope: 'privacy',
-			message: `${activityMessage}${sourceMessage}`
+			message: `${activityMessage}${sourceMessage}${androidMessage}`
 		};
 	}
 };

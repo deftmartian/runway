@@ -1,5 +1,6 @@
 const mutationMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const webShareTargetPath = '/app/import/share';
+const androidClientHeader = 'runway-android/1';
 
 export function isMutationRequest(method: string): boolean {
 	return mutationMethods.has(method.toUpperCase());
@@ -28,5 +29,22 @@ export function isWebShareTargetNavigation(request: Request, pathname: string): 
 		request.headers.get('sec-fetch-site') === 'none' &&
 		request.headers.get('sec-fetch-mode') === 'navigate' &&
 		request.headers.get('sec-fetch-dest') === 'document'
+	);
+}
+
+/**
+ * Android cannot send a browser Origin header. Keep the exception to two
+ * non-cookie API requests that browsers cannot submit cross-site without a
+ * CORS preflight: JSON pairing and bearer-authenticated GPX upload.
+ */
+export function isAndroidNativeApiRequest(request: Request, pathname: string): boolean {
+	if (request.method.toUpperCase() !== 'POST' || request.headers.has('origin')) return false;
+	if (request.headers.get('x-runway-client') !== androidClientHeader) return false;
+	const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
+	if (pathname === '/api/android/pair') return contentType.startsWith('application/json');
+	if (pathname !== '/api/android/import') return false;
+	if (!request.headers.get('authorization')?.startsWith('Bearer rwy1_')) return false;
+	return ['application/gpx+xml', 'application/x-gpx+xml'].some(
+		(allowed) => contentType === allowed || contentType.startsWith(`${allowed};`)
 	);
 }

@@ -152,11 +152,17 @@ Supported Chromium PWAs can approve a Gadgetbridge export directory through File
 
 ### Android app
 
-The pre-release Android app launches the complete instance-bound PWA as a Digital Asset Links-verified
+The Android app launches the complete instance-bound PWA as a Digital Asset Links-verified
 Trusted Web Activity, falling back to a browser Custom Tab rather than WebView. Native code owns the
 persisted Storage Access Framework read grant, bounded shares, folder settings, and inexact WorkManager
-reconciliation. Upload remains blocked until the server has a scoped, revocable device-pairing and
-import API. The boundary and production gates are documented in [ANDROID.md](ANDROID.md).
+reconciliation. An authenticated PWA session creates a ten-minute, single-use pairing code. Android
+exchanges it for a one-year, revocable credential limited to `/api/android/status` and
+`/api/android/import`; the server stores only its hash and Android encrypts it with a Keystore-backed
+AES-GCM key. Each GPX request has a stable UUID receipt and user-scoped content key, enters Review,
+and uses the same parser, import-generation barrier, duplicate checks, and privacy rules as browser
+imports. Receipt claims lock the account and revalidate device revocation and expiry, closing the race
+between initial bearer authentication and privacy deletion. The boundary and remaining production
+gates are documented in [ANDROID.md](ANDROID.md).
 
 ### Nextcloud folder share
 

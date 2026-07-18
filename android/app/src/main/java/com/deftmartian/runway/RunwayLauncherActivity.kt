@@ -16,6 +16,11 @@ class RunwayLauncherActivity : LauncherActivity() {
         super.onCreate(savedInstanceState)
     }
 
+    override fun onResume() {
+        super.onResume()
+        ReconciliationScheduler.runOnce(this)
+    }
+
     override fun getUrlForIntent(intent: Intent): Uri? {
         val candidate = intent.data ?: return null
         return candidate.takeIf {

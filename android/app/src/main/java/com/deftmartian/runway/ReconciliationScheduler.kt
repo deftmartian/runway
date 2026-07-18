@@ -15,7 +15,9 @@ object ReconciliationScheduler {
     private const val PERIODIC_WORK_NAME = "runway-folder-reconciliation"
 
     fun runOnce(context: Context) {
-        val request = OneTimeWorkRequest.Builder(ReconciliationWorker::class.java).build()
+        val request = OneTimeWorkRequest.Builder(ReconciliationWorker::class.java)
+            .setConstraints(reconciliationConstraints())
+            .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             ONE_TIME_WORK_NAME,
             ExistingWorkPolicy.REPLACE,
@@ -24,15 +26,11 @@ object ReconciliationScheduler {
     }
 
     fun enablePeriodic(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresStorageNotLow(true)
-            .build()
         val request = PeriodicWorkRequest.Builder(
             ReconciliationWorker::class.java,
             15,
             TimeUnit.MINUTES,
-        ).setConstraints(constraints).build()
+        ).setConstraints(reconciliationConstraints()).build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,
@@ -44,4 +42,9 @@ object ReconciliationScheduler {
     fun disablePeriodic(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
     }
+
+    private fun reconciliationConstraints(): Constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .setRequiresStorageNotLow(true)
+        .build()
 }

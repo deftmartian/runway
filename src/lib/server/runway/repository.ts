@@ -20,6 +20,9 @@ import {
 	activity,
 	activityDeletionTombstone,
 	activityImport,
+	androidDevice,
+	androidImportRequest,
+	androidPairingRequest,
 	athleteProfile,
 	auditEvent,
 	goal,
@@ -4489,6 +4492,8 @@ export async function exportUserData(userId: string) {
 		adjustments,
 		importSources,
 		importItems,
+		androidDevices,
+		androidImportRequests,
 		deletionTombstones,
 		auditEvents
 	] = await Promise.all([
@@ -4566,6 +4571,32 @@ export async function exportUserData(userId: string) {
 			.from(importSourceItem)
 			.where(eq(importSourceItem.userId, userId)),
 		db
+			.select({
+				id: androidDevice.id,
+				label: androidDevice.label,
+				expiresAt: androidDevice.expiresAt,
+				lastSeenAt: androidDevice.lastSeenAt,
+				lastImportedAt: androidDevice.lastImportedAt,
+				revokedAt: androidDevice.revokedAt,
+				createdAt: androidDevice.createdAt,
+				updatedAt: androidDevice.updatedAt
+			})
+			.from(androidDevice)
+			.where(eq(androidDevice.userId, userId)),
+		db
+			.select({
+				id: androidImportRequest.id,
+				deviceId: androidImportRequest.deviceId,
+				requestId: androidImportRequest.requestId,
+				state: androidImportRequest.state,
+				result: androidImportRequest.result,
+				reason: androidImportRequest.reason,
+				createdAt: androidImportRequest.createdAt,
+				completedAt: androidImportRequest.completedAt
+			})
+			.from(androidImportRequest)
+			.where(eq(androidImportRequest.userId, userId)),
+		db
 			.select()
 			.from(activityDeletionTombstone)
 			.where(eq(activityDeletionTombstone.userId, userId))
@@ -4578,7 +4609,7 @@ export async function exportUserData(userId: string) {
 	]);
 
 	return {
-		version: 2,
+		version: 3,
 		exportedAt: new Date().toISOString(),
 		account: account ?? null,
 		profile: profile ?? null,
@@ -4592,10 +4623,13 @@ export async function exportUserData(userId: string) {
 		adjustments,
 		importSources,
 		importItems,
+		androidDevices,
+		androidImportRequests,
 		deletionTombstones,
 		redactions: [
 			'import source share tokens and sealed passwords',
-			'import item remote paths, etags, and content hashes'
+			'import item remote paths, etags, and content hashes',
+			'Android bearer token hashes and content digest keys'
 		],
 		auditEvents
 	};
@@ -4603,6 +4637,12 @@ export async function exportUserData(userId: string) {
 
 export async function deleteActivityData(userId: string) {
 	return db.transaction(async (tx) => {
+		await tx
+			.select({ id: authUser.id })
+			.from(authUser)
+			.where(eq(authUser.id, userId))
+			.limit(1)
+			.for('update');
 		await tx
 			.update(athleteProfile)
 			.set({
@@ -4629,6 +4669,13 @@ export async function deleteActivityData(userId: string) {
 			.delete(importSource)
 			.where(eq(importSource.userId, userId))
 			.returning({ id: importSource.id });
+		await tx.delete(androidPairingRequest).where(eq(androidPairingRequest.userId, userId));
+		const revokedAndroidDevices = await tx
+			.update(androidDevice)
+			.set({ revokedAt: new Date(), updatedAt: new Date() })
+			.where(and(eq(androidDevice.userId, userId), isNull(androidDevice.revokedAt)))
+			.returning({ id: androidDevice.id });
+		await tx.delete(androidImportRequest).where(eq(androidImportRequest.userId, userId));
 		const activityIds = records.map((record) => record.id);
 		if (activityIds.length > 0) {
 			const reversed = await tx
@@ -4695,11 +4742,16 @@ export async function deleteActivityData(userId: string) {
 			eventType: 'activity.deleted',
 			detail: {
 				count: records.length,
-				disconnectedImportSources: deletedSources.length
+				disconnectedImportSources: deletedSources.length,
+				disconnectedAndroidDevices: revokedAndroidDevices.length
 			}
 		});
 
-		return { count: records.length, disconnectedImportSources: deletedSources.length };
+		return {
+			count: records.length,
+			disconnectedImportSources: deletedSources.length,
+			disconnectedAndroidDevices: revokedAndroidDevices.length
+		};
 	});
 }
 

@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import postgres from 'postgres';
@@ -1622,6 +1622,122 @@ test('training calendar month controls are URL-backed', async ({ page }) => {
 	await expect(page).toHaveURL(new RegExp(`/app\\?month=${currentMonth}`));
 });
 
+test('Android pairing imports idempotently and privacy deletion revokes the device', async ({
+	page
+}) => {
+	await createPlan(page);
+	await page.goto('/app/import');
+	await page.getByText('Add import source', { exact: true }).click();
+	const sourceAccessibility = await new AxeBuilder({ page }).include('.import-sources').analyze();
+	expect(sourceAccessibility.violations).toEqual([]);
+	await page.getByRole('button', { name: 'Create pairing code' }).click();
+	const firstPairingCode = (await page.locator('.pairing-code strong').textContent())?.trim() ?? '';
+	expect(firstPairingCode).toMatch(/^[0-9A-F]{4}(?:-[0-9A-F]{4}){3}$/);
+	await page.getByRole('button', { name: 'Create pairing code' }).click();
+	await expect(page.locator('.pairing-code strong')).not.toHaveText(firstPairingCode);
+	const pairingCode = (await page.locator('.pairing-code strong').textContent())?.trim() ?? '';
+	expect(pairingCode).toMatch(/^[0-9A-F]{4}(?:-[0-9A-F]{4}){3}$/);
+	expect(pairingCode).not.toBe(firstPairingCode);
+
+	const replacedPairing = await page.request.post('/api/android/pair', {
+		headers: {
+			'content-type': 'application/json',
+			'x-runway-client': 'runway-android/1'
+		},
+		data: { code: firstPairingCode, label: 'Old test phone' }
+	});
+	expect(replacedPairing.status()).toBe(400);
+
+	const crossOriginPairing = await page.request.post('/api/android/pair', {
+		headers: {
+			origin: 'https://attacker.example',
+			'content-type': 'application/json',
+			'x-runway-client': 'runway-android/1'
+		},
+		data: { code: pairingCode, label: 'Test phone' }
+	});
+	expect(crossOriginPairing.status()).toBe(403);
+
+	const pairing = await page.request.post('/api/android/pair', {
+		headers: {
+			'content-type': 'application/json',
+			'x-runway-client': 'runway-android/1'
+		},
+		data: { code: pairingCode, label: 'Test phone' }
+	});
+	expect(pairing.status()).toBe(201);
+	const paired = (await pairing.json()) as {
+		result: string;
+		deviceId: string;
+		token: string;
+	};
+	expect(paired.result).toBe('paired');
+	expect(paired.token).toMatch(/^rwy1_/);
+
+	await page.reload();
+	await expect(page.getByText('Test phone', { exact: true })).toBeVisible();
+
+	const gpx = gpxForDistance(testDate, 4_000);
+	const requestId = randomUUID();
+	const contentDigest = createHash('sha256').update(gpx).digest('hex');
+	const importHeaders = {
+		authorization: `Bearer ${paired.token}`,
+		'content-type': 'application/gpx+xml',
+		'x-runway-client': 'runway-android/1',
+		'x-runway-content-sha256': contentDigest,
+		'x-runway-request-id': requestId
+	};
+	const imported = await page.request.post('/api/android/import', {
+		headers: importHeaders,
+		data: gpx
+	});
+	expect(imported.status()).toBe(201);
+	await expect(imported.json()).resolves.toMatchObject({
+		result: 'imported',
+		requestId,
+		replayed: false
+	});
+
+	const replayed = await page.request.post('/api/android/import', {
+		headers: importHeaders,
+		data: gpx
+	});
+	expect(replayed.status()).toBe(201);
+	await expect(replayed.json()).resolves.toMatchObject({
+		result: 'imported',
+		requestId,
+		replayed: true
+	});
+
+	const changedGpx = gpxForDistance(testDate, 4_500);
+	const conflicting = await page.request.post('/api/android/import', {
+		headers: {
+			...importHeaders,
+			'x-runway-content-sha256': createHash('sha256').update(changedGpx).digest('hex')
+		},
+		data: changedGpx
+	});
+	expect(conflicting.status()).toBe(409);
+	await expect(conflicting.json()).resolves.toMatchObject({
+		result: 'request-conflict',
+		requestId
+	});
+
+	await page.reload();
+	await expect(page.locator('.activity-record')).toHaveCount(1);
+	await page.goto('/app/settings');
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
+	await expect(
+		page.getByText('Disconnected 1 Android device so it cannot import the activity again.')
+	).toBeVisible();
+
+	const statusAfterDeletion = await page.request.get('/api/android/status', {
+		headers: { authorization: `Bearer ${paired.token}`, 'x-runway-client': 'runway-android/1' }
+	});
+	expect(statusAfterDeletion.status()).toBe(401);
+});
+
 test('an empty inbox offers a direct review-only GPX upload', async ({ page }) => {
 	const email = await createAccount(page);
 	await setTrainingTimeZone(email);
@@ -2807,6 +2923,25 @@ test('PWA files and private routes carry the expected cache boundaries', async (
 	const app = await page.request.get('/app', { maxRedirects: 0 });
 	expect([302, 303, 307, 308]).toContain(app.status());
 	expect(app.headers()['cache-control']).toBe('private, no-store');
+
+	const assetLinks = await page.request.get('/.well-known/assetlinks.json');
+	expect(assetLinks.ok()).toBe(true);
+	expect(assetLinks.headers()['cache-control']).toBe('public, max-age=300');
+	await expect(assetLinks.json()).resolves.toEqual([
+		{
+			relation: ['delegate_permission/common.handle_all_urls'],
+			target: {
+				namespace: 'android_app',
+				package_name: 'com.deftmartian.runway.test',
+				sha256_cert_fingerprints: [
+					'AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB'
+				]
+			}
+		}
+	]);
+	const unknownRoute = await page.request.get('/not-a-runway-route');
+	expect(unknownRoute.status()).toBe(404);
+	expect(unknownRoute.headers()['cache-control']).toBe('private, no-store');
 });
 
 test('PWA lifecycle shows connection state and a quiet install shortcut', async ({

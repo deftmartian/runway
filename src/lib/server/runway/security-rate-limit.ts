@@ -107,6 +107,43 @@ export function passwordResetAttemptRateLimitBuckets(clientAddress: string): Rat
 	];
 }
 
+export function androidPairingCreateRateLimitBuckets(
+	userId: string,
+	clientAddress: string
+): RateLimitBucket[] {
+	return [
+		{ name: 'android-pairing-create:ip', subject: clientAddress, max: 10, windowMs: tenMinutes },
+		{ name: 'android-pairing-create:user', subject: userId, max: 5, windowMs: tenMinutes }
+	];
+}
+
+export function androidPairingExchangeRateLimitBuckets(clientAddress: string): RateLimitBucket[] {
+	return [
+		{ name: 'android-pairing-exchange:ip', subject: clientAddress, max: 20, windowMs: tenMinutes }
+	];
+}
+
+export function androidApiPreAuthRateLimitBuckets(
+	clientAddress: string,
+	action: 'status' | 'import'
+): RateLimitBucket[] {
+	return [{ name: `android-${action}:ip`, subject: clientAddress, max: 120, windowMs: tenMinutes }];
+}
+
+export function androidApiDeviceRateLimitBuckets(
+	deviceId: string,
+	action: 'status' | 'import'
+): RateLimitBucket[] {
+	return [
+		{
+			name: `android-${action}:device`,
+			subject: deviceId,
+			max: action === 'import' ? 30 : 120,
+			windowMs: tenMinutes
+		}
+	];
+}
+
 export async function consumeSecurityRateLimit(
 	buckets: RateLimitBucket[]
 ): Promise<SecurityRateLimitResult> {

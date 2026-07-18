@@ -10,13 +10,18 @@ const requiredFiles = [
 	'android/app/src/main/AndroidManifest.xml',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
+	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt',
+	'android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
 	'android/gradle/wrapper/gradle-wrapper.properties',
 	'android/gradlew',
 	'android/gradlew.bat',
 	'android/assetlinks.json.template',
-	'android/docs/RELEASE.md'
+	'android/docs/RELEASE.md',
+	'src/routes/[...wellKnown]/+server.ts',
+	'src/routes/app/import/+page.server.ts',
+	'src/routes/app/import/+page.svelte'
 ];
 
 for (const file of requiredFiles) {
@@ -84,15 +89,51 @@ for (const required of [
 	': LauncherActivity()',
 	'getUrlForIntent',
 	'InstanceOriginPolicy.belongsTo',
+	'ReconciliationScheduler.runOnce(this)',
 	'TwaLauncher.CCT_FALLBACK_STRATEGY'
 ]) {
 	if (!launcher.includes(required)) errors.push(`Android TWA launcher is missing ${required}`);
+}
+
+const importPageServer = read('src/routes/app/import/+page.server.ts');
+const importPage = read('src/routes/app/import/+page.svelte');
+if (!importPageServer.includes('androidApplicationId: androidApplicationId ?? null')) {
+	errors.push('Android folder link must fail closed without a configured release identity');
+}
+for (const required of ['intent://folder#Intent', 'package=${data.androidApplicationId};end']) {
+	if (!importPage.includes(required)) {
+		errors.push(`Android folder link is missing package binding: ${required}`);
+	}
+}
+
+const assetLinksRoute = read('src/routes/[...wellKnown]/+server.ts');
+for (const required of [
+	'ANDROID_APPLICATION_ID',
+	'ANDROID_CERTIFICATE_SHA256',
+	'buildAndroidAssetLinks'
+]) {
+	if (!assetLinksRoute.includes(required)) {
+		errors.push(`Android Digital Asset Links route is missing ${required}`);
+	}
 }
 
 const kotlinFiles = globSync('android/app/src/**/*.kt', { cwd: root });
 const kotlin = kotlinFiles.map((file) => read(file)).join('\n');
 if (/\bandroid\.webkit\b|\bWebView\b/.test(kotlin)) {
 	errors.push('Android source must not add an embedded WebView');
+}
+for (const required of [
+	'AndroidKeyStore',
+	'AES/GCM/NoPadding',
+	'/api/android/pair',
+	'/api/android/import',
+	'X-Runway-Request-Id',
+	'GpxCandidatePolicy.MAX_FILE_BYTES'
+]) {
+	if (!kotlin.includes(required)) errors.push(`Android import boundary is missing ${required}`);
+}
+if (kotlin.includes('api_unavailable')) {
+	errors.push('Android source still contains the blocked pre-release API state');
 }
 
 const strings = read('android/app/src/main/res/values/strings.xml');

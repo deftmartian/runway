@@ -32,6 +32,12 @@ class ShareReceiverActivity : ComponentActivity() {
     }
 
     private fun inspectSharedFile() {
+        val credentialStore = AndroidCredentialStore(this)
+        val credential = credentialStore.load()
+        if (credential == null) {
+            status.setText(R.string.share_pairing_required)
+            return
+        }
         val uri = resolveSingleContentUri()
         if (intent.action != Intent.ACTION_SEND || uri == null) {
             status.setText(R.string.share_rejected)
@@ -64,10 +70,26 @@ class ShareReceiverActivity : ComponentActivity() {
 
         executor.execute {
             val result = try {
-                val byteCount = contentResolver.openInputStream(uri)?.use {
-                    BoundedStreamInspector.countBytes(it, GpxCandidatePolicy.MAX_FILE_BYTES)
-                } ?: 0
-                if (byteCount > 0) R.string.share_ready_no_upload else R.string.share_rejected
+                val bytes = contentResolver.openInputStream(uri)?.use {
+                    BoundedStreamInspector.readBytes(it, GpxCandidatePolicy.MAX_FILE_BYTES)
+                } ?: ByteArray(0)
+                if (bytes.isEmpty()) {
+                    R.string.share_rejected
+                } else {
+                    when (val imported = RunwayApiClient().importGpx(credential, bytes)) {
+                        is ImportApiResult.Handled -> when (imported.result) {
+                            "imported" -> R.string.share_imported
+                            "duplicate" -> R.string.share_duplicate
+                            else -> R.string.share_quarantined
+                        }
+                        ImportApiResult.Unauthorized -> {
+                            credentialStore.clear()
+                            R.string.share_pairing_required
+                        }
+                        ImportApiResult.RequestConflict -> R.string.share_retryable
+                        ImportApiResult.Retryable -> R.string.share_retryable
+                    }
+                }
             } catch (_: PayloadTooLargeException) {
                 R.string.share_too_large
             } catch (_: SecurityException) {

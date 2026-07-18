@@ -109,6 +109,15 @@
 	const sectionResult = (section: ImportSection) =>
 		scopedResult?.section === section ? scopedResult : null;
 	const actionPending = (key: string) => activeAction === key;
+	const androidPairing = $derived(
+		form &&
+			'pairingCode' in form &&
+			typeof form.pairingCode === 'string' &&
+			'pairingExpiresAt' in form &&
+			typeof form.pairingExpiresAt === 'string'
+			? { code: form.pairingCode, expiresAt: form.pairingExpiresAt }
+			: null
+	);
 	const activityTraceDetail = (activityId: string) => activityTraceDetails[activityId];
 	async function loadActivityTrace(event: Event, activityId: string) {
 		const disclosure = event.currentTarget;
@@ -224,6 +233,11 @@
 		} finally {
 			deviceFolderBusy = false;
 		}
+	}
+
+	function openAndroidFolderSettings() {
+		if (!data.androidApplicationId) return;
+		window.location.href = `intent://folder#Intent;scheme=runway-native;package=${data.androidApplicationId};end`;
 	}
 
 	async function runDeviceFolderScan(afterConnection = false) {
@@ -379,14 +393,15 @@
 		{#if form?.message && !scopedResult}
 			<p class="message" role="status" aria-live="polite">{form.message}</p>
 		{/if}
-		{#if sectionResult('activities')}
+		{#if sectionResult('activities') || sectionResult('empty-gpx')}
+			{@const inboxResult = sectionResult('activities') ?? sectionResult('empty-gpx')}
 			<p
 				class="message compact-message"
-				class:bad-message={sectionResult('activities')?.failed}
+				class:bad-message={inboxResult?.failed}
 				role="status"
 				aria-live="polite"
 			>
-				{sectionResult('activities')?.message}
+				{inboxResult?.message}
 			</p>
 		{/if}
 
@@ -586,16 +601,6 @@
 				<div class="empty-state">
 					<strong>No imported activities.</strong>
 					<p>Upload a GPX now, or connect a source for future runs.</p>
-					{#if sectionResult('empty-gpx')}
-						<p
-							class="message compact-message"
-							class:bad-message={sectionResult('empty-gpx')?.failed}
-							role="status"
-							aria-live="polite"
-						>
-							{sectionResult('empty-gpx')?.message}
-						</p>
-					{/if}
 					<form
 						method="post"
 						action="?/importGpx"
@@ -703,6 +708,34 @@
 				</div>
 			{/if}
 
+			{#each data.androidDevices as device (device.id)}
+				<div class="import-source-row">
+					<div class="source-copy">
+						<strong>{device.label}</strong>
+						<span class:source-error={new Date(device.expiresAt) <= new Date()}>
+							{new Date(device.expiresAt) <= new Date()
+								? 'Android app · pairing expired'
+								: `Android app · seen ${dateTime(device.lastSeenAt)}`}
+						</span>
+						{#if device.lastImportedAt}
+							<span>Last import {dateTime(device.lastImportedAt)}</span>
+						{/if}
+					</div>
+					<div class="import-actions">
+						<form
+							method="post"
+							action="?/revokeAndroidDevice"
+							use:enhance={scopedEnhance(`revoke-android-${device.id}`, 'sources')}
+						>
+							<input type="hidden" name="deviceId" value={device.id} />
+							<button disabled={activeAction !== null}>
+								{actionPending(`revoke-android-${device.id}`) ? 'Disconnecting…' : 'Disconnect'}
+							</button>
+						</form>
+					</div>
+				</div>
+			{/each}
+
 			{#each data.sources as source (source.id)}
 				<div class="import-source-row">
 					<div class="source-copy">
@@ -759,7 +792,7 @@
 				</div>
 			{/each}
 
-			{#if data.sources.length === 0 && deviceFolderState !== 'linked' && deviceFolderState !== 'permission-required'}
+			{#if data.sources.length === 0 && data.androidDevices.length === 0 && deviceFolderState !== 'linked' && deviceFolderState !== 'permission-required'}
 				<p class="no-sources">No import sources connected.</p>
 			{/if}
 		</div>
@@ -767,6 +800,47 @@
 		<details class="source-setup">
 			<summary>Add import source</summary>
 			<div class="setup-sections">
+				<section class="setup-section" aria-labelledby="android-app-heading">
+					<h3 id="android-app-heading">Android app</h3>
+					<p>
+						Pairs this account with the installed runway app. Android can then keep folder access
+						and import in the background without storing your password or browser session.
+					</p>
+					{#if androidPairing}
+						<div class="pairing-code" role="status" aria-live="polite">
+							<span>Pairing code</span>
+							<strong>{androidPairing.code}</strong>
+							<small
+								>Enter it in the Android Folder screen by {dateTime(
+									androidPairing.expiresAt
+								)}.</small
+							>
+						</div>
+					{/if}
+					<form
+						method="post"
+						action="?/createAndroidPairing"
+						use:enhance={scopedEnhance('create-android-pairing', 'sources')}
+					>
+						<button class="primary" disabled={activeAction !== null}>
+							{actionPending('create-android-pairing') ? 'Creating…' : 'Create pairing code'}
+						</button>
+					</form>
+					{#if data.androidApplicationId}
+						<button type="button" class="button-link" onclick={openAndroidFolderSettings}>
+							Open Android Folder screen
+						</button>
+					{:else}
+						<p class="privacy-note">
+							Open the Folder shortcut from the runway app icon on Android.
+						</p>
+					{/if}
+					<p class="privacy-note">
+						The code expires after ten minutes and works once. Connected devices can only check
+						status and submit bounded GPX imports.
+					</p>
+				</section>
+
 				<section class="setup-section" aria-labelledby="device-folder-heading">
 					<h3 id="device-folder-heading">Gadgetbridge folder</h3>
 					<p>
@@ -1195,7 +1269,7 @@
 
 	.setup-sections {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		border-block: 1px solid var(--line);
 	}
 
@@ -1205,11 +1279,39 @@
 		gap: 12px;
 		min-width: 0;
 		padding: 20px;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.setup-section:nth-child(odd) {
 		border-right: 1px solid var(--line);
 	}
 
-	.setup-section:last-child {
-		border-right: 0;
+	.setup-section:nth-last-child(-n + 2) {
+		border-bottom: 0;
+	}
+
+	.pairing-code {
+		display: grid;
+		gap: 3px;
+		padding: 12px;
+		border: 1px solid color-mix(in oklab, var(--accent), var(--line) 55%);
+		border-radius: var(--radius-small);
+		background: color-mix(in oklab, var(--accent-soft), var(--surface) 70%);
+	}
+
+	.pairing-code span,
+	.pairing-code small {
+		color: var(--muted);
+	}
+
+	.pairing-code strong {
+		font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+		font-size: 1.05rem;
+		letter-spacing: 0.05em;
+	}
+
+	.setup-section > .button-link {
+		justify-self: start;
 	}
 
 	.privacy-note {
@@ -1228,6 +1330,14 @@
 
 		.setup-section {
 			border-right: 0;
+			border-bottom: 1px solid var(--line);
+		}
+
+		.setup-section:nth-child(odd) {
+			border-right: 0;
+		}
+
+		.setup-section:nth-last-child(-n + 2) {
 			border-bottom: 1px solid var(--line);
 		}
 

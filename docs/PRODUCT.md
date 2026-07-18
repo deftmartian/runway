@@ -117,6 +117,9 @@ Route data, schedule patterns, pain/load-risk notes, pace and heart-rate history
 - Import credentials are sealed and exact-origin constrained.
 - Exports and destructive controls remain user-scoped and explicit.
 - Local device-folder access stays in the approving browser and is cleared at account handoff/sign-out.
+- Android folder access stays in the installed app. Its import-only credential is Keystore-encrypted,
+  expires, can be revoked from Import sources, and is revoked automatically when imported activity
+  data is deleted.
 
 ## Non-Goals
 

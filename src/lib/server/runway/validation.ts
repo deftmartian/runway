@@ -183,6 +183,10 @@ export const activityIdSchema = z.object({
 	activityId: z.uuid()
 });
 
+export const androidDeviceIdSchema = z.object({
+	deviceId: z.uuid()
+});
+
 export const consequenceDecisionSchema = z.object({
 	source: z.enum(['feedback', 'activity']),
 	sourceId: z.uuid(),

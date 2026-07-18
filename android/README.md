@@ -30,9 +30,10 @@ operator-owned id when independently signing a personal F-Droid build; changing 
 later prevents in-place updates.
 
 The same instance must publish `/.well-known/assetlinks.json` containing the exact application id and
-SHA-256 fingerprint of the certificate that signs the installed APK. Start from
-[`assetlinks.json.template`](assetlinks.json.template). Without that bidirectional association, the
-app remains safe but displays browser controls.
+SHA-256 fingerprint of the certificate that signs the installed APK. Set the server's
+`ANDROID_APPLICATION_ID` and `ANDROID_CERTIFICATE_SHA256` variables; use
+[`assetlinks.json.template`](assetlinks.json.template) to review the expected shape. Without that
+bidirectional association, the app remains safe but displays browser controls.
 
 ## Android capability surface
 
@@ -49,17 +50,28 @@ The native page:
 - selects a Gadgetbridge directory with `ACTION_OPEN_DOCUMENT_TREE`;
 - retains only the read grant with `takePersistableUriPermission()`;
 - scans at most 2,000 direct children without raw filesystem paths or broad storage access;
-- enables unique, inexact WorkManager checks and provides an explicit **Check now** action;
+- checks on launcher resume, enables unique inexact WorkManager checks, and provides an explicit
+  **Check now** action;
 - returns directly to the full runway TWA.
 
 The exported GPX share activity accepts one `content://` URI, checks its grant/type/size, and reads it
 off the UI thread with a 10 MB limit. Names, URIs, XML, coordinates, and metadata are not logged.
 
-## Intentional pre-release block
+## Pairing and imports
 
-The native worker reports `api_unavailable` and share bytes are discarded after local checks. The
-server does not yet expose scoped device pairing/import, so nothing is uploaded. Do not bridge the
-gap with browser cookies, a username/password, an embedded token URL, or an unbounded API key.
+Open **Import sources** in the signed-in PWA and create a pairing code. Open the Android **Folder**
+screen, enter the code and a device label, then choose the Gadgetbridge directory. The code expires
+after ten minutes and works once. Android receives a random, one-year credential limited to device
+status and bounded GPX import; runway stores only its hash and the app encrypts it under an Android
+Keystore key. It never copies browser cookies or asks for the account password.
+
+Folder workers upload at most one unhandled GPX per check, prefer the newest provider-dated file, and
+wait 30 seconds after its last-modified time so a still-writing export is not quarantined prematurely.
+Operating-system shares upload the one selected GPX. Both paths use stable request ids, content
+digests, strict size bounds, and the existing review-only parser. Imported, duplicate, and terminally
+rejected files are marked handled locally; network and server failures retry. Disconnect a device
+from the PWA if it is lost or no longer trusted. Deleting imported GPX data revokes all active Android
+devices before removing the records so background work cannot recreate them.
 
 ## Build prerequisites
 

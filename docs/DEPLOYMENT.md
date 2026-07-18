@@ -20,6 +20,10 @@ Set these before running the production app:
 - `PUBLIC_APP_ORIGIN=https://<runway-host>`
 - `PUBLIC_SOURCE_URL=https://<source-host>/<repository>` for the corresponding source of the deployed version
 - `IMPORT_SECRET_KEY` or a strong `BETTER_AUTH_SECRET`
+- optional `ANDROID_CREDENTIAL_SECRET` to keep Android pairing and import-receipt HMACs independent
+  of auth-key rotation; otherwise a strong `BETTER_AUTH_SECRET` is used
+- `ANDROID_APPLICATION_ID` and `ANDROID_CERTIFICATE_SHA256` when distributing the Android app; these
+  make runway serve the exact Digital Asset Links statement at `/.well-known/assetlinks.json`
 - `NEXTCLOUD_ALLOWED_ORIGINS=https://<nextcloud-host>[:port]` before enabling share sync
 - `BODY_SIZE_LIMIT=12M` so SvelteKit allows runway to validate GPX files against its 10 MB app limit
 - `RUNWAY_IMAGE=ghcr.io/deftmartian/runway:sha-<full-commit-sha>` or an immutable image digest
@@ -86,6 +90,12 @@ reversible key. If `IMPORT_SECRET_KEY` is blank, runway additionally uses `BETTE
 Nextcloud share credentials. Set a dedicated `IMPORT_SECRET_KEY` and reconnect existing import
 sources under it before retiring an auth key. `AUTH_RATE_LIMIT_SECRET` can likewise keep HMAC-keyed
 security-rate-limit identities independent of auth-key rotation.
+
+`ANDROID_CREDENTIAL_SECRET` does the same for unconsumed ten-minute Android pairing codes and
+user-scoped import receipt keys. Android bearer credentials are random and only their SHA-256 hashes
+are stored; changing this HMAC key does not reveal or rotate those bearer credentials, but it
+invalidates unconsumed pairing codes and prevents an old request id from replaying against its prior
+receipt. Prefer a separate stable value before distributing an Android build.
 
 ### Backup And Restore Contract
 
@@ -300,8 +310,9 @@ limit, and local capability deletion on sign-out and privacy deletion.
 For a complete installed Android experience with reliable access after the browser process is stopped,
 use the instance-bound TWA design in [ANDROID.md](ANDROID.md). The APK must be built for this exact HTTPS
 origin and signing identity, and the origin must publish matching Digital Asset Links. Native folder
-access and bounded reconciliation are present, but upload remains blocked until a scoped device-pairing
-API exists. Do not distribute it as import-capable before those production gates are complete.
+access, scoped device pairing, bounded background upload, and review-only import are present. External
+distribution still depends on the signing, device-matrix, accessibility, upgrade, and release-evidence
+gates recorded there.
 
 ## Reverse Proxy And Network Edge
 
@@ -530,7 +541,8 @@ If restore fails, discard the partially populated target instead of attempting t
 After a successful restore, inject the matching key manifest, start the matching image with imports
 disabled, confirm `/health/ready`, and run the read-only authentication checks from the restore
 verification checklist above. The scripts never back up `BETTER_AUTH_SECRET`, `BETTER_AUTH_SECRETS`,
-or `IMPORT_SECRET_KEY`; preserve that key material separately as described in the contract.
+`IMPORT_SECRET_KEY`, `AUTH_RATE_LIMIT_SECRET`, or `ANDROID_CREDENTIAL_SECRET`; preserve that key
+material separately as described in the contract.
 
 For an application-only regression, redeploy the previous image build ID. For a database-changing
 release, restore the pre-release backup into a new database and point the previous image at that

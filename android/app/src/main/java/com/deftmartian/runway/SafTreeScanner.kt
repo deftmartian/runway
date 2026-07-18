@@ -1,13 +1,22 @@
 package com.deftmartian.runway
 
 import android.content.ContentResolver
+import android.net.Uri
 import android.provider.DocumentsContract
+
+data class GpxTreeCandidate(
+    val uri: Uri,
+    val sizeBytes: Long?,
+    val lastModifiedEpochMs: Long?,
+)
 
 data class TreeScanSummary(
     val entriesScanned: Int,
-    val gpxCandidates: Int,
+    val candidates: List<GpxTreeCandidate>,
     val truncated: Boolean,
-)
+) {
+    val gpxCandidates: Int = candidates.size
+}
 
 sealed interface TreeScanResult {
     data class Success(val summary: TreeScanSummary) : TreeScanResult
@@ -26,19 +35,23 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
                 parentDocumentId,
             )
             val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                 DocumentsContract.Document.COLUMN_MIME_TYPE,
                 DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
             )
             val cursor = contentResolver.query(childrenUri, projection, null, null, null)
                 ?: return TreeScanResult.ProviderError
 
             cursor.use {
                 val nameColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val documentIdColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val mimeColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
                 val sizeColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                val modifiedColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                 var entries = 0
-                var candidates = 0
+                val candidates = mutableListOf<GpxTreeCandidate>()
                 var truncated = false
 
                 while (it.moveToNext()) {
@@ -63,7 +76,19 @@ class SafTreeScanner(private val contentResolver: ContentResolver) {
                         null
                     }
                     if (GpxCandidatePolicy.isCandidate(displayName, mimeType, size)) {
-                        candidates += 1
+                        if (documentIdColumn < 0 || it.isNull(documentIdColumn)) continue
+                        candidates += GpxTreeCandidate(
+                            uri = DocumentsContract.buildDocumentUriUsingTree(
+                                state.uri,
+                                it.getString(documentIdColumn),
+                            ),
+                            sizeBytes = size,
+                            lastModifiedEpochMs = if (modifiedColumn >= 0 && !it.isNull(modifiedColumn)) {
+                                it.getLong(modifiedColumn).takeIf { value -> value > 0 }
+                            } else {
+                                null
+                            },
+                        )
                     }
                 }
 

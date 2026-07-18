@@ -28,8 +28,11 @@ TWA chrome is removed only when both sides agree:
   `delegate_permission/common.handle_all_urls` to the installed application id and signing-certificate
   SHA-256 fingerprint.
 
-The file must be available directly over valid HTTPS without authentication or redirects. Use the
-release certificate, not an upload certificate or an unrelated debug certificate. If verification
+The file must be available directly over valid HTTPS without authentication or redirects. Set
+`ANDROID_APPLICATION_ID` and `ANDROID_CERTIFICATE_SHA256` on the runway web process to serve it; the
+certificate variable accepts one or more comma-separated, colon-delimited SHA-256 fingerprints. Use
+the release certificate, not an upload certificate or an unrelated debug certificate. Missing or
+malformed configuration returns 404 instead of publishing a guessed trust statement. If verification
 fails or no capable TWA browser is installed, runway remains usable in a Custom Tab with browser UI.
 That fallback is a security property and must not be replaced by WebView.
 
@@ -40,12 +43,14 @@ history, stats, settings, and authentication. The native folder activity is only
 sheet. It does not duplicate accounts, plans, runs, history, or navigation.
 
 After the first launch, Android publishes a **Folder** launcher shortcut. The folder sheet is also
-registered for `runway-native://folder`; a package-bound `intent://` link can be exposed from the PWA
-import page once device/browser behavior is verified. It always provides **Back to runway**, which
-returns to the TWA launcher. Android's app-storage management entry points to the same sheet.
+registered for `runway-native://folder`. When the server's Android application id and certificate are
+configured, the PWA opens it with a package-bound `intent://` link so another app cannot claim the
+custom scheme. Without that release identity, the UI directs the runner to the **Folder** launcher
+shortcut instead. The sheet always provides **Back to runway**, which returns to the TWA launcher.
+Android's app-storage management entry points to the same sheet.
 
 There is intentionally no JavaScript bridge. The TWA page and native worker do not share browser
-cookies. Native/server communication must use the pairing API described below.
+cookies. Native/server communication uses the pairing API described below.
 
 ## Folder and share flow
 
@@ -59,28 +64,49 @@ Scans are bounded to 2,000 direct entries. Candidate selection accepts GPX-speci
 Share intake accepts exactly one `content://` URI with a read grant, performs a bounded streaming read
 off the UI thread, and does not log names, URIs, XML, coordinates, or metadata.
 
-WorkManager provides eventual reconciliation, not a filesystem watcher. Periodic work has a 15-minute
-minimum interval and Android may defer it for battery, network, or OEM policy. Product copy must not
-promise immediate import; the native sheet retains an explicit **Check now** action.
+WorkManager provides eventual reconciliation, not a filesystem watcher. Reopening or returning to the
+Android launcher enqueues a constrained one-time check. Periodic work has a 15-minute minimum interval
+and Android may defer it for battery, network, or OEM policy. Product copy must not promise immediate
+import; the native sheet retains an explicit **Check now** action.
 
 The app requests no location, activity-recognition, broad storage, contacts, advertising, or Play
 Services permission. The only manifest permission is internet access.
 
 ## Native upload and authentication boundary
 
-The current skeleton does not upload. It reports `api_unavailable` until the server provides:
+The implemented pairing and upload flow is:
 
-1. An authenticated TWA session starts a short-lived, single-use pairing request.
-2. The native app proves possession of an app-generated key and the user confirms the named device.
-3. The server issues a scoped, revocable credential limited to activity import and device status.
-4. Android stores it with Keystore-backed encryption and never exposes it to web content.
-5. Upload uses a bounded streaming request, client request id, and content digest.
-6. The server authenticates before parsing, applies existing user/parser/privacy bounds, and returns a
-   stable `imported`, `duplicate`, `quarantined`, or `retryable` result.
-7. Native storage records only non-sensitive retry state; server-side idempotency is authoritative.
+1. A signed-in PWA session creates a cryptographically random, ten-minute, single-use pairing code.
+   Persistent per-user and per-address limits bound code creation and exchange attempts.
+2. The runner enters that code and a device label in the native Folder screen. No credential is put
+   in a URL, copied through JavaScript, or derived from an account password or browser cookie.
+3. The server consumes the code under a row lock and returns a random 256-bit bearer credential once.
+   It stores only the SHA-256 token hash, user/device binding, one-year expiry, revocation state, and
+   non-sensitive timestamps.
+4. Android encrypts the credential with AES-GCM under a non-exportable Android Keystore key. App
+   backup and device transfer exclude every runway data domain.
+5. The credential is accepted only by `/api/android/status` and `/api/android/import`. Import requires
+   a GPX-specific content type, UUID request id, SHA-256 content digest, and no content encoding. The
+   server authenticates and rate-limits before reading at most 10 MB from the request stream.
+6. The request id is claimed before parsing while the user's account row is locked and the device is
+   revalidated. This closes the gap between initial bearer authentication and concurrent device
+   revocation or privacy deletion. Completed receipts return the original stable result; an id reused
+   for different content is rejected. Raw digests are converted to user-scoped HMAC keys before
+   storage.
+7. The native worker retains only keyed handled markers and a pending request id. When a provider
+   supplies modification time, it waits until the candidate has been unchanged for at least 30
+   seconds, then processes the newest eligible file per run. It marks `imported`, `duplicate`, and
+   `quarantined`
+   outcomes terminal and retries transient failures. The server still applies parser, duplicate,
+   tombstone, route-retention, time zone, Review-state, and import-generation controls.
+8. A device can be revoked from Import sources. Deleting imported activity data revokes all active
+   Android devices in the same database transaction before deleting the activity rows.
 
-Do not ask for the user's password, copy browser cookies, add a JavaScript bridge, put a bearer token
-in a URL, or issue a non-expiring all-purpose API key.
+The short code proves possession of the authenticated browser-approved pairing value; it is not
+hardware attestation. A distribution that needs stronger managed-device assurance should replace the
+exchange with a reviewed hardware-backed proof or standard authorization protocol without changing
+the scoped import boundary. Do not add a JavaScript bridge, password capture, browser-cookie copy,
+bearer URL, or non-expiring general API key.
 
 ## Commercial-grade gates
 
@@ -90,7 +116,8 @@ The Android app is not ready for external release until there is evidence for:
   supported update window;
 - correct Digital Asset Links verification using the actual F-Droid release signer plus negative tests
   proving another origin/signature falls back to browser UI;
-- the scoped pairing/import API, revocation UI, expiry/rotation, rate limits, and audit events;
+- a reviewed decision on whether short-code proof is sufficient or hardware-backed device proof is
+  required, plus credential renewal UX before the one-year expiry;
 - request idempotency across process death, network loss, retries, reinstall, and concurrent workers;
 - encrypted credentials and a threat model for malicious providers, shares, servers, intents, backups,
   logs, screenshots, browser fallback, and rooted devices;
@@ -105,5 +132,6 @@ The Android app is not ready for external release until there is evidence for:
 - privacy policy, support contact, incident response, release notes, and opt-in diagnostics that exclude
   file names, URIs, coordinates, GPX bytes, auth material, and training or injury data.
 
-Until the mobile API exists, the commercial-quality behavior is the explicit block: the installed app
-is a complete runway experience, folder persistence can be tested, and nothing falsely claims an upload.
+The mobile API now supports real review-only imports. External distribution still waits on the
+remaining signing, device-matrix, upgrade, accessibility, incident-response, and release-evidence
+gates above.

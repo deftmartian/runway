@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">runway</string>
     <string name="folder_screen_title">Device folder</string>
+    <string name="folder_section_title">Gadgetbridge folder</string>
     <string name="folder_screen_intro">Choose the folder where Gadgetbridge writes GPX files. Android keeps read access when runway is closed.</string>
     <string name="folder_shortcut_short">Folder</string>
     <string name="folder_shortcut_long">Device folder</string>
@@ -10,9 +11,25 @@
     <string name="check_now">Check now</string>
     <string name="enable_background">Enable background checks</string>
     <string name="disable_background">Disable background checks</string>
-    <string name="upload_blocked">Background upload is disabled in this pre-release build until runway has a scoped device-pairing API.</string>
+    <string name="pairing_title">Account connection</string>
+    <string name="pairing_intro">Create a pairing code from Import sources in runway, then enter it here. The app never stores your password or browser session.</string>
+    <string name="pairing_code">Pairing code</string>
+    <string name="device_label">Device name</string>
+    <string name="device_label_default">Android phone</string>
+    <string name="pair_device">Connect account</string>
+    <string name="pairing_in_progress">Connecting…</string>
+    <string name="pairing_connected">Account connected for background imports.</string>
+    <string name="pairing_expired_or_revoked">This account connection expired or was disconnected in runway. Create a new pairing code to reconnect.</string>
+    <string name="pairing_status_unavailable">The account connection is saved, but runway could not be reached to check it.</string>
+    <string name="pairing_invalid">That pairing code is invalid or expired.</string>
+    <string name="pairing_failed">The account could not be connected. Check the network and try again.</string>
+    <string name="pairing_store_failed">Android could not protect the connection on this device. Disconnect the device in runway before trying again.</string>
+    <string name="forget_account">Forget account on this device</string>
+    <string name="pairing_disconnected">Account connection removed from this device. Disconnect it in runway too if the phone is lost or no longer trusted.</string>
+    <string name="folder_upload_ready">Connected folders are checked in the background. Each new GPX enters the runway activity inbox for review.</string>
     <string name="folder_connected">Folder connected. Android read access is persisted.</string>
     <string name="folder_connected_background">Folder connected. Background checks are enabled.</string>
+    <string name="folder_connected_pairing_needed">Folder connected. Connect the account above before enabling background checks.</string>
     <string name="folder_permission_needed">The saved folder needs permission again.</string>
     <string name="folder_not_connected">No folder connected.</string>
     <string name="folder_connection_failed">Android did not grant persistent read access to that folder.</string>
@@ -24,7 +41,11 @@
     <string name="open_runway">Open runway</string>
     <string name="share_title">Import GPX</string>
     <string name="share_checking">Checking the shared file…</string>
-    <string name="share_ready_no_upload">This file passed local size and type checks. Nothing was uploaded because device pairing is not implemented yet.</string>
+    <string name="share_pairing_required">Connect this Android app from runway before sharing a GPX.</string>
+    <string name="share_imported">GPX added to the runway activity inbox.</string>
+    <string name="share_duplicate">This GPX is already in runway.</string>
+    <string name="share_quarantined">runway did not import this file. Open Import in runway, then upload it manually to review the problem.</string>
+    <string name="share_retryable">The GPX could not be sent right now. Try sharing it again.</string>
     <string name="share_rejected">This share is not a readable GPX file.</string>
     <string name="share_too_large">This file is larger than the 10 MB import limit.</string>
     <string name="close">Close</string>

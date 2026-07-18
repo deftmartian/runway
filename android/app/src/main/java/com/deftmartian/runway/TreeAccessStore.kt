@@ -34,6 +34,9 @@ class TreeAccessStore(context: Context) {
         }.getOrDefault(false)
 
         if (persisted) {
+            if (previousUri != null && previousUri != uri) {
+                HandledImportStore(appContext).clearAll()
+            }
             preferences.edit { putString(TREE_URI_KEY, uri.toString()) }
             if (previousUri != null && previousUri != uri) {
                 runCatching {
@@ -76,6 +79,7 @@ class TreeAccessStore(context: Context) {
             }
         }
         preferences.edit { remove(TREE_URI_KEY) }
+        HandledImportStore(appContext).clearAll()
     }
 
     private companion object {

@@ -662,6 +662,98 @@ export const importSourceItem = pgTable(
 	]
 );
 
+export const androidPairingRequest = pgTable(
+	'android_pairing_request',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		codeHash: text('code_hash').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		consumedAt: timestamp('consumed_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+	},
+	(table) => [
+		uniqueIndex('android_pairing_request_code_hash_unique').on(table.codeHash),
+		index('android_pairing_request_user_created_idx').on(table.userId, table.createdAt),
+		index('android_pairing_request_expires_idx').on(table.expiresAt),
+		check(
+			'android_pairing_request_expiry_after_creation',
+			sql`${table.expiresAt} > ${table.createdAt}`
+		)
+	]
+);
+
+export const androidDevice = pgTable(
+	'android_device',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		label: text('label').notNull(),
+		tokenHash: text('token_hash').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+		lastImportedAt: timestamp('last_imported_at', { withTimezone: true }),
+		revokedAt: timestamp('revoked_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull()
+	},
+	(table) => [
+		unique('android_device_id_user_unique').on(table.id, table.userId),
+		uniqueIndex('android_device_token_hash_unique').on(table.tokenHash),
+		index('android_device_user_active_idx').on(table.userId, table.revokedAt),
+		check('android_device_label_length', sql`length(trim(${table.label})) between 1 and 60`),
+		check('android_device_expiry_after_creation', sql`${table.expiresAt} > ${table.createdAt}`)
+	]
+);
+
+export const androidImportRequest = pgTable(
+	'android_import_request',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		deviceId: uuid('device_id').notNull(),
+		requestId: uuid('request_id').notNull(),
+		contentKey: text('content_key').notNull(),
+		state: text('state').notNull().default('processing'),
+		result: text('result'),
+		reason: text('reason'),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+		completedAt: timestamp('completed_at', { withTimezone: true })
+	},
+	(table) => [
+		uniqueIndex('android_import_request_device_request_unique').on(table.deviceId, table.requestId),
+		index('android_import_request_user_created_idx').on(table.userId, table.createdAt),
+		index('android_import_request_device_updated_idx').on(table.deviceId, table.updatedAt),
+		check('android_import_request_state_known', sql`${table.state} in ('processing', 'completed')`),
+		check(
+			'android_import_request_result_known',
+			sql`${table.result} is null or ${table.result} in ('imported', 'duplicate', 'quarantined')`
+		),
+		check(
+			'android_import_request_completion_consistent',
+			sql`(${table.state} = 'processing' and ${table.result} is null and ${table.completedAt} is null) or (${table.state} = 'completed' and ${table.result} is not null and ${table.completedAt} is not null)`
+		),
+		foreignKey({
+			name: 'android_import_request_device_user_fk',
+			columns: [table.deviceId, table.userId],
+			foreignColumns: [androidDevice.id, androidDevice.userId]
+		}).onDelete('cascade')
+	]
+);
+
 export const passwordResetToken = pgTable(
 	'password_reset_token',
 	{
@@ -764,5 +856,22 @@ export const importSourceItemRelations = relations(importSourceItem, ({ one }) =
 	activity: one(activity, {
 		fields: [importSourceItem.activityId],
 		references: [activity.id]
+	})
+}));
+
+export const androidPairingRequestRelations = relations(androidPairingRequest, ({ one }) => ({
+	user: one(user, { fields: [androidPairingRequest.userId], references: [user.id] })
+}));
+
+export const androidDeviceRelations = relations(androidDevice, ({ many, one }) => ({
+	user: one(user, { fields: [androidDevice.userId], references: [user.id] }),
+	importRequests: many(androidImportRequest)
+}));
+
+export const androidImportRequestRelations = relations(androidImportRequest, ({ one }) => ({
+	user: one(user, { fields: [androidImportRequest.userId], references: [user.id] }),
+	device: one(androidDevice, {
+		fields: [androidImportRequest.deviceId],
+		references: [androidDevice.id]
 	})
 }));
