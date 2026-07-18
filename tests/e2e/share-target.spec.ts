@@ -177,30 +177,42 @@ test('device-folder uploads require exact origin and remain review-only', async 
 test('approved device folder imports once on foreground and stays account-scoped', async ({
 	page
 }) => {
-	await page.addInitScript((gpx) => {
-		Object.defineProperty(globalThis, 'showDirectoryPicker', {
-			configurable: true,
-			value: async () => {
-				const root = await navigator.storage.getDirectory();
-				const file = await root.getFileHandle('gadgetbridge-private-name.gpx', {
-					create: true
-				});
-				const writer = await file.createWritable();
-				await writer.write(gpx);
-				await writer.close();
-				return root;
-			}
-		});
-	}, validGpx().toString('utf8'));
+	await page.addInitScript(
+		(files: { name: string; gpx: string }[]) => {
+			Object.defineProperty(globalThis, 'showDirectoryPicker', {
+				configurable: true,
+				value: async () => {
+					const root = await navigator.storage.getDirectory();
+					for (const { name, gpx } of files) {
+						const file = await root.getFileHandle(name, { create: true });
+						const writer = await file.createWritable();
+						await writer.write(gpx);
+						await writer.close();
+					}
+					return root;
+				}
+			});
+		},
+		[
+			{ name: 'gadgetbridge-private-name.gpx', gpx: validGpx().toString('utf8') },
+			{ name: 'gadgetbridge-waiting-name.gpx', gpx: secondValidGpx().toString('utf8') }
+		]
+	);
 
 	const email = await createAccount(page);
 	await setTrainingTimeZone(email);
 	await page.goto('/app/import');
 	await page.getByText('Add import source', { exact: true }).click();
 	await page.getByRole('button', { name: 'Allow device folder' }).click();
-	await expect(page.getByText('GPX added to the activity inbox.')).toBeVisible();
+	await expect(
+		page.getByText(/GPX added to the activity inbox\. 1 more file is waiting/)
+	).toBeVisible();
 	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toBeVisible();
-	await expect(page.getByText('Connected on this browser')).toBeVisible();
+	await expect(page.getByText('Connected · 1 file waiting')).toBeVisible();
+	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toHaveCount(1);
+	await page.getByRole('button', { name: 'Scan next (1)' }).click();
+	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toHaveCount(2);
+	await expect(page.getByText('Connected on this browser · one file per scan')).toBeVisible();
 
 	await page.evaluate(async (gpx) => {
 		const root = await navigator.storage.getDirectory();
@@ -208,12 +220,12 @@ test('approved device folder imports once on foreground and stays account-scoped
 		const writer = await file.createWritable();
 		await writer.write(gpx);
 		await writer.close();
-	}, secondValidGpx().toString('utf8'));
+	}, thirdValidGpx().toString('utf8'));
 	await page.waitForTimeout(5_100);
 	await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
 	await expect(page.getByText('A GPX from the device folder is ready for review.')).toBeVisible();
 	await page.reload();
-	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toHaveCount(2);
+	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toHaveCount(3);
 
 	await page.getByRole('button', { name: 'Scan now' }).click();
 	await expect(page.getByText('No new GPX files found.')).toBeVisible();
@@ -245,8 +257,9 @@ test('approved device folder imports once on foreground and stays account-scoped
 		}
 	});
 	expect(JSON.stringify(localMarkers)).not.toContain('gadgetbridge-private-name.gpx');
+	expect(JSON.stringify(localMarkers)).not.toContain('gadgetbridge-waiting-name.gpx');
 	expect(JSON.stringify(localMarkers)).not.toContain('another-private-name.gpx');
-	expect(localMarkers).toHaveLength(2);
+	expect(localMarkers).toHaveLength(3);
 
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL(/\/$/);
@@ -353,5 +366,12 @@ function secondValidGpx(): Buffer {
 	return Buffer.from(`<gpx><trk><trkseg>
 		<trkpt lat="45.0100" lon="-63.0100"><time>2026-05-14T13:00:00Z</time></trkpt>
 		<trkpt lat="45.0120" lon="-63.0120"><time>2026-05-14T13:12:00Z</time></trkpt>
+	</trkseg></trk></gpx>`);
+}
+
+function thirdValidGpx(): Buffer {
+	return Buffer.from(`<gpx><trk><trkseg>
+		<trkpt lat="45.0200" lon="-63.0200"><time>2026-05-14T14:00:00Z</time></trkpt>
+		<trkpt lat="45.0230" lon="-63.0230"><time>2026-05-14T14:15:00Z</time></trkpt>
 	</trkseg></trk></gpx>`);
 }

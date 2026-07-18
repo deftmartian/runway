@@ -12,7 +12,7 @@
 	import { onMount } from 'svelte';
 
 	let { userId }: { userId: string } = $props();
-	let notice = $state<{ message: string; failed: boolean } | null>(null);
+	let notice = $state<{ message: string; failed: boolean; remaining?: number } | null>(null);
 	let lastScanStartedAt = Number.NEGATIVE_INFINITY;
 	let permissionNoticeShown = false;
 	let scanning = $state(false);
@@ -51,6 +51,7 @@
 	});
 
 	async function runScan() {
+		if (scanning) return;
 		scanning = true;
 		let result: DeviceFolderScanResult;
 		try {
@@ -69,10 +70,26 @@
 		}
 
 		if (result.result === 'imported') {
+			const remaining = result.remaining ?? 0;
 			notice = {
-				message: 'A GPX from the device folder is ready for review.',
-				failed: false
+				message:
+					remaining > 0
+						? `A GPX is ready for review. ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.`
+						: 'A GPX from the device folder is ready for review.',
+				failed: false,
+				remaining
 			};
+			return;
+		}
+		if (result.result === 'duplicate' || result.result === 'deleted') {
+			const remaining = result.remaining ?? 0;
+			if (remaining > 0) {
+				notice = {
+					message: `${result.result === 'duplicate' ? 'An already imported GPX' : 'A previously deleted activity'} was skipped. ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.`,
+					failed: false,
+					remaining
+				};
+			}
 			return;
 		}
 		if (result.result !== 'permission-required') permissionNoticeShown = false;
@@ -92,10 +109,11 @@
 			return;
 		}
 		if (result.result === 'future') {
+			const remaining = result.remaining ?? 0;
 			notice = {
-				message:
-					'A device-folder GPX was dated in the future and skipped. Reconnect the folder after correcting the device clock to retry it.',
-				failed: true
+				message: `A device-folder GPX was dated in the future and skipped. Correct the device clock, then add a corrected export.${remaining > 0 ? ` ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.` : ''}`,
+				failed: true,
+				remaining
 			};
 			return;
 		}
@@ -121,12 +139,14 @@
 			return;
 		}
 		if (result.result === 'invalid' || result.result === 'too-large') {
+			const remaining = result.remaining ?? 0;
 			notice = {
 				message:
 					result.result === 'too-large'
-						? 'A device-folder GPX exceeded the 10 MB import limit.'
-						: 'A device-folder file was not a valid GPX activity.',
-				failed: true
+						? `A device-folder GPX exceeded the 10 MB import limit.${remaining > 0 ? ` ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.` : ''}`
+						: `A device-folder file was not a valid GPX activity.${remaining > 0 ? ` ${remaining} more ${remaining === 1 ? 'file is' : 'files are'} waiting.` : ''}`,
+				failed: true,
+				remaining
 			};
 			return;
 		}
@@ -142,6 +162,11 @@
 			return;
 		}
 		await goto(resolve('/app/import'));
+	}
+
+	async function scanNext() {
+		notice = null;
+		await runScan();
 	}
 
 	function dismissNotice() {
@@ -161,6 +186,11 @@
 		>
 			<span>{notice.message}</span>
 			{#snippet actions()}
+				{#if notice?.remaining && notice.remaining > 0}
+					<button type="button" class="inbox-link" disabled={scanning} onclick={scanNext}>
+						{scanning ? 'Checking…' : `Scan next (${notice?.remaining})`}
+					</button>
+				{/if}
 				<button type="button" class="inbox-link" onclick={openInbox}>
 					{page.url.pathname === '/app/import' ? 'Refresh inbox' : 'Open inbox'}
 				</button>

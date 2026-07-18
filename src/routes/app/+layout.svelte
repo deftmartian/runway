@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import AccountActions from '$lib/components/AccountActions.svelte';
 	import DeviceFolderScanner from '$lib/components/DeviceFolderScanner.svelte';
+	import InstallAppControl from '$lib/components/InstallAppControl.svelte';
 	import NavIcon from '$lib/components/visual/NavIcon.svelte';
 	import RunwayMark from '$lib/components/visual/RunwayMark.svelte';
 	import type { LayoutData } from './$types';
@@ -62,6 +63,7 @@
 		<RunwayMark />
 		<span>runway</span>
 	</a>
+	<div class="topbar-install"><InstallAppControl compact /></div>
 	<nav class="nav desktop-nav" aria-label="App navigation">
 		{#each navItems as item (item.href)}
 			<a
@@ -93,6 +95,10 @@
 <style>
 	.mobile-nav {
 		display: none;
+	}
+
+	.topbar-install {
+		margin-left: auto;
 	}
 
 	@media (max-width: 720px) {

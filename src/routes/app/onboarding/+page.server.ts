@@ -18,10 +18,11 @@ import type { Actions, PageServerLoad } from './$types';
 
 type Experience = PlanIntake['experience'];
 type ExperienceField = Experience | '';
+type StartModeField = StartMode | '';
 
 type GoalFormValues = {
 	goalKind: GoalKind;
-	startMode: StartMode;
+	startMode: StartModeField;
 	raceDistance: RaceDistance | '';
 	targetDate: string;
 	priority: GoalPriority;
@@ -78,9 +79,10 @@ export const actions: Actions = {
 		const formData = await event.request.formData();
 		const values = goalFormValues(formData);
 		const currentGoal = await getCurrentGoal(event.locals.user.id);
-		const targetBounds = isValidTimeZone(values.timeZone)
-			? targetDateBounds(values.timeZone, values.startMode)
-			: null;
+		const targetBounds =
+			isValidTimeZone(values.timeZone) && values.startMode
+				? targetDateBounds(values.timeZone, values.startMode)
+				: null;
 		const fieldErrors = validatePlanIntake(values, targetBounds);
 
 		if (currentGoal && !values.confirmReplace) {
@@ -154,7 +156,6 @@ function planIntake(values: GoalFormValues): PlanIntake {
 				calibrationDurationSeconds: Math.round(Number(values.calibrationDurationMinutes) * 60)
 			};
 		case 'established':
-		default:
 			return {
 				...common,
 				startMode: 'established',
@@ -166,6 +167,8 @@ function planIntake(values: GoalFormValues): PlanIntake {
 				longestRecentRunMeters: Math.round(Number(values.longestRecentRunKm) * 1_000),
 				preferredLongRunDay: Number(values.preferredLongRunDay)
 			};
+		default:
+			throw new Error('Choose a starting path before creating the plan.');
 	}
 }
 
@@ -182,10 +185,12 @@ function validatePlanIntake(
 	if (!isValidTimeZone(values.timeZone)) errors.timeZone = 'Select a valid IANA time zone.';
 	if (!values.experience) errors.experience = 'Choose your current running experience.';
 	if (raceGoal && !values.raceDistance) errors.raceDistance = 'Choose a race distance.';
-	if (raceGoal && !values.targetDate) {
+	if (raceGoal && !values.startMode) errors.startMode = 'Choose how you are starting.';
+	if (raceGoal && values.startMode && !values.targetDate) {
 		errors.targetDate = 'Choose a target date.';
 	} else if (
 		raceGoal &&
+		values.startMode &&
 		targetBounds &&
 		(values.targetDate < targetBounds.minimum || values.targetDate > targetBounds.maximum)
 	) {
@@ -238,7 +243,7 @@ function validatePlanIntake(
 function emptyGoalValues(timeZone: string): GoalFormValues {
 	return {
 		goalKind: 'race',
-		startMode: 'established',
+		startMode: '',
 		raceDistance: '',
 		targetDate: '',
 		priority: 'finish_healthy',
@@ -298,13 +303,12 @@ function valuesFromCurrentGoal(
 function goalFormValues(formData: FormData): GoalFormValues {
 	return {
 		goalKind: enumValue(formData, 'goalKind', ['race', 'foundation']) || 'race',
-		startMode:
-			enumValue(formData, 'startMode', [
-				'established',
-				'foundation_to_goal',
-				'foundation_only',
-				'calibration'
-			]) || 'established',
+		startMode: enumValue(formData, 'startMode', [
+			'established',
+			'foundation_to_goal',
+			'foundation_only',
+			'calibration'
+		]),
 		raceDistance: enumValue(formData, 'raceDistance', ['5k', '10k', 'half', 'marathon']),
 		targetDate: formString(formData, 'targetDate'),
 		priority:

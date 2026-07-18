@@ -8,10 +8,10 @@
 		connectDeviceFolder,
 		disconnectDeviceFolder,
 		getDeviceFolderConnectionState,
+		getDeviceFolderSupportState,
 		retainDeviceFolderForUser,
 		restoreDeviceFolderPermission,
 		scanDeviceFolder,
-		supportsDeviceFolderImport,
 		type DeviceFolderConnectionState,
 		type DeviceFolderScanResult
 	} from '$lib/pwa/device-folder';
@@ -21,7 +21,7 @@
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
-	type ImportSection = 'activities' | 'sources' | 'gpx';
+	type ImportSection = 'activities' | 'sources' | 'gpx' | 'empty-gpx';
 	type ScopedResult = { section: ImportSection; message: string; failed: boolean };
 	let activeAction = $state<string | null>(null);
 	let activeSection = $state<ImportSection | null>(null);
@@ -30,7 +30,9 @@
 	let gpxWorkoutId = $state('');
 	let deviceFolderState = $state<DeviceFolderConnectionState | 'loading'>('loading');
 	let deviceFolderBusy = $state(false);
+	let deviceFolderRemaining = $state(0);
 	let deviceFolderResult = $state<{ message: string; failed: boolean } | null>(null);
+	let emptyGpxInput = $state<HTMLInputElement>();
 	type ActivityTraceDetail = {
 		id: string;
 		routeTrace: ActivityRouteTrace | null;
@@ -45,8 +47,9 @@
 	});
 
 	async function initializeDeviceFolder() {
-		if (!supportsDeviceFolderImport()) {
-			deviceFolderState = 'unsupported';
+		const support = getDeviceFolderSupportState();
+		if (support !== 'supported') {
+			deviceFolderState = support;
 			return;
 		}
 		try {
@@ -175,6 +178,7 @@
 		deviceFolderResult = null;
 		try {
 			deviceFolderState = await connectDeviceFolder(data.user.id);
+			deviceFolderRemaining = 0;
 			if (deviceFolderState === 'linked') await runDeviceFolderScan(true);
 		} catch (error) {
 			deviceFolderResult = {
@@ -238,6 +242,8 @@
 		} catch {
 			result = { result: 'failed' };
 		}
+		if (typeof result.remaining === 'number') deviceFolderRemaining = result.remaining;
+		if (result.result === 'none') deviceFolderRemaining = 0;
 		deviceFolderResult = deviceFolderMessage(result);
 		if (result.result === 'permission-required') deviceFolderState = 'permission-required';
 		if (result.result === 'folder-missing') deviceFolderState = 'unlinked';
@@ -251,6 +257,7 @@
 		try {
 			await disconnectDeviceFolder(data.user.id);
 			deviceFolderState = 'unlinked';
+			deviceFolderRemaining = 0;
 			deviceFolderResult = {
 				message: 'Gadgetbridge folder disconnected. No files were changed.',
 				failed: false
@@ -266,14 +273,19 @@
 	}
 
 	function deviceFolderMessage(result: DeviceFolderScanResult) {
+		const waiting = result.remaining ?? 0;
+		const moreFiles =
+			waiting > 0
+				? ` ${waiting} more ${waiting === 1 ? 'file is' : 'files are'} waiting; scan again when ready.`
+				: '';
 		switch (result.result) {
 			case 'imported':
-				return { message: 'GPX added to the activity inbox.', failed: false };
+				return { message: `GPX added to the activity inbox.${moreFiles}`, failed: false };
 			case 'duplicate':
-				return { message: 'That GPX was already imported.', failed: false };
+				return { message: `That GPX was already imported.${moreFiles}`, failed: false };
 			case 'deleted':
 				return {
-					message: 'That activity was previously deleted and was not imported.',
+					message: `That activity was previously deleted and was not imported.${moreFiles}`,
 					failed: false
 				};
 			case 'none':
@@ -291,13 +303,16 @@
 				return { message: 'Set the training time zone before importing.', failed: true };
 			case 'future':
 				return {
-					message: 'The newest GPX has a future date. Correct the device clock, then try again.',
+					message: `The newest GPX has a future date and was skipped. Correct the device clock, then add a corrected export.${moreFiles}`,
 					failed: true
 				};
 			case 'too-large':
-				return { message: 'The newest GPX exceeds the 10 MB limit.', failed: true };
+				return { message: `The newest GPX exceeds the 10 MB limit.${moreFiles}`, failed: true };
 			case 'invalid':
-				return { message: 'The newest file is not a valid GPX activity.', failed: true };
+				return {
+					message: `The newest file is not a valid GPX activity.${moreFiles}`,
+					failed: true
+				};
 			case 'too-many-files':
 				return {
 					message: 'Choose a dedicated GPX export folder with fewer files.',
@@ -305,11 +320,25 @@
 				};
 			case 'unsupported':
 				return { message: 'This browser does not support folder access.', failed: true };
+			case 'https-required':
+				return { message: 'Open runway over HTTPS to allow a device folder.', failed: true };
 			case 'unlinked':
 				return { message: 'Allow a Gadgetbridge folder before scanning.', failed: true };
 			default:
 				return { message: 'The Gadgetbridge folder could not be checked.', failed: true };
 		}
+	}
+
+	function chooseEmptyGpx() {
+		if (!emptyGpxInput) return;
+		emptyGpxInput.value = '';
+		emptyGpxInput.click();
+	}
+
+	function submitEmptyGpx(event: Event) {
+		const input = event.currentTarget;
+		if (!(input instanceof HTMLInputElement) || !input.files?.length) return;
+		input.form?.requestSubmit();
 	}
 </script>
 
@@ -556,7 +585,43 @@
 			{:else}
 				<div class="empty-state">
 					<strong>No imported activities.</strong>
-					<p>Add an import source or upload a GPX file below.</p>
+					<p>Upload a GPX now, or connect a source for future runs.</p>
+					{#if sectionResult('empty-gpx')}
+						<p
+							class="message compact-message"
+							class:bad-message={sectionResult('empty-gpx')?.failed}
+							role="status"
+							aria-live="polite"
+						>
+							{sectionResult('empty-gpx')?.message}
+						</p>
+					{/if}
+					<form
+						method="post"
+						action="?/importGpx"
+						enctype="multipart/form-data"
+						use:enhance={scopedEnhance('empty-import-gpx', 'empty-gpx')}
+						class="empty-state-action"
+					>
+						<input type="hidden" name="matchMode" value="unlinked" />
+						<input
+							hidden
+							type="file"
+							name="file"
+							accept=".gpx,application/gpx+xml,application/xml,text/xml"
+							required
+							bind:this={emptyGpxInput}
+							onchange={submitEmptyGpx}
+						/>
+						<button
+							type="button"
+							class="primary"
+							disabled={activeAction !== null || !data.importTimeZoneConfigured}
+							onclick={chooseEmptyGpx}
+						>
+							{actionPending('empty-import-gpx') ? 'Importing…' : 'Upload GPX'}
+						</button>
+					</form>
 				</div>
 			{/each}
 		</div>
@@ -601,7 +666,9 @@
 						<strong>Gadgetbridge folder</strong>
 						<span class:source-error={deviceFolderState === 'permission-required'}>
 							{deviceFolderState === 'linked'
-								? 'Connected on this browser'
+								? deviceFolderRemaining > 0
+									? `Connected · ${deviceFolderRemaining} ${deviceFolderRemaining === 1 ? 'file' : 'files'} waiting`
+									: 'Connected on this browser · one file per scan'
 								: 'Folder access required'}
 						</span>
 					</div>
@@ -622,7 +689,11 @@
 								disabled={deviceFolderBusy || !data.importTimeZoneConfigured}
 								onclick={scanDeviceFolderNow}
 							>
-								{deviceFolderBusy ? 'Checking…' : 'Scan now'}
+								{deviceFolderBusy
+									? 'Checking…'
+									: deviceFolderRemaining > 0
+										? `Scan next (${deviceFolderRemaining})`
+										: 'Scan now'}
 							</button>
 						{/if}
 						<button type="button" disabled={deviceFolderBusy} onclick={removeDeviceFolder}>
@@ -698,14 +769,21 @@
 			<div class="setup-sections">
 				<section class="setup-section" aria-labelledby="device-folder-heading">
 					<h3 id="device-folder-heading">Gadgetbridge folder</h3>
-					<p>Checks one new GPX when the app opens or returns to the foreground.</p>
+					<p>
+						Checks one new GPX when the app opens or returns to the foreground. If several files are
+						waiting, use Scan next after each check.
+					</p>
 					<p class="privacy-note">
 						Folder access stays in this browser and files are not changed. New GPX files are
 						uploaded to runway; {data.routeDataMode === 'private'
 							? 'a bounded private route trace is retained.'
 							: 'route points are discarded after totals are calculated.'}
 					</p>
-					{#if deviceFolderState === 'unsupported'}
+					{#if deviceFolderState === 'https-required'}
+						<p class="source-error">
+							Folder access requires HTTPS. Open the secure runway address, then try again.
+						</p>
+					{:else if deviceFolderState === 'unsupported'}
 						<p class="source-error">
 							This browser cannot retain folder access. Share or upload the GPX instead.
 						</p>
@@ -911,6 +989,11 @@
 	.connected-sources {
 		display: grid;
 		border-top: 1px solid var(--line);
+	}
+
+	.empty-state-action {
+		justify-self: start;
+		margin-top: 6px;
 	}
 
 	.activity-record,

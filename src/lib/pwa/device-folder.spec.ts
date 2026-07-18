@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	classifyDirectoryReadFailure,
+	getDeviceFolderSupportState,
 	isGpxFilename,
 	isTerminalDeviceImportResult,
 	newestUnseenDeviceFile,
 	requestDirectoryReadPermission
 } from './device-folder';
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 describe('device folder GPX selection', () => {
 	it('accepts only GPX file names, case-insensitively', () => {
@@ -80,5 +85,14 @@ describe('device folder GPX selection', () => {
 			'folder-unavailable'
 		);
 		expect(classifyDirectoryReadFailure(new Error('provider failed'))).toBe('failed');
+	});
+
+	it('reports an insecure origin separately from missing browser APIs', () => {
+		vi.stubGlobal('window', { indexedDB: {} });
+		vi.stubGlobal('isSecureContext', false);
+		expect(getDeviceFolderSupportState()).toBe('https-required');
+
+		vi.stubGlobal('isSecureContext', true);
+		expect(getDeviceFolderSupportState()).toBe('unsupported');
 	});
 });

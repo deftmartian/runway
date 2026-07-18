@@ -42,12 +42,16 @@ type DeviceFileCandidate = {
 };
 
 export type DeviceFolderConnectionState =
+	| 'https-required'
 	| 'unsupported'
 	| 'unlinked'
 	| 'linked'
 	| 'permission-required';
 
-export type DeviceFolderScanResult =
+export type DeviceFolderSupportState = 'supported' | 'https-required' | 'unsupported';
+
+export type DeviceFolderScanResult = (
+	| { result: 'https-required' }
 	| { result: 'unsupported' }
 	| { result: 'unlinked' }
 	| { result: 'permission-required' }
@@ -62,7 +66,11 @@ export type DeviceFolderScanResult =
 	| { result: 'invalid' }
 	| { result: 'too-large' }
 	| { result: 'too-many-files' }
-	| { result: 'failed' };
+	| { result: 'failed' }
+) & {
+	/** Number of other unseen GPX files left after a terminal result. */
+	remaining?: number;
+};
 
 export type DeviceFileMetadata = {
 	fingerprint: string;
@@ -70,12 +78,17 @@ export type DeviceFileMetadata = {
 };
 
 export function supportsDeviceFolderImport(): boolean {
-	return (
-		typeof window !== 'undefined' &&
-		typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function' &&
+	return getDeviceFolderSupportState() === 'supported';
+}
+
+export function getDeviceFolderSupportState(): DeviceFolderSupportState {
+	if (typeof window === 'undefined') return 'unsupported';
+	if ('isSecureContext' in globalThis && !globalThis.isSecureContext) return 'https-required';
+	return typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function' &&
 		'indexedDB' in window &&
 		Boolean(globalThis.crypto?.subtle)
-	);
+		? 'supported'
+		: 'unsupported';
 }
 
 export function isGpxFilename(name: string): boolean {
@@ -106,7 +119,8 @@ export function isTerminalDeviceImportResult(result: DeviceFolderScanResult['res
  * access; runway never writes, renames, or deletes files in the chosen folder.
  */
 export async function connectDeviceFolder(userId: string): Promise<DeviceFolderConnectionState> {
-	if (!supportsDeviceFolderImport()) return 'unsupported';
+	const support = getDeviceFolderSupportState();
+	if (support !== 'supported') return support;
 	const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
 	if (!picker) return 'unsupported';
 
@@ -133,7 +147,8 @@ export async function connectDeviceFolder(userId: string): Promise<DeviceFolderC
 export async function restoreDeviceFolderPermission(
 	userId: string
 ): Promise<DeviceFolderConnectionState> {
-	if (!supportsDeviceFolderImport()) return 'unsupported';
+	const support = getDeviceFolderSupportState();
+	if (support !== 'supported') return support;
 	const handle = await getStoredFolder(userId);
 	if (!handle) return 'unlinked';
 	return (await requestDirectoryReadPermission(handle)) === 'granted'
@@ -212,7 +227,8 @@ export async function retainDeviceFolderForUser(userId: string): Promise<void> {
 export async function getDeviceFolderConnectionState(
 	userId: string
 ): Promise<DeviceFolderConnectionState> {
-	if (!supportsDeviceFolderImport()) return 'unsupported';
+	const support = getDeviceFolderSupportState();
+	if (support !== 'supported') return support;
 	const handle = await getStoredFolder(userId);
 	if (!handle) return 'unlinked';
 	return (await queryPermission(handle)) === 'granted' ? 'linked' : 'permission-required';
@@ -229,7 +245,8 @@ export function scanDeviceFolder(userId: string): Promise<DeviceFolderScanResult
 
 async function scanDeviceFolderOnce(userId: string): Promise<DeviceFolderScanResult> {
 	if (blockAllScans || blockedUsers.has(userId)) return { result: 'unlinked' };
-	if (!supportsDeviceFolderImport()) return { result: 'unsupported' };
+	const support = getDeviceFolderSupportState();
+	if (support !== 'supported') return { result: support };
 	const handle = await getStoredFolder(userId);
 	if (!handle) return { result: 'unlinked' };
 	if ((await queryPermission(handle)) !== 'granted') return { result: 'permission-required' };
@@ -254,6 +271,10 @@ async function scanDeviceFolderOnce(userId: string): Promise<DeviceFolderScanRes
 	const seen = await getSeenDigests(userId);
 	const candidate = newestUnseenDeviceFile(candidates, seen);
 	if (!candidate) return { result: 'none' };
+	const remaining = Math.max(
+		0,
+		candidates.filter((item) => !seen.has(item.fingerprint)).length - 1
+	);
 	if (blockAllScans || blockedUsers.has(userId)) return { result: 'unlinked' };
 
 	let result: DeviceFolderScanResult;
@@ -264,6 +285,7 @@ async function scanDeviceFolderOnce(userId: string): Promise<DeviceFolderScanRes
 	}
 	if (isTerminalDeviceImportResult(result.result)) {
 		await markSeen(userId, candidate.fingerprint);
+		return { ...result, remaining };
 	}
 	return result;
 }

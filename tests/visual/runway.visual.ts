@@ -107,6 +107,7 @@ async function seedVisualAccount(page: Page, fixtureName: string) {
 	await expect(page).toHaveURL(/\/app\/onboarding$/);
 	const target = new Date(testNowIso);
 	target.setUTCDate(target.getUTCDate() + 20 * 7);
+	await page.getByLabel(/Established week/).check();
 	await page.getByLabel('Race distance').selectOption('half');
 	await page.getByLabel('Target date').fill(target.toISOString().slice(0, 10));
 	await page.getByLabel('Priority').selectOption('finish_healthy');

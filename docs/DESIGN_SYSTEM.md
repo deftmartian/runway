@@ -8,8 +8,8 @@ The interface is not a generic admin dashboard, calendar skin, fitness social pr
 
 ## Canvas And Geometry
 
-- Light mode uses a flat cool porcelain/steel canvas.
-- Dark mode uses graphite and blue-black surfaces rather than flat black.
+- Light mode uses a warm stone/porcelain canvas with low-chroma teal structure.
+- Dark mode uses graphite with a subtle green cast rather than flat black or cold blue-black.
 - The body has no ruled-paper pattern, gradient wash, or decorative texture.
 - Structural surfaces use a `10px` radius.
 - Controls use a `6px` radius.
@@ -17,7 +17,7 @@ The interface is not a generic admin dashboard, calendar skin, fitness social pr
 - Shadows are reserved for dialogs, mobile sheets, and transient notices.
 - Hover can change outline or fill, but does not lift the control.
 
-Avoid floating navigation shells, boxes inside boxes, repeated card borders, oversized rounding, decorative depth, and large low-information containers.
+Avoid floating navigation shells, boxes inside boxes, repeated card borders, oversized rounding, decorative depth, and large low-information containers. A single bounded work surface is appropriate when it clarifies one focused task, such as authentication or first-plan setup.
 
 ## Semantic Tokens
 
@@ -114,7 +114,7 @@ Use flat section rails and label/value/action rows. Keep complex enrollment or p
 
 ### Public and authentication
 
-Use the same control geometry, SVG mark, and trace identity. Do not wrap every page in a large decorative card. Public copy explains the artifact and its boundary; auth pages stay focused on completing authentication.
+Use the same control geometry, SVG mark, and trace identity. Do not wrap every page in a large decorative card. Public copy explains the artifact and its boundary; auth pages use one quiet, bounded work surface and stay focused on completing authentication.
 
 ## Semantic States
 

@@ -41,6 +41,7 @@ async function createPlan(page: Page) {
 async function fillValidPlanIntake(page: Page) {
 	const target = new Date(testNowIso);
 	target.setUTCDate(target.getUTCDate() + 20 * 7);
+	await page.getByLabel(/Established week/).check();
 	await page.getByLabel('Race distance').selectOption('half');
 	await page.getByLabel('Target date').fill(target.toISOString().slice(0, 10));
 	await page.getByLabel('Priority').selectOption('finish_healthy');
@@ -1024,7 +1025,8 @@ test('established onboarding creates the distance phase from a repeatable baseli
 	page
 }) => {
 	const email = await createAccount(page);
-	await expect(page.getByLabel('Race distance')).toHaveValue('');
+	await expect(page.getByLabel('Race distance')).toHaveCount(0);
+	await expect(page.getByLabel(/Established week/)).not.toBeChecked();
 	await fillValidPlanIntake(page);
 	await expect(page.getByText('Distance plan from an established week')).toBeVisible();
 	await page.getByRole('button', { name: 'Create plan' }).click();
@@ -1050,11 +1052,11 @@ test('a two-run established baseline can create a plan from two available days o
 	await expectNoHorizontalOverflow(page);
 	await expectVisibleChoiceHeadingsReadable(page);
 
+	await page.getByLabel(/Established week/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
 	await goToOnboardingStep(page, 'Starting point');
 	await expectNoHorizontalOverflow(page);
-	await expectVisibleChoiceHeadingsReadable(page);
 	await page.getByLabel('Weekly distance (km)').fill('6');
 	await page.getByLabel('Runs per week').fill('2');
 	await page.getByLabel('Longest recent run (km)').fill('3');
@@ -1084,10 +1086,10 @@ test('foundation-first onboarding keeps the race goal and creates the exact time
 }) => {
 	const email = await createAccount(page);
 	const target = addIsoDays(testDate, 20 * 7);
+	await page.getByLabel(/Foundation first/).check();
 	await page.getByLabel('Race distance').selectOption('half');
 	await page.getByLabel('Target date').fill(target);
 	await goToOnboardingStep(page, 'Starting point');
-	await page.getByLabel(/Foundation first/).check();
 	await page.getByLabel('Running experience').selectOption('new');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Mon', 'Wed', 'Sat']);
@@ -1131,10 +1133,10 @@ test('completed foundation work requires confirmation before the retained race p
 	page
 }) => {
 	const email = await createAccount(page);
+	await page.getByLabel(/Foundation first/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
 	await goToOnboardingStep(page, 'Starting point');
-	await page.getByLabel(/Foundation first/).check();
 	await page.getByLabel('Running experience').selectOption('new');
 	await goToOnboardingStep(page, 'Schedule');
 	await setAvailability(page, ['Mon', 'Wed', 'Sat']);
@@ -1244,10 +1246,10 @@ test('foundation-only onboarding works at a mobile viewport without inventing di
 
 test('short calibration creates two identical timed sessions per week', async ({ page }) => {
 	const email = await createAccount(page);
+	await page.getByLabel(/Short calibration/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 12 * 7));
 	await goToOnboardingStep(page, 'Starting point');
-	await page.getByLabel(/Short calibration/).check();
 	await page.getByLabel('Running experience').selectOption('new');
 	await page.getByLabel('Comfortable total duration').selectOption('20');
 	await goToOnboardingStep(page, 'Schedule');
@@ -1352,13 +1354,14 @@ test('onboarding does not allow forward navigation past an incomplete step', asy
 	await goToOnboardingStep(page, 'Review');
 	await expect(page.getByRole('heading', { name: 'Goal' })).toBeVisible();
 	await expect(page.getByText('Complete this step before continuing.')).toBeVisible();
-	await expect(page.getByLabel('Race distance')).toBeFocused();
+	await expect(page.getByLabel(/Established week/)).toBeFocused();
 });
 
 test('onboarding requires an explicit experience choice before schedule setup', async ({
 	page
 }) => {
 	await createAccount(page);
+	await page.getByLabel(/Established week/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
 	await goToOnboardingStep(page, 'Starting point');
@@ -1375,17 +1378,22 @@ test('foundation-first onboarding reserves time for foundation and race phases',
 	page
 }) => {
 	await createAccount(page);
+	await expect(page.getByLabel('Target date')).toHaveCount(0);
+	await expect(page.getByText('Choose this before the race date.')).toBeVisible();
+	await page.getByLabel(/Established week/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
-	await page.getByLabel('Target date').fill(addIsoDays(testDate, 20 * 7));
-	await goToOnboardingStep(page, 'Starting point');
-	await page.getByLabel(/Foundation first/).check();
-	await page.getByLabel('Running experience').selectOption('new');
-	await goToOnboardingStep(page, 'Goal');
-
 	const targetDate = page.getByLabel('Target date');
+	await targetDate.fill(addIsoDays(testDate, 12 * 7));
+	await page.getByLabel(/Foundation first/).check();
+	await expect(targetDate).toHaveValue('');
+	await expect(
+		page.getByText(
+			'Foundation first needs a different target date. Choose the path first, then set the date.'
+		)
+	).toBeVisible();
+	await expect(page.getByText(/17–52 weeks ahead/)).toBeVisible();
 	const minimum = await targetDate.getAttribute('min');
 	if (!minimum) throw new Error('Foundation target-date minimum was not rendered.');
-	await expect(page.getByText(/17–52 weeks ahead/)).toBeVisible();
 	await targetDate.fill(addIsoDays(minimum, -1));
 	await goToOnboardingStep(page, 'Starting point');
 	await expect(page.getByRole('heading', { name: 'Goal' })).toBeVisible();
@@ -1412,6 +1420,26 @@ test('foundation-first onboarding reserves time for foundation and race phases',
 	});
 	expect(response.status()).toBe(200);
 	expect(await response.text()).toContain('Choose a date from');
+
+	const pathlessResponse = await page.request.post('/app/onboarding?/createPlan', {
+		headers: {
+			origin: new URL(page.url()).origin,
+			accept: 'application/json',
+			'x-sveltekit-action': 'true'
+		},
+		form: {
+			goalKind: 'race',
+			raceDistance: '5k',
+			targetDate: addIsoDays(testDate, 20 * 7),
+			priority: 'finish_healthy',
+			experience: 'new',
+			availability: '1',
+			timeZone: 'America/Halifax'
+		}
+	});
+	const pathlessBody = await pathlessResponse.text();
+	expect(pathlessBody).toContain('Choose how you are starting.');
+	expect(pathlessBody).not.toContain('Choose a date from');
 });
 
 test('current pain saves a pending goal without creating workouts', async ({ page }) => {
@@ -1592,6 +1620,26 @@ test('training calendar month controls are URL-backed', async ({ page }) => {
 
 	await page.getByRole('link', { name: 'Current month' }).click();
 	await expect(page).toHaveURL(new RegExp(`/app\\?month=${currentMonth}`));
+});
+
+test('an empty inbox offers a direct review-only GPX upload', async ({ page }) => {
+	const email = await createAccount(page);
+	await setTrainingTimeZone(email);
+	await page.goto('/app/import');
+
+	await expect(page.getByText('No imported activities.')).toBeVisible();
+	const chooser = page.waitForEvent('filechooser');
+	await page.getByRole('button', { name: 'Upload GPX', exact: true }).click();
+	await (
+		await chooser
+	).setFiles({
+		name: 'direct-inbox-upload.gpx',
+		mimeType: 'application/gpx+xml',
+		buffer: gpxForDistance(testDate, 2_000)
+	});
+
+	await expect(page.getByText(/Added to the activity inbox\./)).toBeVisible();
+	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toBeVisible();
 });
 
 test('local account can create a conservative training plan and import GPX aggregates', async ({
@@ -2761,7 +2809,7 @@ test('PWA files and private routes carry the expected cache boundaries', async (
 	expect(app.headers()['cache-control']).toBe('private, no-store');
 });
 
-test('PWA lifecycle shows connection state and offers install only from settings', async ({
+test('PWA lifecycle shows connection state and a quiet install shortcut', async ({
 	context,
 	page
 }) => {
@@ -2795,9 +2843,12 @@ test('PWA lifecycle shows connection state and offers install only from settings
 			return installButton.isVisible();
 		})
 		.toBe(true);
+	const installShortcut = page.getByRole('button', { name: 'Install runway', exact: true });
+	await expect(installShortcut).toBeVisible();
 	await page.getByRole('link', { name: 'Calendar' }).click();
 	await expect(page).toHaveURL(/\/app\/onboarding$/);
 	await expect(installNotice).not.toBeVisible();
+	await expect(installShortcut).toBeVisible();
 	await page.getByRole('link', { name: 'Settings' }).click();
 	await expect(page).toHaveURL(/\/app\/settings$/);
 	await expect(installNotice).toBeVisible();
@@ -2812,6 +2863,7 @@ test('PWA lifecycle shows connection state and offers install only from settings
 		)
 		.toBe(true);
 	await expect(installNotice).not.toBeVisible();
+	await expect(installShortcut).not.toBeVisible();
 
 	await context.setOffline(true);
 	try {

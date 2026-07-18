@@ -75,13 +75,7 @@
 	const selectedDays = $derived(
 		weekdays.filter((day) => availability.includes(day.value)).map((day) => day.short)
 	);
-	const minimumTargetDate = $derived(
-		startMode === 'foundation_to_goal'
-			? minimumFoundationTargetDate
-			: startMode === 'calibration'
-				? minimumCalibrationTargetDate
-				: minimumEstablishedTargetDate
-	);
+	const minimumTargetDate = $derived(minimumForStartMode(startMode));
 	const targetWindowHelp = $derived(
 		startMode === 'foundation_to_goal'
 			? `17–52 weeks ahead in ${timeZone || 'your time zone'}: nine foundation weeks, then at least eight race-plan weeks.`
@@ -98,8 +92,9 @@
 			case 'calibration':
 				return `Two-week ${calibrationDurationMinutes || '—'} minute calibration`;
 			case 'established':
-			default:
 				return 'Distance plan from an established week';
+			default:
+				return 'Starting path needed';
 		}
 	});
 
@@ -116,8 +111,35 @@
 			raceDistance = '';
 			targetDate = '';
 		} else if (startMode === 'foundation_only') {
-			startMode = 'established';
+			startMode = '';
 		}
+	}
+
+	function chooseStartMode(mode: 'established' | 'foundation_to_goal' | 'calibration') {
+		const nextMinimum = minimumForStartMode(mode);
+		if (targetDate && (targetDate < nextMinimum || targetDate > maximumTargetDate)) {
+			targetDate = '';
+			clientMessage = `${startingPathName(mode)} needs a different target date. Choose the path first, then set the date.`;
+		} else {
+			clientMessage = '';
+		}
+		startMode = mode;
+	}
+
+	function minimumForStartMode(mode: typeof startMode) {
+		return mode === 'foundation_to_goal'
+			? minimumFoundationTargetDate
+			: mode === 'calibration'
+				? minimumCalibrationTargetDate
+				: minimumEstablishedTargetDate;
+	}
+
+	function startingPathName(mode: 'established' | 'foundation_to_goal' | 'calibration') {
+		return mode === 'foundation_to_goal'
+			? 'Foundation first'
+			: mode === 'calibration'
+				? 'Short calibration'
+				: 'Established week';
 	}
 
 	function nextStep() {
@@ -180,6 +202,7 @@
 	}
 
 	function validationStep(): number | null {
+		if (goalKind === 'race' && !startMode) return 0;
 		if (
 			goalKind === 'race' &&
 			(!raceDistance ||
@@ -253,7 +276,7 @@
 	}
 
 	function errorStep(): number | null {
-		if (errorFor('raceDistance') || errorFor('targetDate')) return 0;
+		if (errorFor('startMode') || errorFor('raceDistance') || errorFor('targetDate')) return 0;
 		if (
 			errorFor('currentWeeklyDistanceKm') ||
 			errorFor('currentRunsPerWeek') ||
@@ -278,7 +301,7 @@
 		const container = document.querySelector<HTMLElement>(`#onboarding-step-${targetStep + 1}`);
 		(
 			container?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
-			container?.querySelector<HTMLElement>(':invalid') ??
+			container?.querySelector<HTMLElement>('input:invalid, select:invalid, textarea:invalid') ??
 			container?.querySelector<HTMLElement>('input:required, select:required') ??
 			container
 		)?.focus();
@@ -403,46 +426,114 @@
 				</div>
 
 				{#if goalKind === 'race'}
-					<div class="field-grid">
-						<label>
-							Race distance
-							<select
-								name="raceDistance"
-								bind:value={raceDistance}
-								required={step === 0}
-								aria-invalid={Boolean(errorFor('raceDistance'))}
-								aria-describedby={errorFor('raceDistance') ? 'race-distance-error' : undefined}
-							>
-								<option value="" disabled>Choose distance</option>
-								<option value="5k">5K</option>
-								<option value="10k">10K</option>
-								<option value="half">Half marathon</option>
-								<option value="marathon">Marathon</option>
-							</select>
-							{#if errorFor('raceDistance')}<span id="race-distance-error" class="field-error"
-									>{errorFor('raceDistance')}</span
-								>{/if}
-						</label>
-						<label>
-							Target date
-							<input
-								type="date"
-								name="targetDate"
-								min={minimumTargetDate}
-								max={maximumTargetDate}
-								bind:value={targetDate}
-								required={step === 0}
-								aria-invalid={Boolean(errorFor('targetDate'))}
-								aria-describedby={errorFor('targetDate')
-									? 'target-window-help target-date-error'
-									: 'target-window-help'}
-							/>
-							<span id="target-window-help" class="field-help">{targetWindowHelp}</span>
-							{#if errorFor('targetDate')}<span id="target-date-error" class="field-error"
-									>{errorFor('targetDate')}</span
-								>{/if}
-						</label>
-					</div>
+					<fieldset
+						class="starting-path-fieldset"
+						aria-describedby={errorFor('startMode')
+							? 'starting-path-help starting-path-error'
+							: 'starting-path-help'}
+					>
+						<legend>Starting path</legend>
+						<p id="starting-path-help">
+							Choose this before the race date. The path determines how much preparation time is
+							required.
+						</p>
+						<div class="choice-track mode-track">
+							<label class:selected={startMode === 'established'}>
+								<input
+									type="radio"
+									name="startMode"
+									value="established"
+									checked={startMode === 'established'}
+									required={step === 0}
+									onchange={() => {
+										chooseStartMode('established');
+									}}
+								/>
+								<strong>Established week</strong>
+								<span>At least 3 km, two runs, and a recent longest run.</span>
+							</label>
+							<label class:selected={startMode === 'foundation_to_goal'}>
+								<input
+									type="radio"
+									name="startMode"
+									value="foundation_to_goal"
+									checked={startMode === 'foundation_to_goal'}
+									required={step === 0}
+									onchange={() => {
+										chooseStartMode('foundation_to_goal');
+									}}
+								/>
+								<strong>Foundation first</strong>
+								<span
+									>Complete the NHS nine-week run/walk phase, then keep at least eight weeks for the
+									race plan.</span
+								>
+							</label>
+							<label class:selected={startMode === 'calibration'}>
+								<input
+									type="radio"
+									name="startMode"
+									value="calibration"
+									checked={startMode === 'calibration'}
+									required={step === 0}
+									onchange={() => {
+										chooseStartMode('calibration');
+									}}
+								/>
+								<strong>Short calibration</strong>
+								<span
+									>Repeat a comfortable timed session for two weeks, then keep at least eight weeks
+									for the race plan.</span
+								>
+							</label>
+						</div>
+						{#if errorFor('startMode')}<span id="starting-path-error" class="field-error"
+								>{errorFor('startMode')}</span
+							>{/if}
+					</fieldset>
+
+					{#if startMode && startMode !== 'foundation_only'}
+						<div class="field-grid">
+							<label>
+								Race distance
+								<select
+									name="raceDistance"
+									bind:value={raceDistance}
+									required={step === 0}
+									aria-invalid={Boolean(errorFor('raceDistance'))}
+									aria-describedby={errorFor('raceDistance') ? 'race-distance-error' : undefined}
+								>
+									<option value="" disabled>Choose distance</option>
+									<option value="5k">5K</option>
+									<option value="10k">10K</option>
+									<option value="half">Half marathon</option>
+									<option value="marathon">Marathon</option>
+								</select>
+								{#if errorFor('raceDistance')}<span id="race-distance-error" class="field-error"
+										>{errorFor('raceDistance')}</span
+									>{/if}
+							</label>
+							<label>
+								Target date
+								<input
+									type="date"
+									name="targetDate"
+									min={minimumTargetDate}
+									max={maximumTargetDate}
+									bind:value={targetDate}
+									required={step === 0}
+									aria-invalid={Boolean(errorFor('targetDate'))}
+									aria-describedby={errorFor('targetDate')
+										? 'target-window-help target-date-error'
+										: 'target-window-help'}
+								/>
+								<span id="target-window-help" class="field-help">{targetWindowHelp}</span>
+								{#if errorFor('targetDate')}<span id="target-date-error" class="field-error"
+										>{errorFor('targetDate')}</span
+									>{/if}
+							</label>
+						</div>
+					{/if}
 				{/if}
 
 				<label class="single-field">
@@ -469,37 +560,10 @@
 					>
 				</header>
 
-				{#if goalKind === 'race'}
-					<div class="choice-track mode-track">
-						<label class:selected={startMode === 'established'}>
-							<input type="radio" name="startMode" value="established" bind:group={startMode} />
-							<strong>Established week</strong>
-							<span>At least 3 km, two runs, and a recent longest run.</span>
-						</label>
-						<label class:selected={startMode === 'foundation_to_goal'}>
-							<input
-								type="radio"
-								name="startMode"
-								value="foundation_to_goal"
-								bind:group={startMode}
-							/>
-							<strong>Foundation first</strong>
-							<span
-								>Complete the NHS nine-week run/walk phase, then keep at least eight weeks for the
-								race plan.</span
-							>
-						</label>
-						<label class:selected={startMode === 'calibration'}>
-							<input type="radio" name="startMode" value="calibration" bind:group={startMode} />
-							<strong>Short calibration</strong>
-							<span
-								>Repeat a comfortable timed session for two weeks, then keep at least eight weeks
-								for the race plan.</span
-							>
-						</label>
-					</div>
-				{:else}
-					<input type="hidden" name="startMode" value="foundation_only" />
+				{#if startMode === 'foundation_to_goal' || startMode === 'foundation_only'}
+					{#if startMode === 'foundation_only'}
+						<input type="hidden" name="startMode" value="foundation_only" />
+					{/if}
 					<div class="foundation-summary">
 						<strong>NHS Couch to 5K foundation</strong>
 						<span
@@ -959,6 +1023,25 @@
 
 	.choice-track.mode-track {
 		grid-template-columns: repeat(3, 1fr);
+	}
+
+	.starting-path-fieldset {
+		display: grid;
+		gap: 12px;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.starting-path-fieldset legend {
+		padding: 0;
+		font-weight: 690;
+	}
+
+	.starting-path-fieldset > p {
+		margin: -4px 0 0;
+		color: var(--muted);
+		font-size: 0.88rem;
 	}
 
 	.choice-track label {

@@ -23,20 +23,22 @@
 	.auth-page {
 		display: grid;
 		place-items: start center;
-		padding-top: clamp(32px, 9vh, 88px);
+		padding-top: clamp(28px, 7vh, 72px);
 	}
 
 	.auth-surface {
 		width: min(100%, 560px);
-		padding: clamp(22px, 4vw, 34px) 0;
-		border-top: 3px solid var(--accent);
-		background: transparent;
+		padding: clamp(24px, 4vw, 38px);
+		border: 1px solid var(--line);
+		border-top: 4px solid var(--accent);
+		border-radius: var(--radius);
+		background: color-mix(in oklab, var(--surface), var(--surface-strong) 46%);
 	}
 
 	.auth-header {
 		display: grid;
-		gap: 18px;
-		margin-bottom: 8px;
+		gap: 22px;
+		margin-bottom: 10px;
 	}
 
 	.auth-header h1 {
@@ -78,7 +80,11 @@
 
 	@media (max-width: 680px) {
 		.auth-page {
-			padding-top: 18px;
+			padding-top: 10px;
+		}
+
+		.auth-surface {
+			padding: 22px 18px 26px;
 		}
 	}
 </style>

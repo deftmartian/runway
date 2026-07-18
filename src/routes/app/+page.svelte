@@ -31,7 +31,12 @@
 		justify-items: start;
 		gap: 16px;
 		max-width: 620px;
-		padding: clamp(40px, 10vw, 100px) 0;
+		margin-top: clamp(18px, 5vw, 56px);
+		padding: clamp(30px, 6vw, 54px);
+		border: 1px solid var(--line);
+		border-left: 4px solid var(--accent);
+		border-radius: var(--radius);
+		background: color-mix(in oklab, var(--surface), var(--surface-strong) 42%);
 	}
 
 	.first-plan-empty h1,
@@ -40,8 +45,8 @@
 	}
 
 	.first-plan-empty h1 {
-		font-size: clamp(2.2rem, 7vw, 4rem);
-		line-height: 0.98;
+		font-size: clamp(2rem, 6vw, 3.4rem);
+		line-height: 1;
 	}
 
 	.first-plan-empty p {
