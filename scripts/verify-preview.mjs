@@ -301,7 +301,7 @@ const offlineCss = await request(new URL('/offline.css', siteUrl));
 if (offlineCss.statusCode !== 200) {
 	failures.push(`/offline.css returned ${offlineCss.statusCode}.`);
 }
-if (header(offlineCss.headers, 'cache-control') !== 'public, max-age=86400') {
+if (header(offlineCss.headers, 'cache-control') !== 'public, max-age=0, must-revalidate') {
 	failures.push('/offline.css has the wrong cache policy.');
 }
 
