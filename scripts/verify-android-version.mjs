@@ -26,7 +26,12 @@ if (!Number.isSafeInteger(versionCode) || versionCode <= 0 || fdroidVersionCode 
 	);
 }
 
-const tag = process.env['RUNWAY_RELEASE_TAG'] ?? process.env['GITHUB_REF_NAME'];
+const githubRef = process.env['GITHUB_REF'];
+const githubTag =
+	process.env['GITHUB_REF_TYPE'] === 'tag' || githubRef?.startsWith('refs/tags/')
+		? (process.env['GITHUB_REF_NAME'] ?? githubRef?.slice('refs/tags/'.length))
+		: undefined;
+const tag = process.env['RUNWAY_RELEASE_TAG'] ?? githubTag;
 if (tag && tag !== `v${versionName}`) {
 	fail(`release tag ${tag} does not match v${versionName}`);
 }

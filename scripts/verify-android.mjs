@@ -103,6 +103,13 @@ for (const required of [
 	if (!build.includes(required)) errors.push(`Android Gradle contract is missing ${required}`);
 }
 
+const versionVerification = read('scripts/verify-android-version.mjs');
+for (const required of ["GITHUB_REF_TYPE'] === 'tag'", "startsWith('refs/tags/')"]) {
+	if (!versionVerification.includes(required)) {
+		errors.push(`Android version verification is missing its tag-only guard: ${required}`);
+	}
+}
+
 const androidIgnore = read('android/.gitignore');
 for (const required of ['signing.properties', '*.jks', '*.keystore']) {
 	if (!androidIgnore.split(/\r?\n/).includes(required)) {
