@@ -48,7 +48,7 @@
 		"verify:caddy": "node scripts/verify-caddy.mjs",
 		"verify:dependencies": "node scripts/verify-dependencies.mjs",
 		"verify:image": "node scripts/verify-image.mjs",
-		"verify:migrations": "node scripts/verify-fresh-migrations.mjs && node scripts/verify-upgrade-migrations.mjs",
+		"verify:migrations": "node scripts/verify-fresh-migrations.mjs && node scripts/verify-upgrade-migrations.mjs && node scripts/verify-rebased-migrations.mjs",
 		"verify:pwa": "vitest run src/lib/pwa/*.spec.ts",
 		"verify:pwa:assets": "corepack pnpm assets:pwa:check",
 		"verify:preview": "node scripts/verify-preview.mjs",
