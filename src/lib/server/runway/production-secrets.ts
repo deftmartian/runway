@@ -1,6 +1,7 @@
 const secretPrefix = 'runway-secret-v1_';
 const encodedSecretBytes = 32;
 const encodedSecretCharacters = 43;
+const legacyHexSecretCharacters = 64;
 
 const dedicatedSecretNames = [
 	'IMPORT_SECRET_KEY',
@@ -12,7 +13,11 @@ const dedicatedSecretNames = [
 export type SecretEnvironment = Readonly<Record<string, string | undefined>>;
 
 /**
- * Reject recoverable production key material that would only produce a warning in Better Auth.
+ * Reject weak production key material that would only produce a warning in Better Auth.
+ *
+ * Releases through v0.1.0 documented `openssl rand -hex 32`, so the exact 64-character
+ * hexadecimal representation remains valid during a staged rotation. New secrets use the
+ * versioned runway encoding so operators can distinguish newly generated key material.
  * Error messages deliberately identify the setting, never its value.
  */
 export function validateProductionSecretConfiguration(environment: SecretEnvironment): void {
@@ -61,11 +66,15 @@ function assertStrongSecret(name: string, value: string | undefined, required: b
 	if (value !== value.trim() || /\s/u.test(value)) {
 		throw new Error(`${name} must not contain whitespace.`);
 	}
-	if (!isCanonicalGeneratedSecret(value)) {
+	if (!isCanonicalGeneratedSecret(value) && !isLegacyGeneratedSecret(value)) {
 		throw new Error(
-			`${name} must be generated with \`pnpm secret:generate\` (runway-secret-v1 plus 32 random bytes).`
+			`${name} must be generated with \`pnpm secret:generate\` or be a legacy 64-character hexadecimal secret generated with \`openssl rand -hex 32\`.`
 		);
 	}
+}
+
+function isLegacyGeneratedSecret(value: string): boolean {
+	return value.length === legacyHexSecretCharacters && /^[0-9a-f]+$/i.test(value);
 }
 
 function isCanonicalGeneratedSecret(value: string): boolean {
@@ -80,6 +89,6 @@ function isCanonicalGeneratedSecret(value: string): boolean {
 
 function invalidKeyring(): Error {
 	return new Error(
-		'BETTER_AUTH_SECRETS must be a comma-separated keyring of unique non-negative versions and generated runway secrets.'
+		'BETTER_AUTH_SECRETS must be a comma-separated keyring of unique non-negative versions and strong generated secrets.'
 	);
 }

@@ -80,9 +80,11 @@ release version. Android follows no redirect and requires valid HTTPS outside de
 network use. Every build keeps browser origin controls visible and supports an explicitly selected
 server; the removed origin-bound build property fails configuration.
 
-`BETTER_AUTH_SECRET` rotation is an operational migration, not a blind value replacement. Database
-backups must have separately protected matching key material, and an old key cannot be retired until
-count-only checks show no OAuth or TOTP ciphertext still references it. The staged rotation,
+`BETTER_AUTH_SECRET` rotation is an operational migration, not a blind value replacement. The
+documented legacy 64-character hexadecimal secret remains accepted as a transition key; newly
+generated keys use the `runway-secret-v1_` format. Database backups must have separately protected
+matching key material, and an old key cannot be retired until count-only checks show no OAuth or TOTP
+ciphertext still references it. The staged rotation,
 re-authentication, revocation, restore, and compromised-key procedures live in
 [DEPLOYMENT.md](DEPLOYMENT.md#better-auth-secret-and-encrypted-provider-tokens).
 

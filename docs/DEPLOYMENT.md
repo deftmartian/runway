@@ -91,11 +91,13 @@ without a new source-level and database-level review. Better Auth's
 [versioned secrets](https://better-auth.com/docs/reference/options#secrets) are the supported rotation
 mechanism.
 
-Production startup cannot infer how a human-chosen string was generated. It therefore accepts only
-the versioned format emitted by `corepack pnpm secret:generate`: `runway-secret-v1_` followed by the
-canonical base64url encoding of exactly 32 bytes from Node's operating-system CSPRNG. Do not handcraft
-a value that merely matches the shape. The same format policy applies to
-every entry in `BETTER_AUTH_SECRETS` and to any explicitly configured `IMPORT_SECRET_KEY`,
+New secrets must use the versioned format emitted by `corepack pnpm secret:generate`:
+`runway-secret-v1_` followed by the canonical base64url encoding of exactly 32 bytes from Node's
+operating-system CSPRNG. Do not handcraft a value that merely matches the shape. Releases through
+v0.1.0 documented `openssl rand -hex 32`; that exact 64-character hexadecimal representation remains
+accepted so an existing installation can start and rotate without losing access to encrypted data.
+Short values, arbitrary passphrases, and malformed encodings still fail closed. This compatibility
+policy also applies to `BETTER_AUTH_SECRETS` and any explicitly configured `IMPORT_SECRET_KEY`,
 `AUTH_RATE_LIMIT_SECRET`, `PASSWORD_RESET_RATE_LIMIT_SECRET`, or `ANDROID_CREDENTIAL_SECRET`.
 Configuration errors identify the setting but never print the rejected value.
 
@@ -153,7 +155,7 @@ For a routine rotation from key `K1` to `K2`:
 
 1. Take and verify a database backup. Confirm `K1` is recoverable. Record the current image build ID.
    Finish or cancel active sign-in and TOTP-enrollment flows.
-2. Generate `K2` with at least 32 high-entropy characters. Deploy every app and worker replica with
+2. Generate `K2` with `corepack pnpm secret:generate`. Deploy every app and worker replica with
    `BETTER_AUTH_SECRET=K1` and `BETTER_AUTH_SECRETS=2:K2,1:K1`. The singular secret is the fallback for
    pre-versioned ciphertext; the first plural entry encrypts new values. Never place the literal
    values in shell history or the change ticket.
@@ -469,8 +471,12 @@ changing the running stack:
 docker pull "${RUNWAY_IMAGE}"
 ```
 
-This launch path assumes a clean, empty runway database. Verify the complete migration journal before
-the first deployment:
+The migration journal is forward-only. v0.1.2 restores the original 22-entry lineage shipped before
+v0.1.1 and adds `0022_forward_compatible_upgrade`; it upgrades an existing database without replaying
+the schema baseline. Do not delete tables or edit `drizzle.__drizzle_migrations` to work around the
+v0.1.1 failure. Take a database backup, deploy v0.1.2 or later, and let the bundled migration service
+apply the single pending migration. `verify:migrations` exercises both a fresh database and an exact
+22-migration database containing an existing data probe:
 
 ```sh
 corepack pnpm verify:migrations

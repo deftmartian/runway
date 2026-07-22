@@ -5,6 +5,7 @@ import { validateProductionSecretConfiguration } from './production-secrets';
 const generatedSecret = () => `runway-secret-v1_${randomBytes(32).toString('base64url')}`;
 const primarySecret = generatedSecret();
 const rotatedSecret = generatedSecret();
+const legacySecret = randomBytes(32).toString('hex');
 const dedicatedSecrets = Array.from({ length: 4 }, generatedSecret);
 
 describe('production secret configuration', () => {
@@ -21,6 +22,19 @@ describe('production secret configuration', () => {
 		}).not.toThrow();
 	});
 
+	test('accepts the documented legacy 32-byte hexadecimal secret during rotation', () => {
+		expect(() => {
+			validateProductionSecretConfiguration({
+				BETTER_AUTH_SECRET: legacySecret,
+				BETTER_AUTH_SECRETS: `2:${rotatedSecret},1:${legacySecret}`,
+				IMPORT_SECRET_KEY: legacySecret,
+				AUTH_RATE_LIMIT_SECRET: legacySecret,
+				PASSWORD_RESET_RATE_LIMIT_SECRET: legacySecret,
+				ANDROID_CREDENTIAL_SECRET: legacySecret
+			});
+		}).not.toThrow();
+	});
+
 	test('requires the generated 32-byte runway secret encoding', () => {
 		for (const value of [
 			undefined,
@@ -28,6 +42,7 @@ describe('production secret configuration', () => {
 			'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 			'abcdefghijklmnopqrstuvwxyzabcdef',
 			'0123456789abcdef0123456789abcdef',
+			'0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg',
 			'correcthorsebatterystaplecorrecthorse',
 			' runway-auth-key-with-whitespace-Q8m2P7v4Z1x6 ',
 			'runway-build-time-placeholder-secret-Q8m2P7v4Z1x6',
