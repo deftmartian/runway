@@ -54,7 +54,7 @@ export function startingPathName(mode: RaceStartMode) {
 	return mode === 'foundation_to_goal'
 		? 'Foundation first'
 		: mode === 'calibration'
-			? 'Short calibration'
+			? 'Two-week baseline'
 			: 'Established week';
 }
 
@@ -63,7 +63,7 @@ export function targetWindowHelp(mode: StartMode, timeZone: string) {
 	return mode === 'foundation_to_goal'
 		? `17–52 weeks ahead in ${zone}: nine foundation weeks, then at least eight race-plan weeks.`
 		: mode === 'calibration'
-			? `10–52 weeks ahead in ${zone}: two calibration weeks, then at least eight race-plan weeks.`
+			? `10–52 weeks ahead in ${zone}: two baseline weeks, then at least eight race-plan weeks.`
 			: `8–52 weeks ahead in ${zone}.`;
 }
 
@@ -74,11 +74,11 @@ export function modeLabel(values: OnboardingValues) {
 		case 'foundation_only':
 			return 'Nine-week foundation to 30 continuous minutes';
 		case 'calibration':
-			return `Two-week ${values.calibrationDurationMinutes || '—'} minute calibration`;
+			return `Two-week ${values.calibrationDurationMinutes || '—'} minute baseline`;
 		case 'established':
 			return 'Distance plan from an established week';
 		default:
-			return 'Starting path needed';
+			return 'Choose how you’re starting';
 	}
 }
 

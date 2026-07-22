@@ -216,7 +216,7 @@
 				<p class="message" role="status" aria-live="polite">{scopedForm.message}</p>
 			{/if}
 			<label>
-				Name
+				Name <span class="optional">Optional</span>
 				<input name="name" autocomplete="name" maxlength="100" />
 			</label>
 			<label>

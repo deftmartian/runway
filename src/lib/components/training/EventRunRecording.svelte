@@ -77,8 +77,9 @@
 					<label><input type="checkbox" name="pain" /> Pain changed or limited this run</label>
 				</div>
 				<p class="muted">
-					Hard effort changes load advice; pain triggers the safety path. This run is outside the
-					schedule and can reduce the next run.
+					This counts toward this week’s actual load. Saving shows its measured effect and choices
+					to keep the plan, reduce or rest the next run, or spread a reduction. No future workout
+					changes automatically. Mark hard effort or pain so the advice reflects it.
 				</p>
 				<button
 					aria-label={`Save unplanned run for ${formatDay(event.date)}`}

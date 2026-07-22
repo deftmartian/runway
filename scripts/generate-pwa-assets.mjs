@@ -1,6 +1,6 @@
 import { chromium } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -26,6 +26,16 @@ const screenshotSpecs = [
 		source: 'tests/visual/runway.visual.ts-snapshots/calendar-wide-linux.png',
 		viewport: { width: 1440, height: 900 },
 		output: 'static/pwa/screenshots/calendar-desktop.png'
+	}
+];
+const documentationScreenshotSpecs = [
+	{
+		source: 'tests/visual/runway.visual.ts-snapshots/calendar-desktop-linux.png',
+		output: 'docs/images/runway-calendar-desktop.png'
+	},
+	{
+		source: 'tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png',
+		output: 'docs/images/runway-calendar-mobile.png'
 	}
 ];
 
@@ -55,6 +65,9 @@ try {
 			screenshot.viewport,
 			resolve(root, screenshot.output)
 		);
+	}
+	for (const screenshot of documentationScreenshotSpecs) {
+		await copyFile(resolve(root, screenshot.source), resolve(root, screenshot.output));
 	}
 	await writeScreenshotProvenance();
 } finally {
@@ -103,15 +116,24 @@ async function writeScreenshotProvenance() {
 			outputSha256: await fileSha256(resolve(root, output))
 		}))
 	);
+	const documentationScreenshots = await Promise.all(
+		documentationScreenshotSpecs.map(async ({ source, output }) => ({
+			source,
+			sourceSha256: await fileSha256(resolve(root, source)),
+			output,
+			outputSha256: await fileSha256(resolve(root, output))
+		}))
+	);
 	await writeFile(
 		provenancePath,
 		`${JSON.stringify(
 			{
-				version: 2,
+				version: 3,
 				iconSource: iconSourcePath,
 				iconSourceSha256: await fileSha256(resolve(root, iconSourcePath)),
 				icons,
-				screenshots
+				screenshots,
+				documentationScreenshots
 			},
 			null,
 			2
@@ -130,12 +152,14 @@ async function checkScreenshotProvenance() {
 		);
 	}
 	if (
-		provenance?.version !== 2 ||
+		provenance?.version !== 3 ||
 		provenance.iconSource !== iconSourcePath ||
 		!Array.isArray(provenance.icons) ||
 		provenance.icons.length !== iconOutputs.length ||
 		!Array.isArray(provenance.screenshots) ||
-		provenance.screenshots.length !== screenshotSpecs.length
+		provenance.screenshots.length !== screenshotSpecs.length ||
+		!Array.isArray(provenance.documentationScreenshots) ||
+		provenance.documentationScreenshots.length !== documentationScreenshotSpecs.length
 	) {
 		throw new Error(
 			'PWA screenshot provenance has an unsupported shape. Run `corepack pnpm assets:pwa`.'
@@ -170,6 +194,25 @@ async function checkScreenshotProvenance() {
 		if (recorded.sourceSha256 !== sourceSha256 || recorded.outputSha256 !== outputSha256) {
 			throw new Error(
 				`PWA install screenshot ${expected.output} is stale. Run \`corepack pnpm assets:pwa\` after the visual snapshot update.`
+			);
+		}
+	}
+
+	for (let index = 0; index < documentationScreenshotSpecs.length; index += 1) {
+		const expected = documentationScreenshotSpecs[index];
+		const recorded = provenance.documentationScreenshots[index];
+		if (recorded?.source !== expected.source || recorded?.output !== expected.output) {
+			throw new Error(
+				'Documentation screenshot provenance does not match the configured assets. Run `corepack pnpm assets:pwa`.'
+			);
+		}
+		const [sourceSha256, outputSha256] = await Promise.all([
+			fileSha256(resolve(root, expected.source)),
+			fileSha256(resolve(root, expected.output))
+		]);
+		if (recorded.sourceSha256 !== sourceSha256 || recorded.outputSha256 !== outputSha256) {
+			throw new Error(
+				`README screenshot ${expected.output} is stale. Run \`corepack pnpm assets:pwa\` after the visual snapshot update.`
 			);
 		}
 	}

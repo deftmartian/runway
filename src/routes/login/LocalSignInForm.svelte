@@ -24,7 +24,7 @@
 	use:enhance={enhancer}
 	aria-busy={pendingAction === 'signInEmail'}
 >
-	<h2>Local sign in</h2>
+	<h2>Email and password</h2>
 	{#if message}
 		<p class="message" role="status" aria-live="polite">{message}</p>
 	{/if}

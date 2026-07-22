@@ -85,8 +85,8 @@ describe('training assessment presentation', () => {
 	});
 
 	test('formats exact ramp arithmetic without claiming medical safety', () => {
-		expect(formatRampEvidence(9.44, 7.5)).toBe('9.4% required · 7.5% generated-week cap');
-		expect(formatRampEvidence(12)).toBe('12% required weekly increase');
+		expect(formatRampEvidence(9.44, 7.5)).toBe('9.4% needed each week · 7.5% runway default');
+		expect(formatRampEvidence(12)).toBe('12% needed each week');
 	});
 
 	test.each([

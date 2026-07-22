@@ -125,7 +125,7 @@ test('future workout edits preview effects and support reset, undo, remove, and 
 		});
 
 	await panel.getByText('Edit planned workout', { exact: true }).click();
-	await editor.getByLabel('Prescription').selectOption('rest');
+	await editor.getByLabel('Workout target').selectOption('rest');
 	await editor.getByLabel('Purpose').fill('Extra recovery');
 	await editor.getByRole('button', { name: 'Preview change' }).click();
 	await panel

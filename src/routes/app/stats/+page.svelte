@@ -178,11 +178,10 @@
 			<h1 class="section-title">Stats</h1>
 			<p>{data.active ? 'Current plan and recorded runs.' : 'Recorded runs and past plans.'}</p>
 		</div>
-		{#if !data.active || hasRecordedHistory}
+		{#if !data.active}
 			<div class="stats-signal" aria-label="Current plan assessment">
-				<span>Plan assessment</span>
-				<strong>{data.active ? currentAssessment.label : 'No active plan'}</strong>
-				{#if data.active}<small>{currentRiskSource}</small>{/if}
+				<span>Plan status</span>
+				<strong>No active plan</strong>
 			</div>
 		{/if}
 	</header>
@@ -240,7 +239,10 @@
 	{#if data.active && hasRecordedHistory}
 		<section class="stats-section plan-attention" aria-labelledby="plan-attention-title">
 			<header class="section-heading">
-				<h2 id="plan-attention-title">Current assessment</h2>
+				<div>
+					<h2 id="plan-attention-title">Current assessment</h2>
+					<span>{currentRiskSource}</span>
+				</div>
 				<strong
 					class="risk-value"
 					class:review={currentAssessment.attention === 'review'}
@@ -615,8 +617,7 @@
 		background: transparent;
 	}
 
-	.stats-signal span,
-	.stats-signal small {
+	.stats-signal span {
 		color: var(--muted);
 		font-size: 0.82rem;
 	}

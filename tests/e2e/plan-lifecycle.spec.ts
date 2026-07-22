@@ -25,7 +25,7 @@ test('an active plan can be stopped explicitly and reviewed in History', async (
 	await page.getByRole('link', { name: 'History' }).click();
 	await expect(page.getByRole('heading', { name: 'Half marathon plan' })).toBeVisible();
 	await expect(page.getByRole('region', { name: 'Half marathon plan' })).toContainText(
-		'generated-week cap'
+		'runway default'
 	);
 	await page.getByText('Stop this plan without marking it complete').click();
 	await page.getByLabel('Stop Half marathon plan').check();

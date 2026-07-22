@@ -20,7 +20,9 @@ export async function createAccount(page: Page) {
 }
 
 export function localSignInForm(page: Page) {
-	return page.locator('form').filter({ has: page.getByRole('heading', { name: 'Local sign in' }) });
+	return page
+		.locator('form')
+		.filter({ has: page.getByRole('heading', { name: 'Email and password' }) });
 }
 
 export async function holdSettingsAction(page: Page, action: string) {

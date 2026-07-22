@@ -93,7 +93,7 @@
 		<small class="event-meta">{distanceLabel} · {statusLabel}</small>
 		<span class="event-compact" aria-hidden="true">
 			<strong>{compactLabel}</strong>
-			<em>{compactStatusLabel}</em>
+			<em>{event.title} · {compactStatusLabel}</em>
 		</span>
 	{/if}
 </button>

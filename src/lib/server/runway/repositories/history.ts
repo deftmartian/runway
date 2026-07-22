@@ -148,7 +148,7 @@ export async function getHistory(userId: string, context?: TrainingReadContext) 
 			.where(activitySummaryWhere)
 			.groupBy(activityWeekStart),
 		db
-			.select({ workoutId: activity.workoutId })
+			.selectDistinct({ workoutId: activity.workoutId })
 			.from(activity)
 			.innerJoin(
 				workout,

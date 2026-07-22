@@ -101,6 +101,14 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 }) => {
 	await createAccount(page);
 	await page.goto('/app/settings');
+	await expect(page.getByRole('link', { name: 'Setup', exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Inbox', exact: true })).toHaveCount(0);
+	await page.getByText('Time zone', { exact: true }).click();
+	await page.getByLabel('Training time zone').fill('America/Halifax');
+	await page.getByRole('button', { name: 'Save time zone' }).click();
+	await expect(page.getByText('Training time zone saved.')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Setup', exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Inbox', exact: true })).toHaveCount(0);
 
 	const installNotice = page.getByRole('region', { name: 'Install runway' });
 	const installButton = installNotice.getByRole('button', { name: 'Install', exact: true });
@@ -131,7 +139,7 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 		.toBe(true);
 	const installShortcut = page.getByRole('button', { name: 'Install runway', exact: true });
 	await expect(installShortcut).toBeVisible();
-	await page.getByRole('link', { name: 'Calendar' }).click();
+	await page.getByRole('link', { name: 'Setup' }).click();
 	await expect(page).toHaveURL(/\/app\/onboarding$/);
 	await expect(installNotice).not.toBeVisible();
 	await expect(installShortcut).toBeVisible();

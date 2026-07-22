@@ -502,6 +502,7 @@ export async function getPlannedRuns(userId: string): Promise<
 		scheduledDate: string;
 		targetDistanceMeters: number;
 		status: string;
+		purpose: string;
 	}[]
 > {
 	const sql = postgres(
@@ -514,7 +515,8 @@ export async function getPlannedRuns(userId: string): Promise<
 				w.id,
 				w.scheduled_date::text as "scheduledDate",
 				w.target_distance_meters as "targetDistanceMeters",
-				w.status
+				w.status,
+				w.purpose
 			from workout w
 			inner join training_plan p on p.id = w.plan_id and p.status = 'active'
 			where w.user_id = ${userId}

@@ -109,6 +109,7 @@
 	);
 	const currentWeekLoad = $derived(calendarRows.find((row) => row.load?.isCurrent)?.load ?? null);
 	const todayEvents = $derived(allEvents.filter((event) => event.date === calendar.today));
+	const todayEvent = $derived(todayEvents[0] ?? null);
 	const todayStatus = $derived.by(() => {
 		const primary = todayEvents[0];
 		if (!primary) return 'Open day';
@@ -345,10 +346,17 @@
 				</div>
 			{/if}
 			<div class="training-command-strip" aria-label="Training summary">
-				<div class="command-readout current">
+				<button
+					type="button"
+					class="command-readout current interactive"
+					disabled={!todayEvent}
+					onclick={(mouseEvent) => {
+						if (todayEvent) selectEvent(todayEvent, mouseEvent.currentTarget);
+					}}
+				>
 					<span>Today</span>
 					<strong>{todayStatus}</strong>
-				</div>
+				</button>
 				<button
 					type="button"
 					class="command-readout interactive"
@@ -528,10 +536,10 @@
 											<span class="badge">{weekAssessment.evidence}</span>
 										{/if}
 										{#if load.week.painFlags > 0}<span class="badge bad"
-												>{load.week.painFlags} pain</span
+												>Pain reported · {load.week.painFlags}</span
 											>{/if}
 										{#if load.week.hardFlags > 0}<span class="badge warn"
-												>{load.week.hardFlags} hard</span
+												>Hard effort · {load.week.hardFlags}</span
 											>{/if}
 									</div>
 								</div>

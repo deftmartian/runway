@@ -54,7 +54,7 @@ describe('onboarding presentation model', () => {
 		);
 		expect(
 			modeLabel(validValues({ startMode: 'calibration', calibrationDurationMinutes: '15' }))
-		).toBe('Two-week 15 minute calibration');
+		).toBe('Two-week 15 minute baseline');
 	});
 
 	it('routes invalid setup to the owning stage', () => {

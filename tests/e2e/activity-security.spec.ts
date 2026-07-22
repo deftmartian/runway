@@ -76,7 +76,7 @@ test('matched GPX overruns carry the same load-spike consequence as feedback', a
 	const currentAssessment = page.getByRole('region', { name: 'Current assessment' });
 	await expect(currentAssessment).toBeVisible();
 	await expect(currentAssessment).toContainText(/Completed .* above plan\./);
-	await expect(currentAssessment).toContainText('generated-week cap');
+	await expect(currentAssessment).toContainText('runway default');
 	await expect(page.getByText('Based on recent activity', { exact: true })).toBeVisible();
 });
 

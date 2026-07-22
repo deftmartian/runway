@@ -294,9 +294,9 @@ test('foundation-only onboarding works at a mobile viewport without inventing di
 	await expect(page.getByText('29 min', { exact: true }).first()).toBeVisible();
 });
 
-test('short calibration creates two identical timed sessions per week', async ({ page }) => {
+test('two-week baseline creates two identical timed sessions per week', async ({ page }) => {
 	const email = await createAccount(page);
-	await page.getByLabel(/Short calibration/).check();
+	await page.getByLabel(/Two-week baseline/).check();
 	await page.getByLabel('Race distance').selectOption('5k');
 	await page.getByLabel('Target date').fill(addIsoDays(testDate, 12 * 7));
 	await goToOnboardingStep(page, 'Starting point');

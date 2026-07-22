@@ -212,9 +212,9 @@ export function formatRampEvidence(
 ): string {
 	const required = formatPercent(requiredWeeklyIncreasePercent);
 	if (defaultWeeklyIncreasePercent === undefined) {
-		return `${required} required weekly increase`;
+		return `${required} needed each week`;
 	}
-	return `${required} required · ${formatPercent(defaultWeeklyIncreasePercent)} generated-week cap`;
+	return `${required} needed each week · ${formatPercent(defaultWeeklyIncreasePercent)} runway default`;
 }
 
 export function formatLoadChangeEvidence(

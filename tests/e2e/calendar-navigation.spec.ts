@@ -29,6 +29,8 @@ test('training calendar month controls are URL-backed', async ({ page }) => {
 	expect(visibleDayCount).toBeGreaterThanOrEqual(35);
 	expect(visibleDayCount).toBeLessThanOrEqual(42);
 	expect(visibleDayCount % 7).toBe(0);
+	await page.getByRole('button', { name: /^Today\b/ }).click();
+	await expect(page.locator('#event-detail-panel')).toBeVisible();
 
 	await page.getByRole('link', { name: 'Next month' }).click();
 	await expect(page).toHaveURL(new RegExp(`/app\\?month=${nextMonth}`));
@@ -109,10 +111,11 @@ test('mobile training detail contains focus and locks background scrolling', asy
 		(run) => run.scheduledDate > testDate
 	);
 	if (!futureRun) throw new Error('Plan did not create a future workout for the dialog test.');
-	await page
+	const futureRunButton = page
 		.getByRole('button', { name: new RegExp(`^${futureRun.scheduledDate}:`) })
-		.first()
-		.click();
+		.first();
+	await expect(futureRunButton.locator('.event-compact em')).toContainText(futureRun.purpose);
+	await futureRunButton.click();
 	const panel = page.getByRole('dialog');
 	await expect(panel).toBeVisible();
 	await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
@@ -145,5 +148,6 @@ test('an empty past calendar day can record an unplanned run', async ({ page }) 
 	await expect(openDay).toBeVisible();
 	await openDay.click();
 	await expect(page.getByRole('heading', { name: 'Open day' })).toBeVisible();
-	await expect(page.getByText('Record unplanned run')).toBeVisible();
+	await page.getByText('Record unplanned run', { exact: true }).click();
+	await expect(page.getByText('No future workout changes automatically.')).toBeVisible();
 });

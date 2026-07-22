@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "iconSource": "src/lib/assets/favicon.svg",
   "iconSourceSha256": "fb582b5cad7f9dcb5cad4c5e958fd9136cb2a7fa97ea9c27af1bf3b880ee7b1d",
   "icons": [
@@ -27,15 +27,29 @@
   "screenshots": [
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
-      "sourceSha256": "a682506adb3b76f0473a4415a25b2f4a35b731b6452805c815ce5300685ee033",
+      "sourceSha256": "22373bb75531659fef3f73aa6d15397211cda1cce6df7a376e646bd4062196bc",
       "output": "static/pwa/screenshots/calendar-mobile.png",
-      "outputSha256": "947d7951a11a2c964e37c71d4a53bf7a664e0f63550e86c09644f7244759c862"
+      "outputSha256": "29227f2ebd099f1234c84b1f49779dc6f09e582a5476891f7e69e002dc61918b"
     },
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-wide-linux.png",
-      "sourceSha256": "35dbc360a30d18634558c1fd264dc61368de1edbb033530d70bc929d7421d2f1",
+      "sourceSha256": "062bbce6a8b5cb7d56ab4342c3f009d77089354b5a95faffd809b3bee5772308",
       "output": "static/pwa/screenshots/calendar-desktop.png",
-      "outputSha256": "339c61bc1e56710de1319ecde5aebad43af2b7c13452e5cb3c2a0011e0a354e1"
+      "outputSha256": "6d7ecd7b86efe12595237a49c5782d49ee8213a7585c3fe80b3937d94c5815e6"
+    }
+  ],
+  "documentationScreenshots": [
+    {
+      "source": "tests/visual/runway.visual.ts-snapshots/calendar-desktop-linux.png",
+      "sourceSha256": "58a51ec0854db48034079e13045a7dc5330bf4a50873c24910ad83c46183e683",
+      "output": "docs/images/runway-calendar-desktop.png",
+      "outputSha256": "58a51ec0854db48034079e13045a7dc5330bf4a50873c24910ad83c46183e683"
+    },
+    {
+      "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
+      "sourceSha256": "22373bb75531659fef3f73aa6d15397211cda1cce6df7a376e646bd4062196bc",
+      "output": "docs/images/runway-calendar-mobile.png",
+      "outputSha256": "22373bb75531659fef3f73aa6d15397211cda1cce6df7a376e646bd4062196bc"
     }
   ]
 }

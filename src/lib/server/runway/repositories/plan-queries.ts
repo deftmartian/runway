@@ -28,6 +28,15 @@ export async function getActivePlan(userId: string) {
 	return record;
 }
 
+export async function hasPlanHistory(userId: string): Promise<boolean> {
+	const [record] = await db
+		.select({ id: trainingPlan.id })
+		.from(trainingPlan)
+		.where(eq(trainingPlan.userId, userId))
+		.limit(1);
+	return record !== undefined;
+}
+
 export async function getCurrentGoal(userId: string) {
 	const [record] = await db
 		.select()

@@ -174,7 +174,7 @@
 			/>
 		</label>
 		<label>
-			Prescription
+			Workout target
 			<select
 				name="prescriptionKind"
 				bind:value={prescriptionKind}
@@ -287,7 +287,7 @@
 	</label>
 	<label class="check-row inline-check">
 		<input type="checkbox" name="rebalance" />
-		Rebalance compatible workouts in the destination week
+		Spread the weekly change across the other compatible runs
 	</label>
 	<p class="muted">By default this changes only this workout.</p>
 	<button class="secondary">Preview {mode === 'edit' ? 'change' : 'workout'}</button>

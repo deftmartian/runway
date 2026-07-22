@@ -85,7 +85,7 @@
 				? 'starting-path-help starting-path-error'
 				: 'starting-path-help'}
 		>
-			<legend>Starting path</legend>
+			<legend>How you’re starting</legend>
 			<p id="starting-path-help">
 				Choose this before the race date. The path determines how much preparation time is required.
 			</p>
@@ -132,7 +132,7 @@
 							onchoosestartmode('calibration');
 						}}
 					/>
-					<strong>Short calibration</strong>
+					<strong>Two-week baseline</strong>
 					<span>
 						Repeat a comfortable timed session for two weeks, then keep at least eight weeks for the
 						race plan.

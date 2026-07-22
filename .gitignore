@@ -9,6 +9,7 @@ node_modules/
 .svelte-kit-playwright-visual/
 .vite/
 build/
+/.runway-*
 .runway-live/
 dist/
 coverage/

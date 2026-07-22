@@ -10,34 +10,63 @@
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
-	const navItems = [
-		{ href: resolve('/app'), label: 'Calendar', path: resolve('/app'), icon: 'calendar' as const },
+	type NavItem = {
+		href:
+			| '/app'
+			| '/app/import'
+			| '/app/stats'
+			| '/app/history'
+			| '/app/settings'
+			| '/app/onboarding';
+		label: string;
+		path: string;
+		icon: 'calendar' | 'inbox' | 'stats' | 'history' | 'settings';
+	};
+	const appNavItems: NavItem[] = [
+		{ href: '/app', label: 'Calendar', path: resolve('/app'), icon: 'calendar' as const },
 		{
-			href: resolve('/app/import'),
+			href: '/app/import',
 			label: 'Inbox',
 			path: resolve('/app/import'),
 			icon: 'inbox' as const
 		},
 		{
-			href: resolve('/app/stats'),
+			href: '/app/stats',
 			label: 'Stats',
 			path: resolve('/app/stats'),
 			icon: 'stats' as const
 		},
 		{
-			href: resolve('/app/history'),
+			href: '/app/history',
 			label: 'History',
 			path: resolve('/app/history'),
 			icon: 'history' as const
 		},
 		{
-			href: resolve('/app/settings'),
+			href: '/app/settings',
 			label: 'Settings',
 			path: resolve('/app/settings'),
 			icon: 'settings' as const
 		}
 	];
-	const isActive = (item: (typeof navItems)[number]) => {
+	const setupNavItems: NavItem[] = [
+		{
+			href: '/app/onboarding',
+			label: 'Setup',
+			path: resolve('/app/onboarding'),
+			icon: 'calendar'
+		},
+		{
+			href: '/app/settings',
+			label: 'Settings',
+			path: resolve('/app/settings'),
+			icon: 'settings'
+		}
+	];
+	const usesSetupNavigation = $derived(!data.setupComplete);
+	const navItems = $derived(usesSetupNavigation ? setupNavItems : appNavItems);
+	const brandHref = $derived(usesSetupNavigation ? '/app/onboarding' : '/app');
+	const isActive = (item: NavItem) => {
 		return item.path === resolve('/app')
 			? page.url.pathname === item.path
 			: page.url.pathname === item.path || page.url.pathname.startsWith(`${item.path}/`);
@@ -59,7 +88,7 @@
 
 <a class="skip-link" href="#app-content">Skip to main content</a>
 <header class="topbar">
-	<a class="brand" href={resolve('/app')}>
+	<a class="brand" href={resolve(brandHref)}>
 		<RunwayMark />
 		<span>runway</span>
 	</a>
@@ -67,7 +96,7 @@
 	<nav class="nav desktop-nav" aria-label="App navigation">
 		{#each navItems as item (item.href)}
 			<a
-				href={item.href}
+				href={resolve(item.href)}
 				aria-current={isActive(item) ? 'page' : undefined}
 				class:active={isActive(item)}>{item.label}</a
 			>
@@ -80,10 +109,10 @@
 	{@render children()}
 </div>
 
-<nav class="mobile-nav" aria-label="App navigation">
+<nav class="mobile-nav" class:setup-navigation={usesSetupNavigation} aria-label="App navigation">
 	{#each navItems as item (item.href)}
 		<a
-			href={item.href}
+			href={resolve(item.href)}
 			aria-current={isActive(item) ? 'page' : undefined}
 			class:active={isActive(item)}><NavIcon name={item.icon} /><span>{item.label}</span></a
 		>
@@ -139,6 +168,10 @@
 			border-top: 1px solid var(--line);
 			background: color-mix(in oklab, var(--canvas), transparent 4%);
 			backdrop-filter: blur(16px);
+		}
+
+		.mobile-nav.setup-navigation {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
 		.mobile-nav a {
