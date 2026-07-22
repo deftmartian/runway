@@ -1,8 +1,17 @@
-ALTER TABLE "activity" ADD COLUMN "consequence_plan_id" uuid;
+ALTER TABLE "activity" ADD COLUMN IF NOT EXISTS "consequence_plan_id" uuid;
 --> statement-breakpoint
-CREATE INDEX "activity_consequence_plan_idx" ON "activity" USING btree ("consequence_plan_id");
+CREATE INDEX IF NOT EXISTS "activity_consequence_plan_idx" ON "activity" USING btree ("consequence_plan_id");
 --> statement-breakpoint
-ALTER TABLE "activity" ADD CONSTRAINT "activity_consequence_plan_user_fk" FOREIGN KEY ("consequence_plan_id","user_id") REFERENCES "public"."training_plan"("id","user_id") ON DELETE no action ON UPDATE no action;
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'activity_consequence_plan_user_fk'
+			AND conrelid = 'public.activity'::regclass
+	) THEN
+		ALTER TABLE "activity" ADD CONSTRAINT "activity_consequence_plan_user_fk" FOREIGN KEY ("consequence_plan_id","user_id") REFERENCES "public"."training_plan"("id","user_id") ON DELETE no action ON UPDATE no action;
+	END IF;
+END $$;
 --> statement-breakpoint
 DO $$
 BEGIN
@@ -19,9 +28,9 @@ BEGIN
 	END IF;
 END $$;
 --> statement-breakpoint
-CREATE UNIQUE INDEX "plan_adjustment_active_decision_unique" ON "plan_adjustment" USING btree ("user_id","trigger_id","workout_id") WHERE "plan_adjustment"."trigger_type" = 'decision' and "plan_adjustment"."trigger_id" is not null and "plan_adjustment"."reversed_at" is null;
+CREATE UNIQUE INDEX IF NOT EXISTS "plan_adjustment_active_decision_unique" ON "plan_adjustment" USING btree ("user_id","trigger_id","workout_id") WHERE "plan_adjustment"."trigger_type" = 'decision' and "plan_adjustment"."trigger_id" is not null and "plan_adjustment"."reversed_at" is null;
 --> statement-breakpoint
-CREATE TABLE "android_device" (
+CREATE TABLE IF NOT EXISTS "android_device" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" text NOT NULL,
 	"label" text NOT NULL,
@@ -37,7 +46,7 @@ CREATE TABLE "android_device" (
 	CONSTRAINT "android_device_expiry_after_creation" CHECK ("android_device"."expires_at" > "android_device"."created_at")
 );
 --> statement-breakpoint
-CREATE TABLE "android_import_request" (
+CREATE TABLE IF NOT EXISTS "android_import_request" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" text NOT NULL,
 	"device_id" uuid NOT NULL,
@@ -54,7 +63,7 @@ CREATE TABLE "android_import_request" (
 	CONSTRAINT "android_import_request_completion_consistent" CHECK (("android_import_request"."state" = 'processing' and "android_import_request"."result" is null and "android_import_request"."completed_at" is null) or ("android_import_request"."state" = 'completed' and "android_import_request"."result" is not null and "android_import_request"."completed_at" is not null))
 );
 --> statement-breakpoint
-CREATE TABLE "android_pairing_request" (
+CREATE TABLE IF NOT EXISTS "android_pairing_request" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" text NOT NULL,
 	"code_hash" text NOT NULL,
@@ -64,20 +73,55 @@ CREATE TABLE "android_pairing_request" (
 	CONSTRAINT "android_pairing_request_expiry_after_creation" CHECK ("android_pairing_request"."expires_at" > "android_pairing_request"."created_at")
 );
 --> statement-breakpoint
-ALTER TABLE "android_device" ADD CONSTRAINT "android_device_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "android_import_request" ADD CONSTRAINT "android_import_request_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "android_import_request" ADD CONSTRAINT "android_import_request_device_user_fk" FOREIGN KEY ("device_id","user_id") REFERENCES "public"."android_device"("id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "android_pairing_request" ADD CONSTRAINT "android_pairing_request_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "android_device_token_hash_unique" ON "android_device" USING btree ("token_hash");--> statement-breakpoint
-CREATE INDEX "android_device_user_active_idx" ON "android_device" USING btree ("user_id","revoked_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "android_import_request_device_request_unique" ON "android_import_request" USING btree ("device_id","request_id");--> statement-breakpoint
-CREATE INDEX "android_import_request_user_created_idx" ON "android_import_request" USING btree ("user_id","created_at");--> statement-breakpoint
-CREATE INDEX "android_import_request_device_updated_idx" ON "android_import_request" USING btree ("device_id","updated_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "android_pairing_request_code_hash_unique" ON "android_pairing_request" USING btree ("code_hash");--> statement-breakpoint
-CREATE INDEX "android_pairing_request_user_created_idx" ON "android_pairing_request" USING btree ("user_id","created_at");--> statement-breakpoint
-CREATE INDEX "android_pairing_request_expires_idx" ON "android_pairing_request" USING btree ("expires_at");
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'android_device_user_id_user_id_fk'
+			AND conrelid = 'public.android_device'::regclass
+	) THEN
+		ALTER TABLE "android_device" ADD CONSTRAINT "android_device_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'android_import_request_user_id_user_id_fk'
+			AND conrelid = 'public.android_import_request'::regclass
+	) THEN
+		ALTER TABLE "android_import_request" ADD CONSTRAINT "android_import_request_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'android_import_request_device_user_fk'
+			AND conrelid = 'public.android_import_request'::regclass
+	) THEN
+		ALTER TABLE "android_import_request" ADD CONSTRAINT "android_import_request_device_user_fk" FOREIGN KEY ("device_id","user_id") REFERENCES "public"."android_device"("id","user_id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'android_pairing_request_user_id_user_id_fk'
+			AND conrelid = 'public.android_pairing_request'::regclass
+	) THEN
+		ALTER TABLE "android_pairing_request" ADD CONSTRAINT "android_pairing_request_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+END $$;
 --> statement-breakpoint
-CREATE TABLE "import_operation_lease" (
+CREATE UNIQUE INDEX IF NOT EXISTS "android_device_token_hash_unique" ON "android_device" USING btree ("token_hash");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "android_device_user_active_idx" ON "android_device" USING btree ("user_id","revoked_at");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "android_import_request_device_request_unique" ON "android_import_request" USING btree ("device_id","request_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "android_import_request_user_created_idx" ON "android_import_request" USING btree ("user_id","created_at");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "android_import_request_device_updated_idx" ON "android_import_request" USING btree ("device_id","updated_at");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "android_pairing_request_code_hash_unique" ON "android_pairing_request" USING btree ("code_hash");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "android_pairing_request_user_created_idx" ON "android_pairing_request" USING btree ("user_id","created_at");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "android_pairing_request_expires_idx" ON "android_pairing_request" USING btree ("expires_at");
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "import_operation_lease" (
 	"user_id" text PRIMARY KEY NOT NULL,
 	"token" uuid NOT NULL,
 	"operation" text NOT NULL,
@@ -86,7 +130,24 @@ CREATE TABLE "import_operation_lease" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "athlete_profile" ADD COLUMN "browser_folder_generation" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE "import_operation_lease" ADD CONSTRAINT "import_operation_lease_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "import_operation_lease_expires_idx" ON "import_operation_lease" USING btree ("expires_at");--> statement-breakpoint
-ALTER TABLE "athlete_profile" ADD CONSTRAINT "athlete_profile_browser_folder_generation_nonnegative" CHECK ("athlete_profile"."browser_folder_generation" >= 0);
+ALTER TABLE "athlete_profile" ADD COLUMN IF NOT EXISTS "browser_folder_generation" integer DEFAULT 0 NOT NULL;
+--> statement-breakpoint
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'import_operation_lease_user_id_user_id_fk'
+			AND conrelid = 'public.import_operation_lease'::regclass
+	) THEN
+		ALTER TABLE "import_operation_lease" ADD CONSTRAINT "import_operation_lease_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'athlete_profile_browser_folder_generation_nonnegative'
+			AND conrelid = 'public.athlete_profile'::regclass
+	) THEN
+		ALTER TABLE "athlete_profile" ADD CONSTRAINT "athlete_profile_browser_folder_generation_nonnegative" CHECK ("athlete_profile"."browser_folder_generation" >= 0);
+	END IF;
+END $$;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "import_operation_lease_expires_idx" ON "import_operation_lease" USING btree ("expires_at");
