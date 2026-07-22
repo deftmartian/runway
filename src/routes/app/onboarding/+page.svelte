@@ -59,6 +59,7 @@
 			values.startMode = 'foundation_only';
 			values.raceDistance = '';
 			values.targetDate = '';
+			values.priority = 'finish_healthy';
 		} else if (values.startMode === 'foundation_only') {
 			values.startMode = '';
 		}

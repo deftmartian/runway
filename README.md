@@ -36,8 +36,8 @@ access, background reconciliation, and Android GPX shares. See [Android architec
 [build instructions](android/README.md).
 
 Versioned GitHub releases are wired to include a verified, signed APK alongside the container image.
-The release is blocked if the protected Android signing identity is unavailable; debug or unsigned
-APKs are never presented as installable releases.
+The release is blocked if the protected Android signing identity is unavailable or differs from its
+pinned certificate fingerprint; debug or unsigned APKs are never presented as installable releases.
 
 <details>
 <summary>Plan traces and exact values</summary>

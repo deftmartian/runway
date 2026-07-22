@@ -188,19 +188,23 @@
 		{/if}
 	{/if}
 
-	<label class="single-field">
-		Priority
-		<select
-			name="priority"
-			bind:value={values.priority}
-			aria-invalid={Boolean(errorFor('priority'))}
-			aria-describedby={errorFor('priority') ? 'priority-error' : undefined}
-		>
-			<option value="finish_healthy">Lower ramp</option>
-			<option value="consistency">Build consistency</option>
-		</select>
-		{#if errorFor('priority')}
-			<span id="priority-error" class="field-error">{errorFor('priority')}</span>
-		{/if}
-	</label>
+	{#if values.goalKind === 'foundation'}
+		<input type="hidden" name="priority" value="finish_healthy" />
+	{:else}
+		<label class="single-field">
+			Priority
+			<select
+				name="priority"
+				bind:value={values.priority}
+				aria-invalid={Boolean(errorFor('priority'))}
+				aria-describedby={errorFor('priority') ? 'priority-error' : undefined}
+			>
+				<option value="finish_healthy">Lower ramp</option>
+				<option value="consistency">Build consistency</option>
+			</select>
+			{#if errorFor('priority')}
+				<span id="priority-error" class="field-error">{errorFor('priority')}</span>
+			{/if}
+		</label>
+	{/if}
 </section>

@@ -632,7 +632,7 @@ function editProposal(
 		targetDurationSeconds: input.prescriptionKind === 'timed' ? input.targetDurationSeconds : null,
 		intervalStructure:
 			input.prescriptionKind === 'timed' ? structuredClone(input.intervalStructure) : null,
-		intensity: input.intensity.trim() || 'easy',
+		intensity: input.intensity,
 		purpose: input.purpose.trim(),
 		reason,
 		sourceRefs: [],

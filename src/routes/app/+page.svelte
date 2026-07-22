@@ -10,7 +10,7 @@
 	{#if !data.calendar}
 		<section class="first-plan-empty">
 			<h1>Create your first plan</h1>
-			<p>Enter your goal, current weekly distance, and available running days.</p>
+			<p>Choose a goal, starting point, and days that usually work.</p>
 			<a class="button primary" href={resolve('/app/onboarding')}>Create plan</a>
 		</section>
 	{:else}

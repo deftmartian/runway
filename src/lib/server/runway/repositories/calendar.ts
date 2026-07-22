@@ -233,7 +233,8 @@ export async function getTrainingCalendar(
 			userId,
 			activePlan.plan,
 			today,
-			effectivePlanRisk(allEffectiveWeeks, activePlan.plan.risk)
+			effectivePlanRisk(allEffectiveWeeks, activePlan.plan.risk),
+			allEffectiveWeeks.some((week) => week.hasMixedLoad)
 		)
 	]);
 	const weeks = allEffectiveWeeks.filter(

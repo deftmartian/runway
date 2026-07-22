@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	activity,
@@ -27,8 +27,8 @@ import { changedWorkoutState, workoutAdjustmentState } from './workout-state';
 import { requireAthleteTimeZoneInTransaction } from './profiles';
 import { effectiveWeekTargetDistance, planWeekIdForDate } from './schedule-queries';
 import {
+	eraseLedgerAdjustments,
 	recordPlanAdjustment,
-	replayWorkoutLedgers,
 	reverseLedgerAdjustmentsForTrigger
 } from './adjustment-ledger';
 import { lockActivityOwner } from './mutation-locks';
@@ -527,12 +527,13 @@ export async function deleteActivityRecord(userId: string, activityId: string) {
 			.limit(1)
 			.for('update', { of: activity });
 		if (!targetActivity) throw new Error('Activity not found.');
-		await reverseLedgerAdjustmentsForTrigger(tx, {
-			userId,
-			triggerId: targetActivity.id,
-			originalTriggerTypes: ['manual', 'import_match', 'import_extra', 'link', 'decision'],
-			reason: 'Deleting the activity restored every active workout change derived from it.'
-		});
+		const activityAdjustments = await tx
+			.select({ id: planAdjustment.id, workoutId: planAdjustment.workoutId })
+			.from(planAdjustment)
+			.where(
+				and(eq(planAdjustment.userId, userId), eq(planAdjustment.triggerId, targetActivity.id))
+			);
+		await eraseLedgerAdjustments(tx, { userId, targets: activityAdjustments });
 		if (targetActivity.workoutId) {
 			await tx
 				.delete(workoutFeedback)
@@ -557,13 +558,6 @@ export async function deleteActivityRecord(userId: string, activityId: string) {
 					sql`${auditEvent.detail} ->> 'activityId' = ${targetActivity.id}`
 				)
 			);
-		await tx
-			.update(planAdjustment)
-			.set({ triggerId: null, consequence: null, reason: 'Deleted activity adjustment.' })
-			.where(
-				and(eq(planAdjustment.userId, userId), eq(planAdjustment.triggerId, targetActivity.id))
-			);
-
 		// Keep the keyed remote-item marker so a connected source does not fetch the
 		// same file again. The marker contains no reversible path, and clearing the
 		// activity reference lets the private activity itself be deleted.
@@ -640,24 +634,6 @@ export async function deleteActivityData(userId: string) {
 			on conflict (user_id, file_hash) do nothing
 		`);
 
-		const importedActivityTriggerExists = sql`exists (
-			select 1
-			from ${activity} as imported_activity
-			where imported_activity.user_id = ${userId}
-				and imported_activity.source = 'gpx'
-				and imported_activity.id = ${planAdjustment.triggerId}
-		)`;
-		await tx
-			.update(planAdjustment)
-			.set({ reversedAt: now, reversalReason: 'Imported activity data was deleted.' })
-			.where(
-				and(
-					eq(planAdjustment.userId, userId),
-					isNull(planAdjustment.reversedAt),
-					importedActivityTriggerExists
-				)
-			);
-
 		const replayBatchSize = 100;
 		let lastWorkoutId: string | null = null;
 		for (;;) {
@@ -682,7 +658,21 @@ export async function deleteActivityData(userId: string) {
 				.limit(replayBatchSize);
 			if (affectedWorkouts.length === 0) break;
 			const workoutIds = affectedWorkouts.map(({ workoutId }) => workoutId);
-			await replayWorkoutLedgers(tx, userId, workoutIds);
+			const importedActivityAdjustments = await tx
+				.select({ id: planAdjustment.id, workoutId: planAdjustment.workoutId })
+				.from(planAdjustment)
+				.innerJoin(
+					activity,
+					and(
+						eq(activity.id, planAdjustment.triggerId),
+						eq(activity.userId, userId),
+						eq(activity.source, 'gpx')
+					)
+				)
+				.where(
+					and(eq(planAdjustment.userId, userId), inArray(planAdjustment.workoutId, workoutIds))
+				);
+			await eraseLedgerAdjustments(tx, { userId, targets: importedActivityAdjustments });
 			lastWorkoutId = workoutIds.at(-1) ?? null;
 			if (affectedWorkouts.length < replayBatchSize) break;
 		}
@@ -699,10 +689,6 @@ export async function deleteActivityData(userId: string) {
 					)`
 			)
 		);
-		await tx
-			.update(planAdjustment)
-			.set({ triggerId: null, consequence: null, reason: 'Deleted activity adjustment.' })
-			.where(and(eq(planAdjustment.userId, userId), importedActivityTriggerExists));
 		await tx.delete(workoutFeedback).where(
 			and(
 				eq(workoutFeedback.userId, userId),

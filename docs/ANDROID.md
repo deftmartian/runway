@@ -189,7 +189,7 @@ corepack pnpm verify:android:release
 corepack pnpm verify:android:version
 ```
 
-The build command runs Gradle `lint`, `test`, and `assembleDebug`. The release-contract command proves
+The build command runs Gradle `lint`, `test`, `assembleDebug`, and `assembleDebugAndroidTest`. The release-contract command proves
 the selectable-server configuration passes, the removed bound-origin property is rejected, normal
 release packaging fails without `android/signing.properties`, and the explicit F-Droid path can produce an unsigned
 source-built artifact without private material. The check points Gradle at an isolated nonexistent signing file,
@@ -197,7 +197,15 @@ so it never reads an operator's local key configuration. Both commands verify th
 contains only the reviewed normal operational permissions and exported components, with backups and
 release cleartext/debugging disabled. Neither command produces a directly distributable release. The
 repository check workflow runs the same commands with JDK 17, Android platform 36, and build tools
-36.0.0. Version tags use a separate protected signing job; release publication waits for its verified
-installable APK and attaches the APK, checksum, and signer fingerprint. Emulator, physical-device,
-Custom Tab, and accessibility evidence remain explicit release gates rather than being implied by a
-successful build.
+36.0.0. Version tags use a separate protected signing job. Its `android-release` environment must
+hold the four signing secrets and a `RUNWAY_ANDROID_CERT_SHA256` variable containing the expected
+release-certificate fingerprint; a missing or changed identity blocks publication. Release
+publication waits for the verified installable APK and attaches the APK, filename-only checksum, and
+signer fingerprint. Emulator, physical-device, Custom Tab, and accessibility evidence remain
+explicit release gates rather than being implied by a successful build.
+
+`connectedDebugAndroidTest` is the local device gate. On a disposable emulator or test phone, it
+exercises the real Android Keystore and preferences to verify recovery from an interrupted server
+transition and rejection of a stale credential clear. CI still compiles the instrumentation APK but
+does not claim device coverage; release evidence must record the actual emulator and physical-device
+runs.

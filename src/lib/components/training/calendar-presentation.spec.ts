@@ -123,6 +123,15 @@ describe('presentCalendarTrainingAssessment', () => {
 		expect(assessment.presentation.attention).toBe('blocked');
 	});
 
+	it('does not collapse mixed distance and timed prescriptions into one ramp label', () => {
+		const assessment = presentCalendarTrainingAssessment('aggressive', 'plan', null, true);
+
+		expect(assessment.presentation).toMatchObject({
+			label: 'Mixed prescriptions',
+			assessment: 'needs_review'
+		});
+	});
+
 	it('presents feedback and activity as accepted load context, not plan ramps', () => {
 		const feedbackAssessment = presentCalendarTrainingAssessment('unsafe', 'feedback');
 		const activityAssessment = presentCalendarTrainingAssessment('aggressive', 'activity');

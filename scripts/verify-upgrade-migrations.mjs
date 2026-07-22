@@ -63,24 +63,11 @@ try {
 			insert into "user" ("id", "name", "email", "email_verified", "created_at", "updated_at")
 			values ('migration-upgrade-probe', 'Migration probe', 'migration-probe@example.invalid', false, now(), now())
 		`;
+		await seedDuplicateActiveDecisions(sql);
 	});
 
-	if (migrationImage) {
-		await run('docker', [
-			'run',
-			'--rm',
-			'--network',
-			'host',
-			'-e',
-			`DATABASE_URL=${databaseUrl.toString()}`,
-			migrationImage,
-			'node',
-			'scripts/run-migrations.mjs'
-		]);
-	} else {
-		await migrateDatabase(databaseUrl, 'drizzle');
-	}
-	await migrateDatabase(databaseUrl, 'drizzle');
+	await runMigrationRunner(databaseUrl);
+	await runMigrationRunner(databaseUrl);
 
 	await withSql(databaseUrl, async (sql) => {
 		const [state] = await sql`
@@ -139,6 +126,24 @@ try {
 		if (!decisionIndex?.indexDefinition?.includes('UNIQUE')) {
 			throw new Error('Upgrade is missing the active-decision uniqueness guard.');
 		}
+
+		const decisions = await sql`
+			select "id", "reversed_at" as "reversedAt", "reversal_reason" as "reversalReason"
+			from "plan_adjustment"
+			where "trigger_id" = '10000000-0000-4000-8000-000000000005'
+			order by "created_at", "id"
+		`;
+		if (
+			decisions.length !== 2 ||
+			decisions.filter((decision) => decision.reversedAt === null).length !== 1 ||
+			decisions.filter(
+				(decision) =>
+					decision.reversedAt !== null &&
+					decision.reversalReason === 'migration: superseded duplicate decision'
+			).length !== 1
+		) {
+			throw new Error('Upgrade did not deterministically repair duplicate active decisions.');
+		}
 	});
 
 	console.log(
@@ -156,6 +161,85 @@ async function migrateDatabase(url, migrationsFolder) {
 	} finally {
 		await client.end();
 	}
+}
+
+async function runMigrationRunner(url) {
+	if (migrationImage) {
+		await run('docker', [
+			'run',
+			'--rm',
+			'--network',
+			'host',
+			'-e',
+			`DATABASE_URL=${url.toString()}`,
+			migrationImage,
+			'node',
+			'scripts/run-migrations.mjs'
+		]);
+		return;
+	}
+	await run('node', ['scripts/run-migrations.mjs'], {
+		...process.env,
+		DATABASE_URL: url.toString()
+	});
+}
+
+async function seedDuplicateActiveDecisions(sql) {
+	await sql`
+		insert into "goal" (
+			"id", "user_id", "title", "kind", "state", "start_mode", "distance", "target_date", "priority"
+		) values (
+			'10000000-0000-4000-8000-000000000001', 'migration-upgrade-probe', 'Upgrade probe',
+			'race', 'active', 'established', '5k', current_date + 7, 'finish_healthy'
+		)
+	`;
+	await sql`
+		insert into "training_plan" (
+			"id", "user_id", "goal_id", "status", "phase", "start_date", "target_date", "weeks", "risk", "plan_summary"
+		) values (
+			'10000000-0000-4000-8000-000000000002', 'migration-upgrade-probe',
+			'10000000-0000-4000-8000-000000000001', 'active', 'distance', current_date,
+			current_date + 7, 1, 'conservative', '{"kind":"distance"}'::jsonb
+		)
+	`;
+	await sql`
+		insert into "training_week" (
+			"id", "user_id", "plan_id", "week_number", "start_date", "target_distance_meters",
+			"target_duration_seconds", "long_run_meters", "risk"
+		) values (
+			'10000000-0000-4000-8000-000000000003', 'migration-upgrade-probe',
+			'10000000-0000-4000-8000-000000000002', 1, current_date, 3000, 0, 3000, 'conservative'
+		)
+	`;
+	await sql`
+		insert into "workout" (
+			"id", "user_id", "plan_id", "week_id", "scheduled_date", "type", "status",
+			"prescription_kind", "target_distance_meters", "intensity", "purpose", "reason"
+		) values (
+			'10000000-0000-4000-8000-000000000004', 'migration-upgrade-probe',
+			'10000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000003',
+			current_date, 'easy', 'planned', 'distance', 3000, 'easy', 'Upgrade probe', 'Upgrade probe'
+		)
+	`;
+	await sql`
+		insert into "plan_adjustment" (
+			"id", "user_id", "plan_id", "workout_id", "trigger_type", "trigger_id",
+			"previous_target_distance_meters", "new_target_distance_meters",
+			"previous_scheduled_date", "new_scheduled_date", "previous_state", "new_state", "reason", "created_at"
+		) values
+		(
+			'10000000-0000-4000-8000-000000000006', 'migration-upgrade-probe',
+			'10000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000004',
+			'decision', '10000000-0000-4000-8000-000000000005', 3000, 2800, current_date, current_date,
+			'{}'::jsonb, '{}'::jsonb, 'Older duplicate', now() - interval '1 minute'
+		),
+		(
+			'10000000-0000-4000-8000-000000000007', 'migration-upgrade-probe',
+			'10000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000004',
+			'decision', '10000000-0000-4000-8000-000000000005', 3000, 2600, current_date, current_date,
+			'{}'::jsonb, '{}'::jsonb, 'Current decision', now()
+		)
+	`;
 }
 
 async function withSql(url, callback) {
@@ -176,9 +260,9 @@ function assertLocalDatabase(url) {
 	}
 }
 
-function run(command, args) {
+function run(command, args, env = process.env) {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { env: process.env, stdio: 'inherit' });
+		const child = spawn(command, args, { env, stdio: 'inherit' });
 		child.once('error', reject);
 		child.once('exit', (code, signal) => {
 			if (code === 0) resolve();

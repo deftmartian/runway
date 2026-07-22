@@ -66,7 +66,7 @@ test('activity deletion serializes behind a claimed consequence decision', async
 		.poll(() => getActivityDeletionResidue(userId, activityId))
 		.toEqual({
 			activityCount: 0,
-			activeAdjustmentCount: 0,
+			adjustmentCount: 0,
 			auditCount: 0
 		});
 });
@@ -160,7 +160,7 @@ test('link followed by deletion cannot leave a completed phantom workout', async
 	await expect.poll(() => getWorkout(targetRun.id)).toEqual(originalWorkout);
 	await expect
 		.poll(() => getActivityDeletionResidue(userId, activityId))
-		.toEqual({ activityCount: 0, activeAdjustmentCount: 0, auditCount: 0 });
+		.toEqual({ activityCount: 0, adjustmentCount: 0, auditCount: 0 });
 });
 
 test('unlink followed by deletion restores the workout exactly once', async ({ page }) => {
@@ -204,7 +204,7 @@ test('unlink followed by deletion restores the workout exactly once', async ({ p
 	await expect.poll(() => getWorkout(targetRun.id)).toEqual(originalWorkout);
 	await expect
 		.poll(() => getActivityDeletionResidue(userId, activityId))
-		.toEqual({ activityCount: 0, activeAdjustmentCount: 0, auditCount: 0 });
+		.toEqual({ activityCount: 0, adjustmentCount: 0, auditCount: 0 });
 });
 
 test('an import match wins cleanly over a queued future workout edit', async ({ page }) => {

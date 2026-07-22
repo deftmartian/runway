@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConsequenceResult } from '$lib/training/types';
 import {
 	currentSignalReasonsFor,
+	healthNoticeFor,
 	selectCurrentTrainingSignal,
 	type RecordedTrainingEvidence
 } from './training-signal';
@@ -105,6 +106,19 @@ describe('current training signal reasons', () => {
 			})
 		).toEqual(['One', 'Two', 'Three']);
 	});
+
+	it('keeps stored health warnings out of the numeric ramp reasons', () => {
+		expect(
+			currentSignalReasonsFor({
+				planRisk: 'conservative',
+				planWarnings: [
+					'Injury recovery or recurring pain is included in the ramp assessment. Get qualified guidance if pain persists.',
+					'The available weeks do not allow the usual peak distance.'
+				],
+				selectedConsequence: null
+			})
+		).toEqual(['The available weeks do not allow the usual peak distance.']);
+	});
 });
 
 describe('current training evidence selection', () => {
@@ -153,7 +167,9 @@ describe('current training evidence selection', () => {
 			risk: 'conservative',
 			consequence: null,
 			reasons: [],
-			source: 'plan'
+			source: 'plan',
+			planComparisonStatus: 'comparable',
+			healthNotice: null
 		});
 	});
 
@@ -179,6 +195,44 @@ describe('current training evidence selection', () => {
 			risk: 'unsafe',
 			source: 'activity',
 			consequence: painConsequence
+		});
+	});
+});
+
+describe('current training health context', () => {
+	const healthy = {
+		recentInjury: false,
+		currentPain: false,
+		recurringPain: false,
+		medicalRestriction: false,
+		notes: ''
+	};
+
+	it('keeps active pain separate from the numeric training signal', () => {
+		const healthNotice = healthNoticeFor({ ...healthy, currentPain: true });
+		const current = selectCurrentTrainingSignal({
+			planRisk: 'conservative',
+			planWarnings: [],
+			recordedEvidence: [],
+			healthNotice
+		});
+
+		expect(current.risk).toBe('conservative');
+		expect(current.healthNotice).toMatchObject({ level: 'paused', heading: 'Pain is present now' });
+	});
+
+	it('marks mixed prescriptions as non-comparable without changing the numeric risk', () => {
+		const current = selectCurrentTrainingSignal({
+			planRisk: 'moderate',
+			planWarnings: ["Weekly distance growth above 10% is outside runway's default."],
+			recordedEvidence: [],
+			planHasMixedLoad: true
+		});
+
+		expect(current).toMatchObject({
+			risk: 'moderate',
+			planComparisonStatus: 'mixed',
+			reasons: []
 		});
 	});
 });

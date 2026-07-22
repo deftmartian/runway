@@ -19,7 +19,9 @@ const allMaterialOptions: PlanDecision[] = [
 export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceResult {
 	assertFeedbackInvariants(input);
 	const comparison = comparePrescription(input);
-	const repeatedMiss = (input.recentMissedWorkouts ?? 0) > 0;
+	const repeatedSkip = (input.recentSkippedWorkouts ?? 0) > 0;
+	const repeatedShortfall =
+		(input.recentSkippedWorkouts ?? 0) + (input.recentShortenedWorkouts ?? 0) > 0;
 	const weeklyLoadDelta = metricDelta(comparison.metric, comparison.actualDifference);
 
 	if (input.pain) {
@@ -34,7 +36,8 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 					: -Math.max(input.targetDistanceMeters, 1_000)
 			),
 			risk: 'unsafe',
-			recommendedDecision: 'next_rest'
+			recommendedDecision: 'next_rest',
+			options: ['keep_plan', 'reduce_next', 'next_rest', 'rebalance_week']
 		});
 	}
 
@@ -70,7 +73,7 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 		const largeShortfall =
 			Math.abs(comparison.actualDifference) > comparison.target * 0.4 || comparison.actual === 0;
 		return result({
-			kind: repeatedMiss ? 'repeated_shortfall' : 'shortfall',
+			kind: repeatedShortfall ? 'repeated_shortfall' : 'shortfall',
 			...comparison,
 			weeklyLoadDelta,
 			nextRunAdjustment: metricDelta(
@@ -78,19 +81,20 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 				-Math.max(
 					comparison.metric === 'duration' ? 300 : 500,
 					Math.round(
-						Math.abs(comparison.actualDifference) * (input.feltHard || repeatedMiss ? 0.35 : 0.25)
+						Math.abs(comparison.actualDifference) *
+							(input.feltHard || repeatedShortfall ? 0.35 : 0.25)
 					)
 				)
 			),
-			risk: largeShortfall || input.feltHard || repeatedMiss ? 'moderate' : 'conservative',
-			recommendedDecision: input.feltHard || repeatedMiss ? 'repeat_prescription' : 'keep_plan'
+			risk: largeShortfall || input.feltHard || repeatedShortfall ? 'moderate' : 'conservative',
+			recommendedDecision: input.feltHard || repeatedShortfall ? 'repeat_prescription' : 'keep_plan'
 		});
 	}
 
 	if (comparison.deviation === 'skipped') {
 		return result({
-			kind: repeatedMiss
-				? 'repeated_miss'
+			kind: repeatedSkip
+				? 'repeated_skip'
 				: input.choice === 'reduce_next'
 					? 'skip_reduce'
 					: 'skip_continue',
@@ -103,8 +107,8 @@ export function calculateConsequence(input: WorkoutFeedbackInput): ConsequenceRe
 					Math.round(comparison.target * (input.feltHard ? 0.3 : 0.2))
 				)
 			),
-			risk: input.feltHard || repeatedMiss ? 'moderate' : 'conservative',
-			recommendedDecision: repeatedMiss || input.feltHard ? 'repeat_prescription' : 'keep_plan'
+			risk: input.feltHard || repeatedSkip ? 'moderate' : 'conservative',
+			recommendedDecision: repeatedSkip || input.feltHard ? 'repeat_prescription' : 'keep_plan'
 		});
 	}
 
@@ -270,6 +274,7 @@ function result(
 	> & {
 		target: number;
 		actual: number;
+		options?: PlanDecision[];
 	}
 ): ConsequenceResult {
 	const consequence: Omit<ConsequenceResult, 'options' | 'appliedDecision'> = {
@@ -289,9 +294,10 @@ function result(
 	return {
 		...consequence,
 		options:
-			consequence.deviation === 'near_plan' && consequence.kind === 'completed_as_planned'
+			input.options ??
+			(consequence.deviation === 'near_plan' && consequence.kind === 'completed_as_planned'
 				? ['keep_plan']
-				: [...allMaterialOptions],
+				: [...allMaterialOptions]),
 		appliedDecision: null
 	};
 }
@@ -361,10 +367,9 @@ function assertFeedbackInvariants(input: WorkoutFeedbackInput): void {
 			throw new Error('Completed distance workouts need a positive recorded distance.');
 		}
 	}
-	if (
-		input.recentMissedWorkouts !== undefined &&
-		(!Number.isInteger(input.recentMissedWorkouts) || input.recentMissedWorkouts < 0)
-	) {
-		throw new Error('Recent missed-workout count is invalid.');
+	for (const count of [input.recentSkippedWorkouts, input.recentShortenedWorkouts]) {
+		if (count !== undefined && (!Number.isInteger(count) || count < 0)) {
+			throw new Error('Recent deviation count is invalid.');
+		}
 	}
 }

@@ -76,7 +76,7 @@
 			runMinutes: runSegment ? String(runSegment.durationSeconds / 60) : '2',
 			walkMinutes: walkSegment ? String(walkSegment.durationSeconds / 60) : '1',
 			repetitions: String(firstBlock?.repetitions ?? 6),
-			intensity: workout?.intensity ?? 'easy',
+			intensity: workout?.type === 'rest' ? 'rest' : 'easy',
 			purpose: workout?.purpose ?? 'Easy run',
 			userReason: '',
 			rebalance: false,
@@ -275,16 +275,12 @@
 		{/if}
 	{/if}
 
-	<div class="form-grid two">
-		<label>
-			Purpose
-			<input name="purpose" maxlength="120" value={initial.purpose} required />
-		</label>
-		<label>
-			Effort
-			<input name="intensity" maxlength="80" value={initial.intensity} required />
-		</label>
-	</div>
+	<label>
+		Purpose
+		<input name="purpose" maxlength="120" value={initial.purpose} required />
+	</label>
+	<input type="hidden" name="intensity" value={prescriptionKind === 'rest' ? 'rest' : 'easy'} />
+	<p class="muted">Run effort stays easy; runway does not model harder workout prescriptions.</p>
 	<label>
 		Reason for the change <span class="muted">(optional)</span>
 		<input name="userReason" maxlength="500" />

@@ -10,12 +10,10 @@ const baseDatabaseUrl = process.env['DATABASE_URL'] ?? defaultDatabaseUrl;
 const databaseName = `runway_rebased_${process.pid}_${Date.now()}`.slice(0, 63);
 const migrationImage = process.env['RUNWAY_MIGRATION_IMAGE'];
 const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'));
+const integrity = JSON.parse(await readFile('drizzle/migration-integrity.json', 'utf8'));
 const upgradeMigration = journal.entries.at(-1);
-const rebasedEntries = [
-	{ hash: 'v0.1.1-rebased-0000', createdAt: 1784301464615 },
-	{ hash: 'v0.1.1-rebased-0001', createdAt: 1784387613123 },
-	{ hash: 'v0.1.1-rebased-0002', createdAt: 1784403938842 }
-];
+const rebasedEntries = integrity.rebasedV011;
+const releasedFixtureFolder = 'tests/fixtures/migrations/v0.1.1/drizzle';
 
 if (upgradeMigration?.tag !== '0022_forward_compatible_upgrade') {
 	throw new Error('Rebased-history verification requires the forward compatibility migration.');
@@ -34,37 +32,31 @@ databaseUrl.pathname = `/${databaseName}`;
 await withSql(adminUrl, (sql) => sql`create database ${sql(databaseName)}`);
 
 try {
-	await migrateDatabase(databaseUrl, 'drizzle');
+	await migrateDatabase(databaseUrl, releasedFixtureFolder);
 	await withSql(databaseUrl, async (sql) => {
+		const ledger = await sql`
+			select "hash", "created_at"::text as "createdAt"
+			from drizzle.__drizzle_migrations
+			order by "created_at", "id"
+		`;
+		if (
+			ledger.length !== rebasedEntries.length ||
+			ledger.some(
+				(entry, index) =>
+					entry.hash !== rebasedEntries[index]?.hash ||
+					entry.createdAt !== rebasedEntries[index]?.createdAt
+			)
+		) {
+			throw new Error('Released v0.1.1 fixture did not create its exact migration ledger.');
+		}
 		await sql`
 			insert into "user" ("id", "name", "email", "email_verified", "created_at", "updated_at")
 			values ('rebased-upgrade-probe', 'Migration probe', 'rebased-probe@example.invalid', false, now(), now())
 		`;
-		await sql`delete from drizzle.__drizzle_migrations`;
-		for (const entry of rebasedEntries) {
-			await sql`
-				insert into drizzle.__drizzle_migrations ("hash", "created_at")
-				values (${entry.hash}, ${entry.createdAt})
-			`;
-		}
 	});
 
-	if (migrationImage) {
-		await run('docker', [
-			'run',
-			'--rm',
-			'--network',
-			'host',
-			'-e',
-			`DATABASE_URL=${databaseUrl.toString()}`,
-			migrationImage,
-			'node',
-			'scripts/run-migrations.mjs'
-		]);
-	} else {
-		await migrateDatabase(databaseUrl, 'drizzle');
-	}
-	await migrateDatabase(databaseUrl, 'drizzle');
+	await runMigrationRunner(databaseUrl);
+	await runMigrationRunner(databaseUrl);
 
 	await withSql(databaseUrl, async (sql) => {
 		const migrations = await sql`
@@ -74,7 +66,8 @@ try {
 		`;
 		if (
 			migrations.length !== rebasedEntries.length + 1 ||
-			migrations.at(-1)?.createdAt !== String(upgradeMigration.when)
+			migrations.at(-1)?.createdAt !== String(upgradeMigration.when) ||
+			migrations.at(-1)?.hash !== integrity.canonical.at(-1)?.hash
 		) {
 			throw new Error(
 				'Rebased v0.1.1 database did not apply the compatibility migration exactly once.'
@@ -102,6 +95,27 @@ async function migrateDatabase(url, migrationsFolder) {
 	}
 }
 
+async function runMigrationRunner(url) {
+	if (migrationImage) {
+		await run('docker', [
+			'run',
+			'--rm',
+			'--network',
+			'host',
+			'-e',
+			`DATABASE_URL=${url.toString()}`,
+			migrationImage,
+			'node',
+			'scripts/run-migrations.mjs'
+		]);
+		return;
+	}
+	await run('node', ['scripts/run-migrations.mjs'], {
+		...process.env,
+		DATABASE_URL: url.toString()
+	});
+}
+
 async function withSql(url, callback) {
 	const sql = postgres(url.toString(), { max: 1 });
 	try {
@@ -120,9 +134,9 @@ function assertLocalDatabase(url) {
 	}
 }
 
-function run(command, args) {
+function run(command, args, env = process.env) {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { env: process.env, stdio: 'inherit' });
+		const child = spawn(command, args, { env, stdio: 'inherit' });
 		child.once('error', reject);
 		child.once('exit', (code, signal) => {
 			if (code === 0) resolve();

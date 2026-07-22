@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	rebaseWorkoutAdjustments,
 	replayWorkoutAdjustments,
 	type ReplayableAdjustment,
 	type ReplayableWorkoutState
@@ -53,6 +54,33 @@ describe('workout adjustment replay', () => {
 		const row = adjustment(base, changed, new Date());
 		expect(replayWorkoutAdjustments([row])).toEqual(base);
 		expect(replayWorkoutAdjustments([row])).toEqual(base);
+	});
+
+	it('rebases later adjustments without retaining the erased activity state', () => {
+		const completedByActivity = {
+			...base,
+			scheduledDate: '2026-07-21',
+			status: 'done' as const,
+			sourceRefs: [...base.sourceRefs, 'private-activity-id']
+		};
+		const manuallyReduced = { ...completedByActivity, targetDistanceMeters: 8_000 };
+		const activity = { id: 'activity', ...adjustment(base, completedByActivity) };
+		const manual = { id: 'manual', ...adjustment(completedByActivity, manuallyReduced) };
+
+		const rebased = rebaseWorkoutAdjustments([activity, manual], (row) => row.id === 'activity');
+
+		expect(rebased).toEqual({
+			state: { ...base, targetDistanceMeters: 8_000 },
+			adjustments: [
+				{
+					id: manual.id,
+					previousState: base,
+					newState: { ...base, targetDistanceMeters: 8_000 }
+				}
+			]
+		});
+		expect(JSON.stringify(rebased)).not.toContain('private-activity-id');
+		expect(JSON.stringify(rebased)).not.toContain('2026-07-21');
 	});
 });
 

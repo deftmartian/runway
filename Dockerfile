@@ -49,6 +49,7 @@ COPY --from=prod-deps --chown=node:node /prod/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/scripts/run-migrations.mjs ./scripts/run-migrations.mjs
+COPY --from=build --chown=node:node /app/scripts/migration-state.mjs ./scripts/migration-state.mjs
 
 USER node
 EXPOSE 4100

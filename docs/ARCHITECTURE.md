@@ -126,11 +126,14 @@ Training-data export uses a read-only, repeatable-read snapshot and serializes e
 250-row pages. The snapshot is staged to an owner-only (`0600`) temporary file before the HTTP body is
 opened, so neither the full relational graph nor the completed JSON document is held in memory. The
 response removes the artifact on completion, cancellation, or read error; a conservative 24-hour
-reaper removes only stale, real `runway-training-export-*` directories left by a process crash. This
-trades temporary disk space equal to the uncapped export size for a consistent snapshot and bounded
-memory. Operators must therefore leave adequate space in the runtime temporary filesystem. The
-`account.export` success audit is written only after staging finishes and is not part of the snapshot
-that it records.
+reaper runs in the web process at startup and every five minutes, removing only stale, real
+`runway-training-export-*` directories left by a process crash. Running it in the web process is
+required because the dedicated staging tmpfs is not shared with the worker container.
+Application-level byte, staging-quota, and concurrency reservations bound this sensitive scratch
+space independently from general `/tmp`; the Compose deployment supplies a dedicated owner-only
+tmpfs with additional filesystem overhead. Operators can raise the documented limits together for a
+larger installation. The `account.export` success audit is written only after staging finishes and is
+not part of the snapshot that it records.
 
 ## Authentication And Email
 

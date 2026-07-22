@@ -100,6 +100,16 @@ export function presentLoadChangeAssessment(risk: RiskRating): TrainingAssessmen
 	return { assessment, ...changePresentation[assessment] };
 }
 
+export function presentMixedPrescriptionAssessment(): TrainingAssessmentPresentation {
+	return {
+		assessment: 'needs_review',
+		label: 'Mixed prescriptions',
+		description:
+			'This plan contains distance and timed work. Review each prescription separately; runway does not convert between them.',
+		attention: 'review'
+	};
+}
+
 export function presentConsequenceAssessment(
 	consequence: ConsequenceResult
 ): TrainingAssessmentPresentation {
@@ -119,7 +129,81 @@ export function presentConsequenceAssessment(
 			attention: 'review'
 		};
 	}
-	return presentLoadChangeAssessment(consequence.risk);
+
+	if (consequence.kind === 'completed_as_planned') {
+		return {
+			assessment: 'within_default',
+			label: 'Recorded as planned',
+			description: 'The recorded amount is within the material threshold for this workout.',
+			attention: 'none'
+		};
+	}
+	if (consequence.kind === 'historical_link') {
+		return {
+			assessment: 'within_default',
+			label: 'Historical record',
+			description: 'This activity is linked for history and does not change the current plan.',
+			attention: 'none'
+		};
+	}
+	if (consequence.kind === 'hard_effort') {
+		return {
+			assessment: 'needs_review',
+			label: 'Hard-effort review',
+			description:
+				'The planned amount was recorded, but the reported effort changes the next-workout advice.',
+			attention: 'review'
+		};
+	}
+	if (consequence.kind === 'shortfall' || consequence.kind === 'repeated_shortfall') {
+		return {
+			assessment: 'needs_review',
+			label:
+				consequence.kind === 'repeated_shortfall'
+					? 'Repeated-deviation review'
+					: 'Shortfall review',
+			description:
+				consequence.kind === 'repeated_shortfall'
+					? 'More than one recent workout was shortened or skipped; review the next prescription.'
+					: 'This workout was recorded below its planned amount; review the next prescription.',
+			attention: 'review'
+		};
+	}
+	if (
+		consequence.kind === 'skip_continue' ||
+		consequence.kind === 'skip_reduce' ||
+		consequence.kind === 'repeated_skip' ||
+		consequence.kind === 'repeated_miss'
+	) {
+		return {
+			assessment: 'needs_review',
+			label:
+				consequence.kind === 'repeated_skip' || consequence.kind === 'repeated_miss'
+					? 'Repeated-skip review'
+					: 'Skipped-run review',
+			description:
+				consequence.kind === 'repeated_skip' || consequence.kind === 'repeated_miss'
+					? 'More than one recent planned run was skipped; review the next prescription.'
+					: 'This planned run was skipped; review the next prescription.',
+			attention: 'review'
+		};
+	}
+	if (consequence.kind === 'load_spike') {
+		return {
+			assessment: 'needs_review',
+			label: 'Extra-load review',
+			description: 'The recorded amount exceeded this workout prescription.',
+			attention:
+				consequence.risk === 'unsafe' || consequence.risk === 'aggressive' ? 'high' : 'review'
+		};
+	}
+	return {
+		assessment: 'needs_review',
+		label: 'Unplanned-run review',
+		description: 'This run was not prescribed, so its recorded load is reviewed separately.',
+		attention:
+			consequence.risk === 'unsafe' || consequence.risk === 'aggressive' ? 'high' : 'review'
+	};
 }
 
 export function formatRampEvidence(

@@ -10,7 +10,7 @@
 		presentCalendarWeekAssessment
 	} from './calendar-presentation';
 	import { addIsoDays, buildTrainingCalendarModel, type CalendarWeekRow } from './calendar-model';
-	import type { ConsequenceResult, RiskRating } from '$lib/training/types';
+	import type { ConsequenceResult, RiskRating, TrainingHealthNotice } from '$lib/training/types';
 	import type { TrainingCalendarPayload } from '$lib/training/calendar-view';
 	import type {
 		CalendarDay,
@@ -24,6 +24,8 @@
 				source?: 'plan' | 'feedback' | 'activity';
 				reasons?: string[];
 				consequence?: ConsequenceResult | null;
+				planComparisonStatus?: 'comparable' | 'mixed';
+				healthNotice?: TrainingHealthNotice | null;
 		  }
 		| null
 		| undefined;
@@ -142,7 +144,8 @@
 			? presentCalendarTrainingAssessment(
 					currentSignal.risk,
 					currentSignal.source,
-					currentSignal.consequence
+					currentSignal.consequence,
+					currentSignal.planComparisonStatus === 'mixed'
 				)
 			: null
 	);
@@ -286,6 +289,16 @@
 		<div class="calendar-toolbar">
 			<div class="training-title-block">
 				<h1 class="section-title">Training calendar</h1>
+				{#if currentSignal?.healthNotice}
+					<aside
+						class="training-health-notice"
+						class:paused={currentSignal.healthNotice.level === 'paused'}
+						aria-label="Current health context"
+					>
+						<strong>{currentSignal.healthNotice.heading}</strong>
+						<span>{currentSignal.healthNotice.message}</span>
+					</aside>
+				{/if}
 				{#if currentSignal}
 					<details
 						class="plan-assessment"

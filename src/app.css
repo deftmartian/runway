@@ -1700,6 +1700,27 @@ button.command-readout.review:not(:disabled):hover {
 	padding-left: 18px;
 }
 
+.training-health-notice {
+	display: grid;
+	gap: 4px;
+	padding: 12px 14px;
+	border: 1px solid color-mix(in oklab, var(--review) 45%, var(--line));
+	border-left: 4px solid var(--review);
+	border-radius: var(--radius-small);
+	background: color-mix(in oklab, var(--review) 8%, var(--surface));
+	color: var(--text);
+}
+
+.training-health-notice.paused {
+	border-color: color-mix(in oklab, var(--danger) 48%, var(--line));
+	border-left-color: var(--danger);
+	background: color-mix(in oklab, var(--danger) 7%, var(--surface));
+}
+
+.training-health-notice span {
+	color: var(--muted);
+}
+
 .calendar-toolbar-actions {
 	grid-column: 1 / -1;
 	display: flex;

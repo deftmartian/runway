@@ -13,10 +13,8 @@ on:
       - drizzle/**
       - src/**
       - static/**
-      - scripts/generate-secret.mjs
-      - scripts/run-migrations.mjs
-      - scripts/verify-image.mjs
-      - scripts/verify-preview.mjs
+      - scripts/**
+      - tests/fixtures/migrations/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -24,6 +22,8 @@ on:
       - svelte.config.js
       - vite.config.ts
       - .github/workflows/container.yml
+      - .github/workflows/check.yml
+      - .github/workflows/browser.yml
   push:
     branches: [main, master]
     tags: ['v*']
@@ -37,10 +37,8 @@ on:
       - drizzle/**
       - src/**
       - static/**
-      - scripts/generate-secret.mjs
-      - scripts/run-migrations.mjs
-      - scripts/verify-image.mjs
-      - scripts/verify-preview.mjs
+      - scripts/**
+      - tests/fixtures/migrations/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -48,6 +46,8 @@ on:
       - svelte.config.js
       - vite.config.ts
       - .github/workflows/container.yml
+      - .github/workflows/check.yml
+      - .github/workflows/browser.yml
   workflow_dispatch:
 
 concurrency:
@@ -62,27 +62,58 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  checks:
+    name: release check matrix
+    uses: ./.github/workflows/check.yml
+
+  browser:
+    name: release browser suites
+    uses: ./.github/workflows/browser.yml
+
   image:
+    needs: [checks, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     env:
-      RUNWAY_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+      RUNWAY_IMAGE: runway-candidate-local:${{ github.sha }}
+      RUNWAY_CANDIDATE_IMAGE: ghcr.io/${{ github.repository }}:candidate-${{ github.sha }}
       APP_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
       POSTGRES_PASSWORD: runway_ci_database_password
       ORIGIN: https://runway.example.test
       PUBLIC_APP_ORIGIN: https://runway.example.test
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install migration verification dependencies
+        run: corepack pnpm install --frozen-lockfile
       - name: Configure ephemeral auth secret
         run: echo "BETTER_AUTH_SECRET=$(node scripts/generate-secret.mjs)" >> "$GITHUB_ENV"
-      - name: Set up QEMU for release tags
+      - name: Set up QEMU for published candidates
         if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build local pull-request candidate
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.RUNWAY_IMAGE }}
+          build-args: RUNWAY_BUILD_ID=${{ github.sha }}
+          provenance: false
+          cache-from: type=gha,scope=runway-container
+          cache-to: type=gha,mode=max,scope=runway-container
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
@@ -90,46 +121,71 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Generate image metadata
+      - name: Generate verified image metadata
+        if: github.event_name != 'pull_request'
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=sha-${{ github.sha }}
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' || github.ref_name == github.event.repository.default_branch }}
+            type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch }}
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - name: Build and publish image
+      - name: Build immutable multi-architecture candidate
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: ${{ github.event_name != 'pull_request' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.RUNWAY_CANDIDATE_IMAGE }}
           build-args: RUNWAY_BUILD_ID=${{ github.sha }}
-          provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=max' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha,scope=runway-container
           cache-to: type=gha,mode=max,scope=runway-container
-      - name: Pull published image
+      - name: Load exact published AMD64 candidate
         if: github.event_name != 'pull_request'
-        run: docker pull "${RUNWAY_IMAGE}"
-      - name: Scan runtime image
+        run: |
+          docker pull --platform linux/amd64 "$RUNWAY_CANDIDATE_IMAGE"
+          docker tag "$RUNWAY_CANDIDATE_IMAGE" "$RUNWAY_IMAGE"
+      - name: Scan local runtime candidate
         run: node scripts/verify-image.mjs "${RUNWAY_IMAGE}"
       - name: Start image-backed production stack
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
       - name: Verify production runtime and PWA revision
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
+      - name: Verify exact-image upgrades from both released migration histories
+        env:
+          RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}
+        run: |
+          node scripts/verify-upgrade-migrations.mjs
+          node scripts/verify-rebased-migrations.mjs
+      - name: Verify exact ARM64 candidate runtime and migration contract
+        if: github.event_name != 'pull_request'
+        run: >-
+          docker run --rm --platform linux/arm64 --network host
+          -e DATABASE_URL=postgres://runway:${POSTGRES_PASSWORD}@127.0.0.1:5432/runway
+          "$RUNWAY_CANDIDATE_IMAGE" node scripts/run-migrations.mjs
       - name: Container diagnostics
         if: failure()
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml ps && docker compose -f compose.yaml -f deploy/compose.production.yaml logs --no-color --tail=200 app worker migrate db
       - name: Stop containers
         if: always()
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml down --volumes
+      - name: Promote exact verified candidate manifest
+        if: github.event_name != 'pull_request'
+        env:
+          FINAL_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          tags=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then tags+=(--tag "$tag"); fi
+          done <<< "$FINAL_IMAGE_TAGS"
+          test "${#tags[@]}" -gt 0
+          docker buildx imagetools create "${tags[@]}" "$RUNWAY_CANDIDATE_IMAGE"
 
   android-build:
     name: unsigned Android APK
@@ -235,7 +291,10 @@ jobs:
             unsigned/app-release-unsigned.apk
       - name: Verify signed APK and prepare provenance records
         shell: bash
+        env:
+          RUNWAY_ANDROID_CERT_SHA256: ${{ vars.RUNWAY_ANDROID_CERT_SHA256 }}
         run: |
+          set -euo pipefail
           apk="release-assets/runway-${GITHUB_REF_NAME}.apk"
           verification="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
             --verbose --print-certs "$apk")"
@@ -243,9 +302,22 @@ jobs:
           grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true$' <<< "$verification"
           grep -q '^Verified using v3 scheme (APK Signature Scheme v3): true$' <<< "$verification"
           grep -q '^Number of signers: 1$' <<< "$verification"
-          sha256sum "$apk" > "${apk}.sha256"
-          sed -n 's/^Signer #1 certificate SHA-256 digest: /SHA-256: /p' <<< "$verification" \
-            > "${apk}.signer.txt"
+          expected="$(tr '[:upper:]' '[:lower:]' <<< "${RUNWAY_ANDROID_CERT_SHA256//:/}" | tr -d '[:space:]')"
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$verification" \
+            | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::The android-release environment must define RUNWAY_ANDROID_CERT_SHA256 as a SHA-256 fingerprint."
+            exit 1
+          fi
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::The APK signer does not match the pinned Android release certificate."
+            exit 1
+          fi
+          (
+            cd release-assets
+            sha256sum "$(basename "$apk")" > "$(basename "$apk").sha256"
+          )
+          printf 'SHA-256: %s\n' "$actual" > "${apk}.signer.txt"
           test -s "${apk}.sha256"
           test -s "${apk}.signer.txt"
       - name: Upload signed Android release assets
@@ -293,7 +365,7 @@ jobs:
                 target_commitish: context.sha,
                 name: existing.data.name,
                 body: existing.data.body,
-                make_latest: 'true'
+                make_latest: 'legacy'
               });
               core.info(`Release ${tag} updated.`);
             } else {
@@ -311,7 +383,7 @@ jobs:
                   'This tag passed the web, container, and signed Android release checks. See the README for installation and deployment.'
                 ].join('\n'),
                 generate_release_notes: true,
-                make_latest: 'true'
+                make_latest: 'legacy'
               });
             }
             const releaseId = existing.data.id;

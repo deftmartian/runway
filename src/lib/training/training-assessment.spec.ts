@@ -55,6 +55,35 @@ describe('training assessment presentation', () => {
 		).toMatchObject({ label: 'Pain review', assessment: 'pain_review' });
 	});
 
+	test.each([
+		['hard_effort', 'near_plan', 'Hard-effort review'],
+		['shortfall', 'short', 'Shortfall review'],
+		['repeated_shortfall', 'short', 'Repeated-deviation review'],
+		['skip_continue', 'skipped', 'Skipped-run review'],
+		['repeated_skip', 'skipped', 'Repeated-skip review'],
+		['repeated_miss', 'skipped', 'Repeated-skip review'],
+		['load_spike', 'over', 'Extra-load review'],
+		['extra_activity', 'unplanned', 'Unplanned-run review'],
+		['completed_as_planned', 'near_plan', 'Recorded as planned']
+	] as const)('labels %s from the recorded fact, not the edit band', (kind, deviation, label) => {
+		const consequence: ConsequenceResult = {
+			kind,
+			deviation,
+			metric: 'distance',
+			actualDifference: 0,
+			weeklyLoadDelta: { metric: 'distance', value: 0 },
+			nextRunAdjustment: { metric: 'distance', value: 0 },
+			weeklyDistanceDeltaMeters: 0,
+			nextRunAdjustmentMeters: 0,
+			risk: 'moderate',
+			recommendedDecision: 'keep_plan',
+			options: ['keep_plan'],
+			appliedDecision: null
+		};
+
+		expect(presentConsequenceAssessment(consequence).label).toBe(label);
+	});
+
 	test('formats exact ramp arithmetic without claiming medical safety', () => {
 		expect(formatRampEvidence(9.44, 7.5)).toBe('9.4% required · 7.5% generated-week cap');
 		expect(formatRampEvidence(12)).toBe('12% required weekly increase');

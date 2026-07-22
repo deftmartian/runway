@@ -121,6 +121,9 @@ Do not commit `local.properties`, `signing.properties`, signing keys, or signing
 release builds load the four required values shown in `signing.properties.example` and fail before
 packaging if the external keystore or any value is missing. The explicit F-Droid source-build mode
 produces an unsigned release for `fdroid publish` to sign; it refuses a local signing configuration.
+The GitHub `android-release` environment also pins `RUNWAY_ANDROID_CERT_SHA256` as a non-secret
+environment variable. Set it from the long-lived release certificate before creating a version tag;
+CI refuses to publish an APK signed by any other key.
 
 From the repository root, the normal development gate is:
 
@@ -131,12 +134,24 @@ corepack pnpm verify:android:release
 ```
 
 The first command reviews the static Android/browser/security contract. The second runs Gradle `lint`,
-`test`, and `assembleDebug`. The third rejects the removed origin-bound property, rejects an unsigned
+`test`, `assembleDebug`, and `assembleDebugAndroidTest`. The third rejects the removed origin-bound property, rejects an unsigned
 normal release, and builds only the explicitly unsigned F-Droid source
 artifact without private key material. The build and release gates inspect their merged manifests and
 reject permissions or exported components outside the reviewed allowlists. They also assert disabled
 backups and release cleartext/debuggable flags. CI runs these exact commands; a green build does not
 replace emulator, physical-device, Custom Tab, large-text, or TalkBack checks.
+
+With a disposable emulator or USB test device already online, run the lifecycle instrumentation
+checks as well:
+
+```sh
+android/gradlew -p android --no-daemon --dependency-verification strict connectedDebugAndroidTest
+```
+
+These tests use the real Android Keystore and preferences to prove that an interrupted server-change
+journal finishes before state is exposed and that a delayed credential snapshot cannot clear its
+replacement. They intentionally change the installed debug app's selected test server, so do not run
+them against a debug installation whose local state you need to keep.
 
 Plain `./gradlew test` exercises the only supported shape. Passing `-PrunwayOrigin` is a build error.
 

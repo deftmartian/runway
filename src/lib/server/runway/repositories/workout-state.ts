@@ -19,7 +19,7 @@ export type FutureWorkoutEditInput = {
 	targetDistanceMeters: number;
 	targetDurationSeconds: number | null;
 	intervalStructure: WorkoutAdjustmentState['intervalStructure'];
-	intensity: string;
+	intensity: 'easy' | 'rest';
 	purpose: string;
 	userReason?: string;
 	rebalance: boolean;

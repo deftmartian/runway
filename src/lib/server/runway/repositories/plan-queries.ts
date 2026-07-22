@@ -228,7 +228,15 @@ export async function getPlanDetail(userId: string, planId: string) {
 			.orderBy(desc(workoutFeedback.createdAt))
 			.limit(52 * 14),
 		db
-			.select({ activity })
+			.select({
+				workoutId: activity.workoutId,
+				source: activity.source,
+				distanceMeters: activity.distanceMeters,
+				durationSeconds: activity.durationSeconds,
+				feltHard: activity.feltHard,
+				pain: activity.pain,
+				consequence: activity.consequence
+			})
 			.from(activity)
 			.innerJoin(workout, and(eq(activity.workoutId, workout.id), eq(workout.userId, userId)))
 			.where(
@@ -248,7 +256,6 @@ export async function getPlanDetail(userId: string, planId: string) {
 			.limit(10_000)
 	]);
 	const feedback = feedbackRows.map((row) => row.feedback);
-	const activities = activityRows.map((row) => row.activity);
 	const cutoffDate = planRecord.plan.archivedAt
 		? toIsoDateInTimeZone(planRecord.plan.archivedAt, timeZone)
 		: today;
@@ -258,7 +265,7 @@ export async function getPlanDetail(userId: string, planId: string) {
 		weeks,
 		workouts,
 		feedback,
-		activities,
+		activities: activityRows,
 		adjustments,
 		cutoffDate
 	};

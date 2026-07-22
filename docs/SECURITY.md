@@ -137,6 +137,10 @@ Set `AUDIT_EVENT_RETENTION_DAYS` to an integer from 1 to 3650 to override the de
 retention requires the exact value `disabled`; a blank value keeps the default, and malformed values
 fail the worker pass instead of silently changing policy.
 
+Expired password-reset records and completed Android import receipts use a separate fixed 30-day
+operational retention window. The worker deletes at most 500 rows from each table per pass. Active
+reset tokens and in-progress Android requests are not eligible for that cleanup.
+
 Audit rows can retain event type, timestamp, opaque record identifiers, counts, and minimized
 operational detail until expiry. They must not contain route coordinates, imported filenames,
 Nextcloud tokens or paths, credentials, reset tokens, or health-note text. Activity deletion removes
@@ -149,7 +153,8 @@ created within the preceding ten minutes, uses persistent per-user and per-addre
 records an `account.export` event without export contents only after a complete repeatable-read
 snapshot has been staged successfully. Export JSON is assembled in bounded pages in an owner-only
 temporary file, streamed once, and removed on completion, cancellation, or read error. A 24-hour
-reaper handles crash leftovers without touching active exports. It is POST-only so runway's
+reaper starts with the web process and checks the web container's configured staging directory every
+five minutes, without touching active exports. It is POST-only so runway's
 exact-origin mutation boundary applies; GET requests are rejected without creating an audit event.
 
 Full account deletion is a separate Settings action. It requires the runner to type an exact

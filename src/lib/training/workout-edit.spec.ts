@@ -329,6 +329,7 @@ describe('workout edit previews', () => {
 				targetDistanceMeters: 0,
 				targetDurationSeconds: null,
 				intervalStructure: null,
+				intensity: 'rest',
 				purpose: 'Recovery day'
 			},
 			workouts: [base],
@@ -341,6 +342,20 @@ describe('workout edit previews', () => {
 			expect.objectContaining({ distanceBeforeMeters: 3_000, distanceAfterMeters: 0 })
 		);
 		expect(preview.spacingConflicts).toEqual([]);
+	});
+
+	it('rejects arbitrary effort labels that the planner does not model', () => {
+		expect(() =>
+			previewWorkoutEdit({
+				current: base,
+				recommended: proposalFromWorkout(base),
+				proposed: { ...proposalFromWorkout(base), intensity: 'threshold' },
+				workouts: [base],
+				weeks,
+				today: '2026-07-16',
+				rebalance: false
+			})
+		).toThrow(/modeled easy effort/i);
 	});
 
 	it('permits multiple workouts on a day but requires confirmation for the conflict', () => {

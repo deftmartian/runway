@@ -1,7 +1,10 @@
 import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { planAdjustment, workout } from '$lib/server/db/schema';
-import { replayWorkoutAdjustments } from '$lib/server/runway/adjustment-replay';
+import {
+	rebaseWorkoutAdjustments,
+	replayWorkoutAdjustments
+} from '$lib/server/runway/adjustment-replay';
 import type { TrainingCalendarWorkout, TrainingPlanAdjustment } from '$lib/training/calendar-view';
 import type { ConsequenceResult } from '$lib/training/types';
 import type { RunwayTransaction } from './transaction';
@@ -180,4 +183,64 @@ export async function replayWorkoutLedgers(
 			.set({ ...state, updatedAt: new Date() })
 			.where(and(eq(workout.userId, userId), eq(workout.id, workoutId)));
 	}
+}
+
+export async function eraseLedgerAdjustments(
+	tx: RunwayTransaction,
+	input: {
+		userId: string;
+		targets: { id: string; workoutId: string }[];
+	}
+): Promise<void> {
+	if (input.targets.length === 0) return;
+	const targetIds = new Set(input.targets.map(({ id }) => id));
+	const workoutIds = Array.from(new Set(input.targets.map(({ workoutId }) => workoutId)));
+	const adjustments = await tx
+		.select({
+			id: planAdjustment.id,
+			workoutId: planAdjustment.workoutId,
+			previousState: planAdjustment.previousState,
+			newState: planAdjustment.newState,
+			reversedAt: planAdjustment.reversedAt
+		})
+		.from(planAdjustment)
+		.where(
+			and(eq(planAdjustment.userId, input.userId), inArray(planAdjustment.workoutId, workoutIds))
+		)
+		.orderBy(asc(planAdjustment.createdAt), asc(planAdjustment.id));
+	const now = new Date();
+
+	for (const workoutId of workoutIds) {
+		const rebased = rebaseWorkoutAdjustments(
+			adjustments.filter((row) => row.workoutId === workoutId),
+			(row) => targetIds.has(row.id)
+		);
+		if (!rebased) continue;
+		for (const row of rebased.adjustments) {
+			await tx
+				.update(planAdjustment)
+				.set({
+					previousTargetDistanceMeters: row.previousState.targetDistanceMeters,
+					newTargetDistanceMeters: row.newState.targetDistanceMeters,
+					previousScheduledDate: row.previousState.scheduledDate,
+					newScheduledDate: row.newState.scheduledDate,
+					previousState: row.previousState,
+					newState: row.newState
+				})
+				.where(and(eq(planAdjustment.userId, input.userId), eq(planAdjustment.id, row.id)));
+		}
+		await tx
+			.update(workout)
+			.set({ ...rebased.state, updatedAt: now })
+			.where(and(eq(workout.userId, input.userId), eq(workout.id, workoutId)));
+	}
+
+	await tx
+		.delete(planAdjustment)
+		.where(
+			and(
+				eq(planAdjustment.userId, input.userId),
+				inArray(planAdjustment.id, Array.from(targetIds))
+			)
+		);
 }

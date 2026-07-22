@@ -10,6 +10,7 @@ build/
 artifacts/
 coverage/
 node_modules/
+android/
 playwright-report/
 test-results/
 tests/visual/*-snapshots/

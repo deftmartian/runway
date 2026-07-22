@@ -2,6 +2,7 @@ import type { CalendarDay, CalendarEvent } from './calendar-types';
 import {
 	presentConsequenceAssessment,
 	presentLoadChangeAssessment,
+	presentMixedPrescriptionAssessment,
 	presentRampAssessment,
 	type TrainingAssessmentPresentation
 } from '$lib/training/training-assessment';
@@ -107,7 +108,8 @@ export function presentCalendarEvent(event: CalendarEvent): CalendarEventPresent
 export function presentCalendarTrainingAssessment(
 	risk: RiskRating,
 	source: 'plan' | 'feedback' | 'activity' = 'plan',
-	consequence: ConsequenceResult | null = null
+	consequence: ConsequenceResult | null = null,
+	planHasMixedLoad = false
 ): CalendarTrainingAssessment {
 	if (source === 'feedback') {
 		return {
@@ -130,7 +132,9 @@ export function presentCalendarTrainingAssessment(
 	return {
 		heading: 'Ramp assessment',
 		sourceLabel: 'Current plan',
-		presentation: presentRampAssessment(risk)
+		presentation: planHasMixedLoad
+			? presentMixedPrescriptionAssessment()
+			: presentRampAssessment(risk)
 	};
 }
 

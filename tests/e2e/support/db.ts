@@ -973,14 +973,14 @@ export async function getActivityDeletionResidue(userId: string, activityId: str
 	);
 	try {
 		const [row] = await sql<
-			{ activityCount: number; activeAdjustmentCount: number; auditCount: number }[]
+			{ activityCount: number; adjustmentCount: number; auditCount: number }[]
 		>`
 			select
 				(select count(*) from activity where user_id = ${userId} and id = ${activityId})::int as "activityCount",
-				(select count(*) from plan_adjustment where user_id = ${userId} and trigger_id = ${activityId} and reversed_at is null)::int as "activeAdjustmentCount",
+				(select count(*) from plan_adjustment where user_id = ${userId} and trigger_id = ${activityId})::int as "adjustmentCount",
 				(select count(*) from audit_event where user_id = ${userId} and (detail ->> 'activityId' = ${activityId} or detail ->> 'sourceId' = ${activityId}))::int as "auditCount"
 		`;
-		return row ?? { activityCount: 0, activeAdjustmentCount: 0, auditCount: 0 };
+		return row ?? { activityCount: 0, adjustmentCount: 0, auditCount: 0 };
 	} finally {
 		await sql.end();
 	}

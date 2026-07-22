@@ -55,10 +55,12 @@
 		<div>
 			<span>Available days</span><strong>{selectedDays.join(' · ') || 'Days needed'}</strong>
 		</div>
-		<div>
-			<span>Priority</span>
-			<strong>{values.priority === 'finish_healthy' ? 'Lower ramp' : 'Build consistency'}</strong>
-		</div>
+		{#if values.goalKind !== 'foundation'}
+			<div>
+				<span>Priority</span>
+				<strong>{values.priority === 'finish_healthy' ? 'Lower ramp' : 'Build consistency'}</strong>
+			</div>
+		{/if}
 	</div>
 
 	{#if healthBlocked}

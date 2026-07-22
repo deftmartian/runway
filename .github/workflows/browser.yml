@@ -2,6 +2,7 @@ name: Browser
 
 # Keep the expensive functional and visual suites off documentation-only changes.
 on:
+  workflow_call:
   pull_request:
     paths:
       - src/**
@@ -39,7 +40,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: runway-browser-${{ github.ref }}
+  group: runway-browser-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

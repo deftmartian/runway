@@ -27,6 +27,7 @@ const requiredFiles = [
 	'android/app/src/main/java/com/deftmartian/runway/TreeAccessStore.kt',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
+	'android/app/src/androidTest/java/com/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
 	'android/gradle/wrapper/gradle-wrapper.properties',
 	'android/gradle/verification-metadata.xml',
@@ -138,6 +139,8 @@ for (const required of [
 	'assembleRelease',
 	'apksigner',
 	'Number of signers: 1',
+	'RUNWAY_ANDROID_CERT_SHA256',
+	'The APK signer does not match the pinned Android release certificate.',
 	'name: signed-android-release',
 	'needs: [image, android-release]',
 	'application/vnd.android.package-archive'
@@ -173,7 +176,9 @@ for (const secretName of [
 		!signingStep.includes(secretName) ||
 		protectedSigningJob.replace(signingStep, '').includes(secretName)
 	) {
-		errors.push(`Protected Android signing secret is not scoped to the apksigner step: ${secretName}`);
+		errors.push(
+			`Protected Android signing secret is not scoped to the apksigner step: ${secretName}`
+		);
 	}
 }
 
@@ -289,6 +294,20 @@ const stateCoordinator = read(
 for (const required of ['ReentrantReadWriteLock(true)', 'fun <T> read', 'fun <T> write']) {
 	if (!stateCoordinator.includes(required)) {
 		errors.push(`Android lifecycle serialization is missing ${required}`);
+	}
+}
+
+const lifecycleInstrumentation = read(
+	'android/app/src/androidTest/java/com/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt'
+);
+for (const required of [
+	'testInterruptedServerTransitionRecoversBeforeNewWorkCanReadState',
+	'testStaleCredentialSnapshotCannotClearReplacement',
+	'PENDING_CLEANUP_ORIGIN_KEY',
+	'clearIfCurrent(stale)'
+]) {
+	if (!lifecycleInstrumentation.includes(required)) {
+		errors.push(`Android lifecycle instrumentation is missing ${required}`);
 	}
 }
 

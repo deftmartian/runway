@@ -1,0 +1,61 @@
+{
+  "canonical": [
+    { "tag": "0000_green_dormammu", "createdAt": "1778731314114", "hash": "951fca3909b7678d2033737435958f693548c65685e3d063bd09f748e072d5d3" },
+    { "tag": "0001_military_vermin", "createdAt": "1778732812551", "hash": "2dec00df9a96e95735210f695d20b687d18f620a35de65438d6c1b78f4472fe6" },
+    { "tag": "0002_overjoyed_spitfire", "createdAt": "1778764753918", "hash": "ce69f70e243c8b2cec751a33c3d8d5cf82ba2f682f3c6aea3933bba5dff84e2c" },
+    { "tag": "0003_many_xorn", "createdAt": "1778778110014", "hash": "d85ed6205c5b0e826b917ff15d5ccc6be18e49bcbc2afc61b156725d6b587ad2" },
+    { "tag": "0004_reflective_maggott", "createdAt": "1778778455020", "hash": "593ed52dbf89877e11bf06c2d5a3c56d96bbe2e2d02fdf8b431d4e223bf97394" },
+    { "tag": "0005_dark_goliath", "createdAt": "1778780237323", "hash": "8b6fe5991989b32c62c329c69c22e2f276ae584129caae64ba4dc97a17cda917" },
+    { "tag": "0006_brave_mentor", "createdAt": "1778781905488", "hash": "05bf5dc075d7d70a3bc25a5f96f9b7fe7847bd4842f04be43730e1830969cae6" },
+    { "tag": "0007_sweet_iceman", "createdAt": "1778782784188", "hash": "2df38008d2d068c2d68615f1022ae5b5a0d207564ac7c1612750502743789f18" },
+    { "tag": "0008_robust_black_tarantula", "createdAt": "1778783701423", "hash": "5b0543432e7bc7c210593b4547c928d2ca526dfb591c0770d6d94b83c95ccd1c" },
+    { "tag": "0009_tranquil_justin_hammer", "createdAt": "1778785696393", "hash": "85180fac014163f20c99e70dc3a0c18312b09e9793956596b11b0ca5c5882bd1" },
+    { "tag": "0010_known_red_ghost", "createdAt": "1778799023444", "hash": "ae2f4eb31023fe1a3a3d1d45425cc816af8d0d816f17d21f31ae9c9e9dae548d" },
+    { "tag": "0011_last_whizzer", "createdAt": "1778800082845", "hash": "e45a87e1fc3c62118cfb366196c3a35e6e839ddf883dd2f28e5e18ed16f1330b" },
+    { "tag": "0012_sticky_the_call", "createdAt": "1778803771771", "hash": "d8ebc6ab77d94d35e95791f21bff83317fcb2eb48fd57a0d123bfa97bcf9c5de" },
+    { "tag": "0013_old_kylun", "createdAt": "1778817504194", "hash": "380a06cbb06fed23f52703f249b8e8fa97897bf93db5a79473c0579b2c8b9aff" },
+    { "tag": "0014_data_integrity", "createdAt": "1784156545627", "hash": "35c44aa623d74bdb3676cb6bee1159487ca09baa1636d53b3c68bce1451f7780" },
+    { "tag": "0015_planning_cutover", "createdAt": "1784174435752", "hash": "f41b86ecd9ff51b9b2dae6da40af9763a71f3b0168c8fe787ae154ce3cc1c6fa" },
+    { "tag": "0016_goal_start_mode", "createdAt": "1784174518449", "hash": "c770a77e701a546cabf6bae9d50c013a58dbe49256e418d728d4287bf4bd70c1" },
+    { "tag": "0017_explicit_plan_decisions", "createdAt": "1784175380110", "hash": "0eab3b7c302158f540582cfe5b31bf35722cba167981af269e7a466377d12e78" },
+    { "tag": "0018_medical_tattoo", "createdAt": "1784176773433", "hash": "ff017d0721960192659043ed64f3f9e1fd35a2e33ccc9c10386a1bd2a9edda4c" },
+    { "tag": "0019_timed_prescription_structure", "createdAt": "1784186140000", "hash": "d9165fa81806946d380a51ec6e82cadee45b3f5374a87721084a3b05fab5132c" },
+    { "tag": "0020_import_generation_barrier", "createdAt": "1784187000000", "hash": "d44a0bcfeeecd719251881034dff019ad0ecc3e8ef8f4e92241d5c6d637bd276" },
+    { "tag": "0021_private_activity_traces", "createdAt": "1784260668587", "hash": "51e522d3bb34c2561a28dcd0cf27f08961f2490b41c53af1cf9c31e22ae5e46d" },
+    { "tag": "0022_forward_compatible_upgrade", "createdAt": "1784689856796", "hash": "b0cb88e76bf109c013d2dae85eb76a98dd2ed7cda0b57eae81a740f825dd287d" }
+  ],
+  "rebasedV011": [
+    { "tag": "0000_initial", "createdAt": "1784301464615", "hash": "06d923af8bc0bccff36051bfb7c6d5aade0d32c6a99ea06de8e630bcd3190c87" },
+    { "tag": "0001_android_device_import", "createdAt": "1784387613123", "hash": "f630c405c15aa539ac03c5e1900cdf485cfbac95abef0ff4fffff4dfbaec3719" },
+    { "tag": "0002_wakeful_hammerhead", "createdAt": "1784403938842", "hash": "3384f84372a05be0574e02ad8e34931d5a35cb0707fca532b3d3dcf32a3cc805" }
+  ],
+  "requiredTables": [
+    "user",
+    "athlete_profile",
+    "training_plan",
+    "training_week",
+    "workout",
+    "workout_feedback",
+    "activity",
+    "plan_adjustment",
+    "android_device",
+    "android_import_request",
+    "android_pairing_request",
+    "import_operation_lease"
+  ],
+  "requiredColumns": [
+    "activity.consequence_plan_id",
+    "activity.route_trace",
+    "activity.heart_rate_series",
+    "athlete_profile.browser_folder_generation"
+  ],
+  "requiredConstraints": [
+    "activity_consequence_plan_user_fk",
+    "athlete_profile_browser_folder_generation_nonnegative"
+  ],
+  "requiredIndexes": [
+    "plan_adjustment_active_decision_unique",
+    "android_device_token_hash_unique",
+    "android_import_request_device_request_unique"
+  ]
+}

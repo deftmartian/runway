@@ -156,6 +156,20 @@ describe('training plan generation', () => {
 		);
 	});
 
+	test('preserves a reported repeatable frequency for a self-described new runner', () => {
+		const plan = generateTrainingPlan({
+			...baseIntake,
+			raceDistance: '10k',
+			experience: 'new',
+			currentRunsPerWeek: 4,
+			availability: [1, 2, 4, 6],
+			preferredLongRunDay: 6
+		});
+
+		expect(plan.weeks[0]?.workouts.filter((workout) => workout.type !== 'rest')).toHaveLength(4);
+		expect(plan.summary.warnings.join(' ')).not.toMatch(/new runners|capped at three/i);
+	});
+
 	test('makes the concentration cost of a two-day half-marathon schedule explicit', () => {
 		const plan = generateTrainingPlan({
 			...baseIntake,
@@ -673,12 +687,12 @@ describe('consequence choices', () => {
 			pain: false,
 			feltHard: false,
 			weekTargetDistanceMeters: 18_000,
-			recentMissedWorkouts: 1
+			recentSkippedWorkouts: 1
 		});
 
 		expect(consequence.risk).toBe('moderate');
 		expect(consequence.nextRunAdjustmentMeters).toBeLessThan(0);
-		expect(consequence.kind).toBe('repeated_miss');
+		expect(consequence.kind).toBe('repeated_skip');
 	});
 
 	test('rejects contradictory shortened feedback', () => {

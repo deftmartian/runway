@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'vitest';
-import { groupImportSourcesByUser, mapWithBoundedConcurrency } from './import-worker';
+import { describe, expect, test, vi } from 'vitest';
+import {
+	groupImportSourcesByUser,
+	mapWithBoundedConcurrency,
+	runScheduledMaintenanceTasks
+} from './import-worker';
 
 describe('scheduled import worker batching', () => {
 	test('keeps one account ordered while exposing independent user groups', () => {
@@ -37,5 +41,32 @@ describe('scheduled import worker batching', () => {
 		await expect(
 			mapWithBoundedConcurrency([1], 0, (item) => Promise.resolve(item))
 		).rejects.toThrow('Worker concurrency must be a positive integer.');
+	});
+
+	test('runs database retention on every maintenance pass', async () => {
+		const tasks = {
+			syncImports: vi.fn(() => Promise.resolve()),
+			purgeAuditEvents: vi.fn(() => Promise.resolve()),
+			purgeOperationalRecords: vi.fn(() => Promise.resolve())
+		};
+
+		await runScheduledMaintenanceTasks(tasks);
+
+		expect(tasks.syncImports).toHaveBeenCalledOnce();
+		expect(tasks.purgeAuditEvents).toHaveBeenCalledOnce();
+		expect(tasks.purgeOperationalRecords).toHaveBeenCalledOnce();
+	});
+
+	test('waits for every maintenance task before reporting a failure', async () => {
+		const purgeOperationalRecords = vi.fn(() => Promise.resolve());
+
+		await expect(
+			runScheduledMaintenanceTasks({
+				syncImports: () => Promise.reject(new Error('sync failed')),
+				purgeAuditEvents: () => Promise.resolve(),
+				purgeOperationalRecords
+			})
+		).rejects.toThrow('scheduled maintenance tasks failed');
+		expect(purgeOperationalRecords).toHaveBeenCalledOnce();
 	});
 });

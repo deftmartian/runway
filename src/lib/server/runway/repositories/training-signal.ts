@@ -1,9 +1,21 @@
 import { and, desc, eq, gte, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { activity, trainingPlan, workout, workoutFeedback } from '$lib/server/db/schema';
+import {
+	activity,
+	athleteProfile,
+	trainingPlan,
+	workout,
+	workoutFeedback
+} from '$lib/server/db/schema';
 import { formatConsequenceAuditReason } from '$lib/training/consequence-presentation';
 import { addDays } from '$lib/training/date';
-import type { ConsequenceResult, PlanDecision, RiskRating } from '$lib/training/types';
+import type {
+	ConsequenceResult,
+	InjuryFlags,
+	PlanDecision,
+	RiskRating,
+	TrainingHealthNotice
+} from '$lib/training/types';
 
 const riskRank: Record<RiskRating, number> = {
 	conservative: 0,
@@ -20,10 +32,39 @@ export type RecordedTrainingEvidence = {
 	source: 'feedback' | 'activity';
 };
 
+export function healthNoticeFor(flags: InjuryFlags): TrainingHealthNotice | null {
+	if (flags.medicalRestriction) {
+		return {
+			level: 'paused',
+			heading: 'Running limit recorded',
+			message:
+				'A clinician-imposed running limit is active. The schedule remains recorded, but runway does not treat it as clearance to continue.'
+		};
+	}
+	if (flags.currentPain) {
+		return {
+			level: 'paused',
+			heading: 'Pain is present now',
+			message:
+				'The schedule remains recorded, but runway does not treat it as clearance to continue. Seek qualified guidance if pain persists, worsens, or changes how you move.'
+		};
+	}
+	if (flags.recentInjury || flags.recurringPain) {
+		return {
+			level: 'caution',
+			heading: 'Health context noted',
+			message:
+				'Recovery or recurring pain is recorded. It changes the distance-ramp assessment, but it does not determine whether running is appropriate.'
+		};
+	}
+	return null;
+}
+
 export function currentSignalReasonsFor(input: {
 	planRisk: RiskRating;
 	planWarnings: string[];
 	selectedConsequence: ConsequenceResult | null;
+	planHasMixedLoad?: boolean;
 }) {
 	const reasons: string[] = [];
 	if (
@@ -32,17 +73,39 @@ export function currentSignalReasonsFor(input: {
 	) {
 		reasons.push(formatConsequenceAuditReason(input.selectedConsequence));
 	}
-	reasons.push(...input.planWarnings);
-	if (reasons.length === 0 && input.planRisk !== 'conservative') {
+	reasons.push(
+		...input.planWarnings.filter(
+			(warning) =>
+				!isStoredHealthContextWarning(warning) &&
+				(!input.planHasMixedLoad || !isStoredNumericRampWarning(warning))
+		)
+	);
+	if (reasons.length === 0 && input.planRisk !== 'conservative' && !input.planHasMixedLoad) {
 		reasons.push("The saved plan is above runway's default ramp.");
 	}
 	return Array.from(new Set(reasons)).slice(0, 3);
+}
+
+function isStoredHealthContextWarning(warning: string): boolean {
+	return (
+		warning.startsWith('Injury recovery or recurring pain is included') ||
+		warning.startsWith('Recent injury or recurring pain is noted')
+	);
+}
+
+function isStoredNumericRampWarning(warning: string): boolean {
+	return (
+		warning.startsWith('The required weekly increase is above') ||
+		warning.startsWith('Weekly distance growth above 10%')
+	);
 }
 
 export function selectCurrentTrainingSignal(input: {
 	planRisk: RiskRating;
 	planWarnings: string[];
 	recordedEvidence: RecordedTrainingEvidence[];
+	planHasMixedLoad?: boolean;
+	healthNotice?: TrainingHealthNotice | null;
 }) {
 	const latestEvidence = [...input.recordedEvidence].sort(
 		(left, right) =>
@@ -64,9 +127,12 @@ export function selectCurrentTrainingSignal(input: {
 		reasons: currentSignalReasonsFor({
 			planRisk: input.planRisk,
 			planWarnings: input.planWarnings,
-			selectedConsequence
+			selectedConsequence,
+			planHasMixedLoad: input.planHasMixedLoad ?? false
 		}),
-		source: recordedEvidenceWins ? selected.source : ('plan' as const)
+		source: recordedEvidenceWins ? selected.source : ('plan' as const),
+		planComparisonStatus: input.planHasMixedLoad ? ('mixed' as const) : ('comparable' as const),
+		healthNotice: input.healthNotice ?? null
 	};
 }
 
@@ -74,10 +140,11 @@ export async function currentTrainingSignal(
 	userId: string,
 	plan: typeof trainingPlan.$inferSelect,
 	today: string,
-	effectivePlanRisk: RiskRating = plan.risk
+	effectivePlanRisk: RiskRating = plan.risk,
+	planHasMixedLoad = false
 ) {
 	const recentStart = addDays(today, -28);
-	const [feedbackRows, activityRows] = await Promise.all([
+	const [feedbackRows, activityRows, profileRows] = await Promise.all([
 		db
 			.select({
 				consequence: workoutFeedback.consequence,
@@ -123,11 +190,18 @@ export async function currentTrainingSignal(
 				)
 			)
 			.orderBy(desc(activity.activityDate), desc(activity.createdAt))
-			.limit(100)
+			.limit(100),
+		db
+			.select({ injuryFlags: athleteProfile.injuryFlags })
+			.from(athleteProfile)
+			.where(eq(athleteProfile.userId, userId))
+			.limit(1)
 	]);
 	return selectCurrentTrainingSignal({
 		planRisk: effectivePlanRisk,
 		planWarnings: plan.summary.warnings,
+		planHasMixedLoad,
+		healthNotice: profileRows[0] ? healthNoticeFor(profileRows[0].injuryFlags) : null,
 		recordedEvidence: [
 			...feedbackRows,
 			...activityRows.flatMap((record) =>

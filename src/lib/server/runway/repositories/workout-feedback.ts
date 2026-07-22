@@ -91,8 +91,11 @@ export async function recordWorkoutFeedback(
 
 		const completedDistanceMeters = input.completedDistanceMeters;
 
-		const [recentMisses] = await tx
-			.select({ count: sql<number>`count(*)::int` })
+		const [recentDeviations] = await tx
+			.select({
+				skippedCount: sql<number>`count(*) filter (where ${workout.status} = 'skipped')::int`,
+				shortenedCount: sql<number>`count(*) filter (where ${workout.status} = 'shortened')::int`
+			})
 			.from(workout)
 			.where(
 				and(
@@ -132,7 +135,8 @@ export async function recordWorkoutFeedback(
 			feltHard: input.feltHard,
 			weekTargetDistanceMeters:
 				effectiveWeek?.targetDistanceMeters ?? targetWorkout.week.targetDistanceMeters,
-			recentMissedWorkouts: recentMisses?.count ?? 0,
+			recentSkippedWorkouts: recentDeviations?.skippedCount ?? 0,
+			recentShortenedWorkouts: recentDeviations?.shortenedCount ?? 0,
 			...(completedDistanceMeters === undefined ? {} : { completedDistanceMeters }),
 			...(input.completedDurationSeconds === undefined
 				? {}

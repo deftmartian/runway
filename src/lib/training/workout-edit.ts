@@ -378,6 +378,7 @@ export function assertWorkoutProposal(proposed: WorkoutEditProposal): void {
 	if (proposed.prescriptionKind === 'rest') {
 		if (
 			proposed.type !== 'rest' ||
+			proposed.intensity !== 'rest' ||
 			proposed.targetDistanceMeters !== 0 ||
 			proposed.targetDurationSeconds !== null ||
 			proposed.intervalStructure !== null
@@ -387,6 +388,9 @@ export function assertWorkoutProposal(proposed: WorkoutEditProposal): void {
 		return;
 	}
 	if (proposed.type === 'rest') throw new Error('Run prescriptions need a run type.');
+	if (proposed.intensity !== 'easy') {
+		throw new Error('Run prescriptions use the modeled easy effort.');
+	}
 	if (proposed.prescriptionKind === 'distance') {
 		if (
 			!Number.isInteger(proposed.targetDistanceMeters) ||

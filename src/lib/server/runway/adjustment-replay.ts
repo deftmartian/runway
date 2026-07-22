@@ -22,6 +22,12 @@ export type ReplayableAdjustment = {
 	reversedAt: Date | null;
 };
 
+export type RebasedAdjustment = {
+	id: string;
+	previousState: ReplayableWorkoutState;
+	newState: ReplayableWorkoutState;
+};
+
 const replaceFields = [
 	'weekId',
 	'scheduledDate',
@@ -47,19 +53,48 @@ export function replayWorkoutAdjustments(
 
 	for (const adjustment of chronologicalAdjustments) {
 		if (adjustment.reversedAt) continue;
-		state.targetDistanceMeters = Math.max(
-			0,
-			state.targetDistanceMeters +
-				(adjustment.newState.targetDistanceMeters - adjustment.previousState.targetDistanceMeters)
-		);
-		for (const field of replaceFields) {
-			if (!sameValue(adjustment.previousState[field], adjustment.newState[field])) {
-				assignField(state, field, adjustment.newState[field]);
-			}
-		}
+		applyAdjustmentChanges(state, adjustment);
 	}
 
 	return state;
+}
+
+export function rebaseWorkoutAdjustments<T extends ReplayableAdjustment & { id: string }>(
+	chronologicalAdjustments: T[],
+	shouldErase: (adjustment: T) => boolean
+): { state: ReplayableWorkoutState; adjustments: RebasedAdjustment[] } | null {
+	const first = chronologicalAdjustments[0];
+	if (!first) return null;
+	const state = structuredClone(first.previousState);
+	state.isRemoved ??= false;
+	const adjustments: RebasedAdjustment[] = [];
+
+	for (const adjustment of chronologicalAdjustments) {
+		if (shouldErase(adjustment)) continue;
+		const previousState = structuredClone(state);
+		const newState = structuredClone(state);
+		applyAdjustmentChanges(newState, adjustment);
+		adjustments.push({ id: adjustment.id, previousState, newState });
+		if (!adjustment.reversedAt) Object.assign(state, structuredClone(newState));
+	}
+
+	return { state, adjustments };
+}
+
+function applyAdjustmentChanges(
+	state: ReplayableWorkoutState,
+	adjustment: ReplayableAdjustment
+): void {
+	state.targetDistanceMeters = Math.max(
+		0,
+		state.targetDistanceMeters +
+			(adjustment.newState.targetDistanceMeters - adjustment.previousState.targetDistanceMeters)
+	);
+	for (const field of replaceFields) {
+		if (!sameValue(adjustment.previousState[field], adjustment.newState[field])) {
+			assignField(state, field, adjustment.newState[field]);
+		}
+	}
 }
 
 function sameValue(left: unknown, right: unknown) {

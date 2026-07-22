@@ -80,6 +80,23 @@ set `DATABASE_POOL_MAX` themselves. Statement and idle-transaction timeouts are 
 limits, so a stalled request releases database work instead of occupying a connection indefinitely.
 Tune them only with evidence from slow-query logs and an intentional PostgreSQL connection budget.
 
+### Training-data export staging
+
+The web container stages private training-data exports on a dedicated owner-only tmpfs instead of the
+general 16 MB `/tmp`. Compose defaults that mount to 272 MiB and reserves at most one 256 MiB export
+at a time. `RUNWAY_EXPORT_MAX_BYTES` is the per-export limit,
+`RUNWAY_EXPORT_STAGING_QUOTA_BYTES` is the combined reservation and crash-leftover budget, and
+`RUNWAY_EXPORT_MAX_CONCURRENT` is the in-process concurrency limit. `RUNWAY_EXPORT_TMPFS_SIZE`
+controls the Compose mount itself.
+
+Keep the tmpfs larger than the staging quota so filesystem metadata and the staging directory fit;
+the defaults intentionally leave 16 MiB of headroom. Raise the byte cap, quota, and tmpfs size
+together when retained route or heart-rate history makes a valid export larger than 256 MiB. Direct
+non-Compose deployments must provide `RUNWAY_EXPORT_STAGING_DIRECTORY` as an absolute, writable,
+owner-only directory and enforce an equivalent filesystem quota. Recent crash artifacts count
+against the quota until the 24-hour reaper removes them, so a capacity rejection is safe to retry
+later rather than a reason to delete database data.
+
 ## Better Auth Secret And Encrypted Provider Tokens
 
 `BETTER_AUTH_SECRET` is recoverable key material, not a disposable application setting. runway sets

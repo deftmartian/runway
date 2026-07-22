@@ -145,6 +145,31 @@ describe('timed workout consequences', () => {
 		});
 	});
 
+	it('does not offer repeating the same prescription after pain', () => {
+		const consequence = calculateConsequence({ ...timedBase, pain: true });
+
+		expect(consequence.recommendedDecision).toBe('next_rest');
+		expect(consequence.options).toContain('next_rest');
+		expect(consequence.options).not.toContain('repeat_prescription');
+	});
+
+	it('calls a skip repeated only when an earlier run was also skipped', () => {
+		const skip = {
+			status: 'skipped' as const,
+			choice: 'skip_continue' as const,
+			targetDistanceMeters: 0,
+			targetDurationSeconds: 1_200,
+			pain: false,
+			feltHard: false,
+			weekTargetDistanceMeters: 0
+		};
+
+		expect(calculateConsequence({ ...skip, recentShortenedWorkouts: 1 }).kind).toBe(
+			'skip_continue'
+		);
+		expect(calculateConsequence({ ...skip, recentSkippedWorkouts: 1 }).kind).toBe('repeated_skip');
+	});
+
 	it('preserves distance-based reductions', () => {
 		const consequence = calculateConsequence({
 			status: 'done',

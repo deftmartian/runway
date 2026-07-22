@@ -284,6 +284,7 @@ test('import page can link, unlink, and delete activity records', async ({ page 
 	const records = page.locator('.import-inbox');
 	const record = records.locator('.activity-record').first();
 	await expect(page.getByText(/Added to the activity inbox\./)).toBeVisible();
+	const activityId = await getFirstActivityId(userId);
 	await expect(record.locator('.state-marker')).toContainText('Needs review');
 	await expect
 		.poll(async () => (await getWorkout(adjustedRun.id)).targetDistanceMeters)
@@ -329,10 +330,17 @@ test('import page can link, unlink, and delete activity records', async ({ page 
 	await expect
 		.poll(async () => (await getWorkout(adjustedRun.id)).type)
 		.toBe(adjustedRunBefore.type);
-	await expect
-		.poll(async () => await getPlanAdjustmentTypes(userId))
-		.toEqual(expect.arrayContaining(['link']));
-	expect(await getPlanAdjustmentTypes(userId)).not.toContain('import_extra');
+	const adjustmentTypes = await getPlanAdjustmentTypes(userId);
+	expect(adjustmentTypes).not.toContain('link');
+	expect(adjustmentTypes).not.toContain('import_extra');
+
+	const exportResponse = await page.request.post('/app/settings/export.json', {
+		headers: { origin: new URL(page.url()).origin }
+	});
+	expect(exportResponse.status()).toBe(200);
+	const exported = (await exportResponse.json()) as { adjustments: unknown[] };
+	expect(JSON.stringify(exported.adjustments)).not.toContain(activityId);
+	expect(JSON.stringify(exported.adjustments)).not.toContain(offDate);
 });
 
 test('review-only imports do not enter actual totals until the runner accepts them', async ({

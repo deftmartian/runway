@@ -5,7 +5,9 @@ import {
 	createPlan,
 	getBulkActivityDeletionState,
 	getCurrentGoalPlanState,
+	getFirstActivityId,
 	getHealthContext,
+	getPlannedRuns,
 	getUserId,
 	getUserOwnedRowCount,
 	openImportSourceSetup,
@@ -15,6 +17,7 @@ import {
 	setTrainingTimeZone,
 	setUserSessionCreatedAt
 } from './support/runway';
+import { gpxForDistance } from './support/import-fixtures';
 
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(fixedBrowserClockScript());
@@ -178,6 +181,48 @@ test('bulk activity deletion remains complete beyond a request-sized bind list',
 			deletionTombstones: 2_500,
 			activityAudits: 0
 		});
+});
+
+test('bulk activity deletion removes activity-derived adjustment state from exports', async ({
+	page
+}) => {
+	const email = await createPlan(page);
+	const userId = await getUserId(email);
+	const runs = await getPlannedRuns(userId);
+	await page.getByRole('link', { name: 'Inbox' }).click();
+	await openImportSourceSetup(page);
+	await page.getByLabel('Choose a planned workout').check();
+	const workoutId = await page.locator('select[name="workoutId"]').evaluate((select) => {
+		if (!(select instanceof HTMLSelectElement)) return '';
+		return Array.from(select.options).find((option) => option.value)?.value ?? '';
+	});
+	const targetRun = runs.find((run) => run.id === workoutId);
+	if (!targetRun) throw new Error('A workout candidate was not available for the privacy test.');
+	await page.locator('select[name="workoutId"]').selectOption(workoutId);
+	await page.getByLabel('GPX file').setInputFiles({
+		name: 'bulk-delete-private-adjustment.gpx',
+		mimeType: 'application/gpx+xml',
+		buffer: gpxForDistance(targetRun.scheduledDate, targetRun.targetDistanceMeters)
+	});
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await expect(page.getByText('Matched to the selected planned workout.')).toBeVisible();
+	const activityId = await getFirstActivityId(userId);
+
+	await page.goto('/app/settings');
+	await page.getByText('Imported activity data', { exact: true }).click();
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
+	await expect(page.getByText('Deleted 1 imported GPX activity.')).toBeVisible();
+
+	const exportResponse = await page.request.post('/app/settings/export.json', {
+		headers: { origin: new URL(page.url()).origin }
+	});
+	expect(exportResponse.status()).toBe(200);
+	const exported = (await exportResponse.json()) as {
+		adjustments: { triggerId: string | null; triggerType: string }[];
+	};
+	expect(JSON.stringify(exported.adjustments)).not.toContain(activityId);
+	expect(exported.adjustments.map(({ triggerType }) => triggerType)).not.toContain('import_match');
 });
 
 test('account deletion clears browser folder data across tabs and cascades every user-owned record', async ({

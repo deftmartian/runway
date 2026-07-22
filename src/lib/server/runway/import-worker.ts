@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { importSource } from '$lib/server/db/schema';
 import { purgeExpiredAuditEvents } from './audit-retention';
 import { syncNextcloudSource } from './import-sources';
+import { purgeExpiredOperationalRecords } from './operational-retention';
 
 const workerIntervalMs = 5 * 60 * 1000;
 export const importWorkerUserConcurrency = 3;
@@ -48,19 +49,36 @@ async function runImportWorkerPass(): Promise<void> {
 	globalThis.runwayImportWorkerInFlight = true;
 	globalThis.runwayImportWorkerLastStartedAt = new Date().toISOString();
 	try {
-		const tasks = await Promise.allSettled([
-			syncDueNextcloudSourcesOnce(),
-			purgeExpiredAuditEvents()
-		]);
-		if (tasks.some((task) => task.status === 'rejected')) {
-			throw new Error('One or more scheduled maintenance tasks failed.');
-		}
+		await runScheduledMaintenanceTasks();
 		globalThis.runwayImportWorkerLastCompletedAt = new Date().toISOString();
 	} catch {
 		globalThis.runwayImportWorkerLastFailureAt = new Date().toISOString();
 		console.error('Scheduled maintenance pass failed; the worker will retry.');
 	} finally {
 		globalThis.runwayImportWorkerInFlight = false;
+	}
+}
+
+export type ScheduledMaintenanceTasks = {
+	syncImports: () => Promise<unknown>;
+	purgeAuditEvents: () => Promise<unknown>;
+	purgeOperationalRecords: () => Promise<unknown>;
+};
+
+export async function runScheduledMaintenanceTasks(
+	tasks: ScheduledMaintenanceTasks = {
+		syncImports: syncDueNextcloudSourcesOnce,
+		purgeAuditEvents: purgeExpiredAuditEvents,
+		purgeOperationalRecords: purgeExpiredOperationalRecords
+	}
+): Promise<void> {
+	const results = await Promise.allSettled([
+		tasks.syncImports(),
+		tasks.purgeAuditEvents(),
+		tasks.purgeOperationalRecords()
+	]);
+	if (results.some((task) => task.status === 'rejected')) {
+		throw new Error('One or more scheduled maintenance tasks failed.');
 	}
 }
 

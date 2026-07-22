@@ -78,6 +78,8 @@ val releaseSigningIdentity = when {
 android {
     namespace = "com.deftmartian.runway"
     compileSdk = 36
+    useLibrary("android.test.runner")
+    useLibrary("android.test.base")
 
     defaultConfig {
         applicationId = runwayApplicationId
@@ -85,6 +87,7 @@ android {
         targetSdk = 36
         versionCode = 3
         versionName = "0.2.0"
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }

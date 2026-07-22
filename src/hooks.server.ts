@@ -19,6 +19,7 @@ import {
 	passkeyAuthenticationRateLimitBuckets,
 	passkeyRegistrationRateLimitBuckets
 } from '$lib/server/runway/security-rate-limit';
+import { startStagedExportReaper } from '$lib/server/runway/staged-json-export';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { sequence } from '@sveltejs/kit/hooks';
 
@@ -41,6 +42,7 @@ const baselineCsp = [
 ].join('; ');
 
 if (!building && env['IMPORT_WORKER_ENABLED'] === 'true') startImportSourceWorker();
+if (!building && env['IMPORT_WORKER_ENABLED'] !== 'true') startStagedExportReaper();
 
 const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 	if (isMutationRequest(event.request.method)) {

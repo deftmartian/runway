@@ -29,6 +29,8 @@ export type ConsequenceKind =
 	| 'shortfall'
 	| 'repeated_shortfall'
 	| 'hard_effort'
+	| 'repeated_skip'
+	/** Legacy value retained for existing recorded consequences. */
 	| 'repeated_miss'
 	| 'skip_reduce'
 	| 'skip_continue'
@@ -41,6 +43,12 @@ export type InjuryFlags = {
 	recurringPain: boolean;
 	medicalRestriction: boolean;
 	notes: string;
+};
+
+export type TrainingHealthNotice = {
+	level: 'caution' | 'paused';
+	heading: string;
+	message: string;
 };
 
 export type PrescriptionSegment = {
@@ -288,8 +296,10 @@ export type WorkoutFeedbackInput = {
 	pain: boolean;
 	feltHard: boolean;
 	weekTargetDistanceMeters: number;
-	/** Prior shortened or skipped runs in the caller's bounded recent window. */
-	recentMissedWorkouts?: number;
+	/** Prior skipped runs in the caller's bounded recent window. */
+	recentSkippedWorkouts?: number;
+	/** Prior shortened runs in the caller's bounded recent window. */
+	recentShortenedWorkouts?: number;
 };
 
 export type ConsequenceMetric = 'distance' | 'duration';

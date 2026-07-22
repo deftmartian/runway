@@ -17,6 +17,26 @@ export type PaceResult = {
 	durationSeconds: number | null | undefined;
 };
 
+export const maxHistoryPlanWorkouts = 52 * 14;
+
+export function indexPlanHistoryEvidence<Feedback extends { workoutId: string }>(
+	feedbackRows: Feedback[],
+	linkedActivityRows: { workoutId: string | null }[]
+) {
+	const latestFeedbackByWorkout = new Map<string, Feedback>();
+	for (const feedback of feedbackRows) {
+		if (!latestFeedbackByWorkout.has(feedback.workoutId)) {
+			latestFeedbackByWorkout.set(feedback.workoutId, feedback);
+		}
+	}
+
+	const activityWorkoutIds = new Set(
+		linkedActivityRows.flatMap((record) => (record.workoutId ? [record.workoutId] : []))
+	);
+
+	return { latestFeedbackByWorkout, activityWorkoutIds };
+}
+
 export function averagePaceFromPairedResults(results: PaceResult[]): number | null {
 	let distanceMeters = 0;
 	let durationSeconds = 0;
@@ -86,7 +106,7 @@ export async function getHistory(userId: string, context?: TrainingReadContext) 
 				)
 			)
 			.orderBy(asc(workout.scheduledDate))
-			.limit(52 * 14),
+			.limit(maxHistoryPlanWorkouts),
 		db
 			.select({
 				id: workoutFeedback.id,
@@ -105,7 +125,7 @@ export async function getHistory(userId: string, context?: TrainingReadContext) 
 			)
 			.where(and(eq(workoutFeedback.userId, userId), eq(workout.planId, activePlan.plan.id)))
 			.orderBy(desc(workoutFeedback.createdAt))
-			.limit(300),
+			.limit(maxHistoryPlanWorkouts),
 		db
 			.select({
 				weekStart: activityWeekStart,
@@ -146,7 +166,7 @@ export async function getHistory(userId: string, context?: TrainingReadContext) 
 					lte(activity.activityDate, today)
 				)
 			)
-			.limit(52 * 7),
+			.limit(maxHistoryPlanWorkouts),
 		db
 			.select({
 				workoutId: planAdjustment.workoutId,
@@ -173,22 +193,17 @@ export async function getHistory(userId: string, context?: TrainingReadContext) 
 			userId,
 			activePlan.plan,
 			today,
-			effectivePlanRisk(weeks, activePlan.plan.risk)
+			effectivePlanRisk(weeks, activePlan.plan.risk),
+			weeks.some((week) => week.hasMixedLoad)
 		)
 	]);
 	const activityWeeklyByStart = new Map(
 		activityWeeklyRows.map((record) => [record.weekStart, record])
 	);
-	const activityWorkoutIds = new Set(
-		linkedActivityRows.flatMap((record) => (record.workoutId ? [record.workoutId] : []))
+	const { activityWorkoutIds, latestFeedbackByWorkout } = indexPlanHistoryEvidence(
+		planFeedback,
+		linkedActivityRows
 	);
-
-	const latestFeedbackByWorkout = new Map<string, (typeof planFeedback)[number]>();
-	for (const feedback of planFeedback) {
-		if (!latestFeedbackByWorkout.has(feedback.workoutId)) {
-			latestFeedbackByWorkout.set(feedback.workoutId, feedback);
-		}
-	}
 
 	const weeklySummaries = weeks
 		.filter((week) => week.startDate <= today)

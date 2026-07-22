@@ -190,17 +190,48 @@ export async function inspectBackupArchive(connection, inputPath) {
 
 /** @param {PostgresConnection} connection */
 export async function verifyRestoredDatabase(connection) {
-	const journal = JSON.parse(
-		await readFile(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8')
+	/** @type {{
+	 * canonical: Array<{ createdAt: string, hash: string }>,
+	 * rebasedV011: Array<{ createdAt: string, hash: string }>,
+	 * requiredTables: string[],
+	 * requiredColumns: string[],
+	 * requiredConstraints: string[],
+	 * requiredIndexes: string[]
+	 * }} */
+	const integrity = JSON.parse(
+		await readFile(new URL('../drizzle/migration-integrity.json', import.meta.url), 'utf8')
 	);
-	const expectedMigration = journal.entries.at(-1);
-	if (!expectedMigration) throw new Error('The migration journal is empty.');
+	const compatibilityMigration = integrity.canonical.at(-1);
+	if (!compatibilityMigration) throw new Error('The migration integrity manifest is empty.');
+	const supportedLedgers = [
+		integrity.canonical,
+		[...integrity.rebasedV011, compatibilityMigration]
+	];
+	const ledgerChecks = supportedLedgers.map((entries) => {
+		const expected = JSON.stringify(entries.map((entry) => [entry.createdAt, entry.hash]));
+		return `coalesce((select jsonb_agg(jsonb_build_array(created_at::text, hash) order by created_at, id) from drizzle.__drizzle_migrations), '[]'::jsonb) = '${expected}'::jsonb`;
+	});
+	const tableChecks = integrity.requiredTables.map(
+		(name) => `to_regclass('public."${name}"') is not null`
+	);
+	const columnChecks = integrity.requiredColumns.map((qualifiedName) => {
+		const [tableName, columnName] = qualifiedName.split('.');
+		return `exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = '${tableName}' and column_name = '${columnName}')`;
+	});
+	const constraintChecks = integrity.requiredConstraints.map(
+		(name) =>
+			`exists (select 1 from information_schema.table_constraints where constraint_schema = 'public' and constraint_name = '${name}')`
+	);
+	const indexChecks = integrity.requiredIndexes.map(
+		(name) => `to_regclass('public."${name}"') is not null`
+	);
 	const query = [
 		'select case when',
-		"to_regclass('public.user') is not null",
-		"and to_regclass('public.training_plan') is not null",
-		"and to_regclass('public.activity') is not null",
-		`and (select max(created_at)::text from drizzle.__drizzle_migrations) = '${expectedMigration.when}'`,
+		`(${ledgerChecks.join(' or ')})`,
+		...tableChecks.map((check) => `and ${check}`),
+		...columnChecks.map((check) => `and ${check}`),
+		...constraintChecks.map((check) => `and ${check}`),
+		...indexChecks.map((check) => `and ${check}`),
 		"then 'ready' else 'not-ready' end;"
 	].join(' ');
 	const output = await runPostgresTool(

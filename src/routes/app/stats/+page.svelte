@@ -6,6 +6,7 @@
 		formatRampEvidence,
 		presentConsequenceAssessment,
 		presentLoadChangeAssessment,
+		presentMixedPrescriptionAssessment,
 		presentRampAssessment
 	} from '$lib/training/training-assessment';
 	import type { PageData } from './$types';
@@ -74,7 +75,9 @@
 			? data.history.currentSignal.consequence
 				? presentConsequenceAssessment(data.history.currentSignal.consequence)
 				: presentLoadChangeAssessment(currentRisk)
-			: presentRampAssessment(currentRisk)
+			: data.history.currentSignal?.planComparisonStatus === 'mixed'
+				? presentMixedPrescriptionAssessment()
+				: presentRampAssessment(currentRisk)
 	);
 	const currentRiskReasons = $derived(data.history.currentSignal?.reasons ?? []);
 	const currentRiskSource = $derived(
@@ -183,6 +186,17 @@
 			</div>
 		{/if}
 	</header>
+
+	{#if data.history.currentSignal?.healthNotice}
+		<aside
+			class="training-health-notice"
+			class:paused={data.history.currentSignal.healthNotice.level === 'paused'}
+			aria-label="Current health context"
+		>
+			<strong>{data.history.currentSignal.healthNotice.heading}</strong>
+			<span>{data.history.currentSignal.healthNotice.message}</span>
+		</aside>
+	{/if}
 
 	{#if data.active && !hasRecordedHistory}
 		<section class="stats-section first-run" aria-labelledby="first-run-title">

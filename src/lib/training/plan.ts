@@ -588,12 +588,6 @@ function getWarnings(
 		);
 	}
 	if (
-		intake.experience === 'new' &&
-		intake.currentRunsPerWeek > experienceRunCap(intake.experience)
-	) {
-		warnings.push('New runners are capped at three run days per week until consistency is built.');
-	}
-	if (
 		intake.raceDistance === 'half' &&
 		intake.currentRunsPerWeek > raceRunCap(intake.raceDistance)
 	) {
@@ -781,11 +775,7 @@ function uniqueAvailableDays(availability: number[]): number[] {
 }
 
 function plannedRunCount(intake: TrainingIntake): number {
-	return Math.min(
-		intake.currentRunsPerWeek,
-		experienceRunCap(intake.experience),
-		raceRunCap(intake.raceDistance)
-	);
+	return Math.min(intake.currentRunsPerWeek, raceRunCap(intake.raceDistance));
 }
 
 function assertSupportedBaseline(intake: TrainingIntake): void {
@@ -817,10 +807,6 @@ function spacingScore(day: number, picked: number[]): number {
 	return Math.min(
 		...picked.map((other) => Math.min(Math.abs(day - other), 7 - Math.abs(day - other)))
 	);
-}
-
-function experienceRunCap(experience: TrainingIntake['experience']): number {
-	return experience === 'new' ? 3 : 5;
 }
 
 function raceRunCap(distance: RaceDistance): number {

@@ -6,6 +6,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
+      # Export data is sensitive and may be substantially larger than general
+      # runtime scratch space. This mount is bounded independently and owned by
+      # the unprivileged `node` user in the production image.
+      - /var/runway/exports:size=${RUNWAY_EXPORT_TMPFS_SIZE:-272m},mode=0700,uid=1000,gid=1000
     cap_drop:
       - ALL
     security_opt:
@@ -55,6 +59,10 @@ services:
       PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
       PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-runway}
       BODY_SIZE_LIMIT: ${BODY_SIZE_LIMIT:-12M}
+      RUNWAY_EXPORT_STAGING_DIRECTORY: /var/runway/exports
+      RUNWAY_EXPORT_MAX_BYTES: ${RUNWAY_EXPORT_MAX_BYTES:-268435456}
+      RUNWAY_EXPORT_STAGING_QUOTA_BYTES: ${RUNWAY_EXPORT_STAGING_QUOTA_BYTES:-268435456}
+      RUNWAY_EXPORT_MAX_CONCURRENT: ${RUNWAY_EXPORT_MAX_CONCURRENT:-1}
       IMPORT_WORKER_ENABLED: 'false'
     healthcheck:
       test:

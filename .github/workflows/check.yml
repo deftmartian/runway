@@ -4,12 +4,13 @@ name: Check
 # container and snapshot fonts instead of duplicating those suites on the host runner.
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main, master]
 
 concurrency:
-  group: runway-check-${{ github.ref }}
+  group: runway-check-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -83,6 +84,9 @@ jobs:
       - name: Fresh and released-database migration paths
         if: matrix.task == 'deployment'
         run: corepack pnpm verify:migrations
+      - name: Exact-artifact release promotion contract
+        if: matrix.task == 'deployment'
+        run: corepack pnpm verify:release
 
       - name: Android selectable-server static contract
         if: matrix.task == 'android'
@@ -136,11 +140,11 @@ jobs:
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
           test
-      - name: Android debug build
+      - name: Android debug and instrumentation builds
         if: matrix.task == 'android'
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
-          assembleDebug
+          assembleDebug assembleDebugAndroidTest
       - name: Android debug artifact contract
         if: matrix.task == 'android'
         run: node scripts/verify-android-artifact.mjs debug

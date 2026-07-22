@@ -271,7 +271,7 @@ const workoutPrescriptionFields = {
 	runMinutes: optionalNumber(z.coerce.number().min(0.25).max(120)),
 	walkMinutes: optionalNumber(z.coerce.number().min(0.25).max(120)),
 	repetitions: optionalNumber(z.coerce.number().int().min(1).max(100)),
-	intensity: z.string().trim().min(2).max(80),
+	intensity: z.enum(['easy', 'rest']),
 	purpose: z.string().trim().min(2).max(120),
 	userReason: z.string().trim().max(500).default(''),
 	rebalance: z.boolean().default(false),
@@ -406,6 +406,7 @@ function validateWorkoutPrescriptionFields(
 	value: {
 		type: 'easy' | 'long' | 'recovery' | 'rest';
 		prescriptionKind: 'distance' | 'timed' | 'rest';
+		intensity: 'easy' | 'rest';
 		distanceKm?: number | undefined;
 		durationMinutes?: number | undefined;
 		intervalStructureJson: string;
@@ -422,6 +423,12 @@ function validateWorkoutPrescriptionFields(
 			path: ['type'],
 			message: 'Rest needs the rest workout type.'
 		});
+	}
+	if (value.prescriptionKind === 'rest' && value.intensity !== 'rest') {
+		context.addIssue({ code: 'custom', path: ['intensity'], message: 'Rest needs rest effort.' });
+	}
+	if (value.prescriptionKind !== 'rest' && value.intensity !== 'easy') {
+		context.addIssue({ code: 'custom', path: ['intensity'], message: 'Runs use easy effort.' });
 	}
 	if (value.prescriptionKind !== 'rest' && value.type === 'rest') {
 		context.addIssue({ code: 'custom', path: ['type'], message: 'Runs need a run workout type.' });
