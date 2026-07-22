@@ -268,8 +268,10 @@ health checks, and PWA verification.
 - HTTP is suitable for local product review. Passkeys, OIDC redirects, secure cookies,
   installability, and offline behavior need the real HTTPS origin.
 - Installed Chromium-family PWAs can receive GPX files from the operating-system share sheet or read
-  an explicitly approved Gadgetbridge Auto GPX export directory. New records enter review without
-  changing the plan automatically.
+  an explicitly approved Gadgetbridge Auto GPX export directory. A visible PWA checks again after
+  focus, with backoff after quiet or unavailable folders; **Scan now** performs a full check. Browser
+  permission remains browser-managed, while the Android app provides durable background folder
+  reconciliation. New records enter review without changing the plan automatically.
 - Password reset needs `MAIL_ENABLED=true` and SMTP configuration.
 - Nextcloud sync expects a password-protected public folder share and an exact-origin production
   allowlist.

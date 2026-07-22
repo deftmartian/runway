@@ -77,6 +77,10 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('X-Frame-Options', 'DENY');
 
+	if (response.status >= 400) {
+		response.headers.set('Cache-Control', 'private, no-store');
+	}
+
 	if (pathname.startsWith('/_app/immutable/')) {
 		response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 	}
@@ -92,7 +96,7 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 			pathname === '/offline.css' ||
 			pathname.endsWith('.svg'))
 	) {
-		response.headers.set('Cache-Control', 'public, max-age=86400');
+		response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
 	}
 
 	if (

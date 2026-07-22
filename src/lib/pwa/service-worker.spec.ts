@@ -12,6 +12,16 @@ describe('service worker build revisions', () => {
 		expect(second).toContain("name.startsWith('runway-') && !ACTIVE_CACHES.has(name)");
 	});
 
+	it('bypasses the HTTP cache while installing every unversioned offline asset', () => {
+		const source = createServiceWorkerSource('fresh-install');
+
+		expect(source).toContain("new Request(asset, { cache: 'reload', credentials: 'same-origin' })");
+		expect(source).toContain(
+			"if (!response.ok) throw new Error('Public offline asset could not be cached: '"
+		);
+		expect(source).not.toContain('cache.addAll(PUBLIC_ASSETS)');
+	});
+
 	it('activates a waiting build only after an explicit client request', () => {
 		const source = createServiceWorkerSource('safe-update');
 

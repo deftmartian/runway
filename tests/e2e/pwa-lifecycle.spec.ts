@@ -23,6 +23,37 @@ test('a service-worker setup failure stays out of the form and can be dismissed'
 	await expect(notice).toHaveCount(0);
 });
 
+test('a failed first installation is reported after registration resolves', async ({ page }) => {
+	await page.addInitScript(() => {
+		const worker = new EventTarget() as EventTarget & { state: ServiceWorkerState };
+		worker.state = 'installing';
+		const registration = new EventTarget() as EventTarget & {
+			active: ServiceWorker | null;
+			installing: ServiceWorker;
+			waiting: ServiceWorker | null;
+		};
+		registration.active = null;
+		registration.installing = worker as ServiceWorker;
+		registration.waiting = null;
+		Object.defineProperty(navigator.serviceWorker, 'register', {
+			configurable: true,
+			value: () => {
+				setTimeout(() => {
+					worker.state = 'redundant';
+					worker.dispatchEvent(new Event('statechange'));
+				}, 25);
+				return Promise.resolve(registration);
+			}
+		});
+	});
+	await page.goto('/login');
+
+	await expect(page.getByRole('alert', { name: /App setup incomplete/ })).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => navigator.serviceWorker.controller === null))
+		.toBe(true);
+});
+
 test('a controller replacement reloads a clean client', async ({ page }) => {
 	await openControlledLogin(page);
 

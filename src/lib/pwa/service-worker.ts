@@ -11,7 +11,18 @@ const PUBLIC_ASSET_SET = new Set(PUBLIC_ASSETS);
 const PRIVATE_PREFIXES = ['/app', '/api/auth', '/login', '/logout'];
 
 self.addEventListener('install', (event) => {
-	event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PUBLIC_ASSETS)));
+	event.waitUntil(
+		caches.open(CACHE_NAME).then((cache) =>
+			Promise.all(
+				PUBLIC_ASSETS.map(async (asset) => {
+					const request = new Request(asset, { cache: 'reload', credentials: 'same-origin' });
+					const response = await fetch(request);
+					if (!response.ok) throw new Error('Public offline asset could not be cached: ' + asset);
+					await cache.put(asset, response);
+				})
+			)
+		)
+	);
 });
 
 self.addEventListener('message', (event) => {

@@ -30,6 +30,7 @@ test('public pages are accessible at desktop and mobile widths', async ({ page }
 test('PWA files and private routes carry the expected cache boundaries', async ({ page }) => {
 	const manifest = await page.request.get('/manifest.webmanifest');
 	expect(manifest.ok()).toBe(true);
+	expect(manifest.headers()['cache-control']).toBe('public, max-age=0, must-revalidate');
 	await expect(manifest.json()).resolves.toMatchObject({
 		id: '/',
 		name: 'runway',
@@ -65,13 +66,14 @@ test('PWA files and private routes carry the expected cache boundaries', async (
 
 	const offline = await page.request.get('/offline.html');
 	expect(offline.ok()).toBe(true);
+	expect(offline.headers()['cache-control']).toBe('public, max-age=0, must-revalidate');
 	const offlineBody = await offline.text();
 	expect(offlineBody).toContain('Reconnect to open your calendar and training data.');
 	expect(offlineBody).toContain('href="/app">Try again</a>');
 	expect(offlineBody).not.toContain('<style');
 	const offlineCss = await page.request.get('/offline.css');
 	expect(offlineCss.ok()).toBe(true);
-	expect(offlineCss.headers()['cache-control']).toBe('public, max-age=86400');
+	expect(offlineCss.headers()['cache-control']).toBe('public, max-age=0, must-revalidate');
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/offline.html');
 	expect(

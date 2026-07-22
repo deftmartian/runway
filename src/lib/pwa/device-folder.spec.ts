@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	automaticDeviceFolderScanDelayMs,
 	classifyDirectoryReadFailure,
 	deviceFolderFingerprintConcurrency,
+	directoryListingSignature,
 	fingerprintDeviceFile,
 	getDeviceFolderSupportState,
 	isDeviceFolderControlMessage,
@@ -44,6 +46,21 @@ describe('device folder GPX selection', () => {
 		];
 		expect(newestUnseenDeviceFile(files, new Set(['same-a']))?.fingerprint).toBe('same-b');
 		expect(newestUnseenDeviceFile(files, new Set(['same-a', 'same-b']))?.fingerprint).toBe('older');
+	});
+
+	it('uses a cheap deterministic directory signature before automatic content reads', async () => {
+		const original = await directoryListingSignature(['second.gpx', 'first.gpx']);
+		await expect(directoryListingSignature(['first.gpx', 'second.gpx'])).resolves.toBe(original);
+		await expect(directoryListingSignature(['first.gpx', 'third.gpx'])).resolves.not.toBe(original);
+	});
+
+	it('backs off quiet focus scans while checking waiting files promptly', () => {
+		expect(automaticDeviceFolderScanDelayMs({ result: 'none' })).toBe(300_000);
+		expect(automaticDeviceFolderScanDelayMs({ result: 'imported', remaining: 2 })).toBe(5_000);
+		expect(
+			automaticDeviceFolderScanDelayMs({ result: 'rate-limited', retryAfterSeconds: 180 })
+		).toBe(180_000);
+		expect(automaticDeviceFolderScanDelayMs({ result: 'permission-required' })).toBe(900_000);
 	});
 
 	it('does not reuse a handled marker when bounded GPX content changes in place', async () => {

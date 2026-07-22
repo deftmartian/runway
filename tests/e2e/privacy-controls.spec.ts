@@ -238,7 +238,7 @@ test('account deletion clears browser folder data across tabs and cascades every
 	await page.goto('/app/settings');
 	await page.evaluate(async () => {
 		await new Promise<void>((resolve, reject) => {
-			const request = indexedDB.open('runway-device-folders', 1);
+			const request = indexedDB.open('runway-device-folders', 2);
 			request.onupgradeneeded = () => {
 				request.result.createObjectStore('folders', { keyPath: 'userId' });
 				const seen = request.result.createObjectStore('seen-files', {

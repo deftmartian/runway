@@ -21,7 +21,7 @@ const offlinePage = `<!doctype html>
 export const GET: RequestHandler = () =>
 	new Response(offlinePage, {
 		headers: {
-			'Cache-Control': 'public, max-age=86400',
+			'Cache-Control': 'public, max-age=0, must-revalidate',
 			'Content-Type': 'text/html; charset=utf-8'
 		}
 	});

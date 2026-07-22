@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import Notice from '$lib/components/Notice.svelte';
 	import {
+		automaticDeviceFolderScanDelayMs,
+		deviceFolderControlEvent,
 		retainDeviceFolderForUser,
 		scanDeviceFolder,
 		supportsDeviceFolderImport,
@@ -15,6 +17,7 @@
 	let { userId }: { userId: string } = $props();
 	let notice = $state<{ message: string; failed: boolean; remaining?: number } | null>(null);
 	let lastScanStartedAt = Number.NEGATIVE_INFINITY;
+	let nextAutomaticScanAt = Number.NEGATIVE_INFINITY;
 	let permissionNoticeShown = false;
 	let scanning = $state(false);
 	let showScanProgress = $state(false);
@@ -30,32 +33,46 @@
 
 		const scanWhenActive = () => {
 			if (document.visibilityState !== 'visible' || !navigator.onLine) return;
-			if (performance.now() - lastScanStartedAt < 5_000) return;
-			lastScanStartedAt = performance.now();
-			void runScan();
+			const now = performance.now();
+			if (now - lastScanStartedAt < 5_000 || now < nextAutomaticScanAt) return;
+			lastScanStartedAt = now;
+			void runScan('automatic');
+		};
+		const handleOnline = () => {
+			nextAutomaticScanAt = Number.NEGATIVE_INFINITY;
+			scanWhenActive();
 		};
 		const handleVisibility = () => {
 			if (document.visibilityState === 'visible') scanWhenActive();
 		};
+		const handleFolderControl = (event: Event) => {
+			if (!(event instanceof CustomEvent)) return;
+			const message = event.detail as { type?: unknown; userId?: unknown } | null;
+			if (message?.type === 'connected' && message.userId === userId) {
+				nextAutomaticScanAt = Number.NEGATIVE_INFINITY;
+			}
+		};
 
 		globalThis.addEventListener('focus', scanWhenActive);
-		globalThis.addEventListener('online', scanWhenActive);
+		globalThis.addEventListener('online', handleOnline);
 		globalThis.addEventListener('pageshow', scanWhenActive);
 		document.addEventListener('visibilitychange', handleVisibility);
 		document.addEventListener('resume', scanWhenActive);
+		globalThis.addEventListener(deviceFolderControlEvent, handleFolderControl);
 		scanWhenActive();
 
 		return () => {
 			clearTimeout(progressTimer);
 			globalThis.removeEventListener('focus', scanWhenActive);
-			globalThis.removeEventListener('online', scanWhenActive);
+			globalThis.removeEventListener('online', handleOnline);
 			globalThis.removeEventListener('pageshow', scanWhenActive);
 			document.removeEventListener('visibilitychange', handleVisibility);
 			document.removeEventListener('resume', scanWhenActive);
+			globalThis.removeEventListener(deviceFolderControlEvent, handleFolderControl);
 		};
 	});
 
-	async function runScan() {
+	async function runScan(mode: 'automatic' | 'manual' = 'manual') {
 		if (scanning) return;
 		scanning = true;
 		scanProgress = null;
@@ -65,6 +82,7 @@
 		let result: DeviceFolderScanResult;
 		try {
 			if (!(await accountIsolation)) {
+				if (mode === 'automatic') nextAutomaticScanAt = performance.now() + 60_000;
 				notice = {
 					message: 'Local folder access could not be isolated for this account.',
 					failed: true
@@ -72,6 +90,7 @@
 				return;
 			}
 			result = await scanDeviceFolder(userId, {
+				mode,
 				onProgress: (progress) => (scanProgress = progress)
 			});
 		} catch {
@@ -80,6 +99,9 @@
 			clearTimeout(progressTimer);
 			showScanProgress = false;
 			scanning = false;
+		}
+		if (mode === 'automatic') {
+			nextAutomaticScanAt = performance.now() + automaticDeviceFolderScanDelayMs(result);
 		}
 
 		if (result.result === 'imported') {
@@ -195,7 +217,7 @@
 
 	async function scanNext() {
 		notice = null;
-		await runScan();
+		await runScan('manual');
 	}
 
 	function dismissNotice() {

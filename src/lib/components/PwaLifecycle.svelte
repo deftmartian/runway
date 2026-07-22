@@ -170,11 +170,11 @@
 	async function registerServiceWorker() {
 		serviceWorkerSetupState.set('checking');
 		try {
-			bindRegistration(
-				await navigator.serviceWorker.register(serviceWorkerUrl(), {
-					scope: '/'
-				})
-			);
+			const nextRegistration = await navigator.serviceWorker.register(serviceWorkerUrl(), {
+				scope: '/'
+			});
+			bindRegistration(nextRegistration);
+			await waitForInitialInstallation(nextRegistration);
 			serviceWorkerSetupState.set('ready');
 		} catch {
 			serviceWorkerSetupState.set('failed');
@@ -192,6 +192,13 @@
 			if (!installing) return;
 			installing.addEventListener('statechange', () => {
 				if (
+					installing.state === 'redundant' &&
+					!nextRegistration.active &&
+					!navigator.serviceWorker.controller
+				) {
+					serviceWorkerSetupState.set('failed');
+				}
+				if (
 					installing.state === 'installed' &&
 					navigator.serviceWorker.controller &&
 					nextRegistration.waiting
@@ -199,6 +206,31 @@
 					showWaitingUpdate(nextRegistration.waiting);
 				}
 			});
+		});
+	}
+
+	function waitForInitialInstallation(nextRegistration: ServiceWorkerRegistration): Promise<void> {
+		if (nextRegistration.active || navigator.serviceWorker.controller) return Promise.resolve();
+		const installing = nextRegistration.installing ?? nextRegistration.waiting;
+		if (!installing)
+			return Promise.reject(new Error('No service worker installation is available.'));
+		if (installing.state === 'installed' || installing.state === 'activated') {
+			return Promise.resolve();
+		}
+		if (installing.state === 'redundant') {
+			return Promise.reject(new Error('The service worker installation failed.'));
+		}
+		return new Promise((resolve, reject) => {
+			const handleStateChange = () => {
+				if (installing.state === 'installed' || installing.state === 'activated') {
+					installing.removeEventListener('statechange', handleStateChange);
+					resolve();
+				} else if (installing.state === 'redundant') {
+					installing.removeEventListener('statechange', handleStateChange);
+					reject(new Error('The service worker installation failed.'));
+				}
+			};
+			installing.addEventListener('statechange', handleStateChange);
 		});
 	}
 

@@ -68,7 +68,7 @@ test('matched GPX overruns carry the same load-spike consequence as feedback', a
 	await expect(page.getByText(/Completed .* above plan\./)).toBeVisible();
 
 	await page.getByRole('link', { name: 'Calendar' }).click();
-	await expect(page.locator('.plan-assessment')).toContainText('High change');
+	await expect(page.locator('.plan-assessment')).toContainText('Extra-load review');
 	await expect(page.locator('.plan-assessment')).toContainText('Recent activity');
 	await page.locator('.plan-assessment > summary').click();
 	await expect(page.getByText(/Completed .* above plan\./).first()).toBeVisible();

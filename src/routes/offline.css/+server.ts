@@ -93,7 +93,7 @@ a:focus-visible {
 export const GET: RequestHandler = () =>
 	new Response(offlineCss, {
 		headers: {
-			'Cache-Control': 'public, max-age=86400',
+			'Cache-Control': 'public, max-age=0, must-revalidate',
 			'Content-Type': 'text/css; charset=utf-8'
 		}
 	});

@@ -101,6 +101,11 @@ function shareNotice(value: string | null): { message: string; failed: boolean }
 			return { message: 'Imported activities cannot be in the future.', failed: true };
 		case 'time-zone-required':
 			return { message: importTimeZoneRequiredMessage, failed: true };
+		case 'busy':
+			return {
+				message: 'Another import is still running. Wait a moment, then share the GPX again.',
+				failed: true
+			};
 		case 'failed':
 			return { message: 'The shared GPX file could not be imported.', failed: true };
 		default:

@@ -1,5 +1,29 @@
 {
-  "version": 1,
+  "version": 2,
+  "iconSource": "src/lib/assets/favicon.svg",
+  "iconSourceSha256": "fb582b5cad7f9dcb5cad4c5e958fd9136cb2a7fa97ea9c27af1bf3b880ee7b1d",
+  "icons": [
+    {
+      "output": "static/pwa/icon-192.png",
+      "outputSha256": "4ca5809b77c4f62c1333c2cb8030414e492c6d3a8d78134ff9556842438a57f2"
+    },
+    {
+      "output": "static/pwa/icon-512.png",
+      "outputSha256": "16a8bf58346771a52768c91ebb49cb9bf2cdb0aa15c6863307d14a73c451b006"
+    },
+    {
+      "output": "static/pwa/maskable-icon-192.png",
+      "outputSha256": "5e8eaa7a7f00f7ae1935a215efbb563a87cfa59a712c67bae21a3e28a8db5345"
+    },
+    {
+      "output": "static/pwa/maskable-icon-512.png",
+      "outputSha256": "cf8bb8c6fd77afce0e75b874571412df5d9c18b7d1af32091d931d53002ddc3b"
+    },
+    {
+      "output": "static/pwa/apple-touch-icon.png",
+      "outputSha256": "4c8d3283f01b431ba85727d9761774988cb6c747eef04fc1f40ecaf82e6b8665"
+    }
+  ],
   "screenshots": [
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",

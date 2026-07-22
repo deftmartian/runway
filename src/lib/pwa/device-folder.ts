@@ -1,11 +1,13 @@
 import { maxGpxImportBytes } from '$lib/import-limits';
 
 const databaseName = 'runway-device-folders';
-const databaseVersion = 1;
+const databaseVersion = 2;
 const configStoreName = 'folders';
 const seenStoreName = 'seen-files';
+const scanStateStoreName = 'scan-state';
 const seenUserIndexName = 'user-id';
 const controlChannelName = 'runway-device-folder-control-v1';
+export const deviceFolderControlEvent = 'runway:device-folder-control';
 const maxDirectoryEntries = 2_000;
 export const maxDeviceFingerprintCandidatesPerScan = 500;
 const fingerprintWindowBytes = 1_600;
@@ -49,6 +51,11 @@ type DirectoryPickerWindow = Window & {
 type StoredFolder = {
 	userId: string;
 	handle: FileSystemDirectoryHandle;
+};
+
+type DeviceFolderScanState = {
+	userId: string;
+	settledSignature: string;
 };
 
 type SeenFile = {
@@ -114,11 +121,13 @@ export type DeviceFolderScanProgress = {
 
 export type DeviceFolderScanOptions = {
 	onProgress?: (progress: DeviceFolderScanProgress) => void;
+	mode?: 'automatic' | 'manual';
 };
 
 type DeviceFolderScanContext = {
 	signal: AbortSignal;
 	deadline: number;
+	automatic: boolean;
 	progress: DeviceFolderScanProgress;
 	report: (progress: DeviceFolderScanProgress) => void;
 };
@@ -165,6 +174,18 @@ export function isTerminalDeviceImportResult(result: DeviceFolderScanResult['res
 	return ['imported', 'duplicate', 'deleted', 'future', 'invalid', 'too-large'].includes(result);
 }
 
+export function automaticDeviceFolderScanDelayMs(result: DeviceFolderScanResult): number {
+	if (result.result === 'rate-limited') {
+		return Math.max(60_000, (result.retryAfterSeconds ?? 60) * 1_000);
+	}
+	if (result.remaining && result.remaining > 0) return 5_000;
+	if (isTerminalDeviceImportResult(result.result)) return 60_000;
+	if (result.result === 'none') return 5 * 60_000;
+	if (result.result === 'permission-required' || result.result === 'unlinked') return 15 * 60_000;
+	if (result.result === 'unsupported' || result.result === 'https-required') return 60 * 60_000;
+	return 60_000;
+}
+
 /**
  * Must be called directly from a user action. The picker grants read-only
  * access; runway never writes, renames, or deletes files in the chosen folder.
@@ -182,6 +203,7 @@ export async function connectDeviceFolder(userId: string): Promise<DeviceFolderC
 	if (!previous || !(await isSameDirectory(previous, handle))) {
 		await clearSeenFiles(userId);
 	}
+	await clearDeviceFolderScanState(userId);
 	await storeFolder({ userId, handle });
 	// A persisted storage bucket reduces the chance that Android evicts the
 	// IndexedDB record containing the handle. It does not grant file access.
@@ -226,8 +248,12 @@ export async function disconnectDeviceFolder(userId: string): Promise<void> {
 	await activeScans.get(userId)?.promise.catch(() => undefined);
 	const database = await openDatabase();
 	try {
-		const transaction = database.transaction([configStoreName, seenStoreName], 'readwrite');
+		const transaction = database.transaction(
+			[configStoreName, seenStoreName, scanStateStoreName],
+			'readwrite'
+		);
 		transaction.objectStore(configStoreName).delete(userId);
+		transaction.objectStore(scanStateStoreName).delete(userId);
 		deleteSeenFiles(transaction, userId);
 		await transactionComplete(transaction);
 	} finally {
@@ -270,9 +296,13 @@ export async function retainDeviceFolderForUser(userId: string): Promise<void> {
 	blockedUsers.delete(userId);
 	const database = await openDatabase();
 	try {
-		const transaction = database.transaction([configStoreName, seenStoreName], 'readwrite');
+		const transaction = database.transaction(
+			[configStoreName, seenStoreName, scanStateStoreName],
+			'readwrite'
+		);
 		deleteOtherUsers(transaction.objectStore(configStoreName), userId);
 		deleteOtherUsers(transaction.objectStore(seenStoreName), userId);
+		deleteOtherUsers(transaction.objectStore(scanStateStoreName), userId);
 		await transactionComplete(transaction);
 	} finally {
 		database.close();
@@ -309,6 +339,7 @@ export function scanDeviceFolder(
 	const context: DeviceFolderScanContext = {
 		signal: controller.signal,
 		deadline: monotonicNow() + deviceFolderScanBudgetMs,
+		automatic: options.mode === 'automatic',
 		progress: entry.progress,
 		report: (progress) => {
 			context.progress = progress;
@@ -384,10 +415,13 @@ async function scanDeviceFolderOnce(
 			return { result: classifyDirectoryReadFailure(retryError) };
 		}
 	}
-	const { candidates, skippedCandidates } = candidateScan;
+	const { candidates, skippedCandidates, directorySignature } = candidateScan;
 	const seen = await getSeenDigests(userId);
 	const candidate = newestUnseenDeviceFile(candidates, seen);
 	if (!candidate) {
+		if (skippedCandidates === 0) {
+			await storeSettledDirectorySignature(userId, directorySignature);
+		}
 		return skippedCandidates > 0
 			? {
 					result: 'timed-out',
@@ -418,6 +452,9 @@ async function scanDeviceFolderOnce(
 	}
 	if (isTerminalDeviceImportResult(result.result)) {
 		await markSeen(userId, candidate.fingerprint);
+		if (remaining === 0 && skippedCandidates === 0) {
+			await storeSettledDirectorySignature(userId, directorySignature);
+		}
 		return {
 			...result,
 			remaining,
@@ -473,6 +510,19 @@ async function listGpxCandidates(
 			throw new DeviceFolderLimitError();
 		}
 		fileHandles.push(entry);
+	}
+	const directorySignature = await directoryListingSignature(
+		fileHandles.map(({ name }) => name),
+		context
+	);
+	if (context.automatic && directorySignature === (await getSettledDirectorySignature(userId))) {
+		return {
+			candidates: [],
+			skippedCandidates: 0,
+			checkedCandidates: 0,
+			totalCandidates: fileHandles.length,
+			directorySignature
+		};
 	}
 	context.report({ phase: 'fingerprinting', completed: 0, total: fileHandles.length });
 
@@ -531,7 +581,8 @@ async function listGpxCandidates(
 		candidates,
 		skippedCandidates,
 		checkedCandidates: providerAttempts,
-		totalCandidates: orderedHandles.length
+		totalCandidates: orderedHandles.length,
+		directorySignature
 	};
 }
 
@@ -540,7 +591,22 @@ type DeviceCandidateScan = {
 	skippedCandidates: number;
 	checkedCandidates: number;
 	totalCandidates: number;
+	directorySignature: string;
 };
+
+export async function directoryListingSignature(
+	names: string[],
+	context?: DeviceFolderScanContext
+): Promise<string> {
+	const encoded = new TextEncoder().encode(
+		JSON.stringify(['runway-device-folder-listing-v1', ...[...names].sort()])
+	);
+	const digest = await waitForOptionalScanOperation(
+		globalThis.crypto.subtle.digest('SHA-256', encoded),
+		context
+	);
+	return hexDigest(digest);
+}
 
 function isSkippableCandidateFailure(error: unknown): boolean {
 	return (
@@ -869,6 +935,7 @@ function signalDeviceFolderControl(message: DeviceFolderControlMessage): void {
 
 function applyDeviceFolderControl(message: DeviceFolderControlMessage): void {
 	capabilityRevision += 1;
+	globalThis.dispatchEvent?.(new CustomEvent(deviceFolderControlEvent, { detail: message }));
 	if (message.type === 'clear-all') {
 		blockAllScans = true;
 		for (const active of activeScans.values()) active.controller.abort();
@@ -933,6 +1000,43 @@ async function clearSeenFiles(userId: string): Promise<void> {
 	try {
 		const transaction = database.transaction(seenStoreName, 'readwrite');
 		deleteSeenFiles(transaction, userId);
+		await transactionComplete(transaction);
+	} finally {
+		database.close();
+	}
+}
+
+async function clearDeviceFolderScanState(userId: string): Promise<void> {
+	const database = await openDatabase();
+	try {
+		const transaction = database.transaction(scanStateStoreName, 'readwrite');
+		transaction.objectStore(scanStateStoreName).delete(userId);
+		await transactionComplete(transaction);
+	} finally {
+		database.close();
+	}
+}
+
+async function getSettledDirectorySignature(userId: string): Promise<string | null> {
+	const database = await openDatabase();
+	try {
+		const transaction = database.transaction(scanStateStoreName, 'readonly');
+		const stored = await requestResult(transaction.objectStore(scanStateStoreName).get(userId));
+		await transactionComplete(transaction);
+		return isDeviceFolderScanState(stored, userId) ? stored.settledSignature : null;
+	} finally {
+		database.close();
+	}
+}
+
+async function storeSettledDirectorySignature(userId: string, settledSignature: string) {
+	if (blockAllScans || blockedUsers.has(userId)) return;
+	const database = await openDatabase();
+	try {
+		const transaction = database.transaction(scanStateStoreName, 'readwrite');
+		transaction
+			.objectStore(scanStateStoreName)
+			.put({ userId, settledSignature } satisfies DeviceFolderScanState);
 		await transactionComplete(transaction);
 	} finally {
 		database.close();
@@ -1020,6 +1124,9 @@ function openDatabase(): Promise<IDBDatabase> {
 				});
 				store.createIndex(seenUserIndexName, 'userId', { unique: false });
 			}
+			if (!database.objectStoreNames.contains(scanStateStoreName)) {
+				database.createObjectStore(scanStateStoreName, { keyPath: 'userId' });
+			}
 		};
 		request.onsuccess = () => {
 			resolve(request.result);
@@ -1072,4 +1179,15 @@ function isSeenFile(value: unknown, userId: string): value is SeenFile {
 		return false;
 	}
 	return value.userId === userId && typeof value.digest === 'string';
+}
+
+function isDeviceFolderScanState(value: unknown, userId: string): value is DeviceFolderScanState {
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		'userId' in value &&
+		'settledSignature' in value &&
+		value.userId === userId &&
+		typeof value.settledSignature === 'string'
+	);
 }

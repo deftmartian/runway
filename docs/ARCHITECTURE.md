@@ -163,7 +163,7 @@ Manual upload can use an explicit match choice. The installed-PWA share target a
 
 ### Browser device folder
 
-Supported Chromium PWAs can approve a Gadgetbridge export directory through File System Access. The handle and handled-file hashes remain in browser IndexedDB, keyed by runway user id. The app scans only while visible, reads bounded direct-child metadata, submits at most one newest unhandled GPX per check, quarantines terminal rejects, never modifies the folder, and clears browser-local access at account handoff/sign-out.
+Supported Chromium PWAs can approve a Gadgetbridge export directory through File System Access. The handle and handled-file hashes remain in browser IndexedDB, keyed by runway user id. While the app is visible, an automatic check first compares a bounded, name-only directory signature. An unchanged, fully handled listing avoids reopening and hashing every file; a new name triggers the bounded fingerprint and import path. Automatic checks back off after empty, unavailable, or rate-limited results. **Scan now** is deliberately exhaustive so a same-name replacement can still be found. The browser submits at most one newest unhandled GPX per check, quarantines terminal rejects, never modifies the folder, and clears browser-local access at account handoff/sign-out. Browser-managed permission can still require another user gesture after the browser or operating system revokes it; the Android app exists for durable folder access and background reconciliation.
 
 The browser submits both the activity-deletion generation and a separate browser-folder generation.
 The final recording transaction locks and checks both. Plain folder disconnect increments only the

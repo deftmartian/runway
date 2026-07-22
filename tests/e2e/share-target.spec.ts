@@ -376,7 +376,7 @@ test('approved device folder imports once on foreground and stays account-scoped
 
 	const localMarkers = await page.evaluate(async () => {
 		const database = await new Promise<IDBDatabase>((resolve, reject) => {
-			const request = indexedDB.open('runway-device-folders', 1);
+			const request = indexedDB.open('runway-device-folders', 2);
 			request.onsuccess = () => {
 				resolve(request.result);
 			};

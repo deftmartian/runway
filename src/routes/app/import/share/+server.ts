@@ -75,10 +75,10 @@ function shareRedirect(result: string) {
 }
 
 function shareRateLimited(retryAfterSeconds: number) {
-	return new Response('Another import is running or the import limit was reached.', {
-		status: 429,
+	return new Response(null, {
+		status: 303,
 		headers: {
-			'Content-Type': 'text/plain; charset=utf-8',
+			Location: '/app/import?share=busy',
 			'Retry-After': String(retryAfterSeconds)
 		}
 	});
