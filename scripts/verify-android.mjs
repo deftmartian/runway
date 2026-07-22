@@ -128,10 +128,13 @@ for (const required of [
 
 const releaseWorkflow = read('.github/workflows/container.yml');
 for (const required of [
+	'android-build:',
 	'android-release:',
 	'environment: android-release',
 	'RUNWAY_ANDROID_KEYSTORE_BASE64',
 	'corepack pnpm verify:android:version',
+	'-PrunwayFdroidSourceBuild=true',
+	'name: unsigned-android-release',
 	'assembleRelease',
 	'apksigner',
 	'Number of signers: 1',
@@ -141,6 +144,36 @@ for (const required of [
 ]) {
 	if (!releaseWorkflow.includes(required)) {
 		errors.push(`Android signed-release workflow is missing ${required}`);
+	}
+}
+const unsignedBuildJob = section(releaseWorkflow, '  android-build:', '  android-release:');
+if (unsignedBuildJob.includes('secrets.') || unsignedBuildJob.includes('environment:')) {
+	errors.push('Unsigned Android build job must not receive a protected environment or secrets');
+}
+const protectedSigningJob = section(releaseWorkflow, '  android-release:', '  release:');
+for (const forbidden of ['actions/checkout', 'corepack pnpm', 'gradlew', 'assembleRelease']) {
+	if (protectedSigningJob.includes(forbidden)) {
+		errors.push(`Protected Android signing job must not execute repository code: ${forbidden}`);
+	}
+}
+const signingStep = section(
+	protectedSigningJob,
+	'      - name: Sign protected Android release candidate',
+	'      - name: Verify signed APK and prepare provenance records'
+);
+for (const secretName of [
+	'RUNWAY_ANDROID_KEYSTORE_BASE64',
+	'RUNWAY_ANDROID_KEYSTORE_PASSWORD',
+	'RUNWAY_ANDROID_KEY_ALIAS',
+	'RUNWAY_ANDROID_KEY_PASSWORD'
+]) {
+	const occurrences = [...protectedSigningJob.matchAll(new RegExp(secretName, 'g'))].length;
+	if (
+		occurrences === 0 ||
+		!signingStep.includes(secretName) ||
+		protectedSigningJob.replace(signingStep, '').includes(secretName)
+	) {
+		errors.push(`Protected Android signing secret is not scoped to the apksigner step: ${secretName}`);
 	}
 }
 
@@ -400,4 +433,11 @@ console.log(
 
 function read(file) {
 	return readFileSync(resolve(root, file), 'utf8');
+}
+
+function section(source, start, end) {
+	const startIndex = source.indexOf(start);
+	if (startIndex < 0) return '';
+	const endIndex = source.indexOf(end, startIndex + start.length);
+	return source.slice(startIndex, endIndex < 0 ? source.length : endIndex);
 }

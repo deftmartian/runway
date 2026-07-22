@@ -131,20 +131,13 @@ jobs:
         if: always()
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml down --volumes
 
-  android-release:
-    name: signed Android APK
+  android-build:
+    name: unsigned Android APK
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: android-release
     permissions:
       contents: read
-    env:
-      RUNWAY_ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/runway-release.jks
-      RUNWAY_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_PASSWORD }}
-      RUNWAY_ANDROID_KEY_ALIAS: ${{ secrets.RUNWAY_ANDROID_KEY_ALIAS }}
-      RUNWAY_ANDROID_KEY_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEY_PASSWORD }}
-      RUNWAY_ANDROID_KEYSTORE_BASE64: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Validate Gradle wrapper
@@ -170,9 +163,52 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.32.0 --activate
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
-      - name: Materialize protected signing identity
+      - name: Verify release identity and source contracts
+        run: corepack pnpm verify:android && corepack pnpm verify:android:version
+      - name: Build unsigned release APK
+        run: >-
+          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
+          -PrunwayFdroidSourceBuild=true lint test assembleRelease
+      - name: Verify unsigned APK boundary
+        run: node scripts/verify-android-artifact.mjs release
+      - name: Upload unsigned Android release candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-android-release
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  android-release:
+    name: signed Android APK
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: android-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: android-release
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: build-tools;36.0.0
+      - name: Download unsigned Android release candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: unsigned-android-release
+          path: unsigned
+      - name: Sign protected Android release candidate
         shell: bash
+        env:
+          RUNWAY_ANDROID_KEYSTORE_BASE64: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_BASE64 }}
+          RUNWAY_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_PASSWORD }}
+          RUNWAY_ANDROID_KEY_ALIAS: ${{ secrets.RUNWAY_ANDROID_KEY_ALIAS }}
+          RUNWAY_ANDROID_KEY_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+          keystore="${RUNNER_TEMP}/runway-release.jks"
+          trap 'rm -f "$keystore"' EXIT
           for name in \
             RUNWAY_ANDROID_KEYSTORE_BASE64 \
             RUNWAY_ANDROID_KEYSTORE_PASSWORD \
@@ -183,35 +219,34 @@ jobs:
               exit 1
             fi
           done
-          printf '%s' "$RUNWAY_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNWAY_ANDROID_KEYSTORE_FILE"
-          chmod 600 "$RUNWAY_ANDROID_KEYSTORE_FILE"
-          test -s "$RUNWAY_ANDROID_KEYSTORE_FILE"
-      - name: Verify release identity and source contracts
-        run: corepack pnpm verify:android && corepack pnpm verify:android:version
-      - name: Build signed release APK
-        run: >-
-          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
-          lint test assembleRelease
-      - name: Verify signed APK boundary
+          printf '%s' "$RUNWAY_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          test -s "$keystore"
+          mkdir -p release-assets
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks "$keystore" \
+            --ks-key-alias "$RUNWAY_ANDROID_KEY_ALIAS" \
+            --ks-pass env:RUNWAY_ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:RUNWAY_ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "release-assets/runway-${GITHUB_REF_NAME}.apk" \
+            unsigned/app-release-unsigned.apk
+      - name: Verify signed APK and prepare provenance records
         shell: bash
         run: |
-          node scripts/verify-android-artifact.mjs release
+          apk="release-assets/runway-${GITHUB_REF_NAME}.apk"
           verification="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
-            --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk)"
+            --verbose --print-certs "$apk")"
           printf '%s\n' "$verification"
           grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true$' <<< "$verification"
           grep -q '^Verified using v3 scheme (APK Signature Scheme v3): true$' <<< "$verification"
           grep -q '^Number of signers: 1$' <<< "$verification"
-      - name: Prepare Android release assets
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          apk="release-assets/runway-${GITHUB_REF_NAME}.apk"
-          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
           sha256sum "$apk" > "${apk}.sha256"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: /SHA-256: /p' \
+          sed -n 's/^Signer #1 certificate SHA-256 digest: /SHA-256: /p' <<< "$verification" \
             > "${apk}.signer.txt"
+          test -s "${apk}.sha256"
           test -s "${apk}.signer.txt"
       - name: Upload signed Android release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -220,9 +255,6 @@ jobs:
           path: release-assets/
           if-no-files-found: error
           retention-days: 14
-      - name: Remove signing material
-        if: always()
-        run: rm -f "$RUNWAY_ANDROID_KEYSTORE_FILE"
 
   release:
     name: release

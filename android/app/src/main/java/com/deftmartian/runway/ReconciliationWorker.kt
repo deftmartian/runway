@@ -17,21 +17,44 @@ class ReconciliationWorker(
     override fun doWork(): Result {
         val serverStore = ServerConnectionStore(applicationContext)
         val serverConnection = serverStore.currentConnection() ?: run {
-            ReconciliationScheduler.cancelAll(applicationContext)
-            return success(STATE_SERVER_REQUIRED)
+            val handled = serverStore.mutateIfCurrent(null) {
+                ReconciliationScheduler.cancelAll(applicationContext)
+                statusStore.record(STATE_SERVER_REQUIRED)
+                true
+            } == true
+            return successResult(if (handled) STATE_SERVER_REQUIRED else STATE_STALE_CONNECTION)
         }
         val origin = serverConnection.origin
         val credentialStore = AndroidCredentialStore(applicationContext, origin)
         val credentialState = credentialStore.snapshot()
         val credential = credentialState.credential ?: run {
-            ReconciliationScheduler.cancelAll(applicationContext)
-            return success(STATE_PAIRING_REQUIRED)
+            val handled = serverStore.mutateIfCurrent(serverConnection) {
+                if (!credentialStore.isCurrent(credentialState)) {
+                    false
+                } else {
+                    ReconciliationScheduler.cancelAll(applicationContext)
+                    statusStore.record(STATE_PAIRING_REQUIRED)
+                    true
+                }
+            } == true
+            return successResult(if (handled) STATE_PAIRING_REQUIRED else STATE_STALE_CONNECTION)
         }
         val treeStore = TreeAccessStore(applicationContext)
         val treeState = treeStore.currentState(serverConnection)
         if (treeState !is TreeAccessState.Connected) {
-            ReconciliationScheduler.cancelAll(applicationContext)
-            return success(STATE_PERMISSION_REQUIRED)
+            val handled = serverStore.mutateIfCurrent(serverConnection) {
+                if (
+                    !credentialStore.isCurrent(credentialState) ||
+                    treeStore.currentState(serverConnection) != treeState
+                ) {
+                    false
+                } else {
+                    ReconciliationScheduler.cancelAll(applicationContext)
+                    statusStore.record(STATE_PERMISSION_REQUIRED)
+                    true
+                }
+            } == true
+            return successResult(if (handled) STATE_PERMISSION_REQUIRED else STATE_STALE_CONNECTION)
         }
         val connection = ImportConnectionGeneration.capture(serverConnection, credentialState, treeState)
         statusGuard = {
@@ -45,8 +68,15 @@ class ReconciliationWorker(
         if (scan !is TreeScanResult.Success) {
             return when (scan) {
                 TreeScanResult.PermissionRequired -> {
-                    ReconciliationScheduler.cancelAll(applicationContext)
-                    success(STATE_PERMISSION_REQUIRED)
+                    stopAutomationIfCurrent(
+                        serverStore,
+                        serverConnection,
+                        credentialStore,
+                        credentialState,
+                        treeStore,
+                        treeState,
+                        STATE_PERMISSION_REQUIRED,
+                    )
                 }
                 TreeScanResult.ProviderError -> success(STATE_PROVIDER_ERROR)
                 is TreeScanResult.Success -> error("unreachable")
@@ -83,8 +113,15 @@ class ReconciliationWorker(
                 scan.summary.truncated,
             )
         } catch (_: SecurityException) {
-            ReconciliationScheduler.cancelAll(applicationContext)
-            return success(STATE_PERMISSION_REQUIRED)
+            return stopAutomationIfCurrent(
+                serverStore,
+                serverConnection,
+                credentialStore,
+                credentialState,
+                treeStore,
+                treeState,
+                STATE_PERMISSION_REQUIRED,
+            )
         } catch (_: IOException) {
             return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
         } catch (_: RuntimeException) {
@@ -225,15 +262,16 @@ class ReconciliationWorker(
             }
             ImportApiResult.Unauthorized -> {
                 val cleared = serverStore.mutateIfCurrent(serverConnection) {
-                    credentialStore.clearIfCurrent(credentialState)
+                    if (!credentialStore.clearIfCurrent(credentialState)) {
+                        false
+                    } else {
+                        handledStore.clearForDevice(credential.deviceId)
+                        ReconciliationScheduler.cancelAll(applicationContext)
+                        statusStore.record(STATE_PAIRING_REQUIRED)
+                        true
+                    }
                 } == true
-                if (cleared) {
-                    handledStore.clearForDevice(credential.deviceId)
-                    ReconciliationScheduler.cancelAll(applicationContext)
-                    success(STATE_PAIRING_REQUIRED)
-                } else {
-                    success(STATE_STALE_CONNECTION)
-                }
+                successResult(if (cleared) STATE_PAIRING_REQUIRED else STATE_STALE_CONNECTION)
             }
             ImportApiResult.RequestConflict -> {
                 mutateIfCurrent(
@@ -275,6 +313,30 @@ class ReconciliationWorker(
         }
     }
 
+    private fun stopAutomationIfCurrent(
+        serverStore: ServerConnectionStore,
+        serverConnection: ServerConnection,
+        credentialStore: AndroidCredentialStore,
+        credentialState: AndroidCredentialState,
+        treeStore: TreeAccessStore,
+        treeState: TreeAccessState.Connected,
+        state: String,
+    ): Result {
+        val handled = mutateIfCurrent(
+            serverStore,
+            serverConnection,
+            credentialStore,
+            credentialState,
+            treeStore,
+            treeState,
+        ) {
+            ReconciliationScheduler.cancelAll(applicationContext)
+            statusStore.record(state)
+            true
+        } == true
+        return successResult(if (handled) state else STATE_STALE_CONNECTION)
+    }
+
     private fun terminal(
         state: String,
         remainingCandidates: Int,
@@ -306,7 +368,15 @@ class ReconciliationWorker(
         backlog: Int = 0,
     ): Result {
         recordStatus(state, backlog, truncated)
-        return Result.success(
+        return successResult(state, candidateCount, truncated, backlog)
+    }
+
+    private fun successResult(
+        state: String,
+        candidateCount: Int = 0,
+        truncated: Boolean = false,
+        backlog: Int = 0,
+    ): Result = Result.success(
             Data.Builder()
                 .putString(OUTPUT_STATE, state)
                 .putInt(OUTPUT_CANDIDATE_COUNT, candidateCount)
@@ -314,7 +384,6 @@ class ReconciliationWorker(
                 .putInt(OUTPUT_BACKLOG, backlog)
                 .build(),
         )
-    }
 
     private fun recordStatus(state: String, backlog: Int, truncated: Boolean) {
         AndroidStateCoordinator.read {

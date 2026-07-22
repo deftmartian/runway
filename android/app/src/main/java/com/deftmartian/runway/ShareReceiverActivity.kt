@@ -48,9 +48,20 @@ class ShareReceiverActivity : ComponentActivity() {
         val credentialState = credentialStore.snapshot()
         val credential = credentialState.credential
         if (credential == null) {
-            ReconciliationScheduler.cancelAll(this)
-            ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
-            status.setText(R.string.share_pairing_required)
+            val handled = serverStore.mutateIfCurrent(serverConnection) {
+                if (!credentialStore.isCurrent(credentialState)) {
+                    false
+                } else {
+                    ReconciliationScheduler.cancelAll(this)
+                    ReconciliationStatusStore(this).record(
+                        ReconciliationWorker.STATE_PAIRING_REQUIRED,
+                    )
+                    true
+                }
+            } == true
+            status.setText(
+                if (handled) R.string.share_pairing_required else R.string.share_server_changed,
+            )
             return
         }
         val uri = resolveSingleContentUri()
@@ -105,14 +116,18 @@ class ShareReceiverActivity : ComponentActivity() {
                         }
                         ImportApiResult.Unauthorized -> {
                             val cleared = serverStore.mutateIfCurrent(serverConnection) {
-                                credentialStore.clearIfCurrent(credentialState)
+                                if (!credentialStore.clearIfCurrent(credentialState)) {
+                                    false
+                                } else {
+                                    HandledImportStore(this).clearForDevice(credential.deviceId)
+                                    ReconciliationScheduler.cancelAll(this)
+                                    ReconciliationStatusStore(this).record(
+                                        ReconciliationWorker.STATE_PAIRING_REQUIRED,
+                                    )
+                                    true
+                                }
                             } == true
                             if (cleared) {
-                                HandledImportStore(this).clearForDevice(credential.deviceId)
-                                ReconciliationScheduler.cancelAll(this)
-                                ReconciliationStatusStore(this).record(
-                                    ReconciliationWorker.STATE_PAIRING_REQUIRED,
-                                )
                                 R.string.share_pairing_required
                             } else {
                                 R.string.share_server_changed

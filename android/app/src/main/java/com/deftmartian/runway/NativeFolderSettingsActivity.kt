@@ -53,13 +53,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         if (uri == null || expected == null) return@registerForActivityResult
         executor.execute {
             val result = treeAccessStore.connect(uri, expected)
+            val automationStarted =
+                result == TreeAccessMutation.Changed && startAutomationIfReady()
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 when (result) {
                     TreeAccessMutation.Changed -> {
-                        if (credentialStore.load() != null) {
-                            ReconciliationScheduler.runOnce(this)
-                            ReconciliationScheduler.enablePeriodic(this)
+                        if (automationStarted) {
                             backgroundEnabled = true
                             folderStatus.setText(R.string.folder_connected_background)
                             lastCheckStatus.setText(R.string.last_check_queued)
@@ -278,13 +278,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 },
             )
             val automationStarted =
-                completion is PairingCompletion.Connected &&
-                    treeAccessStore.currentState(serverConnection) is TreeAccessState.Connected
-            if (automationStarted) {
-                if (!isCurrentServer()) return@execute
-                ReconciliationScheduler.runOnce(this)
-                ReconciliationScheduler.enablePeriodic(this)
-            }
+                completion is PairingCompletion.Connected && startAutomationIfReady(completion.credential)
             runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (completion) {
@@ -313,17 +307,28 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 RunwayApiClient(serverOrigin).status(current)
             } ?: return@execute
             if (!isCurrentServer()) return@execute
-            runOnUiThread {
-                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
-                when (result) {
-                    DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
-                    DeviceStatusApiResult.Unauthorized -> {
-                        if (!credentialStore.clearIfCurrent(credentialState)) return@runOnUiThread
+            val credentialCleared = if (result == DeviceStatusApiResult.Unauthorized) {
+                ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+                    if (!credentialStore.clearIfCurrent(credentialState)) {
+                        false
+                    } else {
                         HandledImportStore(this).clearForDevice(credential.deviceId)
                         ReconciliationScheduler.cancelAll(this)
                         ReconciliationStatusStore(this).record(
                             ReconciliationWorker.STATE_PAIRING_REQUIRED,
                         )
+                        true
+                    }
+                } == true
+            } else {
+                false
+            }
+            if (result == DeviceStatusApiResult.Unauthorized && !credentialCleared) return@execute
+            runOnUiThread {
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                when (result) {
+                    DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
+                    DeviceStatusApiResult.Unauthorized -> {
                         backgroundEnabled = false
                         pairingStatus.setText(R.string.pairing_expired_or_revoked)
                         refreshScreen(keepPairingStatus = true)
@@ -494,6 +499,20 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         credentialStore.replace(expectedCredentialState, credential)
     } == true
 
+    private fun startAutomationIfReady(expectedCredential: AndroidCredential? = null): Boolean =
+        ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+            val credential = credentialStore.snapshot().credential ?: return@mutateIfCurrent false
+            if (expectedCredential != null && credential != expectedCredential) {
+                return@mutateIfCurrent false
+            }
+            if (treeAccessStore.currentState(serverConnection) !is TreeAccessState.Connected) {
+                return@mutateIfCurrent false
+            }
+            ReconciliationScheduler.runOnce(this)
+            ReconciliationScheduler.enablePeriodic(this)
+            true
+        } == true
+
     private fun isCurrentServer(): Boolean =
         ServerConnectionStore(this).isCurrent(serverConnection)
 
@@ -535,12 +554,18 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 return@execute
             }
             val cleared = ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
-                credentialStore.clearIfCurrent(credentialState)
+                if (!credentialStore.clearIfCurrent(credentialState)) {
+                    false
+                } else {
+                    HandledImportStore(this).clearForDevice(credential.deviceId)
+                    ReconciliationScheduler.cancelAll(this)
+                    ReconciliationStatusStore(this).record(
+                        ReconciliationWorker.STATE_PAIRING_REQUIRED,
+                    )
+                    true
+                }
             } == true
             if (!cleared) return@execute
-            HandledImportStore(this).clearForDevice(credential.deviceId)
-            ReconciliationScheduler.cancelAll(this)
-            ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
             runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 backgroundEnabled = false

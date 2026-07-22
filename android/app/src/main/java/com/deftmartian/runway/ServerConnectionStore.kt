@@ -61,7 +61,7 @@ class ServerConnectionStore(context: Context) {
 
     fun isCurrent(connection: ServerConnection): Boolean = currentConnection() == connection
 
-    internal fun <T> mutateIfCurrent(expected: ServerConnection, block: () -> T): T? =
+    internal fun <T> mutateIfCurrent(expected: ServerConnection?, block: () -> T): T? =
         AndroidStateCoordinator.write {
             if (reconcileConnection() != expected) null else block()
         }
