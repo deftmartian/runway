@@ -86,20 +86,8 @@ test('PWA files and private routes carry the expected cache boundaries', async (
 	expect(app.headers()['cache-control']).toBe('private, no-store');
 
 	const assetLinks = await page.request.get('/.well-known/assetlinks.json');
-	expect(assetLinks.ok()).toBe(true);
-	expect(assetLinks.headers()['cache-control']).toBe('public, max-age=300');
-	await expect(assetLinks.json()).resolves.toEqual([
-		{
-			relation: ['delegate_permission/common.handle_all_urls'],
-			target: {
-				namespace: 'android_app',
-				package_name: 'com.deftmartian.runway.test',
-				sha256_cert_fingerprints: [
-					'AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB'
-				]
-			}
-		}
-	]);
+	expect(assetLinks.status()).toBe(404);
+	expect(assetLinks.headers()['cache-control']).toBe('private, no-store');
 	const unknownRoute = await page.request.get('/not-a-runway-route');
 	expect(unknownRoute.status()).toBe(404);
 	expect(unknownRoute.headers()['cache-control']).toBe('private, no-store');

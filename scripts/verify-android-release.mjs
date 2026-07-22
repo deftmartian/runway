@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const gradle = process.platform === 'win32' ? 'android\\gradlew.bat' : 'android/gradlew';
-const fixtureOrigin = 'https://android-release-check.deftmartian.com';
 const fixtureApplicationId = 'com.deftmartian.runway.releasecheck';
 const common = [
 	'-p',
@@ -17,34 +16,26 @@ const common = [
 	`-PrunwayApplicationId=${fixtureApplicationId}`
 ];
 
-const rejected = run([
-	...common,
-	'-PrunwayOrigin=https://runway.invalid',
-	':app:verifyReleaseInstance'
-]);
+const selectableServer = run([...common, ':app:verifyServerSelectionRelease']);
+if (selectableServer.status !== 0) {
+	process.stderr.write(selectableServer.stdout);
+	process.stderr.write(selectableServer.stderr);
+	fail('selectable-server release configuration failed verification');
+}
+
+const rejected = run([...common, '-PrunwayOrigin=https://runway.example', ':app:tasks']);
 if (rejected.status === 0) {
-	fail('placeholder release origin unexpectedly passed verifyReleaseInstance');
+	fail('obsolete instance-bound origin unexpectedly passed configuration');
 }
 if (
 	!`${rejected.stdout}\n${rejected.stderr}`.includes(
-		'Release builds require the final runway HTTPS origin'
+		'runwayOrigin is no longer supported; every runway APK uses in-app server selection'
 	)
 ) {
-	fail('placeholder check failed for a reason other than the release-origin guard');
+	fail('instance-bound build failed for a reason other than the selectable-server guard');
 }
 
-const verified = run([...common, `-PrunwayOrigin=${fixtureOrigin}`, ':app:verifyReleaseInstance']);
-if (verified.status !== 0) {
-	process.stderr.write(verified.stdout);
-	process.stderr.write(verified.stderr);
-	fail('valid release-shaped identity or debug artifact verification failed');
-}
-
-const unsignedRelease = run([
-	...common,
-	`-PrunwayOrigin=${fixtureOrigin}`,
-	':app:verifyReleaseSigning'
-]);
+const unsignedRelease = run([...common, ':app:verifyReleaseSigning']);
 if (unsignedRelease.status === 0) {
 	fail('release signing verification unexpectedly passed without signing.properties');
 }
@@ -55,12 +46,7 @@ if (
 ) {
 	fail('unsigned release check failed for a reason other than the signing guard');
 }
-const sourceBuild = run([
-	...common,
-	`-PrunwayOrigin=${fixtureOrigin}`,
-	'-PrunwayFdroidSourceBuild=true',
-	':app:assembleRelease'
-]);
+const sourceBuild = run([...common, '-PrunwayFdroidSourceBuild=true', ':app:assembleRelease']);
 if (sourceBuild.status !== 0) {
 	process.stderr.write(sourceBuild.stdout);
 	process.stderr.write(sourceBuild.stderr);
@@ -73,21 +59,7 @@ const unsignedArtifact = resolve(
 if (!existsSync(unsignedArtifact)) {
 	fail('F-Droid source build did not produce the expected unsigned release APK');
 }
-const manifestVerification = spawnSync(
-	process.execPath,
-	[resolve(root, 'scripts/verify-android-artifact.mjs'), 'release'],
-	{
-		cwd: root,
-		encoding: 'utf8',
-		env: process.env
-	}
-);
-if (manifestVerification.status !== 0) {
-	process.stderr.write(manifestVerification.stdout);
-	process.stderr.write(manifestVerification.stderr);
-	fail('release merged-manifest permission verification failed');
-}
-process.stdout.write(manifestVerification.stdout);
+verifyArtifact('release');
 
 console.log('Android release identity guard and non-secret build artifact contract verified.');
 
@@ -97,6 +69,21 @@ function run(args) {
 		encoding: 'utf8',
 		env: process.env
 	});
+}
+
+function verifyArtifact(variant) {
+	const args = [resolve(root, 'scripts/verify-android-artifact.mjs'), variant];
+	const verification = spawnSync(process.execPath, args, {
+		cwd: root,
+		encoding: 'utf8',
+		env: process.env
+	});
+	if (verification.status !== 0) {
+		process.stderr.write(verification.stdout);
+		process.stderr.write(verification.stderr);
+		fail(`${variant} selectable-server artifact verification failed`);
+	}
+	process.stdout.write(verification.stdout);
 }
 
 function fail(message) {

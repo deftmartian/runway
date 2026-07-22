@@ -1,5 +1,9 @@
 import { json } from '@sveltejs/kit';
-import { authenticateAndroidDevice, touchAndroidDevice } from '$lib/server/runway/android-devices';
+import {
+	authenticateAndroidDevice,
+	revokeAndroidDevice,
+	touchAndroidDevice
+} from '$lib/server/runway/android-devices';
 import {
 	androidApiDeviceRateLimitBuckets,
 	androidApiPreAuthRateLimitBuckets,
@@ -34,6 +38,26 @@ export const GET: RequestHandler = async (event) => {
 		expiresAtEpochMs: device.expiresAt.getTime(),
 		lastImportedAt: device.lastImportedAt?.toISOString() ?? null
 	});
+};
+
+export const DELETE: RequestHandler = async (event) => {
+	if (event.request.headers.get('x-runway-client') !== 'runway-android/1') {
+		return json({ result: 'unsupported-client' }, { status: 400 });
+	}
+	const preAuthLimit = await consumeSecurityRateLimit(
+		androidApiPreAuthRateLimitBuckets(event.getClientAddress(), 'disconnect')
+	);
+	if (!preAuthLimit.allowed) return rateLimited(preAuthLimit.retryAfterSeconds);
+
+	const device = await authenticateAndroidDevice(event.request.headers.get('authorization'));
+	if (!device) return json({ result: 'unauthorized' }, { status: 401 });
+	const deviceLimit = await consumeSecurityRateLimit(
+		androidApiDeviceRateLimitBuckets(device.id, 'disconnect')
+	);
+	if (!deviceLimit.allowed) return rateLimited(deviceLimit.retryAfterSeconds);
+
+	await revokeAndroidDevice(device.userId, device.id);
+	return json({ result: 'disconnected' });
 };
 
 function rateLimited(retryAfterSeconds: number) {

@@ -1,6 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">runway</string>
+    <string name="server_title">Connect to runway</string>
+    <string name="server_explanation">Enter the address of the runway server you use. The app checks the server before opening sign in.</string>
+    <string name="server_address">Server address</string>
+    <string name="server_address_hint">https://runway.example.com</string>
+    <string name="server_intro">Use the full public HTTPS address. No account details are sent during this check.</string>
+    <string name="server_current">Current server: %1$s</string>
+    <string name="server_checking">Checking this server…</string>
+    <string name="server_invalid">Enter an HTTPS address without a path, query, or sign-in details.</string>
+    <string name="server_invalid_debug">Enter an HTTPS address, or a private HTTP address for this debug build, without a path or sign-in details.</string>
+    <string name="server_not_runway">This address did not identify itself as a compatible runway server.</string>
+    <string name="server_upgrade_required">This runway server and Android app do not support the same mobile API version. Update the older one, then try again.</string>
+    <string name="server_unreachable">The server could not be reached securely. Check the address, certificate, and network, then try again.</string>
+    <string name="server_change_title">Change runway server?</string>
+    <string name="server_change_consequence">This disconnects this phone from the current server, then removes its saved account connection, Gadgetbridge folder access, queued checks, and local import markers. It does not delete GPX files or data already stored on either server.</string>
+    <string name="server_disconnecting_old">Disconnecting this phone from the current server…</string>
+    <string name="server_switching">Switching servers…</string>
+    <string name="server_connection_changed">The server connection changed in another window. Review the current server and try again.</string>
+    <string name="server_disconnect_unavailable">The current server could not be reached, so this phone is still connected there.</string>
+    <string name="server_disconnect_unavailable_title">Current server unavailable</string>
+    <string name="server_disconnect_unavailable_consequence">Switching anyway removes local access, but the old server may keep this device active until you disconnect it there. An upload already in progress may finish. Cancel if you can bring the old server back online first.</string>
+    <string name="switch_anyway">Switch anyway</string>
+    <string name="connect_server">Connect to server</string>
+    <string name="change_server">Change server</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="server_section_title">runway server</string>
+    <string name="server_shortcut_short">Server</string>
+    <string name="server_shortcut_long">Change runway server</string>
+    <string name="browser_unavailable_title">No browser available</string>
+    <string name="browser_unavailable_message">Install or enable a browser to open runway.</string>
     <string name="folder_screen_title">Automatic GPX imports</string>
     <string name="folder_section_title">Gadgetbridge folder</string>
     <string name="folder_screen_intro">Connect this phone once, then choose the folder where Gadgetbridge saves your runs.</string>
@@ -59,6 +89,7 @@
     <string name="last_check_settling">Waiting for the newest GPX to stop changing.</string>
     <string name="last_check_retrying">The last check could not finish. Android will retry.</string>
     <string name="last_check_stale">An old check stopped because the account or folder changed.</string>
+    <string name="last_check_server_required">Checks stopped because no runway server is connected.</string>
     <string name="last_check_unknown">The folder check finished.</string>
     <plurals name="last_check_backlog">
         <item quantity="one">%1$s One more is waiting.</item>
@@ -70,6 +101,8 @@
     <string name="share_title">Import GPX</string>
     <string name="share_checking">Checking the shared file…</string>
     <string name="share_pairing_required">Connect this Android app from runway before sharing a GPX.</string>
+    <string name="share_server_required">Open runway and connect to your server before sharing a GPX.</string>
+    <string name="share_server_changed">The runway server changed before this GPX was sent. Share it again after reconnecting the Android app.</string>
     <string name="share_imported">GPX added to the runway activity inbox.</string>
     <string name="share_duplicate">This GPX is already in runway.</string>
     <string name="share_quarantined">runway did not import this file. Open Import in runway, then upload it manually to review the problem.</string>

@@ -1,44 +1,46 @@
 # runway for Android (pre-release)
 
-This project packages a complete self-hosted runway instance as an Android app. Its launcher opens
-the full PWA in a Trusted Web Activity (TWA), while small native activities own Android-only
-capabilities: persisted Gadgetbridge folder access, scheduled reconciliation, and GPX shares.
+This project packages the complete self-hosted runway PWA as an Android app. The normal build asks
+for the runner's server on first launch, verifies that it is a compatible runway instance, and opens
+the full product in a browser Custom Tab. Small native activities own Android-only capabilities:
+server selection, persisted Gadgetbridge folder access, scheduled reconciliation, and GPX shares.
 
 It is not a separate companion product and it does not reimplement the planning UI. It also does not
-use a generic WebView. If Digital Asset Links verification fails, Android Browser Helper deliberately
-falls back to a browser Custom Tab with visible origin controls.
+use a generic WebView. Every build keeps browser origin controls visible and lets the runner change
+servers from the launcher shortcut.
 
-## Instance-bound build
+| First launch                                                        | Native import setup                                                         |
+| :------------------------------------------------------------------ | :-------------------------------------------------------------------------- |
+| ![Choose a runway server](../docs/images/runway-android-server.png) | ![Set up the Gadgetbridge folder](../docs/images/runway-android-folder.png) |
+| Verify one self-hosted origin before sign-in.                       | Pair the phone, approve one folder, and choose background-check behavior.   |
 
-Every release APK is bound at build time to one HTTPS runway origin and one Android application id:
+## Build and server model
+
+Every APK uses the same selectable-server model:
 
 ```sh
 ./gradlew \
-  -PrunwayOrigin=https://runway.example.com \
   -PrunwayApplicationId=com.example.runway \
   :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-`runwayOrigin` must be an origin only: no credentials, path, query, or fragment. Release builds fail
-when it is missing, uses the placeholder `.invalid` host, is not HTTPS, or uses a non-default port.
-Put the public instance behind normal HTTPS port 443. Local/private cleartext and custom ports are
-accepted only by debug builds and open as a Custom Tab rather than a verified TWA.
+The runner enters an HTTPS origin on first launch. Android checks `/api/android/instance` before
+saving it, follows no redirect, and then uses that exact origin for navigation, pairing, imports, and
+shares. Debug builds also accept private-network HTTP for local development. Changing servers first
+tries to revoke the old device, then clears its local pairing, folder grant, queued work, and import
+markers without touching GPX files or stored activity data. If the old host is offline, the app
+requires a second confirmation and says exactly what remains active there.
 
 The source namespace and default pre-release application id are `com.deftmartian.runway`. Choose the
-final application id before the first signed distribution. An instance operator should use a stable,
+final application id before the first signed distribution. An independent operator should use a stable,
 operator-owned id when independently signing a personal F-Droid build; changing the id or signing key
 later prevents in-place updates.
 
-The same instance must publish `/.well-known/assetlinks.json` containing the exact application id and
-SHA-256 fingerprint of the certificate that signs the installed APK. Set the server's
-`ANDROID_APPLICATION_ID` and `ANDROID_CERTIFICATE_SHA256` variables; use
-[`assetlinks.json.template`](assetlinks.json.template) to review the expected shape. Without that
-bidirectional association, the app remains safe but displays browser controls.
-
 ## Android capability surface
 
-The normal launcher is the full runway PWA. Folder settings are available by long-pressing the runway
-launcher icon and choosing **Folder** after the first launch. The native page can also be opened with
+The normal launcher is the full runway PWA after server selection. Folder settings are available by
+long-pressing the runway launcher icon and choosing **Folder** after the first launch. Every build
+also exposes **Server**. The native page can be opened with
 an explicit package-bound Android intent:
 
 ```text
@@ -53,7 +55,7 @@ The native page:
   offsets, or broad storage access, and reports when the selected folder exceeds that bound;
 - checks on launcher resume, enables unique inexact WorkManager checks, and provides an explicit
   **Check now** action;
-- returns directly to the full runway TWA.
+- returns directly to the full runway web app.
 
 The exported GPX share activity accepts one `content://` URI, checks its grant/type/size, and reads it
 off the UI thread with a 10 MB limit. Names, URIs, XML, coordinates, and metadata are not logged.
@@ -97,7 +99,6 @@ changing an Android dependency, regenerate both controls and review every versio
 
 ```sh
 ./gradlew --no-daemon \
-  -PrunwayOrigin=https://runway.example.test \
   --write-locks --write-verification-metadata sha256 \
   :app:dependencies lint test assembleDebug
 ```
@@ -110,7 +111,6 @@ Build with the wrapper:
 cd android
 ./gradlew --version
 ./gradlew \
-  -PrunwayOrigin=https://runway.example.com \
   -PrunwayApplicationId=com.example.runway \
   :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
@@ -130,15 +130,15 @@ corepack pnpm verify:android:build
 corepack pnpm verify:android:release
 ```
 
-The first command reviews the static Android/TWA/security contract. The second runs Gradle `lint`,
-`test`, and `assembleDebug` with a non-routable HTTPS test origin. The third proves the release-origin
-guard, rejects an unsigned normal release, and builds only the explicitly unsigned F-Droid source
+The first command reviews the static Android/browser/security contract. The second runs Gradle `lint`,
+`test`, and `assembleDebug`. The third rejects the removed origin-bound property, rejects an unsigned
+normal release, and builds only the explicitly unsigned F-Droid source
 artifact without private key material. The build and release gates inspect their merged manifests and
-reject any permission outside the reviewed normal WorkManager/internet allowlist. CI runs these exact commands; a green build does not replace
-emulator, device, App Link, TWA, large-text, or TalkBack checks.
+reject permissions or exported components outside the reviewed allowlists. They also assert disabled
+backups and release cleartext/debuggable flags. CI runs these exact commands; a green build does not
+replace emulator, physical-device, Custom Tab, large-text, or TalkBack checks.
 
-Plain `./gradlew test` also works with the non-distributable placeholder origin. Tasks that create or
-install a release artifact still fail closed until `-PrunwayOrigin` names a real HTTPS instance.
+Plain `./gradlew test` exercises the only supported shape. Passing `-PrunwayOrigin` is a build error.
 
 See [Android architecture and production gates](../docs/ANDROID.md) and
 [release guidance](docs/RELEASE.md).

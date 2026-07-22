@@ -23,6 +23,8 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var treeAccessStore: TreeAccessStore
     private lateinit var credentialStore: AndroidCredentialStore
+    private lateinit var serverConnection: ServerConnection
+    private lateinit var serverOrigin: String
 
     private lateinit var setupStatus: TextView
     private lateinit var setupIndicator: View
@@ -46,6 +48,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
         if (uri == null) return@registerForActivityResult
+        if (!requireCurrentServer()) return@registerForActivityResult
         val connected = treeAccessStore.connect(uri)
         if (connected) {
             if (credentialStore.load() != null) {
@@ -65,6 +68,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val configuredConnection = ServerConnectionStore(this).currentConnection()
+        if (configuredConnection == null) {
+            startActivity(Intent(this, ServerConnectionActivity::class.java))
+            finish()
+            return
+        }
+        serverConnection = configuredConnection
+        serverOrigin = configuredConnection.origin
         enableEdgeToEdge()
         if (
             Build.VERSION.SDK_INT >= 25 &&
@@ -75,7 +86,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
 
         treeAccessStore = TreeAccessStore(this)
-        credentialStore = AndroidCredentialStore(this)
+        credentialStore = AndroidCredentialStore(this, serverOrigin)
         if (credentialStore.load() == null) ReconciliationScheduler.cancelAll(this)
         setContentView(R.layout.activity_native_folder_settings)
         EdgeToEdgeLayout.applySystemBarPadding(findViewById(R.id.folder_settings_scroll))
@@ -95,9 +106,15 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::serverConnection.isInitialized && !isCurrentServer()) finish()
+    }
+
     private fun bindViews() {
         listOf(
             R.id.screen_heading,
+            R.id.server_section_heading,
             R.id.pairing_heading,
             R.id.folder_heading,
             R.id.background_heading,
@@ -122,6 +139,16 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         backgroundStatus = findViewById(R.id.background_status)
         lastCheckStatus = findViewById(R.id.last_check_status)
         backgroundButton = findViewById(R.id.background_action)
+        findViewById<TextView>(R.id.server_origin_status).text = serverOrigin
+        findViewById<Button>(R.id.change_server).apply {
+            setOnClickListener {
+                if (!requireCurrentServer()) return@setOnClickListener
+                startActivity(Intent(this@NativeFolderSettingsActivity, ServerConnectionActivity::class.java).apply {
+                    action = ServerConnectionActivity.ACTION_CHANGE_SERVER
+                })
+                finish()
+            }
+        }
     }
 
     private fun bindActions() {
@@ -132,6 +159,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             true
         }
         forgetButton.setOnClickListener {
+            if (!requireCurrentServer()) return@setOnClickListener
             credentialStore.load()?.let { credential ->
                 HandledImportStore(this).clearForDevice(credential.deviceId)
             }
@@ -143,8 +171,11 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             refreshScreen(keepPairingStatus = true)
             refreshLastCheckStatus()
         }
-        changeFolderButton.setOnClickListener { openDirectoryPicker() }
+        changeFolderButton.setOnClickListener {
+            if (requireCurrentServer()) openDirectoryPicker()
+        }
         disconnectButton.setOnClickListener {
+            if (!requireCurrentServer()) return@setOnClickListener
             treeAccessStore.disconnect()
             backgroundEnabled = false
             folderStatus.setText(R.string.folder_disconnected)
@@ -152,6 +183,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             refreshLastCheckStatus()
         }
         backgroundButton.setOnClickListener {
+            if (!requireCurrentServer()) return@setOnClickListener
             if (!isReady()) {
                 backgroundStatus.setText(R.string.background_setup_required)
                 return@setOnClickListener
@@ -168,12 +200,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             refreshAutomationState(keepStatus = true)
         }
         findViewById<Button>(R.id.return_to_runway).setOnClickListener {
-            startActivity(Intent(this, RunwayLauncherActivity::class.java))
+            if (!requireCurrentServer()) return@setOnClickListener
+            startActivity(Intent(this, ServerConnectionActivity::class.java))
             finish()
         }
     }
 
     private fun performPrimaryAction() {
+        if (!requireCurrentServer()) return
         when {
             credentialStore.load() == null -> pairAccount()
             treeAccessStore.currentState() !is TreeAccessState.Connected -> openDirectoryPicker()
@@ -186,6 +220,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     }
 
     private fun openDirectoryPicker() {
+        if (!requireCurrentServer()) return
         val initialUri = when (val state = treeAccessStore.currentState()) {
             is TreeAccessState.Connected -> state.uri
             is TreeAccessState.PermissionRequired -> state.uri
@@ -195,6 +230,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     }
 
     private fun pairAccount() {
+        if (!requireCurrentServer()) return
         val code = pairingCode.text.toString().trim()
         val label = deviceLabel.text.toString().trim()
         if (code.isBlank() || label.isBlank()) {
@@ -204,19 +240,23 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         primaryAction.isEnabled = false
         pairingStatus.setText(R.string.pairing_in_progress)
         executor.execute {
+            if (!isCurrentServer()) return@execute
+            val result = RunwayApiClient(serverOrigin).pair(code, label)
+            if (!isCurrentServer()) return@execute
             val completion = completePairing(
-                result = RunwayApiClient().pair(code, label),
-                saveCredential = credentialStore::save,
+                result = result,
+                saveCredential = ::saveCredentialIfCurrent,
             )
             val automationStarted =
                 completion is PairingCompletion.Connected &&
                     treeAccessStore.currentState() is TreeAccessState.Connected
             if (automationStarted) {
+                if (!isCurrentServer()) return@execute
                 ReconciliationScheduler.runOnce(this)
                 ReconciliationScheduler.enablePeriodic(this)
             }
             runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (completion) {
                     is PairingCompletion.Connected -> {
                         pairingCode.text.clear()
@@ -234,11 +274,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     }
 
     private fun verifyPairingStatus() {
+        if (!isCurrentServer()) return
         val credential = credentialStore.load() ?: return
         executor.execute {
-            val result = RunwayApiClient().status(credential)
+            val result = RunwayApiClient(serverOrigin).status(credential)
+            if (!isCurrentServer()) return@execute
             runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (result) {
                     DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
                     DeviceStatusApiResult.Unauthorized -> {
@@ -263,6 +305,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private fun refreshBackgroundWorkState() {
         executor.execute {
+            if (!isCurrentServer()) return@execute
             val enabled = runCatching {
                 WorkManager.getInstance(this)
                     .getWorkInfosForUniqueWork(PERIODIC_WORK_NAME)
@@ -274,7 +317,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                     }
             }.getOrNull() ?: return@execute
             runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 backgroundEnabled = enabled
                 refreshAutomationState()
             }
@@ -289,6 +332,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             WorkManager.getInstance(this)
                 .getWorkInfosForUniqueWorkLiveData(workName)
                 .observe(this) { workInfos ->
+                    if (!isCurrentServer()) return@observe
                     workRunningByName[workName] = workInfos.any { it.state == WorkInfo.State.RUNNING }
                     refreshLastCheckStatus()
                 }
@@ -319,6 +363,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 ReconciliationWorker.STATE_SETTLING -> R.string.last_check_settling
                 ReconciliationWorker.STATE_RETRYING -> R.string.last_check_retrying
                 ReconciliationWorker.STATE_STALE_CONNECTION -> R.string.last_check_stale
+                ReconciliationWorker.STATE_SERVER_REQUIRED -> R.string.last_check_server_required
                 else -> R.string.last_check_unknown
             },
         )
@@ -407,6 +452,22 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private fun isReady(): Boolean =
         credentialStore.load() != null &&
             treeAccessStore.currentState() is TreeAccessState.Connected
+
+    private fun saveCredentialIfCurrent(credential: AndroidCredential): Boolean {
+        if (!isCurrentServer() || !credentialStore.save(credential)) return false
+        if (isCurrentServer()) return true
+        credentialStore.clear()
+        return false
+    }
+
+    private fun isCurrentServer(): Boolean =
+        ServerConnectionStore(this).isCurrent(serverConnection)
+
+    private fun requireCurrentServer(): Boolean {
+        if (isCurrentServer()) return true
+        finish()
+        return false
+    }
 
     private companion object {
         const val PAIRING_CODE_MAX_LENGTH = 19

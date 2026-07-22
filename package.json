@@ -1,7 +1,7 @@
 {
 	"name": "runway",
 	"private": true,
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "A self-hosted running planner and activity ledger for comparing recommendations, edits, and recorded work.",
 	"license": "AGPL-3.0-only",
 	"repository": {
@@ -43,7 +43,7 @@
 		"verify:compose": "docker compose config -q",
 		"verify:compose:production": "node scripts/verify-production-compose.mjs",
 		"verify:android": "node scripts/verify-android.mjs",
-		"verify:android:build": "android/gradlew -p android --no-daemon --dependency-verification strict -PrunwayOrigin=https://runway.example.test lint test assembleDebug && node scripts/verify-android-artifact.mjs debug",
+		"verify:android:build": "android/gradlew -p android --no-daemon --dependency-verification strict lint test assembleDebug && node scripts/verify-android-artifact.mjs debug",
 		"verify:android:release": "node scripts/verify-android-release.mjs",
 		"verify:caddy": "node scripts/verify-caddy.mjs",
 		"verify:dependencies": "node scripts/verify-dependencies.mjs",

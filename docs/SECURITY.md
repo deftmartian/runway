@@ -65,7 +65,7 @@ top-level navigation Fetch Metadata (`site=none`, `mode=navigate`, `dest=documen
 requires an authenticated session before reading the body, accepts exactly one bounded GPX, and uses
 the same strict parser and review-only import path as manual upload.
 
-The Android app has two separate no-Origin API shapes. `POST /api/android/pair` requires JSON plus the
+The Android app has two separate no-Origin mutation shapes. `POST /api/android/pair` requires JSON plus the
 versioned Android client header and exchanges a high-entropy, ten-minute, single-use code created by
 an authenticated browser session. `POST /api/android/import` requires that client header, a
 GPX-specific content type, a valid scoped bearer credential, a UUID request id, and a SHA-256 content
@@ -73,6 +73,12 @@ digest. Cross-origin browser requests still fail because an explicit non-matchin
 and browsers cannot set the custom headers cross-site without a CORS preflight that runway does not
 allow. Neither route accepts browser cookies as Android authentication. Rate limits apply before and
 after device authentication, and the import route authenticates before reading a bounded body.
+
+Before saving a server, Android calls public `GET /api/android/instance` with the versioned client
+header. The bounded response exposes only runway identity, the supported Android API range, and the
+release version. Android follows no redirect and requires valid HTTPS outside debug-only private
+network use. Every build keeps browser origin controls visible and supports an explicitly selected
+server; the removed origin-bound build property fails configuration.
 
 `BETTER_AUTH_SECRET` rotation is an operational migration, not a blind value replacement. Database
 backups must have separately protected matching key material, and an old key cannot be retired until
@@ -156,12 +162,22 @@ runway profiles, plans, workouts, activities, imports, devices, tombstones, and 
 
 Real GPX, FIT, and TCX samples must go in `samples/`, which is ignored by git.
 
-Android stores the server-issued import credential encrypted with AES-GCM under a non-exportable
-Android Keystore key. The server stores only its SHA-256 hash, a user/device binding, expiry,
-revocation state, and non-sensitive timestamps. The credential can call only Android status and GPX
-import routes. Raw content digests are not stored: receipt keys are user-scoped HMACs. Completed
+Android stores the exact normalized server origin with the server-issued import credential, encrypted
+with AES-GCM under a non-exportable Android Keystore key and authenticated against application id plus
+origin. The server stores only the credential's SHA-256 hash, a user/device binding, expiry,
+revocation state, and non-sensitive timestamps. The credential can call only Android
+status/self-disconnection and GPX import routes. Raw content digests are not stored: receipt keys are
+user-scoped HMACs. Completed
 request ids make retries idempotent; deleting imported activity data revokes every active Android
 device in the same transaction before the activities are removed.
+
+Changing Android servers is a local and server-side security-boundary transition. The app attempts to
+revoke its bearer on the prior server, then uses an origin-plus-generation compare-and-swap before it
+cancels work, erases the origin-keyed credential, releases the folder grant, clears handled
+markers/status, and saves the new origin. Work, share, and native-screen snapshots include the server
+generation as well as credential and folder generation. If the old server is unreachable, the app
+requires a second explicit confirmation and warns that its old device record remains active and an
+upload already in progress may finish; the runner must revoke that device on the old server later.
 
 Importer behavior should:
 

@@ -5,26 +5,38 @@
 [![GHCR](https://img.shields.io/badge/container-ghcr.io-1f758f.svg)](https://github.com/deftmartian/runway/pkgs/container/runway)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
-**runway is a self-hosted running planner and activity ledger for runners who want to inspect,
-edit, and own the whole record.**
+**runway is a self-hosted running planner and activity ledger. It keeps the recommendation, the
+runner's edits, and the work that actually happened separate—and makes the next decision explicit.**
 
-It keeps the generated recommendation, the runner's current plan, and recorded work distinct. When
-training does not match the plan, runway shows the difference and offers explicit next-plan choices
-without changing future workouts on its own.
+It is for runners who want a plan they can inspect and change, without handing route, schedule,
+heart-rate, pain, or training-history data to a social fitness platform. When a run is missed, moved,
+short, long, hard, or unplanned, runway records the facts first and offers a choice before changing
+future workouts.
 
-## See It
+## The product at a glance
 
-![The runway public home showing the plan trace and the next training decision](tests/visual/runway.visual.ts-snapshots/public-home-desktop-linux.png)
+| Desktop web                                                                                  | Installed mobile PWA                                                                         |
+| :------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- |
+| ![The runway desktop training calendar](docs/images/runway-calendar-desktop.png)             | ![The runway mobile training calendar](docs/images/runway-calendar-mobile.png)               |
+| A month, weekly load, recovery spacing, and the selected day's next decision in one surface. | The same plan and activity record, reflowed around the day rather than reduced to a summary. |
 
-### Calendar and next decision
+The calendar is the main operating surface. It keeps the recommendation, current plan, actual work,
+rest, missed work, recovery spacing, and current review item visible together.
 
-![The runway desktop calendar showing missed work, recovery, week load, and the next long run](tests/visual/runway.visual.ts-snapshots/calendar-desktop-linux.png)
+### Android: the complete app plus native folder access
 
-The calendar is the main operating surface: the week, recovery spacing, missed work, current risk,
-and next decision stay visible together.
+| Connect a self-hosted server                                                          | Configure automatic GPX imports                                                       |
+| :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------ |
+| ![The runway Android server connection screen](docs/images/runway-android-server.png) | ![The runway Android folder setup screen](docs/images/runway-android-folder.png)      |
+| The universal APK verifies the server before opening sign-in.                         | Native Android retains the approved Gadgetbridge folder and schedules bounded checks. |
+
+The Android package is a complete way to use runway, not a companion. It opens the full web product
+in an origin-visible Custom Tab and adds the capabilities the PWA cannot reliably own: durable folder
+access, background reconciliation, and Android GPX shares. See [Android architecture](docs/ANDROID.md) and
+[build instructions](android/README.md).
 
 <details>
-<summary>Plan traces and exact stats</summary>
+<summary>Plan traces and exact values</summary>
 
 ![The runway stats view showing risk context and generated, current, and actual traces](tests/visual/runway.visual.ts-snapshots/stats-desktop-linux.png)
 
@@ -39,8 +51,16 @@ Stats explain whether the current plan needs attention and pair the visual trace
 
 </details>
 
-These screenshots are also visual-regression fixtures, so they stay connected to tested product
-states.
+The web screenshots come from deterministic visual-regression states. The Android screenshots come
+from the built debug APK running on the documented API 35 emulator.
+
+## Ways to run runway
+
+| Surface       | Best for                                           | Capability boundary                                                                                 |
+| ------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Browser       | Any modern desktop or mobile browser               | Complete product; manual, share-target, Nextcloud, and foreground-approved-folder imports.          |
+| Installed PWA | Home-screen use with offline shell and OS sharing  | Same complete product; browser folder permission remains browser-managed and is checked while open. |
+| Android app   | Self-hosters who want durable Gadgetbridge imports | User-selected HTTPS server, visible browser origin, native folder grant, background checks, shares. |
 
 ## What It Does
 
@@ -82,7 +102,7 @@ Put the first generated value in `POSTGRES_PASSWORD` and in the password segment
 artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
-RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.1.1"
+RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.2.0"
 POSTGRES_PASSWORD="<first generated value>"
 APP_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
 BETTER_AUTH_SECRET="<second generated value>"

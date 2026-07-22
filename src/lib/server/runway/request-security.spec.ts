@@ -79,8 +79,33 @@ describe('state-changing request origin checks', () => {
 				'x-runway-client': 'runway-android/1'
 			}
 		});
+		const disconnect = new Request('https://runway.example.test/api/android/status', {
+			method: 'DELETE',
+			headers: {
+				authorization: 'Bearer rwy1_device_secret',
+				'x-runway-client': 'runway-android/1'
+			}
+		});
 		expect(isAndroidNativeApiRequest(pairing, '/api/android/pair')).toBe(true);
 		expect(isAndroidNativeApiRequest(upload, '/api/android/import')).toBe(true);
+		expect(isAndroidNativeApiRequest(disconnect, '/api/android/status')).toBe(true);
+	});
+
+	test('rejects malformed native device disconnection requests', () => {
+		const missingBearer = new Request('https://runway.example.test/api/android/status', {
+			method: 'DELETE',
+			headers: { 'x-runway-client': 'runway-android/1' }
+		});
+		const browserOrigin = new Request('https://runway.example.test/api/android/status', {
+			method: 'DELETE',
+			headers: {
+				authorization: 'Bearer rwy1_device_secret',
+				origin: 'https://attacker.example',
+				'x-runway-client': 'runway-android/1'
+			}
+		});
+		expect(isAndroidNativeApiRequest(missingBearer, '/api/android/status')).toBe(false);
+		expect(isAndroidNativeApiRequest(browserOrigin, '/api/android/status')).toBe(false);
 	});
 
 	test.each([

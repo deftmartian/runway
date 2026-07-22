@@ -14,7 +14,13 @@ class ReconciliationWorker(
     private val statusStore = ReconciliationStatusStore(appContext)
 
     override fun doWork(): Result {
-        val credentialStore = AndroidCredentialStore(applicationContext)
+        val serverStore = ServerConnectionStore(applicationContext)
+        val serverConnection = serverStore.currentConnection() ?: run {
+            ReconciliationScheduler.cancelAll(applicationContext)
+            return success(STATE_SERVER_REQUIRED)
+        }
+        val origin = serverConnection.origin
+        val credentialStore = AndroidCredentialStore(applicationContext, origin)
         val credential = credentialStore.load() ?: run {
             ReconciliationScheduler.cancelAll(applicationContext)
             return success(STATE_PAIRING_REQUIRED)
@@ -25,7 +31,7 @@ class ReconciliationWorker(
             ReconciliationScheduler.cancelAll(applicationContext)
             return success(STATE_PERMISSION_REQUIRED)
         }
-        val connection = ImportConnectionGeneration.capture(credential, treeState)
+        val connection = ImportConnectionGeneration.capture(serverConnection, credential, treeState)
         val scan = SafTreeScanner(applicationContext.contentResolver).scan(treeState)
         if (scan !is TreeScanResult.Success) {
             return when (scan) {
@@ -76,7 +82,13 @@ class ReconciliationWorker(
             return success(STATE_PROVIDER_ERROR)
         }
 
-        if (!connection.isCurrent(credentialStore.load(), treeStore.currentState())) {
+        if (
+            !connection.isCurrent(
+                serverStore.currentConnection(),
+                credentialStore.load(),
+                treeStore.currentState(),
+            )
+        ) {
             return success(STATE_STALE_CONNECTION)
         }
         when (
@@ -115,10 +127,26 @@ class ReconciliationWorker(
 
         if (isStopped) return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
         val requestId = handledStore.requestIdFor(credential.deviceId, contentSha256)
-        if (!connection.isCurrent(credentialStore.load(), treeStore.currentState()) || isStopped) {
+        if (
+            !connection.isCurrent(
+                serverStore.currentConnection(),
+                credentialStore.load(),
+                treeStore.currentState(),
+            ) || isStopped
+        ) {
             return success(STATE_STALE_CONNECTION)
         }
-        return when (val imported = RunwayApiClient().importGpx(credential, bytes, requestId)) {
+        val imported = RunwayApiClient(origin).importGpx(credential, bytes, requestId)
+        if (
+            !connection.isCurrent(
+                serverStore.currentConnection(),
+                credentialStore.load(),
+                treeStore.currentState(),
+            )
+        ) {
+            return success(STATE_STALE_CONNECTION)
+        }
+        return when (imported) {
             is ImportApiResult.Handled -> {
                 handledStore.markHandled(credential.deviceId, candidate, contentSha256)
                 terminal(
@@ -211,6 +239,7 @@ class ReconciliationWorker(
         const val STATE_SETTLING = "settling"
         const val STATE_RETRYING = "retrying"
         const val STATE_STALE_CONNECTION = "stale_connection"
+        const val STATE_SERVER_REQUIRED = "server_required"
         const val FILE_SETTLE_MS = 30_000L
     }
 }

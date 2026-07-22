@@ -16,7 +16,7 @@ import {
 	getActivityImportGeneration,
 	getAthleteProfile
 } from '$lib/server/runway/repositories/profiles';
-import { buildAndroidAssetLinks } from '$lib/server/runway/android-asset-links';
+import { resolveAndroidApplicationId } from '$lib/server/runway/android-instance';
 import { maxGpxImportBytes } from '$lib/import-limits';
 import {
 	createAndroidPairingRequest,
@@ -56,10 +56,7 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) throw redirect(302, '/login');
-	const androidApplicationId = buildAndroidAssetLinks(
-		env['ANDROID_APPLICATION_ID'],
-		env['ANDROID_CERTIFICATE_SHA256']
-	)?.[0]?.target.package_name;
+	const androidApplicationId = resolveAndroidApplicationId(env['ANDROID_APPLICATION_ID']);
 	const activityOffset = Math.max(
 		0,
 		Number.parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0

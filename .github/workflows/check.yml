@@ -91,7 +91,7 @@ jobs:
         run: |
           set -o pipefail
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict \
-            -PrunwayOrigin=https://runway.example.test lint 2>&1 | tee "$RUNNER_TEMP/android-lint.log"
+            lint 2>&1 | tee "$RUNNER_TEMP/android-lint.log"
       - name: Publish Android lint diagnostics
         if: matrix.task == 'android' && steps.android-lint.outcome == 'failure'
         run: |
@@ -132,12 +132,12 @@ jobs:
         if: matrix.task == 'android'
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
-          -PrunwayOrigin=https://runway.example.test test
+          test
       - name: Android debug build
         if: matrix.task == 'android'
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
-          -PrunwayOrigin=https://runway.example.test assembleDebug
+          assembleDebug
       - name: Android debug artifact contract
         if: matrix.task == 'android'
         run: node scripts/verify-android-artifact.mjs debug

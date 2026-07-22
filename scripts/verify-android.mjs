@@ -10,6 +10,7 @@ const requiredFiles = [
 	'android/app/build.gradle.kts',
 	'android/.gitignore',
 	'android/app/src/main/AndroidManifest.xml',
+	'android/app/src/main/res/layout/activity_server_connection.xml',
 	'android/app/src/main/res/layout/activity_native_folder_settings.xml',
 	'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
 	'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml',
@@ -17,6 +18,9 @@ const requiredFiles = [
 	'android/signing.properties.example',
 	'scripts/verify-android-artifact.mjs',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
+	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionActivity.kt',
+	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionStore.kt',
+	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionReset.kt',
 	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt',
@@ -27,9 +31,8 @@ const requiredFiles = [
 	'android/app/gradle.lockfile',
 	'android/gradlew',
 	'android/gradlew.bat',
-	'android/assetlinks.json.template',
 	'android/docs/RELEASE.md',
-	'src/routes/[...wellKnown]/+server.ts',
+	'src/routes/api/android/instance/+server.ts',
 	'src/routes/app/import/+page.server.ts',
 	'src/routes/app/import/+page.svelte',
 	'src/lib/components/import/AndroidSourceSetup.svelte',
@@ -67,23 +70,27 @@ if (permissions.length !== 1 || permissions[0] !== 'android.permission.INTERNET'
 }
 for (const required of [
 	'.RunwayLauncherActivity',
+	'.ServerConnectionActivity',
 	'.NativeFolderSettingsActivity',
-	'android:autoVerify="true"',
-	'android.support.customtabs.trusted.DEFAULT_URL',
-	'asset_statements',
 	'android:icon="@mipmap/ic_launcher"'
 ]) {
 	if (!manifest.includes(required)) errors.push(`AndroidManifest.xml is missing ${required}`);
+}
+for (const forbidden of ['android:autoVerify="true"', 'asset_statements', 'customtabs.trusted']) {
+	if (manifest.includes(forbidden)) {
+		errors.push(`AndroidManifest.xml still contains removed origin-bound behavior: ${forbidden}`);
+	}
 }
 
 const build = read('android/app/build.gradle.kts');
 for (const required of [
 	'compileSdk = 36',
 	'targetSdk = 36',
-	'androidbrowserhelper:2.7.2',
-	'verifyReleaseInstance',
+	'androidx.browser:browser:1.10.0',
+	'verifyServerSelectionRelease',
 	'assembleRelease',
 	'runwayOrigin',
+	'runwayOrigin is no longer supported',
 	'runwayApplicationId',
 	'releaseSigningPropertiesFile',
 	'verifyReleaseSigning'
@@ -104,6 +111,9 @@ for (const required of [
 	"'strict'",
 	'runwaySigningPropertiesFile',
 	':app:verifyReleaseSigning',
+	':app:verifyServerSelectionRelease',
+	'instance-bound origin unexpectedly passed configuration',
+	"verifyArtifact('release')",
 	'-PrunwayFdroidSourceBuild=true',
 	'app-release-unsigned.apk'
 ]) {
@@ -120,7 +130,11 @@ for (const required of [
 	'android.permission.RECEIVE_BOOT_COMPLETED',
 	'android.permission.FOREGROUND_SERVICE',
 	'DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
-	'protectionLevel="signature"'
+	'protectionLevel="signature"',
+	'instance-bound build contract',
+	'expectedExported',
+	'android:usesCleartextTraffic',
+	'android:allowBackup'
 ]) {
 	if (!artifactVerification.includes(required)) {
 		errors.push(`Android merged-manifest permission gate is missing ${required}`);
@@ -161,7 +175,7 @@ for (const required of [
 	'androidx.activity:activity-ktx:',
 	'androidx.core:core-ktx:',
 	'androidx.work:work-runtime:',
-	'com.google.androidbrowserhelper:androidbrowserhelper:',
+	'androidx.browser:browser:',
 	'releaseRuntimeClasspath'
 ]) {
 	if (!dependencyLock.includes(required))
@@ -170,13 +184,51 @@ for (const required of [
 
 const launcher = read('android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt');
 for (const required of [
-	': LauncherActivity()',
-	'getUrlForIntent',
+	': ComponentActivity()',
+	'CustomTabsIntent.Builder()',
 	'InstanceOriginPolicy.belongsTo',
 	'ReconciliationScheduler.runOnce(this)',
-	'TwaLauncher.CCT_FALLBACK_STRATEGY'
+	'setUrlBarHidingEnabled(false)',
+	'ActivityNotFoundException'
 ]) {
-	if (!launcher.includes(required)) errors.push(`Android TWA launcher is missing ${required}`);
+	if (!launcher.includes(required))
+		errors.push(`Android Custom Tab launcher is missing ${required}`);
+}
+
+const serverConnection = read(
+	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionActivity.kt'
+);
+for (const required of [
+	'RunwayApiClient(origin).probe()',
+	'InstanceOriginPolicy.normalizeOrigin',
+	'store.replace(initialConnection, origin)',
+	'RunwayApiClient(previous.origin).disconnect',
+	'R.string.server_change_consequence',
+	'RunwayLauncherActivity::class.java'
+]) {
+	if (!serverConnection.includes(required)) {
+		errors.push(`Android server selection is missing ${required}`);
+	}
+}
+
+const credentialStore = read(
+	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt'
+);
+for (const required of ['expectedOrigin', 'credential.origin == expectedOrigin', 'updateAAD']) {
+	if (!credentialStore.includes(required)) {
+		errors.push(`Android credential origin binding is missing ${required}`);
+	}
+}
+
+const instanceRoute = read('src/routes/api/android/instance/+server.ts');
+for (const required of [
+	"request.headers.get('x-runway-client') !== 'runway-android/1'",
+	'buildAndroidInstanceDescriptor()',
+	"'Cache-Control': 'private, no-store'"
+]) {
+	if (!instanceRoute.includes(required)) {
+		errors.push(`Android instance discovery route is missing ${required}`);
+	}
 }
 
 const folderSettings = read(
@@ -214,17 +266,6 @@ for (const required of ['intent://folder#Intent', 'package=${androidApplicationI
 	}
 }
 
-const assetLinksRoute = read('src/routes/[...wellKnown]/+server.ts');
-for (const required of [
-	'ANDROID_APPLICATION_ID',
-	'ANDROID_CERTIFICATE_SHA256',
-	'buildAndroidAssetLinks'
-]) {
-	if (!assetLinksRoute.includes(required)) {
-		errors.push(`Android Digital Asset Links route is missing ${required}`);
-	}
-}
-
 const kotlinFiles = globSync('android/app/src/**/*.kt', { cwd: root });
 const kotlin = kotlinFiles.map((file) => read(file)).join('\n');
 if (/\bandroid\.webkit\b|\bWebView\b/.test(kotlin)) {
@@ -235,6 +276,7 @@ for (const required of [
 	'AES/GCM/NoPadding',
 	'/api/android/pair',
 	'/api/android/import',
+	'/api/android/instance',
 	'X-Runway-Request-Id',
 	'GpxCandidatePolicy.MAX_FILE_BYTES'
 ]) {
@@ -279,24 +321,13 @@ for (const match of kotlin.matchAll(/R\.string\.([A-Za-z0-9_]+)/g)) {
 	if (!stringResources.has(match[1])) errors.push(`missing Android string resource: ${match[1]}`);
 }
 
-try {
-	const statements = JSON.parse(read('android/assetlinks.json.template'));
-	if (!Array.isArray(statements) || statements.length !== 1) {
-		errors.push('android/assetlinks.json.template must contain one Digital Asset Links statement');
-	}
-} catch (error) {
-	errors.push(
-		`android/assetlinks.json.template is invalid JSON: ${error instanceof Error ? error.message : String(error)}`
-	);
-}
-
 if (errors.length > 0) {
 	console.error(`Android verification failed:\n- ${errors.join('\n- ')}`);
 	process.exit(1);
 }
 
 console.log(
-	`Android TWA contract verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
+	`Android selectable-server contract verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
 );
 
 function read(file) {

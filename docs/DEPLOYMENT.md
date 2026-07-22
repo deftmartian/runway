@@ -22,8 +22,8 @@ Set these before running the production app:
 - `IMPORT_SECRET_KEY` or a strong `BETTER_AUTH_SECRET`
 - optional `ANDROID_CREDENTIAL_SECRET` to keep Android pairing and import-receipt HMACs independent
   of auth-key rotation; otherwise a strong `BETTER_AUTH_SECRET` is used
-- `ANDROID_APPLICATION_ID` and `ANDROID_CERTIFICATE_SHA256` when distributing the Android app; these
-  make runway serve the exact Digital Asset Links statement at `/.well-known/assetlinks.json`
+- optional `ANDROID_APPLICATION_ID` only when distributing a renamed Android package; the canonical
+  package defaults to `com.deftmartian.runway`
 - `NEXTCLOUD_ALLOWED_ORIGINS=https://<nextcloud-host>[:port]` before enabling share sync
 - `BODY_SIZE_LIMIT=12M` so SvelteKit allows runway to validate GPX files against its 10 MB app limit
 - `RUNWAY_IMAGE=ghcr.io/deftmartian/runway:sha-<full-commit-sha>` or an immutable image digest
@@ -339,11 +339,12 @@ disconnect, folder switching, future-dated and malformed GPX quarantine, the ent
 limit, and local capability deletion on sign-out and privacy deletion.
 
 For a complete installed Android experience with reliable access after the browser process is stopped,
-use the instance-bound TWA design in [ANDROID.md](ANDROID.md). The APK must be built for this exact HTTPS
-origin and signing identity, and the origin must publish matching Digital Asset Links. Native folder
-access, scoped device pairing, bounded background upload, and review-only import are present. External
-distribution still depends on the signing, device-matrix, accessibility, upgrade, and release-evidence
-gates recorded there.
+use the Android design in [ANDROID.md](ANDROID.md). The normal APK lets the runner choose this public
+HTTPS origin and verifies `/api/android/instance` before opening sign in. It uses an origin-visible
+Custom Tab; there is no instance-bound build mode. Native folder access, origin-scoped
+device pairing, bounded background upload, and review-only import are present. External distribution
+still depends on the signing, device-matrix, accessibility, upgrade, and release-evidence gates
+recorded there.
 
 ## Reverse Proxy And Network Edge
 

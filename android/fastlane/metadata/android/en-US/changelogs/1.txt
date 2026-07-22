@@ -1,4 +1,4 @@
-Developer preview of the full runway PWA in a Trusted Web Activity, persisted folder access, bounded
+Developer preview of the full runway PWA in a browser Custom Tab, persisted folder access, bounded
 GPX shares, and scheduled reconciliation.
 
 Adds scoped account pairing plus bounded GPX folder and share imports into the review inbox.

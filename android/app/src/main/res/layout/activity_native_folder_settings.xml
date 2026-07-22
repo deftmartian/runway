@@ -61,6 +61,31 @@
             android:layout_marginTop="16dp">
 
             <TextView
+                android:id="@+id/server_section_heading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/server_section_title"
+                android:textAppearance="@style/TextAppearance.Runway.SectionTitle" />
+
+            <TextView
+                android:id="@+id/server_origin_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="@style/TextAppearance.Runway.Body" />
+
+            <Button
+                android:id="@+id/change_server"
+                style="@style/Widget.Runway.Button.Text"
+                android:layout_marginTop="8dp"
+                android:text="@string/change_server" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Widget.Runway.Section"
+            android:layout_marginTop="14dp">
+
+            <TextView
                 android:id="@+id/pairing_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

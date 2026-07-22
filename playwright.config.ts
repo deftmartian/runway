@@ -43,11 +43,7 @@ export default defineConfig({
 			ALLOW_LOCAL_SIGNUPS: process.env['ALLOW_LOCAL_SIGNUPS'] ?? 'true',
 			PASSKEY_RP_ID: process.env['PASSKEY_RP_ID'] ?? new URL(previewUrl).hostname,
 			PASSKEY_RP_NAME: process.env['PASSKEY_RP_NAME'] ?? 'runway',
-			ANDROID_APPLICATION_ID:
-				process.env['ANDROID_APPLICATION_ID'] ?? 'com.deftmartian.runway.test',
-			ANDROID_CERTIFICATE_SHA256:
-				process.env['ANDROID_CERTIFICATE_SHA256'] ??
-				'AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB'
+			ANDROID_APPLICATION_ID: process.env['ANDROID_APPLICATION_ID'] ?? 'com.deftmartian.runway.test'
 		},
 		reuseExistingServer
 	}

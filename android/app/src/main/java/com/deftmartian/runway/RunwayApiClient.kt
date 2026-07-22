@@ -27,7 +27,48 @@ sealed interface DeviceStatusApiResult {
     data object Retryable : DeviceStatusApiResult
 }
 
-class RunwayApiClient {
+sealed interface DeviceDisconnectApiResult {
+    data object Disconnected : DeviceDisconnectApiResult
+    data object Unauthorized : DeviceDisconnectApiResult
+    data object Retryable : DeviceDisconnectApiResult
+}
+
+sealed interface InstanceProbeResult {
+    data object Compatible : InstanceProbeResult
+    data object NotRunway : InstanceProbeResult
+    data object UpgradeRequired : InstanceProbeResult
+    data object Unreachable : InstanceProbeResult
+}
+
+class RunwayApiClient(origin: String) {
+    private val serverOrigin = requireNotNull(
+        InstanceOriginPolicy.normalizeOrigin(origin, BuildConfig.DEBUG),
+    ) { "RunwayApiClient requires a valid runway origin" }
+
+    fun probe(): InstanceProbeResult {
+        val response = request(
+            path = "/api/android/instance",
+            method = "GET",
+            headers = emptyMap(),
+        ) ?: return InstanceProbeResult.Unreachable
+        if (response.status == 429 || response.status >= 500) return InstanceProbeResult.Unreachable
+        if (response.status != HttpURLConnection.HTTP_OK) return InstanceProbeResult.NotRunway
+        return runCatching {
+            val payload = JSONObject(response.body)
+            if (
+                payload.getString("result") != "runway-instance" ||
+                payload.getString("product") != "runway"
+            ) return@runCatching InstanceProbeResult.NotRunway
+            val minimum = payload.getInt("minimumAndroidApi")
+            val maximum = payload.getInt("maximumAndroidApi")
+            if (ANDROID_API_VERSION !in minimum..maximum) {
+                InstanceProbeResult.UpgradeRequired
+            } else {
+                InstanceProbeResult.Compatible
+            }
+        }.getOrDefault(InstanceProbeResult.NotRunway)
+    }
+
     fun pair(code: String, label: String): PairingApiResult {
         val body = JSONObject()
             .put("code", code)
@@ -49,6 +90,7 @@ class RunwayApiClient {
             if (payload.getString("result") != "paired") return@runCatching PairingApiResult.Invalid
             PairingApiResult.Paired(
                 AndroidCredential(
+                    origin = serverOrigin,
                     deviceId = payload.getString("deviceId"),
                     token = payload.getString("token"),
                     expiresAtEpochMs = payload.getLong("expiresAtEpochMs"),
@@ -62,7 +104,9 @@ class RunwayApiClient {
         bytes: ByteArray,
         requestId: String = UUID.randomUUID().toString(),
     ): ImportApiResult {
-        if (credential.isExpired()) return ImportApiResult.Unauthorized
+        if (credential.isExpired() || credential.origin != serverOrigin) {
+            return ImportApiResult.Unauthorized
+        }
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(bytes)
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
@@ -101,7 +145,9 @@ class RunwayApiClient {
     }
 
     fun status(credential: AndroidCredential): DeviceStatusApiResult {
-        if (credential.isExpired()) return DeviceStatusApiResult.Unauthorized
+        if (credential.isExpired() || credential.origin != serverOrigin) {
+            return DeviceStatusApiResult.Unauthorized
+        }
         val response = request(
             path = "/api/android/status",
             method = "GET",
@@ -114,6 +160,24 @@ class RunwayApiClient {
         }
     }
 
+    fun disconnect(credential: AndroidCredential): DeviceDisconnectApiResult {
+        if (credential.isExpired() || credential.origin != serverOrigin) {
+            return DeviceDisconnectApiResult.Unauthorized
+        }
+        val response = request(
+            path = "/api/android/status",
+            method = "DELETE",
+            headers = mapOf("Authorization" to "Bearer ${credential.token}"),
+        ) ?: return DeviceDisconnectApiResult.Retryable
+        return when {
+            response.status == HttpURLConnection.HTTP_OK -> DeviceDisconnectApiResult.Disconnected
+            response.status == HttpURLConnection.HTTP_UNAUTHORIZED -> {
+                DeviceDisconnectApiResult.Unauthorized
+            }
+            else -> DeviceDisconnectApiResult.Retryable
+        }
+    }
+
     private fun request(
         path: String,
         method: String,
@@ -121,7 +185,7 @@ class RunwayApiClient {
         body: ByteArray? = null,
     ): ApiResponse? {
         return try {
-            val connection = (URL("${BuildConfig.RUNWAY_ORIGIN}$path").openConnection() as HttpURLConnection)
+            val connection = (URL("$serverOrigin$path").openConnection() as HttpURLConnection)
                 .apply {
                     requestMethod = method
                     instanceFollowRedirects = false
@@ -163,6 +227,7 @@ class RunwayApiClient {
 
     private companion object {
         const val ANDROID_CLIENT = "runway-android/1"
+        const val ANDROID_API_VERSION = 1
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
         const val MAX_RESPONSE_BYTES = 64L * 1024L

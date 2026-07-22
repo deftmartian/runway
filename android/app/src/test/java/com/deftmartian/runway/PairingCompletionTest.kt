@@ -6,6 +6,7 @@ import org.junit.Test
 
 class PairingCompletionTest {
     private val credential = AndroidCredential(
+        origin = "https://runway.example",
         deviceId = "device-1",
         token = "rwy1_test",
         expiresAtEpochMs = Long.MAX_VALUE,

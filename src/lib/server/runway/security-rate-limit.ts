@@ -126,20 +126,20 @@ export function androidPairingExchangeRateLimitBuckets(clientAddress: string): R
 
 export function androidApiPreAuthRateLimitBuckets(
 	clientAddress: string,
-	action: 'status' | 'import'
+	action: 'status' | 'import' | 'disconnect'
 ): RateLimitBucket[] {
 	return [{ name: `android-${action}:ip`, subject: clientAddress, max: 120, windowMs: tenMinutes }];
 }
 
 export function androidApiDeviceRateLimitBuckets(
 	deviceId: string,
-	action: 'status' | 'import'
+	action: 'status' | 'import' | 'disconnect'
 ): RateLimitBucket[] {
 	return [
 		{
 			name: `android-${action}:device`,
 			subject: deviceId,
-			max: action === 'import' ? 30 : 120,
+			max: action === 'import' ? 30 : action === 'disconnect' ? 20 : 120,
 			windowMs: tenMinutes
 		}
 	];

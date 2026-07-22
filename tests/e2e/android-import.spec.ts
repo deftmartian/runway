@@ -160,7 +160,31 @@ test('disconnecting an Android device cancels its claimed in-flight import', asy
 	);
 	await waitForAndroidImportClaim(paired.deviceId, requestId);
 
-	await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+	const crossOriginDisconnect = await page.request.delete('/api/android/status', {
+		headers: {
+			authorization: `Bearer ${paired.token}`,
+			origin: 'https://attacker.example',
+			'x-runway-client': 'runway-android/1'
+		}
+	});
+	expect(crossOriginDisconnect.status()).toBe(403);
+
+	const disconnected = await page.request.delete('/api/android/status', {
+		headers: {
+			authorization: `Bearer ${paired.token}`,
+			'x-runway-client': 'runway-android/1'
+		}
+	});
+	expect(disconnected.status()).toBe(200);
+	await expect(disconnected.json()).resolves.toEqual({ result: 'disconnected' });
+	const disconnectedStatus = await page.request.get('/api/android/status', {
+		headers: {
+			authorization: `Bearer ${paired.token}`,
+			'x-runway-client': 'runway-android/1'
+		}
+	});
+	expect(disconnectedStatus.status()).toBe(401);
+	await page.reload();
 	await expect(page.getByText('Held import phone', { exact: true })).not.toBeVisible();
 	held.finish();
 	await expect(held.response).resolves.toMatchObject({

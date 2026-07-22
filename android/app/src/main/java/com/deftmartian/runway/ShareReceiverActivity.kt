@@ -37,7 +37,14 @@ class ShareReceiverActivity : ComponentActivity() {
     }
 
     private fun inspectSharedFile() {
-        val credentialStore = AndroidCredentialStore(this)
+        val serverStore = ServerConnectionStore(this)
+        val serverConnection = serverStore.currentConnection()
+        if (serverConnection == null) {
+            status.setText(R.string.share_server_required)
+            return
+        }
+        val origin = serverConnection.origin
+        val credentialStore = AndroidCredentialStore(this, origin)
         val credential = credentialStore.load()
         if (credential == null) {
             ReconciliationScheduler.cancelAll(this)
@@ -82,8 +89,13 @@ class ShareReceiverActivity : ComponentActivity() {
                 } ?: ByteArray(0)
                 if (bytes.isEmpty()) {
                     R.string.share_rejected
+                } else if (!serverStore.isCurrent(serverConnection)) {
+                    R.string.share_server_changed
                 } else {
-                    when (val imported = RunwayApiClient().importGpx(credential, bytes)) {
+                    val imported = RunwayApiClient(origin).importGpx(credential, bytes)
+                    if (!serverStore.isCurrent(serverConnection)) {
+                        R.string.share_server_changed
+                    } else when (imported) {
                         is ImportApiResult.Handled -> when (imported.result) {
                             "imported" -> R.string.share_imported
                             "duplicate" -> R.string.share_duplicate
@@ -189,7 +201,7 @@ class ShareReceiverActivity : ComponentActivity() {
             setText(R.string.open_runway)
             isAllCaps = false
             setOnClickListener {
-                startActivity(Intent(this@ShareReceiverActivity, RunwayLauncherActivity::class.java))
+                startActivity(Intent(this@ShareReceiverActivity, ServerConnectionActivity::class.java))
                 finish()
             }
             layoutParams = LinearLayout.LayoutParams(

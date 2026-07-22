@@ -33,13 +33,19 @@ export function isWebShareTargetNavigation(request: Request, pathname: string): 
 }
 
 /**
- * Android cannot send a browser Origin header. Keep the exception to two
- * non-cookie API requests that browsers cannot submit cross-site without a
- * CORS preflight: JSON pairing and bearer-authenticated GPX upload.
+ * Android cannot send a browser Origin header. Keep the exception to three
+ * non-cookie API operations that browsers cannot submit cross-site without a
+ * CORS preflight: JSON pairing, bearer-authenticated GPX upload, and bearer-authenticated
+ * device disconnection.
  */
 export function isAndroidNativeApiRequest(request: Request, pathname: string): boolean {
-	if (request.method.toUpperCase() !== 'POST' || request.headers.has('origin')) return false;
+	const method = request.method.toUpperCase();
+	if (request.headers.has('origin')) return false;
 	if (request.headers.get('x-runway-client') !== androidClientHeader) return false;
+	if (method === 'DELETE' && pathname === '/api/android/status') {
+		return request.headers.get('authorization')?.startsWith('Bearer rwy1_') === true;
+	}
+	if (method !== 'POST') return false;
 	const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
 	if (pathname === '/api/android/pair') return contentType.startsWith('application/json');
 	if (pathname !== '/api/android/import') return false;

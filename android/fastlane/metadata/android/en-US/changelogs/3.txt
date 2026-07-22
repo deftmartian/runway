@@ -1,0 +1,3 @@
+Choose and verify a self-hosted runway server on first launch. Server changes revoke the old device
+when reachable, then clear its credential, folder access, queued checks, and import markers. This
+upgrade requires pairing and folder approval again once.

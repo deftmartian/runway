@@ -11,14 +11,13 @@ RepoType: git
 Repo: https://REPLACE_GIT_URL
 
 Builds:
-  - versionName: 0.1.1
-    versionCode: 2
+  - versionName: 0.2.0
+    versionCode: 3
     commit: REPLACE_SOURCE_COMMIT
     subdir: android
     gradle:
       - yes
     gradleprops:
-      - runwayOrigin=https://REPLACE_RUNWAY_HOST
       - runwayApplicationId=REPLACE_APPLICATION_ID
       - runwayFdroidSourceBuild=true
 

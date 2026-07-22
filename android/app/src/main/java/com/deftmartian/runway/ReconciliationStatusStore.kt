@@ -55,6 +55,10 @@ internal class ReconciliationStatusStore(context: Context) {
         preferences.edit(commit = true) { putString(STATUS_KEY, status.encode()) }
     }
 
+    fun clear() {
+        preferences.edit(commit = true) { remove(STATUS_KEY) }
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "runway_android_reconciliation_status"
         const val STATUS_KEY = "last_status"

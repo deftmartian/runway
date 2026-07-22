@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/server_connection_scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingTop="48dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="40dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp">
+
+            <TextView
+                android:id="@+id/server_heading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/server_title"
+                android:textAppearance="@style/TextAppearance.Runway.Title" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/server_explanation"
+                android:textAppearance="@style/TextAppearance.Runway.Body" />
+
+            <LinearLayout
+                style="@style/Widget.Runway.Section"
+                android:layout_marginTop="24dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:labelFor="@id/server_origin"
+                    android:text="@string/server_address"
+                    android:textAppearance="@style/TextAppearance.Runway.Label" />
+
+                <EditText
+                    android:id="@+id/server_origin"
+                    style="@style/Widget.Runway.Input"
+                    android:layout_marginTop="4dp"
+                    android:autofillHints="url"
+                    android:hint="@string/server_address_hint"
+                    android:imeOptions="actionGo"
+                    android:inputType="textUri"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/server_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:accessibilityLiveRegion="polite"
+                    android:text="@string/server_intro"
+                    android:textAppearance="@style/TextAppearance.Runway.Supporting" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/connect_server"
+                style="@style/Widget.Runway.Button.Primary"
+                android:layout_marginTop="16dp"
+                android:text="@string/connect_server" />
+
+            <Button
+                android:id="@+id/cancel_server_change"
+                style="@style/Widget.Runway.Button.Text"
+                android:layout_marginTop="8dp"
+                android:text="@string/cancel" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
