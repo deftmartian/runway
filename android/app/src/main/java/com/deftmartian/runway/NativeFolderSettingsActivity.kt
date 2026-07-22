@@ -20,6 +20,12 @@ import androidx.work.WorkManager
 import java.util.concurrent.Executors
 
 class NativeFolderSettingsActivity : ComponentActivity() {
+    private enum class AutomationMutation {
+        Changed,
+        SetupRequired,
+        ServerChanged,
+    }
+
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var treeAccessStore: TreeAccessStore
     private lateinit var credentialStore: AndroidCredentialStore
@@ -100,7 +106,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
         treeAccessStore = TreeAccessStore(this)
         credentialStore = AndroidCredentialStore(this, serverOrigin)
-        if (credentialStore.load() == null) ReconciliationScheduler.cancelAll(this)
+        val setupStillCurrent = ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+            if (credentialStore.load() == null) ReconciliationScheduler.cancelAll(this)
+            true
+        } == true
+        if (!setupStillCurrent) {
+            finish()
+            return
+        }
         setContentView(R.layout.activity_native_folder_settings)
         EdgeToEdgeLayout.applySystemBarPadding(findViewById(R.id.folder_settings_scroll))
         bindViews()
@@ -210,20 +223,20 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
         backgroundButton.setOnClickListener {
             if (!requireCurrentServer()) return@setOnClickListener
-            if (!isReady()) {
-                backgroundStatus.setText(R.string.background_setup_required)
-                return@setOnClickListener
+            val enable = !backgroundEnabled
+            when (setPeriodicAutomationEnabled(enable)) {
+                AutomationMutation.Changed -> {
+                    backgroundEnabled = enable
+                    backgroundStatus.setText(
+                        if (enable) R.string.background_enabled else R.string.background_disabled,
+                    )
+                    refreshAutomationState(keepStatus = true)
+                }
+                AutomationMutation.SetupRequired -> {
+                    refreshScreen()
+                }
+                AutomationMutation.ServerChanged -> finish()
             }
-            if (backgroundEnabled) {
-                ReconciliationScheduler.disablePeriodic(this)
-                backgroundEnabled = false
-                backgroundStatus.setText(R.string.background_disabled)
-            } else {
-                ReconciliationScheduler.enablePeriodic(this)
-                backgroundEnabled = true
-                backgroundStatus.setText(R.string.background_enabled)
-            }
-            refreshAutomationState(keepStatus = true)
         }
         findViewById<Button>(R.id.return_to_runway).setOnClickListener {
             if (!requireCurrentServer()) return@setOnClickListener
@@ -238,9 +251,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             credentialStore.load() == null -> pairAccount()
             treeAccessStore.currentState(serverConnection) !is TreeAccessState.Connected -> openDirectoryPicker()
             else -> {
-                ReconciliationScheduler.runOnce(this)
-                folderStatus.setText(R.string.check_queued)
-                lastCheckStatus.setText(R.string.last_check_queued)
+                when (queueReconciliationIfReady()) {
+                    AutomationMutation.Changed -> {
+                        folderStatus.setText(R.string.check_queued)
+                        lastCheckStatus.setText(R.string.last_check_queued)
+                    }
+                    AutomationMutation.SetupRequired -> refreshScreen()
+                    AutomationMutation.ServerChanged -> finish()
+                }
             }
         }
     }
@@ -512,6 +530,34 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             ReconciliationScheduler.enablePeriodic(this)
             true
         } == true
+
+    private fun setPeriodicAutomationEnabled(enable: Boolean): AutomationMutation =
+        ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+            if (
+                credentialStore.load() == null ||
+                treeAccessStore.currentState(serverConnection) !is TreeAccessState.Connected
+            ) {
+                return@mutateIfCurrent AutomationMutation.SetupRequired
+            }
+            if (enable) {
+                ReconciliationScheduler.enablePeriodic(this)
+            } else {
+                ReconciliationScheduler.disablePeriodic(this)
+            }
+            AutomationMutation.Changed
+        } ?: AutomationMutation.ServerChanged
+
+    private fun queueReconciliationIfReady(): AutomationMutation =
+        ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+            if (
+                credentialStore.load() == null ||
+                treeAccessStore.currentState(serverConnection) !is TreeAccessState.Connected
+            ) {
+                return@mutateIfCurrent AutomationMutation.SetupRequired
+            }
+            ReconciliationScheduler.runOnce(this)
+            AutomationMutation.Changed
+        } ?: AutomationMutation.ServerChanged
 
     private fun isCurrentServer(): Boolean =
         ServerConnectionStore(this).isCurrent(serverConnection)
