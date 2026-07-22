@@ -25,7 +25,7 @@ services:
   migrate:
     image: ${RUNWAY_IMAGE:?Set RUNWAY_IMAGE to a tested runway image tag or digest}
     environment:
-      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL to the production PostgreSQL URL}
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:?Set MIGRATION_DATABASE_URL to the schema-owner PostgreSQL URL}
 
   db:
     environment:

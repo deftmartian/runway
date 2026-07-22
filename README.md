@@ -98,27 +98,36 @@ Start from the documented environment template:
 ```sh
 cp .env.example .env
 openssl rand -hex 24
+openssl rand -hex 24
 corepack pnpm secret:generate
 ```
 
-Put the first generated value in `POSTGRES_PASSWORD` and in the password segment of
-`APP_DATABASE_URL`. Put the generated `runway-secret-v1_…` value in `BETTER_AUTH_SECRET`. The published image is a production
+Put the first OpenSSL value in `POSTGRES_PASSWORD` and `MIGRATION_DATABASE_URL`; use the second for
+the restricted `runway_runtime` account in `APP_DATABASE_URL`. Put the generated
+`runway-secret-v1_…` value in `BETTER_AUTH_SECRET`. The published image is a production
 artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
 RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.2.0"
 POSTGRES_PASSWORD="<first generated value>"
-APP_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
-BETTER_AUTH_SECRET="<second generated value>"
+MIGRATION_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
+APP_DATABASE_URL="postgres://runway_runtime:<second generated value>@db:5432/runway"
+BETTER_AUTH_SECRET="<generated runway-secret-v1 value>"
 ORIGIN="https://runway.example.com"
 PUBLIC_APP_ORIGIN="https://runway.example.com"
 ALLOW_LOCAL_SIGNUPS="true"
 ```
 
-Then pull and start the same tested image for migrations, the web app, and the import worker:
+Pull the same tested image used for migrations, web, and worker:
 
 ```sh
 docker compose -f compose.yaml -f deploy/compose.production.yaml pull
+```
+
+Bootstrap the restricted runtime role once using the exact procedure in
+[Database roles](docs/DEPLOYMENT.md#database-roles), then start the app and worker:
+
+```sh
 docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
 docker compose -f compose.yaml -f deploy/compose.production.yaml ps
 ```

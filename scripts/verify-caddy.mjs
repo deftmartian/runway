@@ -69,14 +69,17 @@ const hsts = handlers.find(
 if (!hsts) throw new Error('Caddy contract must set the exact one-year HSTS baseline.');
 
 const loggers = Object.values(adapted.logging?.logs ?? {});
-const resetTokenFilter = loggers
-	.flatMap((logger) => logger.encoder?.fields?.['request>uri']?.actions ?? [])
-	.find(
+const queryFilterActions = loggers.flatMap(
+	(logger) => logger.encoder?.fields?.['request>uri']?.actions ?? []
+);
+for (const parameter of ['token', 'code', 'state', 'error_description']) {
+	const redacted = queryFilterActions.some(
 		(action) =>
-			action.parameter === 'token' && action.type === 'replace' && action.value === 'REDACTED'
+			action.parameter === parameter && action.type === 'replace' && action.value === 'REDACTED'
 	);
-if (!resetTokenFilter) {
-	throw new Error('Caddy access logging must redact the password-reset token query value.');
+	if (!redacted) {
+		throw new Error(`Caddy access logging must redact the ${parameter} query value.`);
+	}
 }
 
 const activeCaddyfile = readFileSync(config, 'utf8')

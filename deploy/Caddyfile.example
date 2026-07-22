@@ -18,12 +18,15 @@
 {$RUNWAY_HOST} {
 	# Authentik is runway's OIDC provider. Do not add a second forward-auth gate
 	# here; it would create a conflicting session and callback boundary.
-	# When access logging is enabled, redact the one reset-link bearer query
-	# before it reaches any log output.
+	# When access logging is enabled, redact reset-link and OIDC callback values
+	# before they reach any log output.
 	log {
 		format filter {
 			request>uri query {
 				replace token REDACTED
+				replace code REDACTED
+				replace state REDACTED
+				replace error_description REDACTED
 			}
 		}
 	}

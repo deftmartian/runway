@@ -81,6 +81,7 @@ jobs:
       RUNWAY_IMAGE: runway-candidate-local:${{ github.sha }}
       RUNWAY_CANDIDATE_IMAGE: ghcr.io/${{ github.repository }}:candidate-${{ github.sha }}
       APP_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
+      MIGRATION_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
       POSTGRES_PASSWORD: runway_ci_database_password
       ORIGIN: https://runway.example.test
       PUBLIC_APP_ORIGIN: https://runway.example.test

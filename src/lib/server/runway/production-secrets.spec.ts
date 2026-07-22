@@ -6,6 +6,8 @@ const generatedSecret = () => `runway-secret-v1_${randomBytes(32).toString('base
 const primarySecret = generatedSecret();
 const rotatedSecret = generatedSecret();
 const legacySecret = randomBytes(32).toString('hex');
+const legacyBase64Secret = randomBytes(32).toString('base64');
+const legacyBase64UrlSecret = randomBytes(32).toString('base64url');
 const dedicatedSecrets = Array.from({ length: 4 }, generatedSecret);
 
 describe('production secret configuration', () => {
@@ -33,6 +35,23 @@ describe('production secret configuration', () => {
 				ANDROID_CREDENTIAL_SECRET: legacySecret
 			});
 		}).not.toThrow();
+	});
+
+	test('accepts exact legacy 32-byte base64 encodings during rotation', () => {
+		for (const legacyEncoding of [
+			legacyBase64Secret,
+			legacyBase64Secret.slice(0, -1),
+			legacyBase64UrlSecret,
+			`${legacyBase64UrlSecret}=`
+		]) {
+			expect(() => {
+				validateProductionSecretConfiguration({
+					BETTER_AUTH_SECRET: legacyEncoding,
+					BETTER_AUTH_SECRETS: `2:${rotatedSecret},1:${legacyEncoding}`,
+					AUTH_RATE_LIMIT_SECRET: legacyEncoding
+				});
+			}).not.toThrow();
+		}
 	});
 
 	test('requires the generated 32-byte runway secret encoding', () => {

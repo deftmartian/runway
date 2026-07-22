@@ -15,9 +15,9 @@ export type SecretEnvironment = Readonly<Record<string, string | undefined>>;
 /**
  * Reject weak production key material that would only produce a warning in Better Auth.
  *
- * Releases through v0.1.0 documented `openssl rand -hex 32`, so the exact 64-character
- * hexadecimal representation remains valid during a staged rotation. New secrets use the
- * versioned runway encoding so operators can distinguish newly generated key material.
+ * Releases through v0.1.0 accepted conventional 32-byte hex, base64, and base64url values, so
+ * those exact encodings remain valid during a staged rotation. New secrets use the versioned
+ * runway encoding so operators can distinguish newly generated key material.
  * Error messages deliberately identify the setting, never its value.
  */
 export function validateProductionSecretConfiguration(environment: SecretEnvironment): void {
@@ -68,13 +68,26 @@ function assertStrongSecret(name: string, value: string | undefined, required: b
 	}
 	if (!isCanonicalGeneratedSecret(value) && !isLegacyGeneratedSecret(value)) {
 		throw new Error(
-			`${name} must be generated with \`pnpm secret:generate\` or be a legacy 64-character hexadecimal secret generated with \`openssl rand -hex 32\`.`
+			`${name} must be generated with \`pnpm secret:generate\` or be a legacy 32-byte hex, base64, or base64url secret.`
 		);
 	}
 }
 
 function isLegacyGeneratedSecret(value: string): boolean {
-	return value.length === legacyHexSecretCharacters && /^[0-9a-f]+$/i.test(value);
+	if (value.length === legacyHexSecretCharacters && /^[0-9a-f]+$/i.test(value)) return true;
+	const unpadded = value.endsWith('=') ? value.slice(0, -1) : value;
+	if (unpadded.length !== encodedSecretCharacters) return false;
+	if (/^[A-Za-z0-9_-]+$/.test(unpadded)) {
+		const decoded = Buffer.from(unpadded, 'base64url');
+		if (decoded.length === encodedSecretBytes && decoded.toString('base64url') === unpadded) {
+			return true;
+		}
+	}
+	if (/^[A-Za-z0-9+/]+$/.test(unpadded)) {
+		const decoded = Buffer.from(`${unpadded}=`, 'base64');
+		return decoded.length === encodedSecretBytes && decoded.toString('base64') === `${unpadded}=`;
+	}
+	return false;
 }
 
 function isCanonicalGeneratedSecret(value: string): boolean {

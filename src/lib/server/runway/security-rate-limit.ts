@@ -178,16 +178,8 @@ export async function consumeSecurityRateLimit(
 ): Promise<SecurityRateLimitResult> {
 	if (buckets.length === 0) return { allowed: true, retryAfterSeconds: 0 };
 	const now = new Date();
-	const results = await db.transaction(async (tx) => {
-		await tx
-			.delete(passwordResetRateLimit)
-			.where(sql`${passwordResetRateLimit.resetAt} <= now() - interval '1 day'`);
-
-		const rows: { count: number; max: number; resetAt: Date }[] = [];
-		const orderedBuckets = [...buckets].sort(
-			(left, right) =>
-				left.name.localeCompare(right.name) || left.subject.localeCompare(right.subject)
-		);
+	return db.transaction(async (tx) => {
+		const orderedBuckets = prioritizeAddressBuckets(buckets);
 		for (const bucket of orderedBuckets) {
 			const keyHash = hashRateLimitKey(bucket.name, bucket.subject || 'unavailable');
 			const resetAt = new Date(now.getTime() + bucket.windowMs);
@@ -206,18 +198,29 @@ export async function consumeSecurityRateLimit(
 					count: passwordResetRateLimit.count,
 					resetAt: passwordResetRateLimit.resetAt
 				});
-			if (updated) rows.push({ ...updated, max: bucket.max });
+			if (updated && updated.count > bucket.max) {
+				return {
+					allowed: false,
+					retryAfterSeconds: Math.max(
+						1,
+						Math.ceil((updated.resetAt.getTime() - Date.now()) / 1_000)
+					)
+				};
+			}
 		}
-		return rows;
+		return { allowed: true, retryAfterSeconds: 0 };
 	});
+}
 
-	const blockedRows = results.filter((row) => row.count > row.max);
-	if (blockedRows.length === 0) return { allowed: true, retryAfterSeconds: 0 };
-	const retryAfterSeconds = Math.max(
-		1,
-		...blockedRows.map((row) => Math.ceil((row.resetAt.getTime() - Date.now()) / 1_000))
-	);
-	return { allowed: false, retryAfterSeconds };
+export function prioritizeAddressBuckets(buckets: RateLimitBucket[]): RateLimitBucket[] {
+	return buckets
+		.map((bucket, index) => ({ bucket, index }))
+		.sort((left, right) => {
+			const addressOrder =
+				Number(!left.bucket.name.endsWith(':ip')) - Number(!right.bucket.name.endsWith(':ip'));
+			return addressOrder || left.index - right.index;
+		})
+		.map(({ bucket }) => bucket);
 }
 
 export function twoFactorChallengeFromHeaders(headers: Headers): string {

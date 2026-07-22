@@ -13,7 +13,8 @@ Compose can run a web container plus a worker container for scheduled Nextcloud 
 Set these before running the production app:
 
 - `NODE_ENV=production`
-- `APP_DATABASE_URL` (the production overlay maps this to the containers' `DATABASE_URL`)
+- `APP_DATABASE_URL` for the restricted runtime role used by web and worker
+- `MIGRATION_DATABASE_URL` for the schema owner, exposed only to the one-shot migrator
 - `BETTER_AUTH_SECRET`
 - optional `BETTER_AUTH_SECRETS` during a staged key rotation
 - `ORIGIN=https://<runway-host>`
@@ -41,7 +42,7 @@ the address ending in `.10`.
 The base `compose.yaml` keeps a known loopback-only PostgreSQL password fallback for local development.
 It is not the production entrypoint. Production commands must include
 `-f compose.yaml -f deploy/compose.production.yaml`; that overlay refuses to render unless
-`APP_DATABASE_URL`, `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, both public origins,
+`APP_DATABASE_URL`, `MIGRATION_DATABASE_URL`, `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, both public origins,
 and `RUNWAY_IMAGE` are explicit. Add `-f deploy/compose.ipvlan.yaml` only for the optional VLAN
 deployment.
 
@@ -56,6 +57,47 @@ Local account signups should stay closed unless the operator is intentionally on
 - `ALLOW_LOCAL_SIGNUPS=false`
 - `LOCAL_AUTH_ENABLED=true` if local fallback is allowed
 - `ALLOW_OIDC_SIGNUPS=false` except during an intentional OIDC enrollment window
+
+### Database Roles
+
+Do not give the public web process schema-owner credentials. For the bundled PostgreSQL service,
+keep the existing `runway` account as the migration owner and create a separate `runway_runtime`
+login. On a new install, start the database, run the migrator once with the owner URL, then create
+and grant the runtime role before starting web or worker:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait db
+docker compose -f compose.yaml -f deploy/compose.production.yaml run --rm migrate
+docker compose -f compose.yaml -f deploy/compose.production.yaml exec db \
+  psql --username runway --dbname runway
+```
+
+At the `psql` prompt, use the actual runtime role name from `APP_DATABASE_URL`. `\password` prompts
+without putting the password in SQL text:
+
+```sql
+CREATE ROLE runway_runtime LOGIN;
+\password runway_runtime
+REVOKE CONNECT, TEMP ON DATABASE runway FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT CONNECT ON DATABASE runway TO runway_runtime;
+GRANT USAGE ON SCHEMA public, drizzle TO runway_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO runway_runtime;
+GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO runway_runtime;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO runway_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO runway_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO runway_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA drizzle
+  GRANT SELECT ON TABLES TO runway_runtime;
+```
+
+For an existing installation, the current owner URL becomes `MIGRATION_DATABASE_URL`; create and
+grant the runtime role against the already migrated schema, then replace `APP_DATABASE_URL` with its
+connection. Managed PostgreSQL uses the same privilege split with provider-specific role creation.
+Test `/health/ready`, sign-in, imports, edits, export, and account deletion after cutting over. Do not
+grant `CREATE`, `ALTER`, `DROP`, role membership, or schema ownership to the runtime login.
 
 ### Database Runtime Limits
 
@@ -111,9 +153,9 @@ mechanism.
 New secrets must use the versioned format emitted by `corepack pnpm secret:generate`:
 `runway-secret-v1_` followed by the canonical base64url encoding of exactly 32 bytes from Node's
 operating-system CSPRNG. Do not handcraft a value that merely matches the shape. Releases through
-v0.1.0 documented `openssl rand -hex 32`; that exact 64-character hexadecimal representation remains
-accepted so an existing installation can start and rotate without losing access to encrypted data.
-Short values, arbitrary passphrases, and malformed encodings still fail closed. This compatibility
+v0.1.0 documented `openssl rand -hex 32`, and early installs could use exact 32-byte base64 or
+base64url encodings. Those narrow legacy formats remain accepted so an existing installation can
+start and rotate without losing access to encrypted data. Short values, arbitrary passphrases, and malformed encodings still fail closed. This compatibility
 policy also applies to `BETTER_AUTH_SECRETS` and any explicitly configured `IMPORT_SECRET_KEY`,
 `AUTH_RATE_LIMIT_SECRET`, `PASSWORD_RESET_RATE_LIMIT_SECRET`, or `ANDROID_CREDENTIAL_SECRET`.
 Configuration errors identify the setting but never print the rejected value.
@@ -523,8 +565,9 @@ docker compose -f compose.yaml -f deploy/compose.production.yaml -f deploy/compo
 ```
 
 The published image bundles the Drizzle SQL journal and a production-only migration runner. Compose
-uses that same image for `migrate`, maps `APP_DATABASE_URL` to its `DATABASE_URL`, and requires the
-migration to complete before app and worker start. It does not ship `drizzle-kit` or the development
+uses that same image for `migrate`, maps only `MIGRATION_DATABASE_URL` to its `DATABASE_URL`, and
+requires the migration to complete before app and worker start. Web and worker receive only
+`APP_DATABASE_URL`. The image does not ship `drizzle-kit` or the development
 dependency tree. Do not run the host `db:migrate` command unless `DATABASE_URL` has been explicitly
 and safely set to the intended production database.
 

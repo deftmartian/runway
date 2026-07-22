@@ -44,6 +44,9 @@ if (existsSync(caddyfilePath)) {
 		'trusted_proxies_strict',
 		'header_up X-Forwarded-For {client_ip}',
 		'replace token REDACTED',
+		'replace code REDACTED',
+		'replace state REDACTED',
+		'replace error_description REDACTED',
 		'Strict-Transport-Security "max-age=31536000"'
 	]) {
 		if (!caddyfile.includes(required)) {

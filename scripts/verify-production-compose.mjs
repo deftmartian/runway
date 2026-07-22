@@ -12,7 +12,10 @@ const standardEnv = {
 	...process.env,
 	APP_DATABASE_URL:
 		process.env['APP_DATABASE_URL'] ??
-		'postgres://runway:compose_verification_password@db:5432/runway',
+		'postgres://runway_runtime:compose_verification_runtime_password@db:5432/runway',
+	MIGRATION_DATABASE_URL:
+		process.env['MIGRATION_DATABASE_URL'] ??
+		'postgres://runway_owner:compose_verification_owner_password@db:5432/runway',
 	POSTGRES_PASSWORD: process.env['POSTGRES_PASSWORD'] ?? 'compose_verification_password',
 	BETTER_AUTH_SECRET: process.env['BETTER_AUTH_SECRET'] ?? verificationAuthSecret,
 	ORIGIN: process.env['ORIGIN'] ?? 'https://runway.example.test',
@@ -108,6 +111,15 @@ for (const service of ['app', 'worker', 'migrate']) {
 }
 if (standard.services.migrate.command?.join(' ') !== 'node scripts/run-migrations.mjs') {
 	throw new Error('The migration service must use the migrator bundled in the runtime image.');
+}
+if (
+	standard.services.app.environment.DATABASE_URL !== standardEnv.APP_DATABASE_URL ||
+	standard.services.worker.environment.DATABASE_URL !== standardEnv.APP_DATABASE_URL ||
+	standard.services.migrate.environment.DATABASE_URL !== standardEnv.MIGRATION_DATABASE_URL ||
+	standard.services.migrate.environment.DATABASE_URL ===
+		standard.services.app.environment.DATABASE_URL
+) {
+	throw new Error('Production Compose must isolate the schema-owner URL from runtime services.');
 }
 const standardPort = standard.services.app.ports?.[0];
 if (
