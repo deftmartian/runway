@@ -16,18 +16,32 @@ permissions:
   contents: read
 
 jobs:
-  quality:
+  checks:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - task: web
+            name: web quality
+          - task: deployment
+            name: deployment contracts
+          - task: android
+            name: Android
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Validate Gradle wrapper
+        if: matrix.task == 'android'
         uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           package-manager-cache: false
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: matrix.task == 'android'
         with:
           distribution: temurin
           java-version: 17
@@ -37,26 +51,41 @@ jobs:
             android/gradle/wrapper/gradle-wrapper.properties
             android/app/*.gradle.kts
       - name: Set up Android SDK
+        if: matrix.task == 'android'
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: platform-tools platforms;android-36 build-tools;36.0.0
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@10.32.0 --activate
       - name: Install dependencies
+        if: matrix.task == 'web'
         run: corepack pnpm install --frozen-lockfile
+
       - name: Production dependency advisory gate
+        if: matrix.task == 'web'
         run: corepack pnpm verify:dependencies
       - name: Documentation and publication metadata
+        if: matrix.task == 'web'
         run: corepack pnpm verify:docs
       - name: Static, unit, and production build checks
+        if: matrix.task == 'web'
         run: corepack pnpm verify
       - name: PWA generated assets currentness
+        if: matrix.task == 'web'
         run: corepack pnpm verify:pwa:assets
+
       - name: Compose configuration
+        if: matrix.task == 'deployment'
         run: corepack pnpm verify:compose && corepack pnpm verify:compose:production
+      - name: Caddy edge contract
+        if: matrix.task == 'deployment'
+        run: corepack pnpm verify:caddy
+
       - name: Android TWA static contract
+        if: matrix.task == 'android'
         run: corepack pnpm verify:android
       - name: Android lint
+        if: matrix.task == 'android'
         id: android-lint
         continue-on-error: true
         run: |
@@ -64,37 +93,45 @@ jobs:
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict \
             -PrunwayOrigin=https://runway.example.test lint 2>&1 | tee "$RUNNER_TEMP/android-lint.log"
       - name: Publish Android lint diagnostics
-        if: steps.android-lint.outcome == 'failure'
+        if: matrix.task == 'android' && steps.android-lint.outcome == 'failure'
         run: |
+          diagnostics="$RUNNER_TEMP/android-lint-diagnostics.txt"
           {
-            echo '## Android lint failed'
-            echo
-            echo '### Lint report'
-            echo '```text'
             if [ -f android/app/build/reports/lint-results-debug.txt ]; then
-              tail -n 160 android/app/build/reports/lint-results-debug.txt
+              tail -n 120 android/app/build/reports/lint-results-debug.txt
             else
               echo 'No Android lint text report was generated.'
             fi
-            echo '```'
             echo
-            echo '### Gradle output tail'
+            echo 'Gradle output tail:'
+            tail -n 80 "$RUNNER_TEMP/android-lint.log"
+          } > "$diagnostics"
+          {
+            echo '## Android lint failed'
+            echo
             echo '```text'
-            tail -n 120 "$RUNNER_TEMP/android-lint.log"
+            cat "$diagnostics"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          message="$(cat "$diagnostics")"
+          message="${message//'%'/'%25'}"
+          message="${message//$'\r'/'%0D'}"
+          message="${message//$'\n'/'%0A'}"
+          printf '::error title=Android lint failed::%s\n' "$message"
           exit 1
       - name: Android unit tests
+        if: matrix.task == 'android'
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
           -PrunwayOrigin=https://runway.example.test test
       - name: Android debug build
+        if: matrix.task == 'android'
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
           -PrunwayOrigin=https://runway.example.test assembleDebug
       - name: Android debug artifact contract
+        if: matrix.task == 'android'
         run: node scripts/verify-android-artifact.mjs debug
       - name: Android release identity and signing guard
+        if: matrix.task == 'android'
         run: corepack pnpm verify:android:release
-      - name: Caddy edge contract
-        run: corepack pnpm verify:caddy

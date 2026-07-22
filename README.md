@@ -153,6 +153,11 @@ For the complete local release gate:
 corepack pnpm verify:full
 ```
 
+The release gate runs independent web, browser, data/deployment, Android, and container groups in
+parallel, then checks the completed production build. It uses at most three groups at once by
+default; set `RUNWAY_VERIFY_CONCURRENCY=1` or run `corepack pnpm verify:full:serial` when debugging
+resource contention.
+
 Focused commands are available for faster iteration:
 
 ```sh
