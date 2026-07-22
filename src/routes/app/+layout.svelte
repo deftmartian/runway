@@ -56,12 +56,7 @@
 			path: resolve('/app/onboarding'),
 			icon: 'calendar'
 		},
-		{
-			href: '/app/settings',
-			label: 'Settings',
-			path: resolve('/app/settings'),
-			icon: 'settings'
-		}
+		...appNavItems.slice(1)
 	];
 	const usesSetupNavigation = $derived(!data.setupComplete);
 	const navItems = $derived(usesSetupNavigation ? setupNavItems : appNavItems);
@@ -109,7 +104,7 @@
 	{@render children()}
 </div>
 
-<nav class="mobile-nav" class:setup-navigation={usesSetupNavigation} aria-label="App navigation">
+<nav class="mobile-nav" aria-label="App navigation">
 	{#each navItems as item (item.href)}
 		<a
 			href={resolve(item.href)}
@@ -168,10 +163,6 @@
 			border-top: 1px solid var(--line);
 			background: color-mix(in oklab, var(--canvas), transparent 4%);
 			backdrop-filter: blur(16px);
-		}
-
-		.mobile-nav.setup-navigation {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
 		.mobile-nav a {
