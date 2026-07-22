@@ -45,7 +45,8 @@ class ShareReceiverActivity : ComponentActivity() {
         }
         val origin = serverConnection.origin
         val credentialStore = AndroidCredentialStore(this, origin)
-        val credential = credentialStore.load()
+        val credentialState = credentialStore.snapshot()
+        val credential = credentialState.credential
         if (credential == null) {
             ReconciliationScheduler.cancelAll(this)
             ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
@@ -89,11 +90,12 @@ class ShareReceiverActivity : ComponentActivity() {
                 } ?: ByteArray(0)
                 if (bytes.isEmpty()) {
                     R.string.share_rejected
-                } else if (!serverStore.isCurrent(serverConnection)) {
-                    R.string.share_server_changed
                 } else {
-                    val imported = RunwayApiClient(origin).importGpx(credential, bytes)
-                    if (!serverStore.isCurrent(serverConnection)) {
+                    val imported = credentialStore.useIfCurrent(credentialState) { current ->
+                        if (!serverStore.isCurrent(serverConnection)) return@useIfCurrent null
+                        RunwayApiClient(origin).importGpx(current, bytes)
+                    }
+                    if (imported == null || !serverStore.isCurrent(serverConnection)) {
                         R.string.share_server_changed
                     } else when (imported) {
                         is ImportApiResult.Handled -> when (imported.result) {
@@ -102,13 +104,19 @@ class ShareReceiverActivity : ComponentActivity() {
                             else -> R.string.share_quarantined
                         }
                         ImportApiResult.Unauthorized -> {
-                            HandledImportStore(this).clearForDevice(credential.deviceId)
-                            credentialStore.clear()
-                            ReconciliationScheduler.cancelAll(this)
-                            ReconciliationStatusStore(this).record(
-                                ReconciliationWorker.STATE_PAIRING_REQUIRED,
-                            )
-                            R.string.share_pairing_required
+                            val cleared = serverStore.mutateIfCurrent(serverConnection) {
+                                credentialStore.clearIfCurrent(credentialState)
+                            } == true
+                            if (cleared) {
+                                HandledImportStore(this).clearForDevice(credential.deviceId)
+                                ReconciliationScheduler.cancelAll(this)
+                                ReconciliationStatusStore(this).record(
+                                    ReconciliationWorker.STATE_PAIRING_REQUIRED,
+                                )
+                                R.string.share_pairing_required
+                            } else {
+                                R.string.share_server_changed
+                            }
                         }
                         ImportApiResult.RequestConflict -> R.string.share_retryable
                         ImportApiResult.Retryable -> R.string.share_retryable

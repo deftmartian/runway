@@ -1,6 +1,13 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
+data class RunwaySigningIdentity(
+    val storeFile: String,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String,
+)
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -34,12 +41,39 @@ val releaseSigningProperties = if (releaseSigningPropertiesFile.isFile) {
 } else {
     null
 }
-
-fun requiredSigningProperty(name: String): String = releaseSigningProperties
-    ?.getProperty(name)
-    ?.trim()
-    ?.takeIf(String::isNotEmpty)
-    ?: throw GradleException("android/signing.properties is missing $name")
+val environmentSigningValues = mapOf(
+    "storeFile" to providers.environmentVariable("RUNWAY_ANDROID_KEYSTORE_FILE").orNull,
+    "storePassword" to providers.environmentVariable("RUNWAY_ANDROID_KEYSTORE_PASSWORD").orNull,
+    "keyAlias" to providers.environmentVariable("RUNWAY_ANDROID_KEY_ALIAS").orNull,
+    "keyPassword" to providers.environmentVariable("RUNWAY_ANDROID_KEY_PASSWORD").orNull,
+).mapValues { (_, value) -> value?.trim()?.takeIf(String::isNotEmpty) }
+if (environmentSigningValues.values.any { it != null } && environmentSigningValues.values.any { it == null }) {
+    throw GradleException("Android release signing environment is incomplete")
+}
+val releaseSigningIdentity = when {
+    environmentSigningValues.values.all { it != null } -> RunwaySigningIdentity(
+        storeFile = requireNotNull(environmentSigningValues["storeFile"]),
+        storePassword = requireNotNull(environmentSigningValues["storePassword"]),
+        keyAlias = requireNotNull(environmentSigningValues["keyAlias"]),
+        keyPassword = requireNotNull(environmentSigningValues["keyPassword"]),
+    )
+    releaseSigningProperties != null -> RunwaySigningIdentity(
+        storeFile = releaseSigningProperties.getProperty("storeFile")?.trim().orEmpty(),
+        storePassword = releaseSigningProperties.getProperty("storePassword")?.trim().orEmpty(),
+        keyAlias = releaseSigningProperties.getProperty("keyAlias")?.trim().orEmpty(),
+        keyPassword = releaseSigningProperties.getProperty("keyPassword")?.trim().orEmpty(),
+    ).also { identity ->
+        if (
+            identity.storeFile.isEmpty() ||
+            identity.storePassword.isEmpty() ||
+            identity.keyAlias.isEmpty() ||
+            identity.keyPassword.isEmpty()
+        ) {
+            throw GradleException("android/signing.properties is incomplete")
+        }
+    }
+    else -> null
+}
 
 android {
     namespace = "com.deftmartian.runway"
@@ -56,12 +90,12 @@ android {
     }
 
     signingConfigs {
-        if (releaseSigningProperties != null) {
+        if (releaseSigningIdentity != null) {
             create("runwayRelease") {
-                storeFile = rootProject.file(requiredSigningProperty("storeFile"))
-                storePassword = requiredSigningProperty("storePassword")
-                keyAlias = requiredSigningProperty("keyAlias")
-                keyPassword = requiredSigningProperty("keyPassword")
+                storeFile = rootProject.file(releaseSigningIdentity.storeFile)
+                storePassword = releaseSigningIdentity.storePassword
+                keyAlias = releaseSigningIdentity.keyAlias
+                keyPassword = releaseSigningIdentity.keyPassword
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
@@ -121,13 +155,13 @@ val verifyReleaseSigning by tasks.registering {
     group = "verification"
     description = "Fails unless an external, complete Android release signing identity is present."
     doLast {
-        if (releaseSigningProperties == null) {
+        if (releaseSigningIdentity == null) {
             throw GradleException(
                 "Release builds require untracked android/signing.properties; copy " +
                     "android/signing.properties.example and provide operator-owned credentials",
             )
         }
-        val configuredStore = rootProject.file(requiredSigningProperty("storeFile"))
+        val configuredStore = rootProject.file(releaseSigningIdentity.storeFile)
         if (!configuredStore.isFile) {
             throw GradleException("The release keystore configured by signing.properties was not found")
         }
@@ -140,7 +174,7 @@ val verifyReleasePackaging by tasks.registering {
     dependsOn(verifyServerSelectionRelease)
     if (fdroidSourceBuild) {
         doLast {
-            if (releaseSigningProperties != null) {
+            if (releaseSigningIdentity != null) {
                 throw GradleException(
                     "F-Droid source builds must be unsigned; remove android/signing.properties",
                 )

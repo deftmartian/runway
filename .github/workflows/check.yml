@@ -86,7 +86,7 @@ jobs:
 
       - name: Android selectable-server static contract
         if: matrix.task == 'android'
-        run: corepack pnpm verify:android
+        run: corepack pnpm verify:android && corepack pnpm verify:android:version
       - name: Android lint
         if: matrix.task == 'android'
         id: android-lint

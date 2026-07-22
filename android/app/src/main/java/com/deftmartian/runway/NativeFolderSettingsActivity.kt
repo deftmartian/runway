@@ -43,27 +43,39 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private var backgroundEnabled = false
     private val workRunningByName = mutableMapOf<String, Boolean>()
+    private var pickerConnection: ServerConnection? = null
 
     private val chooseDirectory = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
-        if (uri == null) return@registerForActivityResult
-        if (!requireCurrentServer()) return@registerForActivityResult
-        val connected = treeAccessStore.connect(uri)
-        if (connected) {
-            if (credentialStore.load() != null) {
-                ReconciliationScheduler.runOnce(this)
-                ReconciliationScheduler.enablePeriodic(this)
-                backgroundEnabled = true
-                folderStatus.setText(R.string.folder_connected_background)
-                lastCheckStatus.setText(R.string.last_check_queued)
-            } else {
-                folderStatus.setText(R.string.folder_connected_pairing_needed)
+        val expected = pickerConnection
+        pickerConnection = null
+        if (uri == null || expected == null) return@registerForActivityResult
+        executor.execute {
+            val result = treeAccessStore.connect(uri, expected)
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                when (result) {
+                    TreeAccessMutation.Changed -> {
+                        if (credentialStore.load() != null) {
+                            ReconciliationScheduler.runOnce(this)
+                            ReconciliationScheduler.enablePeriodic(this)
+                            backgroundEnabled = true
+                            folderStatus.setText(R.string.folder_connected_background)
+                            lastCheckStatus.setText(R.string.last_check_queued)
+                        } else {
+                            folderStatus.setText(R.string.folder_connected_pairing_needed)
+                        }
+                    }
+                    TreeAccessMutation.Conflict -> {
+                        finish()
+                        return@runOnUiThread
+                    }
+                    TreeAccessMutation.Failed -> folderStatus.setText(R.string.folder_connection_failed)
+                }
+                refreshScreen(keepFolderStatus = true)
             }
-        } else {
-            folderStatus.setText(R.string.folder_connection_failed)
         }
-        refreshScreen(keepFolderStatus = true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,6 +88,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
         serverConnection = configuredConnection
         serverOrigin = configuredConnection.origin
+        pickerConnection = savedInstanceState?.let(::restorePickerConnection)
         enableEdgeToEdge()
         if (
             Build.VERSION.SDK_INT >= 25 &&
@@ -104,6 +117,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         // when this Activity is recreated for rotation; UI delivery is still lifecycle-gated below.
         executor.shutdown()
         super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pickerConnection?.let { connection ->
+            outState.putString(PICKER_ORIGIN_KEY, connection.origin)
+            outState.putLong(PICKER_GENERATION_KEY, connection.generation)
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -159,28 +180,33 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             true
         }
         forgetButton.setOnClickListener {
-            if (!requireCurrentServer()) return@setOnClickListener
-            credentialStore.load()?.let { credential ->
-                HandledImportStore(this).clearForDevice(credential.deviceId)
-            }
-            credentialStore.clear()
-            ReconciliationScheduler.cancelAll(this)
-            ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
-            backgroundEnabled = false
-            pairingStatus.setText(R.string.pairing_disconnected)
-            refreshScreen(keepPairingStatus = true)
-            refreshLastCheckStatus()
+            beginForgetAccount()
         }
         changeFolderButton.setOnClickListener {
             if (requireCurrentServer()) openDirectoryPicker()
         }
         disconnectButton.setOnClickListener {
             if (!requireCurrentServer()) return@setOnClickListener
-            treeAccessStore.disconnect()
-            backgroundEnabled = false
-            folderStatus.setText(R.string.folder_disconnected)
-            refreshScreen(keepFolderStatus = true)
-            refreshLastCheckStatus()
+            executor.execute {
+                val result = treeAccessStore.disconnect(serverConnection)
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    if (result == TreeAccessMutation.Conflict) {
+                        finish()
+                        return@runOnUiThread
+                    }
+                    backgroundEnabled = false
+                    folderStatus.setText(
+                        if (result == TreeAccessMutation.Changed) {
+                            R.string.folder_disconnected
+                        } else {
+                            R.string.folder_connection_failed
+                        },
+                    )
+                    refreshScreen(keepFolderStatus = true)
+                    refreshLastCheckStatus()
+                }
+            }
         }
         backgroundButton.setOnClickListener {
             if (!requireCurrentServer()) return@setOnClickListener
@@ -210,7 +236,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         if (!requireCurrentServer()) return
         when {
             credentialStore.load() == null -> pairAccount()
-            treeAccessStore.currentState() !is TreeAccessState.Connected -> openDirectoryPicker()
+            treeAccessStore.currentState(serverConnection) !is TreeAccessState.Connected -> openDirectoryPicker()
             else -> {
                 ReconciliationScheduler.runOnce(this)
                 folderStatus.setText(R.string.check_queued)
@@ -221,11 +247,12 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private fun openDirectoryPicker() {
         if (!requireCurrentServer()) return
-        val initialUri = when (val state = treeAccessStore.currentState()) {
+        val initialUri = when (val state = treeAccessStore.currentState(serverConnection)) {
             is TreeAccessState.Connected -> state.uri
             is TreeAccessState.PermissionRequired -> state.uri
             TreeAccessState.Missing -> null
         }
+        pickerConnection = serverConnection
         chooseDirectory.launch(initialUri)
     }
 
@@ -239,17 +266,20 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
         primaryAction.isEnabled = false
         pairingStatus.setText(R.string.pairing_in_progress)
+        val expectedCredentialState = credentialStore.snapshot()
         executor.execute {
             if (!isCurrentServer()) return@execute
             val result = RunwayApiClient(serverOrigin).pair(code, label)
             if (!isCurrentServer()) return@execute
             val completion = completePairing(
                 result = result,
-                saveCredential = ::saveCredentialIfCurrent,
+                saveCredential = { credential ->
+                    saveCredentialIfCurrent(expectedCredentialState, credential)
+                },
             )
             val automationStarted =
                 completion is PairingCompletion.Connected &&
-                    treeAccessStore.currentState() is TreeAccessState.Connected
+                    treeAccessStore.currentState(serverConnection) is TreeAccessState.Connected
             if (automationStarted) {
                 if (!isCurrentServer()) return@execute
                 ReconciliationScheduler.runOnce(this)
@@ -275,17 +305,21 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private fun verifyPairingStatus() {
         if (!isCurrentServer()) return
-        val credential = credentialStore.load() ?: return
+        val credentialState = credentialStore.snapshot()
+        val credential = credentialState.credential ?: return
         executor.execute {
-            val result = RunwayApiClient(serverOrigin).status(credential)
+            val result = credentialStore.useIfCurrent(credentialState) { current ->
+                if (!isCurrentServer()) return@useIfCurrent DeviceStatusApiResult.Retryable
+                RunwayApiClient(serverOrigin).status(current)
+            } ?: return@execute
             if (!isCurrentServer()) return@execute
             runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (result) {
                     DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
                     DeviceStatusApiResult.Unauthorized -> {
+                        if (!credentialStore.clearIfCurrent(credentialState)) return@runOnUiThread
                         HandledImportStore(this).clearForDevice(credential.deviceId)
-                        credentialStore.clear()
                         ReconciliationScheduler.cancelAll(this)
                         ReconciliationStatusStore(this).record(
                             ReconciliationWorker.STATE_PAIRING_REQUIRED,
@@ -386,7 +420,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         keepFolderStatus: Boolean = false,
     ) {
         val accountConnected = credentialStore.load() != null
-        val folderState = treeAccessStore.currentState()
+        val folderState = treeAccessStore.currentState(serverConnection)
 
         pairingForm.visibility = if (accountConnected) View.GONE else View.VISIBLE
         forgetButton.visibility = if (accountConnected) View.VISIBLE else View.GONE
@@ -451,14 +485,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private fun isReady(): Boolean =
         credentialStore.load() != null &&
-            treeAccessStore.currentState() is TreeAccessState.Connected
+            treeAccessStore.currentState(serverConnection) is TreeAccessState.Connected
 
-    private fun saveCredentialIfCurrent(credential: AndroidCredential): Boolean {
-        if (!isCurrentServer() || !credentialStore.save(credential)) return false
-        if (isCurrentServer()) return true
-        credentialStore.clear()
-        return false
-    }
+    private fun saveCredentialIfCurrent(
+        expectedCredentialState: AndroidCredentialState,
+        credential: AndroidCredential,
+    ): Boolean = ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+        credentialStore.replace(expectedCredentialState, credential)
+    } == true
 
     private fun isCurrentServer(): Boolean =
         ServerConnectionStore(this).isCurrent(serverConnection)
@@ -469,9 +503,65 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         return false
     }
 
+    private fun beginForgetAccount(allowUnrevoked: Boolean = false) {
+        if (!requireCurrentServer()) return
+        val credentialState = credentialStore.snapshot()
+        val credential = credentialState.credential ?: return
+        forgetButton.isEnabled = false
+        pairingStatus.setText(R.string.pairing_disconnecting)
+        executor.execute {
+            val disconnected = if (allowUnrevoked) {
+                DeviceDisconnectApiResult.Unauthorized
+            } else {
+                credentialStore.useIfCurrent(credentialState) { current ->
+                    if (!isCurrentServer()) return@useIfCurrent DeviceDisconnectApiResult.Retryable
+                    RunwayApiClient(serverOrigin).disconnect(current)
+                } ?: return@execute
+            }
+            if (disconnected == DeviceDisconnectApiResult.Retryable) {
+                runOnUiThread {
+                    if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                    forgetButton.isEnabled = true
+                    pairingStatus.setText(R.string.pairing_disconnect_unavailable)
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle(R.string.pairing_disconnect_unavailable_title)
+                        .setMessage(R.string.pairing_disconnect_unavailable_consequence)
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.forget_anyway) { _, _ ->
+                            beginForgetAccount(allowUnrevoked = true)
+                        }
+                        .show()
+                }
+                return@execute
+            }
+            val cleared = ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+                credentialStore.clearIfCurrent(credentialState)
+            } == true
+            if (!cleared) return@execute
+            HandledImportStore(this).clearForDevice(credential.deviceId)
+            ReconciliationScheduler.cancelAll(this)
+            ReconciliationStatusStore(this).record(ReconciliationWorker.STATE_PAIRING_REQUIRED)
+            runOnUiThread {
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                backgroundEnabled = false
+                pairingStatus.setText(R.string.pairing_disconnected)
+                refreshScreen(keepPairingStatus = true)
+                refreshLastCheckStatus()
+            }
+        }
+    }
+
+    private fun restorePickerConnection(state: Bundle): ServerConnection? {
+        val origin = state.getString(PICKER_ORIGIN_KEY) ?: return null
+        if (!state.containsKey(PICKER_GENERATION_KEY)) return null
+        return ServerConnection(origin, state.getLong(PICKER_GENERATION_KEY))
+    }
+
     private companion object {
         const val PAIRING_CODE_MAX_LENGTH = 19
         const val DEVICE_LABEL_MAX_LENGTH = 60
         const val PERIODIC_WORK_NAME = "runway-folder-reconciliation"
+        const val PICKER_ORIGIN_KEY = "picker_server_origin"
+        const val PICKER_GENERATION_KEY = "picker_server_generation"
     }
 }

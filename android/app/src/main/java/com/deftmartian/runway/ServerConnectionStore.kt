@@ -23,33 +23,16 @@ class ServerConnectionStore(context: Context) {
 
     fun currentOrigin(): String? = currentConnection()?.origin
 
-    fun currentConnection(): ServerConnection? = synchronized(adoptionLock) {
-        val effectiveOrigin = effectiveOrigin()
-        val hasAdoptedOrigin = preferences.contains(ADOPTED_ORIGIN_KEY)
-        val adoptedOrigin = preferences.getString(ADOPTED_ORIGIN_KEY, null)?.ifEmpty { null }
-        if (!hasAdoptedOrigin || adoptedOrigin != effectiveOrigin) {
-            advanceGeneration()
-            ServerConnectionReset.clearDeviceState(appContext, adoptedOrigin)
-            preferences.edit(commit = true) {
-                putString(ADOPTED_ORIGIN_KEY, effectiveOrigin.orEmpty())
-            }
-        }
-        effectiveOrigin?.let { ServerConnection(it, generation()) }
-    }
-
-    private fun effectiveOrigin(): String? {
-        val saved = preferences.getString(ORIGIN_KEY, null) ?: return null
-        return InstanceOriginPolicy.normalizeOrigin(saved, BuildConfig.DEBUG).also { normalized ->
-            if (normalized == null || normalized != saved) preferences.edit(commit = true) {
-                if (normalized == null) remove(ORIGIN_KEY) else putString(ORIGIN_KEY, normalized)
-            }
-        }
+    fun currentConnection(): ServerConnection? {
+        val fast = AndroidStateCoordinator.read { readConsistentConnection() }
+        if (fast.consistent) return fast.connection
+        return AndroidStateCoordinator.write { reconcileConnection() }
     }
 
     /**
      * Replaces the selected server only when the caller's complete connection snapshot is still
-     * current. The generation changes before any teardown and the new origin is committed only
-     * after old device state has been cleared, so stale Activities and workers fail closed.
+     * current. A small transition journal makes cleanup restartable if Android kills the process
+     * between removing the old origin and committing the new one.
      */
     fun replace(
         expected: ServerConnection?,
@@ -57,27 +40,90 @@ class ServerConnectionStore(context: Context) {
     ): ServerConnectionTransition {
         val normalized = InstanceOriginPolicy.normalizeOrigin(origin, BuildConfig.DEBUG)
             ?: return ServerConnectionTransition.Invalid
-        return synchronized(adoptionLock) {
-            if (currentConnection() != expected) return@synchronized ServerConnectionTransition.Conflict
+        return AndroidStateCoordinator.write {
+            if (reconcileConnection() != expected) {
+                return@write ServerConnectionTransition.Conflict
+            }
             if (expected?.origin == normalized) {
-                return@synchronized ServerConnectionTransition.Changed(expected)
+                return@write ServerConnectionTransition.Changed(expected)
             }
 
-            advanceGeneration()
-            preferences.edit(commit = true) {
-                remove(ORIGIN_KEY)
-                putString(ADOPTED_ORIGIN_KEY, "")
+            beginTransition(expected?.origin, normalized)
+            finishPendingTransition()
+            val connection = reconcileConnection()
+            if (connection?.origin != normalized) {
+                ServerConnectionTransition.Conflict
+            } else {
+                ServerConnectionTransition.Changed(connection)
             }
-            ServerConnectionReset.clearDeviceState(appContext, expected?.origin)
-            preferences.edit(commit = true) {
-                putString(ORIGIN_KEY, normalized)
-                putString(ADOPTED_ORIGIN_KEY, normalized)
-            }
-            ServerConnectionTransition.Changed(ServerConnection(normalized, generation()))
         }
     }
 
     fun isCurrent(connection: ServerConnection): Boolean = currentConnection() == connection
+
+    internal fun <T> mutateIfCurrent(expected: ServerConnection, block: () -> T): T? =
+        AndroidStateCoordinator.write {
+            if (reconcileConnection() != expected) null else block()
+        }
+
+    private fun readConsistentConnection(): ConnectionRead {
+        if (preferences.contains(PENDING_TARGET_ORIGIN_KEY)) return ConnectionRead(false, null)
+        val origin = readNormalizedOrigin()
+        if (origin.needsRewrite) return ConnectionRead(false, null)
+        val hasAdoptedOrigin = preferences.contains(ADOPTED_ORIGIN_KEY)
+        val adoptedOrigin = preferences.getString(ADOPTED_ORIGIN_KEY, null)?.ifEmpty { null }
+        if (!hasAdoptedOrigin || adoptedOrigin != origin.value) return ConnectionRead(false, null)
+        return ConnectionRead(true, origin.value?.let { ServerConnection(it, generation()) })
+    }
+
+    private fun reconcileConnection(): ServerConnection? {
+        finishPendingTransition()
+        val normalized = readNormalizedOrigin()
+        if (normalized.needsRewrite) {
+            preferences.edit(commit = true) {
+                if (normalized.value == null) remove(ORIGIN_KEY) else putString(ORIGIN_KEY, normalized.value)
+            }
+        }
+        val effectiveOrigin = normalized.value
+        val hasAdoptedOrigin = preferences.contains(ADOPTED_ORIGIN_KEY)
+        val adoptedOrigin = preferences.getString(ADOPTED_ORIGIN_KEY, null)?.ifEmpty { null }
+        if (!hasAdoptedOrigin || adoptedOrigin != effectiveOrigin) {
+            beginTransition(adoptedOrigin, effectiveOrigin)
+            finishPendingTransition()
+        }
+        return effectiveOrigin?.let { ServerConnection(it, generation()) }
+    }
+
+    private fun beginTransition(cleanupOrigin: String?, targetOrigin: String?) {
+        advanceGeneration()
+        preferences.edit(commit = true) {
+            putString(PENDING_CLEANUP_ORIGIN_KEY, cleanupOrigin.orEmpty())
+            putString(PENDING_TARGET_ORIGIN_KEY, targetOrigin.orEmpty())
+            remove(ORIGIN_KEY)
+            putString(ADOPTED_ORIGIN_KEY, "")
+        }
+    }
+
+    private fun finishPendingTransition() {
+        if (!preferences.contains(PENDING_TARGET_ORIGIN_KEY)) return
+        val cleanupOrigin = preferences.getString(PENDING_CLEANUP_ORIGIN_KEY, null)?.ifEmpty { null }
+        val targetOrigin = preferences.getString(PENDING_TARGET_ORIGIN_KEY, null)
+            ?.ifEmpty { null }
+            ?.let { InstanceOriginPolicy.normalizeOrigin(it, BuildConfig.DEBUG) }
+        ServerConnectionReset.clearDeviceState(appContext, cleanupOrigin)
+        preferences.edit(commit = true) {
+            if (targetOrigin == null) remove(ORIGIN_KEY) else putString(ORIGIN_KEY, targetOrigin)
+            putString(ADOPTED_ORIGIN_KEY, targetOrigin.orEmpty())
+            remove(PENDING_CLEANUP_ORIGIN_KEY)
+            remove(PENDING_TARGET_ORIGIN_KEY)
+        }
+    }
+
+    private fun readNormalizedOrigin(): NormalizedOrigin {
+        val raw = preferences.getString(ORIGIN_KEY, null)
+        val normalized = raw?.let { InstanceOriginPolicy.normalizeOrigin(it, BuildConfig.DEBUG) }
+        return NormalizedOrigin(normalized, raw != null && raw != normalized)
+    }
 
     private fun generation(): Long = preferences.getLong(GENERATION_KEY, 0)
 
@@ -88,11 +134,22 @@ class ServerConnectionStore(context: Context) {
         }
     }
 
+    private data class ConnectionRead(
+        val consistent: Boolean,
+        val connection: ServerConnection?,
+    )
+
+    private data class NormalizedOrigin(
+        val value: String?,
+        val needsRewrite: Boolean,
+    )
+
     private companion object {
         const val PREFERENCES_NAME = "runway_android_server"
         const val ORIGIN_KEY = "origin"
         const val ADOPTED_ORIGIN_KEY = "adopted_origin"
         const val GENERATION_KEY = "connection_generation"
-        val adoptionLock = Any()
+        const val PENDING_CLEANUP_ORIGIN_KEY = "pending_cleanup_origin"
+        const val PENDING_TARGET_ORIGIN_KEY = "pending_target_origin"
     }
 }

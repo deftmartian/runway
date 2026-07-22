@@ -21,8 +21,10 @@ const requiredFiles = [
 	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionStore.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionReset.kt',
+	'android/app/src/main/java/com/deftmartian/runway/AndroidStateCoordinator.kt',
 	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
 	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt',
+	'android/app/src/main/java/com/deftmartian/runway/TreeAccessStore.kt',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
@@ -32,6 +34,8 @@ const requiredFiles = [
 	'android/gradlew',
 	'android/gradlew.bat',
 	'android/docs/RELEASE.md',
+	'scripts/verify-android-version.mjs',
+	'.github/workflows/container.yml',
 	'src/routes/api/android/instance/+server.ts',
 	'src/routes/app/import/+page.server.ts',
 	'src/routes/app/import/+page.svelte',
@@ -119,6 +123,24 @@ for (const required of [
 ]) {
 	if (!releaseVerification.includes(required)) {
 		errors.push(`Android release verification is missing ${required}`);
+	}
+}
+
+const releaseWorkflow = read('.github/workflows/container.yml');
+for (const required of [
+	'android-release:',
+	'environment: android-release',
+	'RUNWAY_ANDROID_KEYSTORE_BASE64',
+	'corepack pnpm verify:android:version',
+	'assembleRelease',
+	'apksigner',
+	'Number of signers: 1',
+	'name: signed-android-release',
+	'needs: [image, android-release]',
+	'application/vnd.android.package-archive'
+]) {
+	if (!releaseWorkflow.includes(required)) {
+		errors.push(`Android signed-release workflow is missing ${required}`);
 	}
 }
 
@@ -214,9 +236,52 @@ for (const required of [
 const credentialStore = read(
 	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt'
 );
-for (const required of ['expectedOrigin', 'credential.origin == expectedOrigin', 'updateAAD']) {
+for (const required of [
+	'expectedOrigin',
+	'credential.origin == expectedOrigin',
+	'updateAAD',
+	'AndroidCredentialState',
+	'generationKey',
+	'useIfCurrent',
+	'clearIfCurrent'
+]) {
 	if (!credentialStore.includes(required)) {
 		errors.push(`Android credential origin binding is missing ${required}`);
+	}
+}
+
+const stateCoordinator = read(
+	'android/app/src/main/java/com/deftmartian/runway/AndroidStateCoordinator.kt'
+);
+for (const required of ['ReentrantReadWriteLock(true)', 'fun <T> read', 'fun <T> write']) {
+	if (!stateCoordinator.includes(required)) {
+		errors.push(`Android lifecycle serialization is missing ${required}`);
+	}
+}
+
+const connectionStore = read(
+	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionStore.kt'
+);
+for (const required of [
+	'PENDING_CLEANUP_ORIGIN_KEY',
+	'PENDING_TARGET_ORIGIN_KEY',
+	'finishPendingTransition()',
+	'mutateIfCurrent'
+]) {
+	if (!connectionStore.includes(required)) {
+		errors.push(`Android server transition recovery is missing ${required}`);
+	}
+}
+
+const treeStore = read('android/app/src/main/java/com/deftmartian/runway/TreeAccessStore.kt');
+for (const required of [
+	'TREE_OWNER_ORIGIN_KEY',
+	'TREE_OWNER_SERVER_GENERATION_KEY',
+	'expectedConnection',
+	'TreeAccessMutation.Conflict'
+]) {
+	if (!treeStore.includes(required)) {
+		errors.push(`Android folder ownership boundary is missing ${required}`);
 	}
 }
 
@@ -241,7 +306,10 @@ for (const required of [
 	'getWorkInfosForUniqueWork',
 	'enableEdgeToEdge()',
 	'EdgeToEdgeLayout.applySystemBarPadding',
-	'executor.shutdown()'
+	'executor.shutdown()',
+	'pickerConnection',
+	'clearIfCurrent',
+	'RunwayApiClient(serverOrigin).disconnect'
 ]) {
 	if (!folderSettings.includes(required)) {
 		errors.push(

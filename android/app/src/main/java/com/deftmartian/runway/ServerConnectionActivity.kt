@@ -156,10 +156,18 @@ class ServerConnectionActivity : ComponentActivity() {
             }
             val previous = initialConnection
             if (previous != null && !allowUnrevoked) {
-                val credential = AndroidCredentialStore(this, previous.origin).load()
-                val disconnected = credential?.let {
-                    RunwayApiClient(previous.origin).disconnect(it)
-                } ?: DeviceDisconnectApiResult.Unauthorized
+                val credentialStore = AndroidCredentialStore(this, previous.origin)
+                val credentialState = credentialStore.snapshot()
+                val disconnected = if (credentialState.credential == null) {
+                    DeviceDisconnectApiResult.Unauthorized
+                } else {
+                    credentialStore.useIfCurrent(credentialState) { current ->
+                        if (!isInitialConnectionCurrent()) {
+                            return@useIfCurrent DeviceDisconnectApiResult.Retryable
+                        }
+                        RunwayApiClient(previous.origin).disconnect(current)
+                    } ?: DeviceDisconnectApiResult.Retryable
+                }
                 if (disconnected == DeviceDisconnectApiResult.Retryable) {
                     deliverSwitchResult(origin, SwitchResult.RevocationUnavailable)
                     return@execute

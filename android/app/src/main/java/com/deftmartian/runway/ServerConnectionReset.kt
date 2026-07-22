@@ -14,7 +14,7 @@ object ServerConnectionReset {
             }
             credentialStore.clear()
         }
-        TreeAccessStore(appContext).disconnect()
+        TreeAccessStore(appContext).disconnectForReset()
         HandledImportStore(appContext).clearAll()
         ReconciliationStatusStore(appContext).clear()
     }

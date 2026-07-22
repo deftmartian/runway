@@ -35,6 +35,10 @@ in an origin-visible Custom Tab and adds the capabilities the PWA cannot reliabl
 access, background reconciliation, and Android GPX shares. See [Android architecture](docs/ANDROID.md) and
 [build instructions](android/README.md).
 
+Versioned GitHub releases are wired to include a verified, signed APK alongside the container image.
+The release is blocked if the protected Android signing identity is unavailable; debug or unsigned
+APKs are never presented as installable releases.
+
 <details>
 <summary>Plan traces and exact values</summary>
 

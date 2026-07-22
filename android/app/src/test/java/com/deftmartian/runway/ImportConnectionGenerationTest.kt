@@ -10,6 +10,7 @@ class ImportConnectionGenerationTest {
         serverGeneration = 7,
         deviceId = "device-1",
         token = "rwy1_token",
+        credentialGeneration = 3,
         treeUri = "content://provider/tree",
         treeGeneration = 4,
     )
@@ -23,6 +24,7 @@ class ImportConnectionGenerationTest {
                 "https://runway.example",
                 "device-1",
                 "rwy1_token",
+                3,
                 "content://provider/tree",
                 4,
             ),
@@ -31,7 +33,7 @@ class ImportConnectionGenerationTest {
 
     @Test
     fun `credential folder or generation change invalidates work`() {
-        assertFalse(snapshot.matches(null, null, null, null, null, "content://provider/tree", 4))
+        assertFalse(snapshot.matches(null, null, null, null, null, null, "content://provider/tree", 4))
         assertFalse(
             snapshot.matches(
                 "https://other.example",
@@ -39,8 +41,9 @@ class ImportConnectionGenerationTest {
                 "https://other.example",
                 "device-1",
                 "rwy1_token",
+                3,
                 "content://provider/tree",
-                4,
+                5,
             ),
         )
         assertFalse(
@@ -50,6 +53,7 @@ class ImportConnectionGenerationTest {
                 "https://runway.example",
                 "device-1",
                 "rwy1_token",
+                3,
                 "content://provider/tree",
                 4,
             ),
@@ -61,6 +65,7 @@ class ImportConnectionGenerationTest {
                 "https://other.example",
                 "device-1",
                 "rwy1_token",
+                3,
                 "content://provider/tree",
                 4,
             ),
@@ -72,6 +77,7 @@ class ImportConnectionGenerationTest {
                 "https://runway.example",
                 "device-1",
                 "rwy1_replaced",
+                3,
                 "content://provider/tree",
                 4,
             ),
@@ -83,6 +89,7 @@ class ImportConnectionGenerationTest {
                 "https://runway.example",
                 "device-1",
                 "rwy1_token",
+                3,
                 "content://provider/tree",
                 5,
             ),
@@ -94,6 +101,19 @@ class ImportConnectionGenerationTest {
                 "https://runway.example",
                 "device-1",
                 "rwy1_token",
+                4,
+                "content://provider/tree",
+                4,
+            ),
+        )
+        assertFalse(
+            snapshot.matches(
+                "https://runway.example",
+                7,
+                "https://runway.example",
+                "device-1",
+                "rwy1_token",
+                3,
                 "content://provider/other",
                 4,
             ),

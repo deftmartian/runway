@@ -131,20 +131,120 @@ jobs:
         if: always()
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml down --volumes
 
+  android-release:
+    name: signed Android APK
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: android-release
+    permissions:
+      contents: read
+    env:
+      RUNWAY_ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/runway-release.jks
+      RUNWAY_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_PASSWORD }}
+      RUNWAY_ANDROID_KEY_ALIAS: ${{ secrets.RUNWAY_ANDROID_KEY_ALIAS }}
+      RUNWAY_ANDROID_KEY_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEY_PASSWORD }}
+      RUNWAY_ANDROID_KEYSTORE_BASE64: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/app/*.gradle.kts
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Materialize protected signing identity
+        shell: bash
+        run: |
+          for name in \
+            RUNWAY_ANDROID_KEYSTORE_BASE64 \
+            RUNWAY_ANDROID_KEYSTORE_PASSWORD \
+            RUNWAY_ANDROID_KEY_ALIAS \
+            RUNWAY_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::The android-release environment is missing ${name}."
+              exit 1
+            fi
+          done
+          printf '%s' "$RUNWAY_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNWAY_ANDROID_KEYSTORE_FILE"
+          chmod 600 "$RUNWAY_ANDROID_KEYSTORE_FILE"
+          test -s "$RUNWAY_ANDROID_KEYSTORE_FILE"
+      - name: Verify release identity and source contracts
+        run: corepack pnpm verify:android && corepack pnpm verify:android:version
+      - name: Build signed release APK
+        run: >-
+          android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict
+          lint test assembleRelease
+      - name: Verify signed APK boundary
+        shell: bash
+        run: |
+          node scripts/verify-android-artifact.mjs release
+          verification="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
+            --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk)"
+          printf '%s\n' "$verification"
+          grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true$' <<< "$verification"
+          grep -q '^Verified using v3 scheme (APK Signature Scheme v3): true$' <<< "$verification"
+          grep -q '^Number of signers: 1$' <<< "$verification"
+      - name: Prepare Android release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          apk="release-assets/runway-${GITHUB_REF_NAME}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          sha256sum "$apk" > "${apk}.sha256"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: /SHA-256: /p' \
+            > "${apk}.signer.txt"
+          test -s "${apk}.signer.txt"
+      - name: Upload signed Android release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-android-release
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNWAY_ANDROID_KEYSTORE_FILE"
+
   release:
     name: release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: image
+    needs: [image, android-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - name: Download signed Android release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: signed-android-release
+          path: release-assets
       - name: Publish GitHub release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const tag = context.ref.replace('refs/tags/', '');
             const request = { ...context.repo, tag };
             let existing;
@@ -154,7 +254,7 @@ jobs:
               if (error.status !== 404) throw error;
             }
             if (existing) {
-              await github.rest.repos.updateRelease({
+              existing = await github.rest.repos.updateRelease({
                 ...context.repo,
                 release_id: existing.data.id,
                 tag_name: tag,
@@ -164,20 +264,48 @@ jobs:
                 make_latest: 'true'
               });
               core.info(`Release ${tag} updated.`);
-              return;
+            } else {
+              existing = await github.rest.repos.createRelease({
+                ...context.repo,
+                tag_name: tag,
+                target_commitish: context.sha,
+                name: `runway ${tag.replace(/^v/, '')}`,
+                body: [
+                  'runway is a self-hosted running planner and activity decision ledger.',
+                  '',
+                  `Container: ghcr.io/${context.repo.owner}/${context.repo.repo}:${tag}`,
+                  `Android: runway-${tag}.apk (choose the server in the app)`,
+                  '',
+                  'This tag passed the web, container, and signed Android release checks. See the README for installation and deployment.'
+                ].join('\n'),
+                generate_release_notes: true,
+                make_latest: 'true'
+              });
             }
-            await github.rest.repos.createRelease({
+            const releaseId = existing.data.id;
+            const currentAssets = await github.paginate(github.rest.repos.listReleaseAssets, {
               ...context.repo,
-              tag_name: tag,
-              target_commitish: context.sha,
-              name: `runway ${tag.replace(/^v/, '')}`,
-              body: [
-                'runway is a self-hosted running planner and activity decision ledger.',
-                '',
-                `Container: ghcr.io/${context.repo.owner}/${context.repo.repo}:${tag}`,
-                '',
-                'This tag passed the repository release checks. See the README for container startup and the deployment guide for the production contract.'
-              ].join('\n'),
-              generate_release_notes: true,
-              make_latest: 'true'
+              release_id: releaseId,
+              per_page: 100
             });
+            for (const name of fs.readdirSync('release-assets').sort()) {
+              const file = path.join('release-assets', name);
+              const prior = currentAssets.find((asset) => asset.name === name);
+              if (prior) {
+                await github.rest.repos.deleteReleaseAsset({
+                  ...context.repo,
+                  asset_id: prior.id
+                });
+              }
+              await github.rest.repos.uploadReleaseAsset({
+                ...context.repo,
+                release_id: releaseId,
+                name,
+                headers: {
+                  'content-type': name.endsWith('.apk')
+                    ? 'application/vnd.android.package-archive'
+                    : 'text/plain'
+                },
+                data: fs.readFileSync(file)
+              });
+            }

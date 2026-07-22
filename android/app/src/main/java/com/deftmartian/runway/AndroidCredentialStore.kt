@@ -7,8 +7,8 @@ import android.util.Base64
 import androidx.core.content.edit
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.security.KeyStore
+import java.security.MessageDigest
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -23,12 +23,19 @@ data class AndroidCredential(
     fun isExpired(nowEpochMs: Long = System.currentTimeMillis()): Boolean = expiresAtEpochMs <= nowEpochMs
 }
 
+internal data class AndroidCredentialState(
+    val credential: AndroidCredential?,
+    val generation: Long,
+)
+
 internal object AndroidCredentialNamespace {
     fun originKey(origin: String): String = MessageDigest.getInstance("SHA-256")
         .digest(origin.toByteArray(StandardCharsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     fun credentialKey(origin: String): String = "paired_device_v2_${originKey(origin)}"
+
+    fun generationKey(origin: String): String = "paired_device_generation_v2_${originKey(origin)}"
 
     fun keyAlias(origin: String): String = "runway_android_device_credential_v2_${originKey(origin)}"
 
@@ -43,6 +50,7 @@ class AndroidCredentialStore(context: Context, origin: String) {
         InstanceOriginPolicy.normalizeOrigin(origin, BuildConfig.DEBUG),
     ) { "Android credentials require a valid runway origin" }
     private val credentialKey = AndroidCredentialNamespace.credentialKey(expectedOrigin)
+    private val generationKey = AndroidCredentialNamespace.generationKey(expectedOrigin)
     private val keyAlias = AndroidCredentialNamespace.keyAlias(expectedOrigin)
     private val associatedData = AndroidCredentialNamespace.associatedData(
         BuildConfig.APPLICATION_ID,
@@ -52,14 +60,69 @@ class AndroidCredentialStore(context: Context, origin: String) {
     init {
         // 0.2.0 intentionally invalidates the pre-server-selection global slot. It cannot be safely
         // attributed to an origin, and retaining it would let one server's lifecycle touch another.
-        preferences.edit(commit = true) { remove(LEGACY_CREDENTIAL_KEY) }
+        AndroidStateCoordinator.write {
+            preferences.edit(commit = true) { remove(LEGACY_CREDENTIAL_KEY) }
+        }
     }
 
-    fun save(credential: AndroidCredential): Boolean = runCatching {
-        require(credential.deviceId.isNotBlank())
-        require(credential.token.startsWith("rwy1_"))
-        require(!credential.isExpired())
-        require(credential.origin == expectedOrigin)
+    fun load(): AndroidCredential? = snapshot().credential
+
+    internal fun snapshot(): AndroidCredentialState = AndroidStateCoordinator.read {
+        readState()
+    }
+
+    internal fun isCurrent(expected: AndroidCredentialState): Boolean =
+        AndroidStateCoordinator.read { readState() == expected }
+
+    /** Runs network work while preventing server, folder, or account identity changes. */
+    internal fun <T> useIfCurrent(
+        expected: AndroidCredentialState,
+        block: (AndroidCredential) -> T,
+    ): T? = AndroidStateCoordinator.read {
+        val current = readState()
+        val credential = current.credential
+        if (current != expected || credential == null) null else block(credential)
+    }
+
+    internal fun replace(
+        expected: AndroidCredentialState,
+        credential: AndroidCredential,
+    ): Boolean = AndroidStateCoordinator.write {
+        if (readState() != expected || !isValid(credential)) return@write false
+        val encoded = encrypt(credential) ?: return@write false
+        preferences.edit(commit = true) {
+            putString(credentialKey, encoded)
+            putLong(generationKey, nextGeneration())
+        }
+        true
+    }
+
+    internal fun clearIfCurrent(expected: AndroidCredentialState): Boolean =
+        AndroidStateCoordinator.write {
+            if (readState() != expected) return@write false
+            clearLocked()
+            true
+        }
+
+    fun clear() {
+        AndroidStateCoordinator.write { clearLocked() }
+    }
+
+    private fun readState(): AndroidCredentialState {
+        val generation = preferences.getLong(generationKey, 0)
+        val encoded = preferences.getString(credentialKey, null)
+            ?: return AndroidCredentialState(null, generation)
+        val credential = decrypt(encoded)?.takeIf(::isValid)
+        return AndroidCredentialState(credential, generation)
+    }
+
+    private fun isValid(credential: AndroidCredential): Boolean =
+        credential.deviceId.isNotBlank() &&
+            credential.token.startsWith("rwy1_") &&
+            !credential.isExpired() &&
+            credential.origin == expectedOrigin
+
+    private fun encrypt(credential: AndroidCredential): String? = runCatching {
         val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         cipher.updateAAD(associatedData)
@@ -71,59 +134,46 @@ class AndroidCredentialStore(context: Context, origin: String) {
             .toString()
             .toByteArray(StandardCharsets.UTF_8)
         val ciphertext = cipher.doFinal(plaintext)
-        val encoded = Base64.encodeToString(
+        Base64.encodeToString(
             cipher.iv + ciphertext,
             Base64.NO_WRAP or Base64.NO_PADDING or Base64.URL_SAFE,
         )
-        preferences.edit { putString(credentialKey, encoded) }
-        true
-    }.getOrElse {
-        clearStoredValue()
-        false
-    }
+    }.getOrNull()
 
-    fun load(): AndroidCredential? {
-        val encoded = preferences.getString(credentialKey, null) ?: return null
-        return runCatching {
-            val encrypted = Base64.decode(encoded, Base64.NO_WRAP or Base64.NO_PADDING or Base64.URL_SAFE)
-            require(encrypted.size > GCM_IV_BYTES)
-            val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                getOrCreateKey(),
-                GCMParameterSpec(GCM_TAG_BITS, encrypted.copyOfRange(0, GCM_IV_BYTES)),
-            )
-            cipher.updateAAD(associatedData)
-            val plaintext = cipher.doFinal(encrypted.copyOfRange(GCM_IV_BYTES, encrypted.size))
-            val payload = JSONObject(String(plaintext, StandardCharsets.UTF_8))
-            val credential = AndroidCredential(
-                origin = payload.getString("origin"),
-                deviceId = payload.getString("deviceId"),
-                token = payload.getString("token"),
-                expiresAtEpochMs = payload.getLong("expiresAtEpochMs"),
-            )
-            if (credential.isExpired() || credential.origin != expectedOrigin) {
-                clearStoredValue()
-                null
-            } else {
-                credential
-            }
-        }.getOrElse {
-            clearStoredValue()
-            null
+    private fun decrypt(encoded: String): AndroidCredential? = runCatching {
+        val encrypted = Base64.decode(encoded, Base64.NO_WRAP or Base64.NO_PADDING or Base64.URL_SAFE)
+        require(encrypted.size > GCM_IV_BYTES)
+        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            getOrCreateKey(),
+            GCMParameterSpec(GCM_TAG_BITS, encrypted.copyOfRange(0, GCM_IV_BYTES)),
+        )
+        cipher.updateAAD(associatedData)
+        val plaintext = cipher.doFinal(encrypted.copyOfRange(GCM_IV_BYTES, encrypted.size))
+        val payload = JSONObject(String(plaintext, StandardCharsets.UTF_8))
+        AndroidCredential(
+            origin = payload.getString("origin"),
+            deviceId = payload.getString("deviceId"),
+            token = payload.getString("token"),
+            expiresAtEpochMs = payload.getLong("expiresAtEpochMs"),
+        )
+    }.getOrNull()
+
+    private fun clearLocked() {
+        preferences.edit(commit = true) {
+            remove(credentialKey)
+            putLong(generationKey, nextGeneration())
         }
-    }
-
-    fun clear() {
-        clearStoredValue()
         runCatching {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
             if (keyStore.containsAlias(keyAlias)) keyStore.deleteEntry(keyAlias)
         }
     }
 
-    private fun clearStoredValue() {
-        preferences.edit { remove(credentialKey) }
+    private fun nextGeneration(): Long {
+        val current = preferences.getLong(generationKey, 0)
+        return if (current == Long.MAX_VALUE) 1 else current + 1
     }
 
     private fun getOrCreateKey(): SecretKey {
@@ -146,12 +196,14 @@ class AndroidCredentialStore(context: Context, origin: String) {
 
     companion object {
         internal fun clearLegacyState(context: Context) {
-            val appContext = context.applicationContext
-            appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-                .edit(commit = true) { remove(LEGACY_CREDENTIAL_KEY) }
-            runCatching {
-                val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-                if (keyStore.containsAlias(LEGACY_KEY_ALIAS)) keyStore.deleteEntry(LEGACY_KEY_ALIAS)
+            AndroidStateCoordinator.write {
+                val appContext = context.applicationContext
+                appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                    .edit(commit = true) { remove(LEGACY_CREDENTIAL_KEY) }
+                runCatching {
+                    val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+                    if (keyStore.containsAlias(LEGACY_KEY_ALIAS)) keyStore.deleteEntry(LEGACY_KEY_ALIAS)
+                }
             }
         }
 

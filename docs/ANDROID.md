@@ -133,12 +133,15 @@ The implemented pairing and upload flow is:
 8. A device can be revoked from Import sources. Deleting imported activity data revokes all active
    Android devices in the same database transaction before deleting the activity rows.
 
-Server and folder selection each carry a monotonically changing local generation. Switching servers,
-switching or disconnecting the folder, and forgetting or losing the credential cancel both periodic
-and queued one-time work. A worker reloads the selected server, credential, tree URI, and both
-generations immediately before upload and again before applying a response. Server-side revocation is
-revalidated inside the import transaction. If the old server cannot be reached and the runner chooses
-**Switch anyway**, the app cannot guarantee that an already-started upload will be rejected there.
+Server, account, and folder selection each carry a monotonically changing local generation. Folder
+grants also record the owning server generation. A process-wide read/write boundary lets active API
+work finish before a server, account, or folder change commits; compare-and-swap clearing prevents a
+late response for an old credential from removing a newer one. Server replacement uses a small local
+transition journal so cleanup resumes after process death. Switching servers, switching or
+disconnecting the folder, and forgetting or losing the credential cancel both periodic and queued
+one-time work. If the old server cannot be reached and the runner chooses **Switch anyway**, the old
+server may retain the phone record, but local work cannot continue under that credential after the
+switch commits.
 
 The short code proves possession of the authenticated browser-approved pairing value; it is not
 hardware attestation. A distribution that needs stronger managed-device assurance should replace the
@@ -183,6 +186,7 @@ manifest, Android resource, pairing/import API, or server-selection change:
 corepack pnpm verify:android
 corepack pnpm verify:android:build
 corepack pnpm verify:android:release
+corepack pnpm verify:android:version
 ```
 
 The build command runs Gradle `lint`, `test`, and `assembleDebug`. The release-contract command proves
@@ -193,5 +197,7 @@ so it never reads an operator's local key configuration. Both commands verify th
 contains only the reviewed normal operational permissions and exported components, with backups and
 release cleartext/debugging disabled. Neither command produces a directly distributable release. The
 repository check workflow runs the same commands with JDK 17, Android platform 36, and build tools
-36.0.0. Emulator, physical-device, Custom Tab, and accessibility evidence remain explicit
-release gates rather than being implied by a successful build.
+36.0.0. Version tags use a separate protected signing job; release publication waits for its verified
+installable APK and attaches the APK, checksum, and signer fingerprint. Emulator, physical-device,
+Custom Tab, and accessibility evidence remain explicit release gates rather than being implied by a
+successful build.

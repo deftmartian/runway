@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">runway</string>
     <string name="server_title">Connect to runway</string>
-    <string name="server_explanation">Enter the address of the runway server you use. The app checks the server before opening sign in.</string>
+    <string name="server_explanation">Enter the address of the runway server you use. After the check, the complete app opens in a secure browser tab so the server remains visible.</string>
     <string name="server_address">Server address</string>
     <string name="server_address_hint">https://runway.example.com</string>
     <string name="server_intro">Use the full public HTTPS address. No account details are sent during this check.</string>
@@ -57,7 +57,12 @@
     <string name="pairing_failed">The account could not be connected. Check the network and try again.</string>
     <string name="pairing_store_failed">Android could not protect the connection on this device. Disconnect the device in runway before trying again.</string>
     <string name="forget_account">Forget account on this device</string>
-    <string name="pairing_disconnected">Account connection removed from this device. Disconnect it in runway too if the phone is lost or no longer trusted.</string>
+    <string name="pairing_disconnecting">Disconnecting this phone from the account…</string>
+    <string name="pairing_disconnected">Account connection removed from this device and runway.</string>
+    <string name="pairing_disconnect_unavailable">runway could not be reached, so this phone is still connected there.</string>
+    <string name="pairing_disconnect_unavailable_title">runway unavailable</string>
+    <string name="pairing_disconnect_unavailable_consequence">Forgetting anyway removes the local credential, but the server may keep this phone active until you disconnect it from runway. Cancel if you can bring the server back online first.</string>
+    <string name="forget_anyway">Forget anyway</string>
     <string name="setup_connect_account">Connect this phone to continue.</string>
     <string name="setup_choose_folder">Account connected. Choose a folder next.</string>
     <string name="setup_restore_folder">Folder access needs to be restored.</string>

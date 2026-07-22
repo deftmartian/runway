@@ -30,6 +30,7 @@ Before using signing material, run the repository gates:
 corepack pnpm verify:android
 corepack pnpm verify:android:build
 corepack pnpm verify:android:release
+corepack pnpm verify:android:version
 ```
 
 These check Kotlin, resources, lint, unit tests, dependency locks, the merged permission and exported
@@ -60,6 +61,26 @@ Browser, Gradle, JDK, SDK, and build-tools versions.
 
 There are no Play Services dependencies. Review the dependency report before every release and reject
 trackers, undeclared network behavior, or a WebView fallback.
+
+## Publish an installable GitHub APK
+
+Version tags do not create a container-only release. The `Container` workflow also builds the Android
+release with the protected signing identity, verifies the APK and its merged manifest, and attaches
+the installable APK, SHA-256 record, and signer fingerprint to the GitHub release. Release publication
+waits for both the image and Android jobs.
+
+Create a protected GitHub environment named `android-release`, restrict its deployment branches to
+version tags, and add these environment secrets:
+
+- `RUNWAY_ANDROID_KEYSTORE_BASE64`: the complete release keystore encoded as one base64 value;
+- `RUNWAY_ANDROID_KEYSTORE_PASSWORD`;
+- `RUNWAY_ANDROID_KEY_ALIAS`;
+- `RUNWAY_ANDROID_KEY_PASSWORD`.
+
+The workflow materializes the keystore only in the ephemeral runner, removes it in an `always()` step,
+and never uploads it. Missing or partial signing secrets fail the tag job; the GitHub release is not
+created without an installable APK. `verify:android:version` also requires the tag, web version,
+Android `versionName`/`versionCode`, and F-Droid metadata to agree.
 
 ## Publish through a personal F-Droid repository
 

@@ -45,6 +45,7 @@
 		"verify:android": "node scripts/verify-android.mjs",
 		"verify:android:build": "android/gradlew -p android --no-daemon --dependency-verification strict lint test assembleDebug && node scripts/verify-android-artifact.mjs debug",
 		"verify:android:release": "node scripts/verify-android-release.mjs",
+		"verify:android:version": "node scripts/verify-android-version.mjs",
 		"verify:caddy": "node scripts/verify-caddy.mjs",
 		"verify:dependencies": "node scripts/verify-dependencies.mjs",
 		"verify:image": "node scripts/verify-image.mjs",
