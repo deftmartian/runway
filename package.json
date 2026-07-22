@@ -1,7 +1,7 @@
 {
 	"name": "runway",
 	"private": true,
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "A self-hosted running planner and activity ledger for comparing recommendations, edits, and recorded work.",
 	"license": "AGPL-3.0-only",
 	"repository": {
@@ -48,7 +48,7 @@
 		"verify:caddy": "node scripts/verify-caddy.mjs",
 		"verify:dependencies": "node scripts/verify-dependencies.mjs",
 		"verify:image": "node scripts/verify-image.mjs",
-		"verify:migrations": "node scripts/verify-fresh-migrations.mjs",
+		"verify:migrations": "node scripts/verify-fresh-migrations.mjs && node scripts/verify-upgrade-migrations.mjs",
 		"verify:pwa": "vitest run src/lib/pwa/*.spec.ts",
 		"verify:pwa:assets": "corepack pnpm assets:pwa:check",
 		"verify:preview": "node scripts/verify-preview.mjs",

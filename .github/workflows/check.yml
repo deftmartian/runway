@@ -58,7 +58,7 @@ jobs:
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@10.32.0 --activate
       - name: Install dependencies
-        if: matrix.task == 'web' || matrix.task == 'android'
+        if: matrix.task == 'web' || matrix.task == 'deployment' || matrix.task == 'android'
         run: corepack pnpm install --frozen-lockfile
 
       - name: Production dependency advisory gate
@@ -80,6 +80,9 @@ jobs:
       - name: Caddy edge contract
         if: matrix.task == 'deployment'
         run: corepack pnpm verify:caddy
+      - name: Fresh and released-database migration paths
+        if: matrix.task == 'deployment'
+        run: corepack pnpm verify:migrations
 
       - name: Android TWA static contract
         if: matrix.task == 'android'

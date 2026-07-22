@@ -82,7 +82,7 @@ Put the first generated value in `POSTGRES_PASSWORD` and in the password segment
 artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
-RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.1.1"
+RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.1.2"
 POSTGRES_PASSWORD="<first generated value>"
 APP_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
 BETTER_AUTH_SECRET="<second generated value>"
