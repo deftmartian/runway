@@ -109,7 +109,7 @@ Factual actual-load changes happen immediately. Future-plan changes do not. Afte
 
 The app recommends one option and previews its effect, but applies nothing until the runner confirms. Deleting or unlinking an activity reverses only changes derived from that activity.
 
-The current feedback/load assessment follows the latest accepted evidence by activity or workout date, not the most severe record in the recent window. Newer normal feedback can replace an older concern, and an applied decision resolves that current item without deleting it from the calendar or history.
+The current feedback/load assessment follows the latest accepted evidence by activity or workout date, not the most severe record in the recent window. Newer normal feedback can replace an older load concern, and an applied decision resolves that current item without deleting it from the calendar or history. A recent pain report is separate health context and remains visible until the runner explicitly clears current pain in Settings; an older historical pain report remains recorded without claiming pain is present now.
 
 Timed-plan comparisons require recorded duration. A distance-only activity still enters factual actual distance, but runway labels its timed load effect `Needs review` and does not invent a duration ratio or call it within default. Pain is presented as `Pain review`, separate from numeric load bands.
 

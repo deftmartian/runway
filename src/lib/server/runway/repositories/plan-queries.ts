@@ -141,12 +141,14 @@ export async function listPlanHistory(
 	const activityByWorkout = new Map(
 		activityRows.flatMap((row) => (row.workoutId ? [[row.workoutId, row] as const] : []))
 	);
+	const workoutsByPlan = groupRowsByPlan(workoutRows);
+	const weeksByPlan = groupRowsByPlan(weekRows);
 
 	const items = page.map(({ plan, goal: planGoal }) => {
 		const cutoff = plan.archivedAt ? toIsoDateInTimeZone(plan.archivedAt, timeZone) : today;
-		const planWorkouts = workoutRows.filter(
-			(row) => row.planId === plan.id && row.type !== 'rest' && !row.isRemoved
-		);
+		const allPlanWorkouts = workoutsByPlan.get(plan.id) ?? [];
+		const planWeeks = weeksByPlan.get(plan.id) ?? [];
+		const planWorkouts = allPlanWorkouts.filter((row) => row.type !== 'rest' && !row.isRemoved);
 		let completedRuns = 0;
 		let completedDistanceMeters = 0;
 		let missedRuns = 0;
@@ -173,8 +175,8 @@ export async function listPlanHistory(
 				weeks: plan.weeks,
 				risk: effectiveRiskForPlanRows(
 					plan,
-					weekRows.filter((row) => row.planId === plan.id),
-					workoutRows.filter((row) => row.planId === plan.id),
+					planWeeks,
+					allPlanWorkouts,
 					profile ? hasInjuryRiskFlags(profile.injuryFlags) : false
 				),
 				summary: plan.summary,
@@ -204,6 +206,18 @@ export async function listPlanHistory(
 		nextOffset: rows.length > limit ? offset + limit : null,
 		today
 	};
+}
+
+export function groupRowsByPlan<Row extends { planId: string }>(
+	rows: readonly Row[]
+): Map<string, Row[]> {
+	const rowsByPlan = new Map<string, Row[]>();
+	for (const row of rows) {
+		const planRows = rowsByPlan.get(row.planId);
+		if (planRows) planRows.push(row);
+		else rowsByPlan.set(row.planId, [row]);
+	}
+	return rowsByPlan;
 }
 
 export async function getPlanDetail(userId: string, planId: string) {

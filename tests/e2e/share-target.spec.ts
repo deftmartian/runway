@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import postgres from 'postgres';
 import { fixedBrowserClockScript } from '../support/test-clock';
+import { openImportSourceSetup } from './support/browser';
 import { startHeldDeviceFolderImport } from './support/import-fixtures';
 
 test.beforeEach(async ({ page }) => {
@@ -267,8 +268,7 @@ test('plain folder disconnect rejects a device-folder POST already waiting on it
 	const email = await createAccount(page);
 	const userId = await setTrainingTimeZone(email);
 	await page.goto('/app/import');
-	await page.getByText('Add import source', { exact: true }).click();
-	await page.getByRole('button', { name: /^Browser folder/ }).click();
+	await openImportSourceSetup(page, 'Browser folder');
 	await page.getByRole('button', { name: 'Allow device folder' }).click();
 	await expect(page.getByText('No new GPX files found.')).toBeVisible();
 
@@ -345,8 +345,7 @@ test('approved device folder imports once on foreground and stays account-scoped
 	const email = await createAccount(page);
 	await setTrainingTimeZone(email);
 	await page.goto('/app/import');
-	await page.getByText('Add import source', { exact: true }).click();
-	await page.getByRole('button', { name: /^Browser folder/ }).click();
+	await openImportSourceSetup(page, 'Browser folder');
 	await page.getByRole('button', { name: 'Allow device folder' }).click();
 	await expect(
 		page.getByText(/GPX added to the activity inbox\. 1 more file is waiting/)
@@ -419,8 +418,7 @@ test('approved device folder imports once on foreground and stays account-scoped
 		.toBe(false);
 	await createAccount(page);
 	await page.goto('/app/import');
-	await page.getByText('Add import source', { exact: true }).click();
-	await page.getByRole('button', { name: /^Browser folder/ }).click();
+	await openImportSourceSetup(page, 'Browser folder');
 	await expect(page.getByRole('button', { name: 'Allow device folder' })).toBeVisible();
 	await expect(page.getByText('Connected on this browser')).not.toBeVisible();
 });
@@ -438,8 +436,7 @@ test('a second tab disconnects a stale folder scan before it can upload with a n
 	const email = await createAccount(page);
 	const userId = await setTrainingTimeZone(email);
 	await page.goto('/app/import');
-	await page.getByText('Add import source', { exact: true }).click();
-	await page.getByRole('button', { name: /^Browser folder/ }).click();
+	await openImportSourceSetup(page, 'Browser folder');
 	await page.getByRole('button', { name: 'Allow device folder' }).click();
 	await expect(page.getByText('No new GPX files found.')).toBeVisible();
 

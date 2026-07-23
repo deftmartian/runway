@@ -41,6 +41,10 @@ export async function expectNoHorizontalOverflow(page: Page) {
 	);
 }
 
+export async function waitForTrainingCalendarHydration(page: Page) {
+	await expect(page.locator('.training-shell')).toHaveAttribute('data-hydrated', 'true');
+}
+
 export async function openImportSourceSetup(
 	page: Page,
 	source: 'Android folder' | 'Browser folder' | 'Nextcloud' | 'Upload GPX' = 'Upload GPX'

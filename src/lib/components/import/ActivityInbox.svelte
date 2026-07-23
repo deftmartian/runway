@@ -400,7 +400,7 @@
 		{:else}
 			<div class="empty-state">
 				<strong>No imported activities.</strong>
-				<p>Upload a GPX now, or connect a source for future runs.</p>
+				<p>Choose an import source below, or upload one GPX now.</p>
 				<form
 					method="post"
 					action="?/importGpx"

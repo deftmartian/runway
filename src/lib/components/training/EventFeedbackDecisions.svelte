@@ -102,7 +102,7 @@
 	{/if}
 {/if}
 
-{#if decisionRecord && !decisionRecord.consequence.appliedDecision}
+{#if decisionRecord && !decisionRecord.consequence.appliedDecision && decisionRecord.consequence.planChangeAvailable !== false}
 	<section class="event-actions consequence-options" aria-labelledby="plan-decision-heading">
 		<div>
 			<h3 id="plan-decision-heading">Choose what changes next</h3>

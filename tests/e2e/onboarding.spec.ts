@@ -28,8 +28,19 @@ test('established onboarding creates the distance phase from a repeatable baseli
 	await expect(page.getByLabel(/Established week/)).not.toBeChecked();
 	await fillValidPlanIntake(page);
 	await expect(page.getByText('Distance plan from an established week')).toBeVisible();
+	const review = page.locator('.review-ledger');
+	await expect(review).toContainText('12 km/week · 3 runs/week · longest 8 km');
+	await expect(review).toContainText('Returning runner');
+	await expect(review).toContainText('No health or running limits selected');
+	await expect(review).toContainText('Mon · Wed · Sat');
+	await expect(review).toContainText('Saturday');
+	await expect(review).toContainText('America/Halifax');
 	await page.getByRole('button', { name: 'Create plan' }).click();
 	await expect(page).toHaveURL(/\/app$/);
+	await expect(page.locator('.plan-assessment-evidence')).toContainText(
+		/needed each week · .* runway default/
+	);
+	await expect(page.getByRole('link', { name: 'Change goal for ramp' })).toBeVisible();
 
 	const state = await getCurrentGoalPlanState(await getUserId(email));
 	expect(state).toMatchObject({
@@ -523,7 +534,7 @@ test('current pain saves a pending goal without creating workouts', async ({ pag
 
 test('active goal can be replaced from the app flow', async ({ page }) => {
 	await createPlan(page);
-	await page.getByRole('link', { name: 'Change goal' }).click();
+	await page.getByRole('link', { name: 'Change goal', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Change goal' })).toBeVisible();
 	await page.getByLabel('Race distance').selectOption('10k');
 	await goToOnboardingStep(page, 'Starting point');
@@ -539,7 +550,7 @@ test('active goal can be replaced from the app flow', async ({ page }) => {
 	await page.goto('/app/plan');
 	await expect(page).toHaveURL(/\/app$/);
 	await expect(page.getByRole('heading', { name: 'Training calendar' })).toBeVisible();
-	await page.getByRole('link', { name: 'Change goal' }).click();
+	await page.getByRole('link', { name: 'Change goal', exact: true }).click();
 	await goToOnboardingStep(page, 'Review');
 	await expect(page.getByRole('button', { name: 'Replace active plan' })).toBeVisible();
 

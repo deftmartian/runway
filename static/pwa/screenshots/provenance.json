@@ -27,29 +27,29 @@
   "screenshots": [
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
-      "sourceSha256": "22373bb75531659fef3f73aa6d15397211cda1cce6df7a376e646bd4062196bc",
+      "sourceSha256": "c4851c06837c6f57b5c2fac34cf3a6f88fe1aaf81a24930b5b6b693441ac3477",
       "output": "static/pwa/screenshots/calendar-mobile.png",
-      "outputSha256": "29227f2ebd099f1234c84b1f49779dc6f09e582a5476891f7e69e002dc61918b"
+      "outputSha256": "8941788e9866c5742c031706681ee5464aff3966f7e881d65794f9670b170cc0"
     },
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-wide-linux.png",
-      "sourceSha256": "062bbce6a8b5cb7d56ab4342c3f009d77089354b5a95faffd809b3bee5772308",
+      "sourceSha256": "ad3e4ce096380810cdbba076d09e55f3505ebf6865b5767021949efecd1740a0",
       "output": "static/pwa/screenshots/calendar-desktop.png",
-      "outputSha256": "6d7ecd7b86efe12595237a49c5782d49ee8213a7585c3fe80b3937d94c5815e6"
+      "outputSha256": "b47f186db61b03624612a495e53e7084f17cbbb5864119d9a349c07ec3f3da7e"
     }
   ],
   "documentationScreenshots": [
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-desktop-linux.png",
-      "sourceSha256": "58a51ec0854db48034079e13045a7dc5330bf4a50873c24910ad83c46183e683",
+      "sourceSha256": "36108344b628cfc38d3fcfad0a5e61e35c738b1af6084cfb78cedce5bf7a1c6f",
       "output": "docs/images/runway-calendar-desktop.png",
-      "outputSha256": "58a51ec0854db48034079e13045a7dc5330bf4a50873c24910ad83c46183e683"
+      "outputSha256": "36108344b628cfc38d3fcfad0a5e61e35c738b1af6084cfb78cedce5bf7a1c6f"
     },
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
-      "sourceSha256": "22373bb75531659fef3f73aa6d15397211cda1cce6df7a376e646bd4062196bc",
+      "sourceSha256": "c4851c06837c6f57b5c2fac34cf3a6f88fe1aaf81a24930b5b6b693441ac3477",
       "output": "docs/images/runway-calendar-mobile.png",
-      "outputSha256": "22373bb75531659fef3f73aa6d15397211cda1cce6df7a376e646bd4062196bc"
+      "outputSha256": "c4851c06837c6f57b5c2fac34cf3a6f88fe1aaf81a24930b5b6b693441ac3477"
     }
   ]
 }

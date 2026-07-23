@@ -1,15 +1,44 @@
 import { describe, expect, it } from 'vitest';
-import { createServiceWorkerSource } from './service-worker';
+import {
+	createServiceWorkerSource,
+	immutableAssetCacheOrder,
+	previousCompleteCacheRevision
+} from './service-worker';
 
 describe('service worker build revisions', () => {
-	it('gives each build independent caches and removes superseded runway caches on activation', () => {
+	it('keeps one complete predecessor cache generation while bounding superseded caches', () => {
 		const first = createServiceWorkerSource('build-a');
 		const second = createServiceWorkerSource('build-b');
 
 		expect(first).toContain('const CACHE_REVISION = "build-a"');
 		expect(second).toContain('const CACHE_REVISION = "build-b"');
 		expect(first).not.toBe(second);
-		expect(second).toContain("name.startsWith('runway-') && !ACTIVE_CACHES.has(name)");
+		expect(second).toContain("const PUBLIC_CACHE_PREFIX = 'runway-public-'");
+		expect(second).toContain("const APP_CACHE_PREFIX = 'runway-app-assets-'");
+		expect(second).toContain('const previousRevision = await previousCompleteCacheRevision(names)');
+		expect(second).toContain('retained.add(PUBLIC_CACHE_PREFIX + previousRevision)');
+		expect(second).toContain('retained.add(APP_CACHE_PREFIX + previousRevision)');
+		expect(second).toContain('function previousCompleteCacheRevision(names)');
+		expect(second).toContain('names.includes(APP_CACHE_PREFIX + revision)');
+		expect(second).toContain("name.startsWith('runway-') && !retained.has(name)");
+	});
+
+	it('uses the recorded predecessor, not cache enumeration order, and ignores incomplete generations', () => {
+		const names = [
+			'runway-public-oldest',
+			'runway-app-assets-oldest',
+			'runway-public-previous',
+			'runway-app-assets-previous',
+			'runway-public-current',
+			'runway-public-incomplete'
+		];
+
+		expect(previousCompleteCacheRevision(names, 'current', 'previous')).toBe('previous');
+		expect(previousCompleteCacheRevision(names, 'current', 'incomplete')).toBe('previous');
+		expect(immutableAssetCacheOrder(names, 'current', 'previous')).toEqual([
+			'runway-app-assets-current',
+			'runway-app-assets-previous'
+		]);
 	});
 
 	it('bypasses the HTTP cache while installing every unversioned offline asset', () => {
@@ -45,5 +74,14 @@ describe('service worker build revisions', () => {
 
 		expect(source).toContain("PRIVATE_PREFIXES = ['/app', '/api/auth', '/login', '/logout']");
 		expect(source).toContain("url.pathname === prefix || url.pathname.startsWith(prefix + '/')");
+	});
+
+	it('falls back to the retained predecessor asset only after the current asset cache and network', () => {
+		const source = createServiceWorkerSource('safe-fallback');
+
+		expect(source).toContain('event.respondWith(immutableAsset(event.request))');
+		expect(source).toContain('const response = await fetch(request)');
+		expect(source).toContain('return (await previousImmutableAsset(request)) ?? response');
+		expect(source).toContain('const fallback = await previousImmutableAsset(request)');
 	});
 });

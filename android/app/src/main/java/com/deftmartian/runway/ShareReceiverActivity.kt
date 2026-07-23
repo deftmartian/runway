@@ -16,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 class ShareReceiverActivity : ComponentActivity() {
@@ -102,19 +103,30 @@ class ShareReceiverActivity : ComponentActivity() {
                 if (bytes.isEmpty()) {
                     R.string.share_rejected
                 } else {
+                    val contentSha256 = sha256(bytes)
+                    val requestStore = ShareImportRequestStore(this)
+                    val requestId = requestStore.requestIdFor(
+                        origin = origin,
+                        deviceId = credential.deviceId,
+                        contentSha256 = contentSha256,
+                    )
                     val imported = credentialStore.useIfCurrent(credentialState) { current ->
                         if (!serverStore.isCurrent(serverConnection)) return@useIfCurrent null
-                        RunwayApiClient(origin).importGpx(current, bytes)
+                        RunwayApiClient(origin).importGpx(current, bytes, requestId)
                     }
                     if (imported == null || !serverStore.isCurrent(serverConnection)) {
                         R.string.share_server_changed
                     } else when (imported) {
-                        is ImportApiResult.Handled -> when (imported.result) {
-                            "imported" -> R.string.share_imported
-                            "duplicate" -> R.string.share_duplicate
-                            else -> R.string.share_quarantined
+                        is ImportApiResult.Handled -> {
+                            requestStore.clear(origin, credential.deviceId, contentSha256)
+                            when (imported.result) {
+                                "imported" -> R.string.share_imported
+                                "duplicate" -> R.string.share_duplicate
+                                else -> R.string.share_quarantined
+                            }
                         }
                         ImportApiResult.Unauthorized -> {
+                            requestStore.clear(origin, credential.deviceId, contentSha256)
                             val cleared = serverStore.mutateIfCurrent(serverConnection) {
                                 if (!credentialStore.clearIfCurrent(credentialState)) {
                                     false
@@ -133,7 +145,10 @@ class ShareReceiverActivity : ComponentActivity() {
                                 R.string.share_server_changed
                             }
                         }
-                        ImportApiResult.RequestConflict -> R.string.share_retryable
+                        ImportApiResult.RequestConflict -> {
+                            requestStore.clear(origin, credential.deviceId, contentSha256)
+                            R.string.share_retryable
+                        }
                         ImportApiResult.Retryable -> R.string.share_retryable
                     }
                 }
@@ -245,6 +260,10 @@ class ShareReceiverActivity : ComponentActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     private data class SharedFileMetadata(
         val displayName: String?,

@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { activity, athleteProfile, auditEvent } from '$lib/server/db/schema';
-import { isValidTimeZone } from '$lib/training/date';
+import { addDays, isValidTimeZone } from '$lib/training/date';
 import { buildHeartRateSettings } from '$lib/training/heart-rate';
 import type { SexForEstimates } from '$lib/training/types';
 import type { RunwayTransaction } from './transaction';
@@ -163,6 +163,35 @@ export async function updateHealthContext(
 	});
 
 	return injuryFlags;
+}
+
+/**
+ * A recent pain report is held as current health context until the runner
+ * clears it explicitly. Older activity remains historical evidence without
+ * asserting that pain is present now.
+ */
+export function isCurrentPainReportDate(evidenceDate: string, today: string): boolean {
+	return evidenceDate >= addDays(today, -7) && evidenceDate <= today;
+}
+
+export async function markCurrentPainInTransaction(tx: RunwayTransaction, userId: string) {
+	const [profile] = await tx
+		.select({ injuryFlags: athleteProfile.injuryFlags })
+		.from(athleteProfile)
+		.where(eq(athleteProfile.userId, userId))
+		.limit(1)
+		.for('update');
+	if (!profile || profile.injuryFlags.currentPain) return;
+
+	await tx
+		.update(athleteProfile)
+		.set({ injuryFlags: { ...profile.injuryFlags, currentPain: true }, updatedAt: new Date() })
+		.where(eq(athleteProfile.userId, userId));
+	await tx.insert(auditEvent).values({
+		userId,
+		eventType: 'profile.current_pain_reported',
+		detail: { source: 'run_feedback' }
+	});
 }
 
 export async function getAthleteTimeZone(userId: string): Promise<string | null> {

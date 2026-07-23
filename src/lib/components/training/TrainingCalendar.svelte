@@ -9,6 +9,7 @@
 		presentCalendarTrainingAssessment,
 		presentCalendarWeekAssessment
 	} from './calendar-presentation';
+	import { formatRampEvidence } from '$lib/training/training-assessment';
 	import { addIsoDays, buildTrainingCalendarModel, type CalendarWeekRow } from './calendar-model';
 	import type { ConsequenceResult, RiskRating, TrainingHealthNotice } from '$lib/training/types';
 	import type { TrainingCalendarPayload } from '$lib/training/calendar-view';
@@ -36,6 +37,7 @@
 		hasActivePlan = false,
 		targetDate = null,
 		defaultWeeklyIncreasePercent = null,
+		requiredWeeklyIncreasePercent = null,
 		activityCandidates = []
 	}: {
 		calendar: TrainingCalendarPayload;
@@ -44,6 +46,7 @@
 		hasActivePlan?: boolean;
 		targetDate?: string | null;
 		defaultWeeklyIncreasePercent?: number | null;
+		requiredWeeklyIncreasePercent?: number | null;
 		activityCandidates?: WorkoutCandidate[];
 	} = $props();
 
@@ -53,6 +56,7 @@
 	let calendarScroll = $state<HTMLDivElement>();
 	let calendarGrid = $state<HTMLDivElement>();
 	let calendarOverflowing = $state(false);
+	let hydrated = $state(false);
 
 	const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 	const km = (meters: number) => `${Math.round((meters / 1000) * 10) / 10} km`;
@@ -150,8 +154,21 @@
 				)
 			: null
 	);
+	const currentPlanRampEvidence = $derived.by(() => {
+		if (
+			currentSignal?.source !== 'plan' ||
+			(currentTrainingAssessment?.presentation.assessment !== 'above_default' &&
+				currentTrainingAssessment?.presentation.assessment !== 'high_increase') ||
+			requiredWeeklyIncreasePercent === null ||
+			defaultWeeklyIncreasePercent === null
+		) {
+			return null;
+		}
+		return formatRampEvidence(requiredWeeklyIncreasePercent, defaultWeeklyIncreasePercent);
+	});
 
 	onMount(() => {
+		hydrated = true;
 		const updateOverflow = () => {
 			calendarOverflowing = Boolean(
 				calendarScroll && calendarScroll.scrollWidth > calendarScroll.clientWidth + 1
@@ -285,7 +302,7 @@
 	}
 </script>
 
-<section class="training-shell">
+<section class="training-shell" data-hydrated={hydrated}>
 	<div class="training-calendar-panel">
 		<div class="calendar-toolbar">
 			<div class="training-title-block">
@@ -322,6 +339,12 @@
 							<p>No current warnings.</p>
 						{/if}
 					</details>
+					{#if currentPlanRampEvidence}
+						<div class="plan-assessment-evidence" role="status">
+							<span>{currentPlanRampEvidence}</span>
+							<a class="button ghost" href={resolve('/app/onboarding')}>Change goal for ramp</a>
+						</div>
+					{/if}
 				{/if}
 				<details class="calendar-state-key">
 					<summary>Calendar states</summary>
@@ -417,7 +440,7 @@
 		</p>
 		{#if calendarOverflowing}
 			<p id="calendar-scroll-help" class="calendar-scroll-help">
-				Scroll sideways to see all seven days.
+				Swipe sideways to read every workout and see all seven days.
 			</p>
 		{/if}
 		<div class="calendar-month-scroll" bind:this={calendarScroll}>

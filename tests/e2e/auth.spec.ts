@@ -58,6 +58,7 @@ test('auth recovery and account creation failures do not enumerate accounts', as
 	await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
 
 	await page.getByRole('button', { name: 'Create account', exact: true }).click();
+	await expect(page).toHaveURL(/\/login#create-account$/);
 	const signup = page.locator('#create-account');
 	await signup.getByLabel('Email').fill(email);
 	await signup.getByLabel('Password').fill('correct horse battery staple 2026');
@@ -73,6 +74,7 @@ test('auth recovery and account creation failures do not enumerate accounts', as
 	await heldSignup.stop();
 
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+	await expect(page).toHaveURL(/\/login$/);
 	await page.getByRole('link', { name: 'Reset password' }).click();
 	await expect(page).toHaveURL(/\/login\/forgot-password$/);
 	await page.getByLabel('Email').fill(email);

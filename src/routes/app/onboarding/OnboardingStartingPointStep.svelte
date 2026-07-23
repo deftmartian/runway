@@ -117,6 +117,9 @@
 				<option value="returning">Returning runner</option>
 				<option value="comfortable">Comfortable with regular running</option>
 			</select>
+			<span class="field-help">
+				Saved as profile context. This label does not change the plan by itself.
+			</span>
 			{#if errorFor('experience')}
 				<span id="experience-error" class="field-error">{errorFor('experience')}</span>
 			{/if}

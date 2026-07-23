@@ -24,7 +24,11 @@ import { summarizeHeartRateEffort } from '$lib/training/heart-rate';
 import type { ConsequenceResult, ParsedGpxActivity } from '$lib/training/types';
 import type { RunwayTransaction } from './transaction';
 import { changedWorkoutState, workoutAdjustmentState } from './workout-state';
-import { requireAthleteTimeZoneInTransaction } from './profiles';
+import {
+	isCurrentPainReportDate,
+	markCurrentPainInTransaction,
+	requireAthleteTimeZoneInTransaction
+} from './profiles';
 import { effectiveWeekTargetDistance, planWeekIdForDate } from './schedule-queries';
 import {
 	eraseLedgerAdjustments,
@@ -396,6 +400,9 @@ export async function updateActivityFeedback(
 				{ ...targetActivity, ...input },
 				today
 			);
+			if (input.pain && isCurrentPainReportDate(targetActivity.activityDate, today)) {
+				await markCurrentPainInTransaction(tx, userId);
+			}
 			await tx.insert(auditEvent).values({
 				userId,
 				eventType: 'activity.feedback_updated',
@@ -479,6 +486,9 @@ export async function updateActivityFeedback(
 				consequencePlanId: planConsequence ? linkedWorkout.planId : null
 			})
 			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
+		if (input.pain && isCurrentPainReportDate(targetActivity.activityDate, today)) {
+			await markCurrentPainInTransaction(tx, userId);
+		}
 		await tx
 			.update(workoutFeedback)
 			.set({

@@ -93,6 +93,9 @@
 		importTimeZoneConfigured={data.importTimeZoneConfigured}
 		routeDataMode={data.routeDataMode}
 		{androidPairing}
+		startOpen={data.activities.items.length === 0 &&
+			data.sources.length === 0 &&
+			data.androidDevices.length === 0}
 		{activeAction}
 		{activeSection}
 		{scopedResult}

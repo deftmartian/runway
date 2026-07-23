@@ -185,7 +185,10 @@ async function makeFirstPlanWeekCurrent(email: string) {
 }
 
 async function createImportRecords(page: Page) {
-	await page.getByText('Add import source', { exact: true }).click();
+	const sourceSetup = page.locator('details.source-setup');
+	if ((await sourceSetup.getAttribute('open')) === null) {
+		await sourceSetup.getByText('Add import source', { exact: true }).click();
+	}
 	await page
 		.getByRole('group', { name: 'Choose an import source' })
 		.getByRole('button', { name: /^Upload GPX/ })
@@ -207,7 +210,9 @@ async function createImportRecords(page: Page) {
 	await page.getByRole('button', { name: 'Import', exact: true }).click();
 	await expect(page.getByText('Matched to the selected planned workout.')).toBeVisible();
 
-	await page.getByText('Add import source', { exact: true }).click();
+	if ((await sourceSetup.getAttribute('open')) === null) {
+		await sourceSetup.getByText('Add import source', { exact: true }).click();
+	}
 	await page
 		.getByRole('group', { name: 'Choose an import source' })
 		.getByRole('button', { name: /^Upload GPX/ })

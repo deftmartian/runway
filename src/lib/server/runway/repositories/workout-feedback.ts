@@ -36,6 +36,11 @@ import {
 	reverseLedgerAdjustmentsForTrigger
 } from '$lib/server/runway/repositories/adjustment-ledger';
 import { lockActivityOwner } from '$lib/server/runway/repositories/mutation-locks';
+import { feedbackMeasurementError } from '$lib/server/runway/validation';
+import {
+	isCurrentPainReportDate,
+	markCurrentPainInTransaction
+} from '$lib/server/runway/repositories/profiles';
 
 export async function recordWorkoutFeedback(
 	userId: string,
@@ -87,6 +92,20 @@ export async function recordWorkoutFeedback(
 			.limit(1);
 		if (existingFeedback) {
 			throw new Error('Feedback has already been recorded for this workout.');
+		}
+		const measurementError = feedbackMeasurementError({
+			status: input.status,
+			targetDurationSeconds: targetWorkout.workout.targetDurationSeconds,
+			...(input.completedDistanceMeters === undefined
+				? {}
+				: { completedDistanceMeters: input.completedDistanceMeters }),
+			...(input.completedDurationSeconds === undefined
+				? {}
+				: { completedDurationSeconds: input.completedDurationSeconds })
+		});
+		if (measurementError) throw new Error(measurementError);
+		if (input.pain && isCurrentPainReportDate(targetWorkout.workout.scheduledDate, today)) {
+			await markCurrentPainInTransaction(tx, userId);
 		}
 
 		const completedDistanceMeters = input.completedDistanceMeters;
@@ -264,6 +283,9 @@ export async function applyConsequenceDecision(
 		if (!sourceLocked) throw new Error('Plan-change proposal not found.');
 		const source = await consequenceDecisionSource(tx, userId, input);
 		if (!source) throw new Error('Plan-change proposal not found.');
+		if (source.consequence.planChangeAvailable === false) {
+			throw new Error('This historical activity cannot change the current plan.');
+		}
 		if (source.consequence.appliedDecision) {
 			throw new Error('A decision has already been applied to this result.');
 		}

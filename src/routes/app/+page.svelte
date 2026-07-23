@@ -31,6 +31,9 @@
 			defaultWeeklyIncreasePercent={data.activePlan?.plan.summary.kind === 'distance'
 				? data.activePlan.plan.summary.defaultWeeklyIncreasePercent
 				: null}
+			requiredWeeklyIncreasePercent={data.activePlan?.plan.summary.kind === 'distance'
+				? data.activePlan.plan.summary.requiredWeeklyIncreasePercent
+				: null}
 		/>
 	{/if}
 </main>

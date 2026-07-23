@@ -88,9 +88,12 @@ export function presentConsequence(result: ConsequenceResult): ConsequencePresen
 		return 'Activity recorded.';
 	})();
 
-	const planChange = result.appliedDecision
-		? appliedDecisionLabel(result)
-		: `No future plan change applied. Recommended: ${recommendedDecisionLabel(result)}.`;
+	const planChange =
+		result.planChangeAvailable === false
+			? 'Recorded outside the adjustment window. No current plan change is offered.'
+			: result.appliedDecision
+				? appliedDecisionLabel(result)
+				: `No future plan change applied. Recommended: ${recommendedDecisionLabel(result)}.`;
 
 	return {
 		outcome,

@@ -265,7 +265,7 @@ export const actions: Actions = {
 
 		const completedDistanceMeters =
 			parsed.data.status === 'skipped'
-				? 0
+				? undefined
 				: parsed.data.completedDistanceKm === undefined
 					? undefined
 					: Math.round(parsed.data.completedDistanceKm * 1_000);
@@ -462,6 +462,9 @@ function feedbackErrorMessage(error: unknown): string {
 		'Workout is scheduled for the future.',
 		'Rest days do not accept workout feedback. Record an unplanned run instead.',
 		'Feedback has already been recorded for this workout.',
+		'Timed workouts need the completed duration.',
+		'Distance workouts need the completed distance.',
+		'Skipped workouts cannot include a recorded distance or duration.',
 		"This goal is outside runway's plan-generation limits. Choose a later date or a shorter distance.",
 		'Training plans cannot exceed 52 weeks.'
 	]);

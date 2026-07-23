@@ -48,7 +48,9 @@ test('authenticated app avoids horizontal overflow on mobile and desktop', async
 	await createPlan(page);
 	await page.setViewportSize({ width: 320, height: 800 });
 	await page.goto('/app');
-	await expect(page.getByText('Scroll sideways to see all seven days.')).toBeVisible();
+	await expect(
+		page.getByText('Swipe sideways to read every workout and see all seven days.')
+	).toBeVisible();
 	await expectNoHorizontalOverflow(page);
 
 	for (const viewport of [
@@ -77,7 +79,9 @@ test('authenticated app avoids horizontal overflow on mobile and desktop', async
 		await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible();
 		await expectNoHorizontalOverflow(page);
 		if (label === 'Calendar') {
-			await expect(page.getByText('Scroll sideways to see all seven days.')).toBeVisible();
+			await expect(
+				page.getByText('Swipe sideways to read every workout and see all seven days.')
+			).toBeVisible();
 		}
 	}
 });
@@ -114,7 +118,8 @@ test('mobile training detail contains focus and locks background scrolling', asy
 	const futureRunButton = page
 		.getByRole('button', { name: new RegExp(`^${futureRun.scheduledDate}:`) })
 		.first();
-	await expect(futureRunButton.locator('.event-compact em')).toContainText(futureRun.purpose);
+	await expect(futureRunButton.locator('.event-title')).toContainText(futureRun.purpose);
+	await expect(futureRunButton.locator('.event-meta')).toBeVisible();
 	await futureRunButton.click();
 	const panel = page.getByRole('dialog');
 	await expect(panel).toBeVisible();

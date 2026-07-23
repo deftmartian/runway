@@ -368,6 +368,11 @@
 	color: var(--muted);
 }
 
+.onboarding-page .review-ledger > .review-note {
+	border-left: 3px solid var(--accent);
+	padding-left: 14px;
+}
+
 .onboarding-page .replace-confirmation {
 	display: flex;
 	gap: 12px;

@@ -46,6 +46,30 @@ describe('presentConsequence', () => {
 		expect(presentation.safety).toContain('qualified guidance');
 	});
 
+	it('does not turn historical pain into a reassuring current-plan recommendation', () => {
+		const presentation = presentConsequence({
+			kind: 'pain_reported',
+			deviation: 'unplanned',
+			metric: 'distance',
+			actualDifference: 2_000,
+			weeklyLoadDelta: { metric: 'distance', value: 2_000 },
+			nextRunAdjustment: null,
+			weeklyDistanceDeltaMeters: 2_000,
+			nextRunAdjustmentMeters: 0,
+			risk: 'unsafe',
+			planChangeAvailable: false,
+			recommendedDecision: 'next_rest',
+			options: [],
+			appliedDecision: null
+		});
+
+		expect(presentation.outcome).toBe('Pain was reported for this run.');
+		expect(presentation.planChange).toBe(
+			'Recorded outside the adjustment window. No current plan change is offered.'
+		);
+		expect(presentation.safety).toContain('qualified guidance');
+	});
+
 	it('presents timed changes in minutes without falling back to kilometres', () => {
 		const consequence: ConsequenceResult = {
 			kind: 'hard_effort',

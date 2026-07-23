@@ -1,11 +1,9 @@
 <script lang="ts">
 	import {
-		distanceLabel,
 		hasHealthCaution,
 		healthBlocksScheduling,
-		modeLabel,
+		onboardingReviewRows,
 		requiresConcentratedSchedule,
-		selectedDayLabels,
 		type OnboardingFieldErrors,
 		type OnboardingValues
 	} from './onboarding-model';
@@ -25,8 +23,7 @@
 	const healthBlocked = $derived(healthBlocksScheduling(values));
 	const healthCaution = $derived(hasHealthCaution(values));
 	const concentratedSchedule = $derived(requiresConcentratedSchedule(values));
-	const selectedDays = $derived(selectedDayLabels(values.availability));
-	const startingPoint = $derived(modeLabel(values));
+	const reviewRows = $derived(onboardingReviewRows(values));
 </script>
 
 <section
@@ -43,24 +40,11 @@
 	</header>
 
 	<div class="review-ledger">
-		<div>
-			<span>Goal</span>
-			<strong>
-				{values.goalKind === 'foundation'
-					? 'Run 30 minutes continuously'
-					: `${distanceLabel(values.raceDistance)} · ${values.targetDate || 'date needed'}`}
-			</strong>
-		</div>
-		<div><span>Starting point</span><strong>{startingPoint}</strong></div>
-		<div>
-			<span>Available days</span><strong>{selectedDays.join(' · ') || 'Days needed'}</strong>
-		</div>
-		{#if values.goalKind !== 'foundation'}
-			<div>
-				<span>Priority</span>
-				<strong>{values.priority === 'finish_healthy' ? 'Lower ramp' : 'Build consistency'}</strong>
+		{#each reviewRows as row (row.label)}
+			<div class:review-note={row.label === 'Plan starting point'}>
+				<span>{row.label}</span><strong>{row.value}</strong>
 			</div>
-		{/if}
+		{/each}
 	</div>
 
 	{#if healthBlocked}

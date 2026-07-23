@@ -324,6 +324,8 @@ export type ConsequenceResult = {
 	/** Legacy distance projection; presentation and decisions use nextRunAdjustment. */
 	nextRunAdjustmentMeters: number;
 	risk: RiskRating;
+	/** False when activity is retained for review but is too old to change the active plan. */
+	planChangeAvailable?: boolean;
 	recommendedDecision: PlanDecision;
 	options: PlanDecision[];
 	appliedDecision: PlanDecision | null;

@@ -178,8 +178,7 @@ export const feedbackSchema = z
 		choice: z.enum(['skip_continue', 'reduce_next']).default('skip_continue')
 	})
 	.superRefine((value, context) => {
-		const completedDistance = value.completedDistanceKm ?? 0;
-		if (value.status === 'skipped' && completedDistance > 0) {
+		if (value.status === 'skipped' && value.completedDistanceKm !== undefined) {
 			context.addIssue({
 				code: 'custom',
 				path: ['completedDistanceKm'],
@@ -193,32 +192,34 @@ export const feedbackSchema = z
 				message: 'Skipped workouts cannot include completed duration.'
 			});
 		}
-		if (value.status === 'shortened' && completedDistance <= 0) {
-			context.addIssue({
-				code: 'custom',
-				path: ['completedDistanceKm'],
-				message: 'Shortened workouts need the completed distance.'
-			});
-		}
-		if (
-			value.status === 'done' &&
-			value.completedDistanceKm !== undefined &&
-			completedDistance <= 0
-		) {
-			context.addIssue({
-				code: 'custom',
-				path: ['completedDistanceKm'],
-				message: 'Completed workouts need a positive distance.'
-			});
-		}
-		if (value.status === 'skipped' && (value.completedDurationMinutes ?? 0) > 0) {
-			context.addIssue({
-				code: 'custom',
-				path: ['completedDurationMinutes'],
-				message: 'Skipped workouts cannot include a completed duration.'
-			});
-		}
 	});
+
+/**
+ * Form parsing cannot know a workout's prescription. Apply this after loading
+ * the workout so direct requests cannot record a timed result without time,
+ * or a distance result without distance.
+ */
+export function feedbackMeasurementError(input: {
+	status: 'done' | 'skipped' | 'shortened';
+	targetDurationSeconds: number | null;
+	completedDistanceMeters?: number;
+	completedDurationSeconds?: number;
+}): string | null {
+	if (input.status === 'skipped') {
+		return input.completedDistanceMeters === undefined &&
+			input.completedDurationSeconds === undefined
+			? null
+			: 'Skipped workouts cannot include a recorded distance or duration.';
+	}
+	const timed = (input.targetDurationSeconds ?? 0) > 0;
+	const completed = timed ? input.completedDurationSeconds : input.completedDistanceMeters;
+	if (!Number.isFinite(completed) || (completed ?? 0) <= 0) {
+		return timed
+			? 'Timed workouts need the completed duration.'
+			: 'Distance workouts need the completed distance.';
+	}
+	return null;
+}
 
 export const manualRunSchema = z.object({
 	occurredDate: z

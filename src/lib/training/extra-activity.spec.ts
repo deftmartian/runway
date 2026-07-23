@@ -1,7 +1,32 @@
-import { describe, expect, it } from 'vitest';
-import { calculateExtraActivityConsequence } from './extra-activity';
+import { describe, expect, it, test } from 'vitest';
+import {
+	calculateExtraActivityConsequence,
+	historicalExtraActivityReview,
+	isHistoricalExtraActivity
+} from './extra-activity';
 
 describe('extra activity consequences', () => {
+	test('keeps the seven-day boundary current and makes older activity acknowledge-only', () => {
+		expect(isHistoricalExtraActivity('2026-07-15', '2026-07-22')).toBe(false);
+		expect(isHistoricalExtraActivity('2026-07-14', '2026-07-22')).toBe(true);
+
+		const calculated = calculateExtraActivityConsequence(
+			{ distanceMeters: 4_000, feltHard: false, pain: false },
+			{
+				nextRunTargetDistanceMeters: 5_000,
+				nextRunTargetDurationSeconds: null,
+				weekTargetDistanceMeters: 15_000,
+				weekTargetDurationSeconds: 0
+			}
+		);
+		expect(historicalExtraActivityReview(calculated)).toMatchObject({
+			kind: 'extra_activity',
+			nextRunAdjustment: null,
+			nextRunAdjustmentMeters: 0,
+			planChangeAvailable: false,
+			options: []
+		});
+	});
 	it('uses duration load for an extra run during a timed phase', () => {
 		const consequence = calculateExtraActivityConsequence(
 			{ distanceMeters: 2_000, durationSeconds: 1_200, feltHard: false, pain: false },

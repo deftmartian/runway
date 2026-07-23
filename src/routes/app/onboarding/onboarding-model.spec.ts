@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	errorStep,
 	modeLabel,
+	onboardingReviewRows,
 	requiresConcentratedSchedule,
 	targetWindowsForTimeZone,
 	validationMessage,
@@ -55,6 +56,44 @@ describe('onboarding presentation model', () => {
 		expect(
 			modeLabel(validValues({ startMode: 'calibration', calibrationDurationMinutes: '15' }))
 		).toBe('Two-week 15 minute baseline');
+	});
+
+	it('builds a complete review record without including private free text', () => {
+		const rows = onboardingReviewRows(
+			validValues({
+				currentWeeklyDistanceKm: '6',
+				currentRunsPerWeek: '2',
+				longestRecentRunKm: '8',
+				recentInjury: true,
+				injuryNotes: 'Private detail that must not be repeated'
+			})
+		);
+		expect(rows).toContainEqual({
+			label: 'Established baseline',
+			value: '6 km/week · 2 runs/week · longest 8 km'
+		});
+		expect(rows).toContainEqual({ label: 'Experience', value: 'Returning runner' });
+		expect(rows).toContainEqual({ label: 'Preferred long-run day', value: 'Saturday' });
+		expect(rows).toContainEqual({ label: 'Training time zone', value: 'America/Halifax' });
+		expect(rows).toContainEqual({
+			label: 'Plan starting point',
+			value:
+				'The 8 km run can be from another week. The plan starts from the 6 km repeatable weekly baseline and caps the first long run to fit it.'
+		});
+		expect(rows.map((row) => row.value).join(' ')).not.toContain('Private detail');
+	});
+
+	it('summarizes timed starting modes without inventing distance', () => {
+		expect(onboardingReviewRows(validValues({ startMode: 'calibration' }))).toContainEqual({
+			label: 'Calibration sessions',
+			value: '20 minutes · twice per week for two weeks'
+		});
+		expect(
+			onboardingReviewRows(validValues({ goalKind: 'foundation', startMode: 'foundation_only' }))
+		).toContainEqual({
+			label: 'Foundation sessions',
+			value: 'Nine weeks · three run/walk sessions per week'
+		});
 	});
 
 	it('routes invalid setup to the owning stage', () => {

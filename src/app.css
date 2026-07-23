@@ -1700,6 +1700,20 @@ button.command-readout.review:not(:disabled):hover {
 	padding-left: 18px;
 }
 
+.plan-assessment-evidence {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 4px 2px;
+	color: var(--muted);
+	font-size: 0.86rem;
+}
+
+.plan-assessment-evidence .button {
+	flex: 0 0 auto;
+}
+
 .training-health-notice {
 	display: grid;
 	gap: 4px;
@@ -2662,6 +2676,11 @@ details.setup-codes > summary {
 		--content: min(calc(100vw - 22px - var(--safe-area-left) - var(--safe-area-right)), 680px);
 	}
 
+	.plan-assessment-evidence {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
 	.history-intro,
 	.history-next-decision,
 	.history-decision {
@@ -2892,12 +2911,12 @@ details.setup-codes > summary {
 
 	.calendar-weekday-row,
 	.calendar-month-grid {
-		min-width: 21.875rem;
+		min-width: 42rem;
 	}
 
 	.calendar-month-day {
-		min-height: 76px;
-		padding: 6px 3px;
+		min-height: 96px;
+		padding: 6px;
 	}
 
 	.calendar-month-day.compact-empty {
@@ -2923,12 +2942,12 @@ details.setup-codes > summary {
 	}
 
 	.calendar-event {
-		align-content: center;
-		justify-items: center;
+		align-content: start;
+		justify-items: start;
 		min-height: 44px;
-		padding: 4px 3px;
+		padding: 6px 6px 6px 10px;
 		border-radius: 7px;
-		font-size: 0.68rem;
+		font-size: 0.72rem;
 		line-height: 1.12;
 	}
 
@@ -2967,14 +2986,12 @@ details.setup-codes > summary {
 
 	.calendar-event .event-title,
 	.calendar-event .event-meta {
-		display: none;
+		display: block;
+		white-space: normal;
 	}
 
 	.event-compact {
-		display: grid;
-		justify-items: center;
-		gap: 1px;
-		max-width: 100%;
+		display: none;
 	}
 
 	.event-compact strong,

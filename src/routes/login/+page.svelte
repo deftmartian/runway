@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { authClient } from '$lib/auth-client';
 	import { onMount } from 'svelte';
 	import AuthSurface from './AuthSurface.svelte';
@@ -51,11 +51,9 @@
 		signupUnavailable = false;
 		globalThis.document.title = 'Sign in · runway';
 		if (globalThis.location.hash === '#create-account') {
-			globalThis.history.replaceState(
-				globalThis.history.state,
-				'',
-				`${globalThis.location.pathname}${globalThis.location.search}`
-			);
+			let signInUrl = resolve('/login');
+			signInUrl += globalThis.location.search;
+			replaceState(signInUrl, {});
 		}
 	}
 
@@ -65,11 +63,9 @@
 		dismissSignupResult = false;
 		signupUnavailable = false;
 		globalThis.document.title = 'Create account · runway';
-		globalThis.history.replaceState(
-			globalThis.history.state,
-			'',
-			`${globalThis.location.pathname}${globalThis.location.search}#create-account`
-		);
+		let createAccountUrl = resolve('/login');
+		createAccountUrl += `${globalThis.location.search}#create-account`;
+		replaceState(createAccountUrl, {});
 	}
 
 	function enhanceAuthAction(key: string): SubmitFunction {

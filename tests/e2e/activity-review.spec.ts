@@ -18,6 +18,7 @@ import {
 	activityExists,
 	expectNoCriticalAxeViolations,
 	openImportSourceSetup,
+	waitForTrainingCalendarHydration,
 	addIsoDays
 } from './support/runway';
 import { gpxForDistance } from './support/import-fixtures';
@@ -32,6 +33,11 @@ test('an empty inbox offers a direct review-only GPX upload', async ({ page }) =
 	await page.goto('/app/import');
 
 	await expect(page.getByText('No imported activities.')).toBeVisible();
+	await expect(page.locator('details.source-setup')).toHaveAttribute('open', '');
+	const sourceChoices = page.getByRole('group', { name: 'Choose an import source' });
+	await expect(sourceChoices.getByRole('button', { name: /^Android folder/ })).toBeVisible();
+	await expect(sourceChoices.getByRole('button', { name: /^Browser folder/ })).toBeVisible();
+	await expect(sourceChoices.getByRole('button', { name: /^Nextcloud/ })).toBeVisible();
 	const chooser = page.waitForEvent('filechooser');
 	await page.getByRole('button', { name: 'Upload GPX', exact: true }).click();
 	await (
@@ -198,6 +204,7 @@ test('imported GPX counts actual load before an explicit future-plan decision', 
 	await expect.poll(() => hasDistanceAdjustment(userId, 'import_match')).toBe(false);
 
 	await page.goto('/app');
+	await waitForTrainingCalendarHydration(page);
 	await page.getByRole('button', { name: new RegExp(`^${targetRun.scheduledDate}:`) }).click();
 	const panel = page.locator('#event-detail-panel');
 	await expect(panel.getByRole('heading', { name: 'Choose what changes next' })).toBeVisible();

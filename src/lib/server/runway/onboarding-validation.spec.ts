@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseGoalSetupForm } from './validation';
+import { feedbackMeasurementError, parseGoalSetupForm } from './validation';
 
 function validGoalForm(): FormData {
 	const form = new FormData();
@@ -71,5 +71,47 @@ describe('onboarding action form boundary', () => {
 		expect(parsed.fieldErrors).toEqual({});
 		expect(parsed.values.calibrationDurationMinutes).toBe('');
 		expect(parsed.values.injuryNotes).toBe('');
+	});
+});
+
+describe('feedback measurement boundary', () => {
+	test('requires the prescription-native measurement after the workout is loaded', () => {
+		expect(
+			feedbackMeasurementError({
+				status: 'done',
+				targetDurationSeconds: 1_200,
+				completedDistanceMeters: 2_000
+			})
+		).toBe('Timed workouts need the completed duration.');
+		expect(
+			feedbackMeasurementError({
+				status: 'shortened',
+				targetDurationSeconds: 1_200,
+				completedDurationSeconds: 600
+			})
+		).toBeNull();
+		expect(
+			feedbackMeasurementError({
+				status: 'done',
+				targetDurationSeconds: null,
+				completedDurationSeconds: 1_200
+			})
+		).toBe('Distance workouts need the completed distance.');
+	});
+
+	test('does not persist a zero completion for a skipped workout', () => {
+		expect(
+			feedbackMeasurementError({
+				status: 'skipped',
+				targetDurationSeconds: null
+			})
+		).toBeNull();
+		expect(
+			feedbackMeasurementError({
+				status: 'skipped',
+				targetDurationSeconds: null,
+				completedDistanceMeters: 0
+			})
+		).toBe('Skipped workouts cannot include a recorded distance or duration.');
 	});
 });

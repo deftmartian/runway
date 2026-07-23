@@ -24,6 +24,7 @@
 		importTimeZoneConfigured,
 		routeDataMode,
 		androidPairing,
+		startOpen = false,
 		activeAction,
 		activeSection,
 		scopedResult,
@@ -37,6 +38,7 @@
 		importTimeZoneConfigured: boolean;
 		routeDataMode: 'private' | 'discard';
 		androidPairing: AndroidPairingSummary | null;
+		startOpen?: boolean;
 		activeAction: string | null;
 		activeSection: ImportSection | null;
 		scopedResult: ScopedImportResult | null;
@@ -45,7 +47,9 @@
 
 	type ImportSourceKind = 'android' | 'browser' | 'nextcloud' | 'upload';
 
-	let setupOpen = $state(false);
+	// This prop deliberately sets only the first-render state; later toggles belong to the user.
+	// svelte-ignore state_referenced_locally
+	let setupOpen = $state(startOpen);
 	let chosenImportSource = $state<ImportSourceKind | null>(null);
 	let browserFolderConnected = $state(false);
 

@@ -122,7 +122,7 @@ describe('current training signal reasons', () => {
 });
 
 describe('current training evidence selection', () => {
-	it('lets newer normal feedback replace an older pain report regardless of severity', () => {
+	it('keeps newer normal feedback as the current load signal while health context remains separate', () => {
 		const current = selectCurrentTrainingSignal({
 			planRisk: 'conservative',
 			planWarnings: [],
@@ -147,6 +147,27 @@ describe('current training evidence selection', () => {
 		expect(current.reasons).toEqual([
 			'Completed at the planned amount. No future plan change applied. Recommended: keep the remaining plan.'
 		]);
+	});
+
+	it('keeps an explicitly current pain context separate from later normal load evidence', () => {
+		const current = selectCurrentTrainingSignal({
+			planRisk: 'conservative',
+			planWarnings: [],
+			recordedEvidence: [
+				evidence({ consequence: painConsequence, evidenceDate: '2026-07-14' }),
+				evidence({ evidenceDate: '2026-07-16' })
+			],
+			healthNotice: healthNoticeFor({
+				recentInjury: false,
+				currentPain: true,
+				recurringPain: false,
+				medicalRestriction: false,
+				notes: ''
+			})
+		});
+
+		expect(current.risk).toBe('conservative');
+		expect(current.healthNotice).toMatchObject({ level: 'paused', heading: 'Pain is present now' });
 	});
 
 	it('treats an applied decision on the latest evidence as a resolution boundary', () => {

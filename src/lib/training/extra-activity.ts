@@ -1,4 +1,5 @@
 import type { ConsequenceResult } from './types';
+import { addDays } from './date';
 
 export type ExtraActivityInput = {
 	distanceMeters: number;
@@ -13,6 +14,25 @@ export type ExtraActivityTargets = {
 	weekTargetDistanceMeters: number;
 	weekTargetDurationSeconds: number;
 };
+
+/** The automatic-adjustment window is inclusive at seven days. */
+export function isHistoricalExtraActivity(activityDate: string, today: string): boolean {
+	return activityDate < addDays(today, -7);
+}
+
+/**
+ * Older accepted activity remains visible against the active plan, but it
+ * cannot propose a retroactive automatic change to today's schedule.
+ */
+export function historicalExtraActivityReview(consequence: ConsequenceResult): ConsequenceResult {
+	return {
+		...consequence,
+		nextRunAdjustment: null,
+		nextRunAdjustmentMeters: 0,
+		planChangeAvailable: false,
+		options: []
+	};
+}
 
 /**
  * Evaluates unplanned work in the prescription's native unit. Timed phases

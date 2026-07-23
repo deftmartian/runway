@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { testNowIso } from '../../support/test-clock';
 import { createAccount } from './account';
+import { waitForTrainingCalendarHydration } from './browser';
 import { getUserId, makeFirstPlanWeekCurrent } from './db';
 
 export async function createPlan(page: Page) {
@@ -11,9 +12,10 @@ export async function createPlan(page: Page) {
 	await page.waitForURL(/\/app$/);
 	await page.waitForLoadState('networkidle');
 	await expect(page.getByRole('heading', { name: 'Training calendar' })).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Change goal' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Change goal', exact: true })).toBeVisible();
 	await makeFirstPlanWeekCurrent(await getUserId(email));
 	await page.reload();
+	await waitForTrainingCalendarHydration(page);
 	return email;
 }
 

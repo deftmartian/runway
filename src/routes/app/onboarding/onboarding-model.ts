@@ -86,6 +86,97 @@ export function selectedDayLabels(availability: number[]) {
 	return weekdays.filter((day) => availability.includes(day.value)).map((day) => day.short);
 }
 
+export type OnboardingReviewRow = {
+	label: string;
+	value: string;
+};
+
+const experienceLabels: Record<OnboardingValues['experience'], string> = {
+	'': 'Experience needed',
+	new: 'New runner',
+	returning: 'Returning runner',
+	comfortable: 'Comfortable with regular running'
+};
+
+function healthContextLabel(values: OnboardingValues) {
+	const selected = [
+		values.recentInjury ? 'Recovering from an injury' : null,
+		values.currentPain ? 'Pain is present now' : null,
+		values.recurringPain ? 'Pain returns when I run' : null,
+		values.medicalRestriction ? 'A clinician has limited or paused running' : null
+	].filter((value): value is string => Boolean(value));
+	return selected.length > 0 ? selected.join(' · ') : 'No health or running limits selected';
+}
+
+export function onboardingReviewRows(values: OnboardingValues): OnboardingReviewRow[] {
+	const rows: OnboardingReviewRow[] = [
+		{
+			label: 'Goal',
+			value:
+				values.goalKind === 'foundation'
+					? 'Run 30 minutes continuously'
+					: `${distanceLabel(values.raceDistance)} · ${values.targetDate || 'Date needed'}`
+		},
+		{ label: 'Starting point', value: modeLabel(values) }
+	];
+
+	if (values.startMode === 'established') {
+		const weeklyDistance = Number(values.currentWeeklyDistanceKm);
+		const longestRun = Number(values.longestRecentRunKm);
+		rows.push({
+			label: 'Established baseline',
+			value: `${values.currentWeeklyDistanceKm || '—'} km/week · ${values.currentRunsPerWeek || '—'} runs/week · longest ${values.longestRecentRunKm || '—'} km`
+		});
+		if (
+			Number.isFinite(weeklyDistance) &&
+			Number.isFinite(longestRun) &&
+			longestRun > weeklyDistance
+		) {
+			rows.push({
+				label: 'Plan starting point',
+				value: `The ${values.longestRecentRunKm} km run can be from another week. The plan starts from the ${values.currentWeeklyDistanceKm} km repeatable weekly baseline and caps the first long run to fit it.`
+			});
+		}
+	} else if (values.startMode === 'calibration') {
+		rows.push({
+			label: 'Calibration sessions',
+			value: `${values.calibrationDurationMinutes || '—'} minutes · twice per week for two weeks`
+		});
+	} else if (values.startMode === 'foundation_to_goal' || values.startMode === 'foundation_only') {
+		rows.push({
+			label: 'Foundation sessions',
+			value: 'Nine weeks · three run/walk sessions per week'
+		});
+	}
+
+	rows.push(
+		{ label: 'Experience', value: experienceLabels[values.experience] },
+		{ label: 'Health context', value: healthContextLabel(values) },
+		{
+			label: 'Available days',
+			value: selectedDayLabels(values.availability).join(' · ') || 'Days needed'
+		}
+	);
+
+	if (values.startMode === 'established') {
+		const preferredLongRunDay = weekdays.find(
+			(day) => day.value === Number(values.preferredLongRunDay)
+		)?.label;
+		rows.push({ label: 'Preferred long-run day', value: preferredLongRunDay ?? 'Day needed' });
+	}
+
+	rows.push({ label: 'Training time zone', value: values.timeZone || 'Time zone needed' });
+
+	if (values.goalKind !== 'foundation') {
+		rows.push({
+			label: 'Priority',
+			value: values.priority === 'finish_healthy' ? 'Lower ramp' : 'Build consistency'
+		});
+	}
+
+	return rows;
+}
+
 export function distanceLabel(value: string) {
 	return (
 		({ '5k': '5K', '10k': '10K', half: 'Half marathon', marathon: 'Marathon' } as const)[

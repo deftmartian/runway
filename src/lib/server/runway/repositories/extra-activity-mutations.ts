@@ -7,11 +7,19 @@ import {
 	workout,
 	workoutFeedback
 } from '$lib/server/db/schema';
-import { addDays, localDateAtNoon, todayIsoInTimeZone } from '$lib/training/date';
-import { calculateExtraActivityConsequence } from '$lib/training/extra-activity';
+import { localDateAtNoon, todayIsoInTimeZone } from '$lib/training/date';
+import {
+	calculateExtraActivityConsequence,
+	historicalExtraActivityReview,
+	isHistoricalExtraActivity
+} from '$lib/training/extra-activity';
 import type { ConsequenceResult } from '$lib/training/types';
 import { lockActivityOwner } from './mutation-locks';
-import { requireAthleteTimeZoneInTransaction } from './profiles';
+import {
+	isCurrentPainReportDate,
+	markCurrentPainInTransaction,
+	requireAthleteTimeZoneInTransaction
+} from './profiles';
 import { effectiveWeekTargetDistance, effectiveWeekTargetDuration } from './schedule-queries';
 import type { RunwayTransaction } from './transaction';
 
@@ -72,6 +80,9 @@ export async function recordManualRun(
 			})
 			.returning();
 		if (!createdActivity) throw new Error('Manual run could not be recorded.');
+		if (input.pain && isCurrentPainReportDate(input.occurredDate, today)) {
+			await markCurrentPainInTransaction(tx, userId);
+		}
 
 		const consequence = await calculateUnplannedConsequence(
 			tx,
@@ -159,14 +170,11 @@ export async function calculateUnplannedConsequence(
 	targetActivity: UnlinkedActivityPlanInput,
 	today: string
 ): Promise<ConsequenceResult | null> {
-	if (
-		!targetActivity.extraPlanImpactConfirmed ||
-		targetActivity.activityDate < addDays(today, -7) ||
-		targetActivity.activityDate > today
-	) {
+	if (!targetActivity.extraPlanImpactConfirmed || targetActivity.activityDate > today) {
 		await clearActivityConsequence(tx, userId, targetActivity.id);
 		return null;
 	}
+	const historical = isHistoricalExtraActivity(targetActivity.activityDate, today);
 
 	const [nextRun] = await tx
 		.select({
@@ -207,7 +215,7 @@ export async function calculateUnplannedConsequence(
 		return null;
 	}
 
-	const consequence = calculateExtraActivityConsequence(targetActivity, {
+	const calculated = calculateExtraActivityConsequence(targetActivity, {
 		nextRunTargetDistanceMeters: nextRun.targetDistanceMeters,
 		nextRunTargetDurationSeconds: nextRun.targetDurationSeconds,
 		weekTargetDistanceMeters: Math.max(
@@ -219,6 +227,7 @@ export async function calculateUnplannedConsequence(
 			await effectiveWeekTargetDuration(tx, userId, nextRun.planId, targetActivity.activityDate)
 		)
 	});
+	const consequence = historical ? historicalExtraActivityReview(calculated) : calculated;
 	await tx
 		.update(activity)
 		.set({ consequence, consequencePlanId: nextRun.planId })
