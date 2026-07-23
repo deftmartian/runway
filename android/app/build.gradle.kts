@@ -142,7 +142,7 @@ kotlin {
 
 dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("androidx.browser:browser:1.10.0")
 
