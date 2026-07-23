@@ -108,7 +108,7 @@ the restricted `runway_runtime` account in `APP_DATABASE_URL`. Put the generated
 artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
-RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.2.0"
+RUNWAY_IMAGE="ghcr.io/deftmartian/runway:v0.2.1"
 POSTGRES_PASSWORD="<first generated value>"
 MIGRATION_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
 APP_DATABASE_URL="postgres://runway_runtime:<second generated value>@db:5432/runway"

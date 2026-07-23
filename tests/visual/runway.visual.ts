@@ -46,6 +46,7 @@ for (const viewport of viewports) {
 
 			await page.goto('/app');
 			await expect(page.getByRole('heading', { name: 'Training calendar' })).toBeVisible();
+			await waitForCalendarReady(page);
 			await stableScreenshot(page, `calendar-${viewport.name}.png`);
 
 			await page
@@ -93,8 +94,21 @@ test('dark mode app state has visual coverage', async ({ page }) => {
 	await seedVisualAccount(page, 'dark');
 	await page.goto('/app');
 	await expect(page.getByRole('heading', { name: 'Training calendar' })).toBeVisible();
+	await expect
+		.poll(() =>
+			page.evaluate(() => ({
+				systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+				canvas: getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim()
+			}))
+		)
+		.toEqual({ systemDark: true, canvas: '#0a1212' });
+	await waitForCalendarReady(page);
 	await stableScreenshot(page, 'calendar-dark-desktop.png');
 });
+
+async function waitForCalendarReady(page: Page) {
+	await expect(page.locator('section.training-shell')).toHaveAttribute('data-hydrated', 'true');
+}
 
 async function seedVisualAccount(page: Page, fixtureName: string) {
 	const email = `visual-${fixtureName}@example.test`;
@@ -229,6 +243,8 @@ async function createImportRecords(page: Page) {
 }
 
 async function stableScreenshot(page: Page, name: string) {
+	await normalizeVisualSafeArea(page);
+	await page.mouse.move(1, 1);
 	await page.evaluate(() => document.fonts.ready.then(() => undefined));
 	await page.evaluate(() => {
 		window.scrollTo(0, 0);
@@ -242,10 +258,20 @@ async function stableScreenshot(page: Page, name: string) {
 }
 
 async function stableElementScreenshot(locator: ReturnType<Page['getByRole']>, name: string) {
+	await normalizeVisualSafeArea(locator.page());
+	await locator.page().mouse.move(1, 1);
 	await locator.page().evaluate(() => document.fonts.ready.then(() => undefined));
 	await expect(locator).toHaveScreenshot(name, {
 		animations: 'disabled',
 		caret: 'hide'
+	});
+}
+
+async function normalizeVisualSafeArea(page: Page) {
+	await page.evaluate(() => {
+		for (const edge of ['top', 'right', 'bottom', 'left']) {
+			document.documentElement.style.setProperty(`--safe-area-${edge}`, '0px', 'important');
+		}
 	});
 }
 
