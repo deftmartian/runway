@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { fixedBrowserClockScript } from '../support/test-clock';
 import { createAccount, expectNoCriticalAxeViolations } from './support/runway';
 
@@ -117,23 +117,7 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 	).toBeVisible();
 	await expect
 		.poll(async () => {
-			await page.evaluate(() => {
-				const installEvent = new Event('beforeinstallprompt', { cancelable: true });
-				Object.defineProperties(installEvent, {
-					prompt: {
-						value: () => {
-							(
-								globalThis as typeof globalThis & { runwayInstallPrompted?: boolean }
-							).runwayInstallPrompted = true;
-							return Promise.resolve();
-						}
-					},
-					userChoice: {
-						value: Promise.resolve({ outcome: 'accepted', platform: 'test' })
-					}
-				});
-				globalThis.dispatchEvent(installEvent);
-			});
+			await dispatchInstallPrompt(page);
 			return installButton.isVisible();
 		})
 		.toBe(true);
@@ -142,10 +126,12 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 	await page.getByRole('link', { name: 'Setup' }).click();
 	await expect(page).toHaveURL(/\/app\/onboarding$/);
 	await expect(installNotice).not.toBeVisible();
-	await expect(installShortcut).toBeVisible();
-	await page.getByRole('link', { name: 'Settings' }).click();
+	await expect(installShortcut).not.toBeVisible();
+	await page.goto('/app/settings');
 	await expect(page).toHaveURL(/\/app\/settings$/);
 	await expect(installNotice).toBeVisible();
+	await dispatchInstallPrompt(page);
+	await expect(installButton).toBeVisible();
 	await installButton.click();
 	await expect
 		.poll(() =>
@@ -169,6 +155,26 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 	}
 	await expect(page.getByText('Back online')).toBeVisible();
 });
+
+async function dispatchInstallPrompt(page: Page) {
+	await page.evaluate(() => {
+		const installEvent = new Event('beforeinstallprompt', { cancelable: true });
+		Object.defineProperties(installEvent, {
+			prompt: {
+				value: () => {
+					(
+						globalThis as typeof globalThis & { runwayInstallPrompted?: boolean }
+					).runwayInstallPrompted = true;
+					return Promise.resolve();
+				}
+			},
+			userChoice: {
+				value: Promise.resolve({ outcome: 'accepted', platform: 'test' })
+			}
+		});
+		globalThis.dispatchEvent(installEvent);
+	});
+}
 
 test('service worker serves the offline fallback without caching private app pages', async ({
 	context,

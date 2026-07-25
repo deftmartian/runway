@@ -9,7 +9,8 @@ import {
 	expectNoHorizontalOverflow,
 	currentCalendarMonth,
 	shiftCalendarMonth,
-	calendarMonthLabel
+	calendarMonthLabel,
+	addIsoDays
 } from './support/runway';
 
 test.beforeEach(async ({ page }) => {
@@ -50,6 +51,11 @@ test('authenticated app avoids horizontal overflow on mobile and desktop', async
 	await page.goto('/app');
 	await expect(
 		page.getByText('Swipe sideways to read every workout and see all seven days.')
+	).toHaveCount(0);
+	await expect(page.locator('.calendar-weekday-row')).toBeHidden();
+	await expect(page.locator('.calendar-month-day:visible').first()).toBeVisible();
+	await expect(
+		page.locator('.calendar-event.open:visible .open-affordance em').first()
 	).toBeVisible();
 	await expectNoHorizontalOverflow(page);
 
@@ -81,8 +87,100 @@ test('authenticated app avoids horizontal overflow on mobile and desktop', async
 		if (label === 'Calendar') {
 			await expect(
 				page.getByText('Swipe sideways to read every workout and see all seven days.')
-			).toBeVisible();
+			).toHaveCount(0);
 		}
+	}
+});
+
+test('mobile day ledger uses chronological arrow navigation without horizontal scrolling', async ({
+	page
+}) => {
+	await createPlan(page);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/app');
+
+	const calendarEvents = page.locator('[data-calendar-event-id]:visible');
+	const first = calendarEvents.first();
+	const second = calendarEvents.nth(1);
+	await first.focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(second).toBeFocused();
+	await page.keyboard.press('ArrowUp');
+	await expect(first).toBeFocused();
+	await page.keyboard.press('ArrowRight');
+	await expect(second).toBeFocused();
+	await page.keyboard.press('Home');
+	await expect(first).toBeFocused();
+	await page.keyboard.press('End');
+	await expect(calendarEvents.last()).toBeFocused();
+
+	const dimensions = await page.locator('.calendar-month-scroll').evaluate((element) => ({
+		clientWidth: element.clientWidth,
+		scrollWidth: element.scrollWidth
+	}));
+	expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+	await expectNoHorizontalOverflow(page);
+
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await expect(
+		page.getByText(
+			'Use Left and Right for adjacent training days and Up and Down for the same weekday.'
+		)
+	).toBeVisible();
+	const desktopFirst = calendarEvents.first();
+	const desktopFirstLabel = await desktopFirst.getAttribute('aria-label');
+	const desktopFirstDate = desktopFirstLabel?.slice(0, 10);
+	if (!desktopFirstDate) throw new Error('Calendar event did not expose its date.');
+	const nextWeek = page.getByRole('button', {
+		name: new RegExp(`^${addIsoDays(desktopFirstDate, 7)}:`)
+	});
+	await desktopFirst.focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(nextWeek).toBeFocused();
+	await page.keyboard.press('ArrowUp');
+	await expect(desktopFirst).toBeFocused();
+});
+
+test('calendar focus and state labels survive forced colors and reduced motion', async ({
+	page
+}) => {
+	await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+	await createPlan(page);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/app');
+
+	const event = page.locator('[data-calendar-event-id]:visible').first();
+	await event.focus();
+	await expect(event).toBeFocused();
+	const focusStyle = await event.evaluate((element) => {
+		const style = getComputedStyle(element);
+		const durations = style.transitionDuration.split(',').map((duration) => {
+			const value = Number.parseFloat(duration);
+			return duration.trim().endsWith('ms') ? value : value * 1000;
+		});
+		return {
+			outlineStyle: style.outlineStyle,
+			outlineWidth: Number.parseFloat(style.outlineWidth),
+			longestTransitionMs: Math.max(0, ...durations)
+		};
+	});
+	expect(focusStyle.outlineStyle).not.toBe('none');
+	expect(focusStyle.outlineWidth).toBeGreaterThanOrEqual(2);
+	expect(focusStyle.longestTransitionMs).toBeLessThanOrEqual(1);
+
+	await page.getByText('Calendar state key', { exact: true }).click();
+	const stateKey = page.locator('.calendar-state-legend');
+	for (const label of [
+		'Planned',
+		'Completed',
+		'Shortened',
+		'Skipped',
+		'Missed',
+		'Review',
+		'Rest',
+		'Removed'
+	]) {
+		await expect(stateKey.getByText(label, { exact: true })).toBeVisible();
 	}
 });
 
@@ -106,6 +204,7 @@ test('app navigation exposes route titles, skip navigation, and roving calendar 
 
 	await page.getByRole('link', { name: 'Stats' }).click();
 	await expect(page).toHaveTitle('Stats · runway');
+	await expect(page.getByRole('heading', { name: 'Stats' })).toBeFocused();
 });
 
 test('mobile training detail contains focus and locks background scrolling', async ({ page }) => {

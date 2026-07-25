@@ -8,18 +8,47 @@ The interface is not a generic admin dashboard, calendar skin, fitness social pr
 
 ## Canvas And Geometry
 
-- Light mode uses a warm stone/porcelain canvas with low-chroma teal structure.
-- Dark mode uses graphite with a subtle green cast rather than flat black or cold blue-black.
+- Light mode uses a pale blue-gray canvas with white and soft-cloud surfaces.
+- Dark mode uses midnight blue-charcoal with distinct slate surface layers.
 - The body has no ruled-paper pattern, gradient wash, or decorative texture.
 - Structural surfaces use a `10px` radius.
 - Controls use a `6px` radius.
 - Pills are reserved for statuses and switches.
-- Shadows are reserved for dialogs, mobile sheets, and transient notices.
+- Shadows are reserved for dialogs, mobile sheets, transient notices, and one bounded focal surface
+  such as authentication or the public plan visual. Daily calendar, ledger, and settings regions
+  remain flat.
 - Hover can change outline or fill, but does not lift the control.
 
 Avoid floating navigation shells, boxes inside boxes, repeated card borders, oversized rounding, decorative depth, and large low-information containers. A single bounded work surface is appropriate when it clarifies one focused task, such as authentication or first-plan setup.
 
-## Semantic Tokens
+## Palette And Semantic Tokens
+
+Use the canonical palette below. Action/planned/current is lake blue; accepted recorded work alone
+is green; unresolved/review is amber; destructive or blocked states are red; rest and passive
+structure are neutral slate. A neutral or blue boundary represents "within default"; completed
+green never implies medical safety.
+
+| Role             | Light     | Dark      | Use                                             |
+| ---------------- | --------- | --------- | ----------------------------------------------- |
+| canvas           | `#F4F7FA` | `#0D151D` | app background                                  |
+| surface          | `#FFFFFF` | `#141F29` | primary reading and working surface             |
+| surface soft     | `#EAF1F5` | `#1B2A36` | selected regions and grouped controls           |
+| surface strong   | `#FFFFFF` | `#22333F` | overlays and raised controls                    |
+| text             | `#16232D` | `#EDF4F7` | primary text                                    |
+| muted text       | `#536571` | `#A9BAC4` | secondary text                                  |
+| passive line     | `#D8E1E7` | `#2F414E` | decorative separator only                       |
+| control line     | `#718B9B` | `#688293` | control and selected boundary                   |
+| action/planned   | `#176B93` | `#6DB9E1` | selected and generated-plan emphasis            |
+| action strong    | `#0F5B81` | `#9AD4F1` | links, focus, and strong interactive accent     |
+| completed actual | `#2F7958` | `#73C89A` | accepted recorded work                          |
+| review           | `#A45F18` | `#F0AB61` | unresolved or elevated attention                |
+| danger           | `#B33F52` | `#F18B98` | destructive actions and blocked states          |
+| rest             | `#687985` | `#A5B2BA` | passive recovery state, always paired with text |
+
+Required text meets 4.5:1 contrast. Control, selection, focus, and status edges meet 3:1 or have
+an equivalent non-color affordance; passive lines can be quieter because spacing and alignment
+carry grouping. Focus uses `--accent-strong` with a 3px outline and offset. Selected controls use
+both `--control-line` and a filled or positional cue.
 
 The app uses one token set, named by job:
 
@@ -27,10 +56,12 @@ The app uses one token set, named by job:
 | ------------------ | -------------------------------------------- |
 | `--canvas`         | page background                              |
 | `--surface`        | standard working surface                     |
+| `--surface-soft`   | selected regions and grouped controls        |
 | `--surface-strong` | focused/raised surface                       |
 | `--text`           | primary text                                 |
 | `--muted`          | secondary text                               |
-| `--line`           | outlines and separators                      |
+| `--line`           | passive decorative separators                |
+| `--control-line`   | required control and selected boundaries     |
 | `--rail`           | structural rail                              |
 | `--tick`           | ticks and inactive trace structure           |
 | `--accent`         | current/selected/generated-plan emphasis     |

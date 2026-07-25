@@ -8,6 +8,7 @@ if (!image || image.startsWith('-') || /\s/.test(image)) {
 
 const scannerImage = 'runway-image-scanner:local';
 
+await verifyRuntimeDependencies(image);
 await run('docker', ['build', '--pull', '--file', 'Dockerfile.audit', '--tag', scannerImage, '.']);
 const report = JSON.parse(
 	await capture('docker', [
@@ -51,6 +52,73 @@ if (findings.length > 0) {
 }
 
 console.log(`${image} has no fixed high or critical OS or library advisories.`);
+
+async function verifyRuntimeDependencies(imageReference) {
+	const script = String.raw`
+		import { readFileSync } from 'node:fs';
+		import { createRequire } from 'node:module';
+		import { dirname, join } from 'node:path';
+
+		const rootPackagePath = '/app/package.json';
+		const rootPackage = JSON.parse(readFileSync(rootPackagePath, 'utf8'));
+		const fromRoot = createRequire(rootPackagePath);
+
+		function installedPackage(requireFrom, name) {
+			const entry = requireFrom.resolve(name);
+			let directory = dirname(entry);
+			while (true) {
+				try {
+					const packagePath = join(directory, 'package.json');
+					const metadata = JSON.parse(readFileSync(packagePath, 'utf8'));
+					if (metadata.name === name) {
+						return { entry, metadata, require: createRequire(entry) };
+					}
+				} catch {
+					// Keep walking toward the package root.
+				}
+				const parent = dirname(directory);
+				if (parent === directory) throw new Error('Could not locate package metadata for ' + name + '.');
+				directory = parent;
+			}
+		}
+
+		for (const name of ['better-auth', '@better-auth/core', '@better-auth/passkey']) {
+			const installed = installedPackage(fromRoot, name);
+			const expected = rootPackage.dependencies?.[name];
+			if (!expected || installed.metadata.version !== expected) {
+				throw new Error(
+					name + ' resolved to ' + installed.metadata.version + ', expected exact runtime version ' + expected + '.'
+				);
+			}
+		}
+
+		const passkey = installedPackage(fromRoot, '@better-auth/passkey');
+		const core = installedPackage(passkey.require, '@better-auth/core');
+		for (const name of ['@better-fetch/fetch', 'better-call']) {
+			const required = core.metadata.peerDependencies?.[name];
+			const resolved = installedPackage(passkey.require, name);
+			if (!required || resolved.metadata.version !== required) {
+				throw new Error(
+					'@better-auth/passkey resolves ' + name + '@' + resolved.metadata.version +
+					', but @better-auth/core requires ' + required + '.'
+				);
+			}
+		}
+	`;
+	await run('docker', [
+		'run',
+		'--rm',
+		'--entrypoint',
+		'node',
+		imageReference,
+		'--input-type=module',
+		'--eval',
+		script
+	]);
+	console.log(
+		`${imageReference} has an internally consistent Better Auth runtime dependency graph.`
+	);
+}
 
 function run(command, args) {
 	return new Promise((resolve, reject) => {

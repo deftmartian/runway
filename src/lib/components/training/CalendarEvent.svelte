@@ -157,6 +157,19 @@
 		opacity: 1;
 	}
 
+	@media (max-width: 820px), (hover: none) {
+		.open-affordance {
+			justify-content: flex-start;
+			color: var(--accent-strong);
+		}
+
+		.open-affordance em {
+			max-width: none;
+			margin-inline-start: 0.35rem;
+			opacity: 1;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.open-affordance em {
 			transition: none;

@@ -1,5 +1,5 @@
 .onboarding-page {
-	max-width: 1080px;
+	max-width: 940px;
 }
 
 .onboarding-page .onboarding-header {
@@ -7,8 +7,8 @@
 	align-items: end;
 	justify-content: space-between;
 	gap: 24px;
-	padding: 10px 0 24px;
-	border-bottom: 1px solid var(--line);
+	padding: 6px 0 20px;
+	border-bottom: 1px solid var(--line-passive);
 }
 
 .onboarding-page .onboarding-header h1,
@@ -20,15 +20,15 @@
 }
 
 .onboarding-page .onboarding-header h1 {
-	font-size: clamp(2rem, 5vw, 3.4rem);
-	line-height: 1;
+	font-size: clamp(1.9rem, 4vw, 2.5rem);
+	line-height: 1.12;
 }
 
 .onboarding-page .eyebrow,
 .onboarding-page .step-header p {
 	color: var(--accent);
 	font-size: 0.73rem;
-	font-weight: 780;
+	font-weight: 720;
 	letter-spacing: 0.13em;
 	text-transform: uppercase;
 }
@@ -43,13 +43,13 @@
 .onboarding-page .step-rail {
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
-	margin: 24px 0 42px;
-	border-bottom: 1px solid var(--line);
+	margin: 20px 0 32px;
+	border-bottom: 1px solid var(--line-passive);
 }
 
 .onboarding-page .step-rail button {
 	justify-content: flex-start;
-	gap: 8px;
+	gap: 6px;
 	min-height: 48px;
 	padding: 8px 4px;
 	border: 0;
@@ -57,7 +57,8 @@
 	border-radius: 0;
 	background: transparent;
 	color: var(--muted);
-	font-weight: 680;
+	font-size: 0.9rem;
+	font-weight: 650;
 }
 
 .onboarding-page .step-rail button.current {
@@ -78,7 +79,7 @@
 
 .onboarding-page .setup-step {
 	display: grid;
-	gap: 28px;
+	gap: 24px;
 	min-width: 0;
 	min-height: 470px;
 	scroll-margin-top: 84px;
@@ -94,12 +95,13 @@
 
 .onboarding-page .step-header {
 	display: grid;
-	gap: 7px;
+	gap: 10px;
 	max-width: 720px;
 }
 
 .onboarding-page .step-header h2 {
-	font-size: clamp(1.65rem, 4vw, 2.4rem);
+	font-size: clamp(1.55rem, 3vw, 2rem);
+	line-height: 1.2;
 }
 
 .onboarding-page .step-header > span {
@@ -108,9 +110,8 @@
 
 .onboarding-page .choice-track {
 	display: grid;
-	gap: 1px;
-	border: 1px solid var(--line);
-	background: var(--line);
+	gap: 10px;
+	background: transparent;
 }
 
 .onboarding-page .choice-track.two-up {
@@ -132,12 +133,14 @@
 .onboarding-page .starting-path-fieldset legend {
 	padding: 0;
 	font-weight: 690;
+	line-height: 1.4;
 }
 
 .onboarding-page .starting-path-fieldset > p {
-	margin: -4px 0 0;
+	margin: 0;
 	color: var(--muted);
 	font-size: 0.88rem;
+	line-height: 1.45;
 }
 
 .onboarding-page .choice-track label {
@@ -146,15 +149,18 @@
 	align-items: stretch;
 	gap: 8px;
 	min-width: 0;
-	min-height: 126px;
-	padding: 18px;
-	background: var(--surface);
+	min-height: 132px;
+	padding: 16px;
+	border: 1px solid var(--line-control);
+	border-radius: var(--radius-small);
+	background: var(--surface-soft);
 	cursor: pointer;
 }
 
 .onboarding-page .choice-track label.selected {
-	box-shadow: inset 0 3px var(--accent);
-	background: var(--surface-strong);
+	border-color: var(--accent);
+	box-shadow: inset 3px 0 var(--accent);
+	background: color-mix(in oklab, var(--accent), var(--surface-soft) 92%);
 }
 
 .onboarding-page .choice-track input {
@@ -230,7 +236,7 @@
 .onboarding-page .decision-note {
 	display: grid;
 	gap: 6px;
-	padding: 18px 0 18px 18px;
+	padding: 14px 0 14px 16px;
 	border-left: 3px solid var(--accent);
 }
 
@@ -273,9 +279,7 @@
 .onboarding-page .health-flags {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 1px;
-	border: 1px solid var(--line);
-	background: var(--line);
+	gap: 10px;
 }
 
 .onboarding-page .health-flags label {
@@ -283,8 +287,10 @@
 	align-items: flex-start;
 	gap: 12px;
 	min-height: 88px;
-	padding: 15px;
-	background: var(--surface);
+	padding: 14px;
+	border: 1px solid var(--line-control);
+	border-radius: var(--radius-small);
+	background: var(--surface-soft);
 	font-size: 0.9rem;
 	font-weight: 500;
 	cursor: pointer;
@@ -329,7 +335,7 @@
 	display: grid;
 	place-items: center;
 	min-height: 54px;
-	border: 1px solid var(--line);
+	border: 1px solid var(--line-control);
 	border-radius: var(--radius-small);
 	background: var(--surface);
 	cursor: pointer;
@@ -352,7 +358,7 @@
 }
 
 .onboarding-page .review-ledger {
-	border-top: 1px solid var(--line);
+	border-top: 1px solid var(--line-passive);
 }
 
 .onboarding-page .review-ledger > div {
@@ -361,7 +367,7 @@
 	gap: 20px;
 	min-width: 0;
 	padding: 16px 0;
-	border-bottom: 1px solid var(--line);
+	border-bottom: 1px solid var(--line-passive);
 }
 
 .onboarding-page .review-ledger span {
@@ -398,7 +404,7 @@
 	gap: 10px;
 	margin-top: 32px;
 	padding-top: 18px;
-	border-top: 1px solid var(--line);
+	border-top: 1px solid var(--line-passive);
 }
 
 .onboarding-page .form-message {
@@ -416,11 +422,13 @@
 
 	.onboarding-page .step-rail button {
 		justify-content: center;
-		font-size: 0;
+		font-size: clamp(0.61rem, 2.55vw, 0.78rem);
+		letter-spacing: -0.015em;
+		white-space: nowrap;
 	}
 
 	.onboarding-page .step-rail span {
-		font-size: 0.78rem;
+		font-size: 0.72rem;
 	}
 
 	.onboarding-page .choice-track.two-up,

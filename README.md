@@ -208,9 +208,10 @@ corepack pnpm verify:dependencies
 corepack pnpm verify:image -- runway:local
 ```
 
-Browser suites allocate an ephemeral PostgreSQL database and preview port, so functional and visual
-checks do not share account, rate-limit, or training state. Visual snapshot changes still require
-browser and diff inspection.
+Browser suites and the local production-preview gate allocate ephemeral PostgreSQL databases, so
+verification never migrates or reuses the configured development database. Functional and visual
+checks also receive isolated preview ports and do not share account, rate-limit, or training state.
+Visual snapshot changes still require browser and diff inspection.
 
 To verify the built application, start the production preview in one terminal:
 

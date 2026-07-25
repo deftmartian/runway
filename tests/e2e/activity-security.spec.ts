@@ -231,10 +231,9 @@ test('import requires an explicit training time zone before upload or source con
 }) => {
 	await createAccount(page);
 	await page.goto('/app/import');
-	await openImportSourceSetup(page, 'Nextcloud');
 
 	await expect(
-		page.getByRole('alert').getByText('Set the training time zone before importing.', {
+		page.getByRole('alert').getByText('Choose a training time zone before importing.', {
 			exact: true
 		})
 	).toBeVisible();
@@ -244,9 +243,9 @@ test('import requires an explicit training time zone before upload or source con
 			.filter({ hasText: /Settings/ })
 			.first()
 	).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Connect folder' })).toBeDisabled();
-	await openImportSourceSetup(page);
-	await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
+	await expect(page.getByLabel('Add import source unavailable')).toBeVisible();
+	await expect(page.locator('details.source-setup')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Upload GPX' })).toBeDisabled();
 
 	const response = await page.request.post('/app/import?/saveNextcloudSource', {
 		headers: { origin: new URL(page.url()).origin },

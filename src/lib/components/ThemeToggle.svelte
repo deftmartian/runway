@@ -5,8 +5,8 @@
 
 	const storageKey = 'runway-theme';
 	const themeColors: Record<Theme, string> = {
-		light: '#edf3f7',
-		dark: '#071018'
+		light: '#F4F7FA',
+		dark: '#0D151D'
 	};
 
 	let { class: className = '' }: { class?: string } = $props();

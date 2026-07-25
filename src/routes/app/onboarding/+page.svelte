@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { beforeNavigate } from '$app/navigation';
 	import { flushSync, onMount, tick } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 	import OnboardingGoalStep from './OnboardingGoalStep.svelte';
@@ -23,19 +24,28 @@
 	import './onboarding.css';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
-	const initialValues = readInitialValues();
 	const initialWindows = readInitialWindows();
-	let values = $state<OnboardingValues>({ ...initialValues });
+	let values = $state<OnboardingValues>(copyValues(readInitialValues()));
+	let cleanValues = $state<OnboardingValues>(copyValues(readCleanValues()));
 	let windows = $state<TargetWindows>(initialWindows);
 	let step = $state(0);
 	let isSubmitting = $state(false);
 	let hydrated = $state(false);
 	let clientMessage = $state('');
+	let submissionCanLeave = $state(false);
 	const fieldErrors = $derived((form?.fieldErrors ?? {}) as OnboardingFieldErrors);
 	const healthBlocked = $derived(healthBlocksScheduling(values));
 
 	function readInitialValues() {
 		return form?.values ?? data.initialValues;
+	}
+
+	function readCleanValues() {
+		return data.initialValues;
+	}
+
+	function copyValues(source: OnboardingValues): OnboardingValues {
+		return { ...source, availability: [...source.availability] };
 	}
 
 	function readInitialWindows(): TargetWindows {
@@ -49,8 +59,35 @@
 
 	onMount(() => {
 		hydrated = true;
-		if (!values.timeZone) values.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+		if (!values.timeZone) {
+			const detectedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+			values.timeZone = detectedTimeZone;
+			if (!cleanValues.timeZone) cleanValues.timeZone = detectedTimeZone;
+		}
 		updateTargetWindow(values.timeZone);
+	});
+
+	const hasUnsavedChanges = $derived(JSON.stringify(values) !== JSON.stringify(cleanValues));
+
+	function shouldGuardExit() {
+		return hydrated && hasUnsavedChanges && !submissionCanLeave;
+	}
+
+	beforeNavigate(({ cancel }) => {
+		if (!shouldGuardExit()) return;
+		if (!window.confirm('Leave plan setup? Your unsaved changes will be lost.')) cancel();
+	});
+
+	onMount(() => {
+		function confirmUnload(event: BeforeUnloadEvent) {
+			if (!shouldGuardExit()) return;
+			event.preventDefault();
+		}
+
+		window.addEventListener('beforeunload', confirmUnload);
+		return () => {
+			window.removeEventListener('beforeunload', confirmUnload);
+		};
 	});
 
 	function chooseGoal(kind: OnboardingValues['goalKind']) {
@@ -131,6 +168,7 @@
 		const problemStep = validationStep(values, windows, Boolean(data.activeGoal));
 		if (problemStep === null) {
 			clientMessage = '';
+			submissionCanLeave = true;
 			return;
 		}
 		event.preventDefault();
@@ -185,6 +223,7 @@
 			return async ({ update }) => {
 				await update();
 				isSubmitting = false;
+				submissionCanLeave = false;
 			};
 		}}
 	>

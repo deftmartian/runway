@@ -18,7 +18,11 @@ for (const [name, contents] of [
 
 const imageJob = section(workflow, '  image:', '  android-build:');
 for (const required of [
-	'needs: [checks, browser]',
+	'needs: [checks, browser, android-release]',
+	'always()',
+	"needs.checks.result == 'success'",
+	"needs.browser.result == 'success'",
+	"(startsWith(github.ref, 'refs/tags/v') == false || needs.android-release.result == 'success')",
 	'platforms: linux/amd64,linux/arm64',
 	'push: true',
 	'tags: ${{ env.RUNWAY_CANDIDATE_IMAGE }}',

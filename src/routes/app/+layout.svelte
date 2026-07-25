@@ -61,6 +61,8 @@
 	const usesSetupNavigation = $derived(!data.setupComplete);
 	const navItems = $derived(usesSetupNavigation ? setupNavItems : appNavItems);
 	const brandHref = $derived(usesSetupNavigation ? '/app/onboarding' : '/app');
+	const isOnboarding = $derived(page.url.pathname === resolve('/app/onboarding'));
+	const hasExistingGoal = $derived(Boolean(page.data['activeGoal']));
 	const isActive = (item: NavItem) => {
 		return item.path === resolve('/app')
 			? page.url.pathname === item.path
@@ -72,47 +74,67 @@
 			requestAnimationFrame(resetRouteScroll);
 			setTimeout(resetRouteScroll, 0);
 			setTimeout(resetRouteScroll, 80);
-			requestAnimationFrame(() => document.querySelector<HTMLElement>('#app-content')?.focus());
+			requestAnimationFrame(focusRouteHeading);
 		}
 	});
 
 	function resetRouteScroll() {
 		window.scrollTo({ top: 0, left: 0 });
 	}
+
+	function focusRouteHeading() {
+		const content = document.querySelector<HTMLElement>('#app-content');
+		const heading = content?.querySelector<HTMLElement>('h1');
+		if (heading) {
+			heading.tabIndex = -1;
+			heading.focus({ preventScroll: true });
+			return;
+		}
+		content?.focus({ preventScroll: true });
+	}
 </script>
 
 <a class="skip-link" href="#app-content">Skip to main content</a>
-<header class="topbar">
+<header class:setup-shell={isOnboarding} class="topbar">
 	<a class="brand" href={resolve(brandHref)}>
 		<RunwayMark />
 		<span>runway</span>
 	</a>
-	<div class="topbar-install"><InstallAppControl compact /></div>
-	<nav class="nav desktop-nav" aria-label="App navigation">
-		{#each navItems as item (item.href)}
-			<a
-				href={resolve(item.href)}
-				aria-current={isActive(item) ? 'page' : undefined}
-				class:active={isActive(item)}>{item.label}</a
-			>
-		{/each}
+	{#if !isOnboarding}
+		<div class="topbar-install"><InstallAppControl compact /></div>
+		<nav class="nav desktop-nav" aria-label="App navigation">
+			{#each navItems as item (item.href)}
+				<a
+					href={resolve(item.href)}
+					aria-current={isActive(item) ? 'page' : undefined}
+					class:active={isActive(item)}>{item.label}</a
+				>
+			{/each}
+		</nav>
+	{/if}
+	<div class="shell-actions">
+		{#if isOnboarding && hasExistingGoal}
+			<a class="back-to-calendar" href={resolve('/app')}>Back to calendar</a>
+		{/if}
 		<AccountActions email={data.user.email} showTheme={false} />
-	</nav>
+	</div>
 </header>
 
 <div id="app-content" class="app-content" tabindex="-1">
 	{@render children()}
 </div>
 
-<nav class="mobile-nav" aria-label="App navigation">
-	{#each navItems as item (item.href)}
-		<a
-			href={resolve(item.href)}
-			aria-current={isActive(item) ? 'page' : undefined}
-			class:active={isActive(item)}><NavIcon name={item.icon} /><span>{item.label}</span></a
-		>
-	{/each}
-</nav>
+{#if !isOnboarding}
+	<nav class="mobile-nav" aria-label="App navigation">
+		{#each navItems as item (item.href)}
+			<a
+				href={resolve(item.href)}
+				aria-current={isActive(item) ? 'page' : undefined}
+				class:active={isActive(item)}><NavIcon name={item.icon} /><span>{item.label}</span></a
+			>
+		{/each}
+	</nav>
+{/if}
 
 <DeviceFolderScanner userId={data.user.id} />
 
@@ -123,6 +145,29 @@
 
 	.topbar-install {
 		margin-left: auto;
+	}
+
+	.shell-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.back-to-calendar {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		padding: 0 10px;
+		color: var(--muted);
+		font-size: 0.9rem;
+		text-decoration: none;
+	}
+
+	.back-to-calendar:hover {
+		color: var(--text);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 
 	@media (max-width: 720px) {
@@ -148,6 +193,19 @@
 
 		.app-content {
 			padding-bottom: calc(78px + env(safe-area-inset-bottom));
+		}
+
+		.setup-shell + .app-content {
+			padding-bottom: calc(40px + env(safe-area-inset-bottom));
+		}
+
+		.setup-shell :global(.account-actions[data-context='header']) {
+			display: flex;
+		}
+
+		.back-to-calendar {
+			padding: 0 4px;
+			font-size: 0.78rem;
 		}
 
 		.mobile-nav {

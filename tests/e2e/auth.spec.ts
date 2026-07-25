@@ -49,10 +49,7 @@ test('theme follows system until light or dark is selected', async ({ page }) =>
 test('auth recovery and account creation failures do not enumerate accounts', async ({ page }) => {
 	await clearPasswordResetRateLimits();
 	const email = await createAccount(page);
-	await page
-		.getByRole('navigation', { name: 'App navigation' })
-		.getByRole('button', { name: 'Sign out' })
-		.click();
+	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page.getByRole('heading', { name: 'runway' })).toBeVisible();
 	await page.goto('/login');
 	await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
@@ -182,10 +179,7 @@ test('TOTP setup reveals recovery codes only after verification and backup sign-
 	const backupCode = backupCodes?.[0];
 	if (!backupCode) throw new Error('TOTP verification did not return backup codes.');
 
-	await page
-		.getByRole('navigation', { name: 'App navigation' })
-		.getByRole('button', { name: 'Sign out' })
-		.click();
+	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL(/\/$/);
 	await page.goto('/login');
 	await localSignInForm(page).getByLabel('Email').fill(email);

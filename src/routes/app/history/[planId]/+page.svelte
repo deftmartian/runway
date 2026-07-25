@@ -336,8 +336,8 @@
 	.history-detail-section {
 		display: grid;
 		gap: 22px;
-		padding: 28px 0;
-		border-bottom: 1px solid var(--line);
+		padding: 26px 0;
+		border-bottom: 1px solid var(--line-passive);
 	}
 
 	.history-detail-header h1,
@@ -346,7 +346,8 @@
 	}
 
 	.history-detail-header h1 {
-		font-size: clamp(1.8rem, 5vw, 2.8rem);
+		font-size: clamp(1.75rem, 4vw, 2rem);
+		letter-spacing: -0.035em;
 	}
 
 	.history-detail-summary dd small {
@@ -384,7 +385,7 @@
 		gap: 6px;
 		align-content: start;
 		padding-bottom: 24px;
-		border-bottom: 1px solid var(--line);
+		border-bottom: 1px solid var(--line-passive);
 	}
 
 	.plan-ledger header {
@@ -406,7 +407,7 @@
 
 	.ledger-marker {
 		position: relative;
-		border-left: 2px solid var(--line);
+		border-left: 2px solid var(--line-passive);
 	}
 
 	.ledger-marker::before {
@@ -425,14 +426,53 @@
 		align-items: center;
 		min-height: 28px;
 		padding: 3px 9px;
-		border: 1px solid var(--line);
+		border: 1px solid var(--line-control);
 		border-radius: 999px;
 		font-size: 0.78rem;
 		font-weight: 700;
 	}
 
 	.status-label.warn {
-		border-color: color-mix(in oklab, var(--review), var(--line) 45%);
+		border-color: color-mix(in oklab, var(--review), var(--line-control) 45%);
 		color: var(--review);
+	}
+
+	.history-detail-page :global(.history-summary-grid) {
+		border-color: var(--line-passive);
+	}
+
+	.history-detail-page :global(.history-summary-grid > div) {
+		border-color: var(--line-passive);
+	}
+
+	.history-detail-page :global(.history-summary-grid dd),
+	.history-detail-page :global(.history-workout-facts dd) {
+		font-family: var(--measure-font);
+		font-weight: 680;
+	}
+
+	.history-detail-page :global(.history-detail-weeks) {
+		gap: 0;
+		border-top: 1px solid var(--line-passive);
+	}
+
+	.history-detail-page :global(.history-week-record) {
+		border: 0;
+		border-bottom: 1px solid var(--line-passive);
+		border-radius: 0;
+		background: transparent;
+	}
+
+	.history-detail-page :global(.history-week-record > summary) {
+		min-height: 64px;
+		padding: 14px 0;
+	}
+
+	.history-detail-page :global(.history-workout-list) {
+		padding: 0 0 14px 22px;
+	}
+
+	.history-detail-page :global(.history-workout-record) {
+		border-color: var(--line-passive);
 	}
 </style>

@@ -1,55 +1,55 @@
 {
   "version": 3,
   "iconSource": "src/lib/assets/favicon.svg",
-  "iconSourceSha256": "fb582b5cad7f9dcb5cad4c5e958fd9136cb2a7fa97ea9c27af1bf3b880ee7b1d",
+  "iconSourceSha256": "836db65e7c41bd5c0ad0c1550dcca89468a61f38c90ba9b7d9dbd08cd63bfb9f",
   "icons": [
     {
       "output": "static/pwa/icon-192.png",
-      "outputSha256": "4ca5809b77c4f62c1333c2cb8030414e492c6d3a8d78134ff9556842438a57f2"
+      "outputSha256": "8ae048710d51e6afde2885c8a9002c5e5cf9fa24cdf03164aeed63ecf94b8962"
     },
     {
       "output": "static/pwa/icon-512.png",
-      "outputSha256": "16a8bf58346771a52768c91ebb49cb9bf2cdb0aa15c6863307d14a73c451b006"
+      "outputSha256": "f2ce355675961c9c7205b8ad7bdba1854b0e444b498bb39ac8d707c858edefcf"
     },
     {
       "output": "static/pwa/maskable-icon-192.png",
-      "outputSha256": "5e8eaa7a7f00f7ae1935a215efbb563a87cfa59a712c67bae21a3e28a8db5345"
+      "outputSha256": "e4a8d3730ae82921c6c4400938d115069d23d8620fd514e9e983f823f7dcea4f"
     },
     {
       "output": "static/pwa/maskable-icon-512.png",
-      "outputSha256": "cf8bb8c6fd77afce0e75b874571412df5d9c18b7d1af32091d931d53002ddc3b"
+      "outputSha256": "22933967f343669d6975e5ec2f207511fa4610600fd2455cc69ca01b659a15e8"
     },
     {
       "output": "static/pwa/apple-touch-icon.png",
-      "outputSha256": "4c8d3283f01b431ba85727d9761774988cb6c747eef04fc1f40ecaf82e6b8665"
+      "outputSha256": "25636f3e5be85aa2679649547f8274ada5ac8610afde35164ec2fdd583cf9228"
     }
   ],
   "screenshots": [
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
-      "sourceSha256": "c4851c06837c6f57b5c2fac34cf3a6f88fe1aaf81a24930b5b6b693441ac3477",
+      "sourceSha256": "6b5a63e7172a6acae799739d7c69dc7eccab2bda768d27e54f1382215ca5c5d7",
       "output": "static/pwa/screenshots/calendar-mobile.png",
-      "outputSha256": "8941788e9866c5742c031706681ee5464aff3966f7e881d65794f9670b170cc0"
+      "outputSha256": "3baa82d04c562411be625e2202dafa2e828b0f35f9555c68de9c9725af1ac808"
     },
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-wide-linux.png",
-      "sourceSha256": "ad3e4ce096380810cdbba076d09e55f3505ebf6865b5767021949efecd1740a0",
+      "sourceSha256": "5baee7a36790a6d44aed275ceadaf4d18036cb9941dc255f43ac530613f897a9",
       "output": "static/pwa/screenshots/calendar-desktop.png",
-      "outputSha256": "b47f186db61b03624612a495e53e7084f17cbbb5864119d9a349c07ec3f3da7e"
+      "outputSha256": "a2d23f16a758ef0be21fae01917942e03d587a92eb5010596484643ad98fc38e"
     }
   ],
   "documentationScreenshots": [
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-desktop-linux.png",
-      "sourceSha256": "36108344b628cfc38d3fcfad0a5e61e35c738b1af6084cfb78cedce5bf7a1c6f",
+      "sourceSha256": "9eadd218dcdfb96a5917df7c7826b8c0aa09c67f4c2762f1bcc686a88a42be2e",
       "output": "docs/images/runway-calendar-desktop.png",
-      "outputSha256": "36108344b628cfc38d3fcfad0a5e61e35c738b1af6084cfb78cedce5bf7a1c6f"
+      "outputSha256": "9eadd218dcdfb96a5917df7c7826b8c0aa09c67f4c2762f1bcc686a88a42be2e"
     },
     {
       "source": "tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png",
-      "sourceSha256": "c4851c06837c6f57b5c2fac34cf3a6f88fe1aaf81a24930b5b6b693441ac3477",
+      "sourceSha256": "6b5a63e7172a6acae799739d7c69dc7eccab2bda768d27e54f1382215ca5c5d7",
       "output": "docs/images/runway-calendar-mobile.png",
-      "outputSha256": "c4851c06837c6f57b5c2fac34cf3a6f88fe1aaf81a24930b5b6b693441ac3477"
+      "outputSha256": "6b5a63e7172a6acae799739d7c69dc7eccab2bda768d27e54f1382215ca5c5d7"
     }
   ]
 }

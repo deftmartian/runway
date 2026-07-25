@@ -57,6 +57,7 @@
 	let calendarGrid = $state<HTMLDivElement>();
 	let calendarOverflowing = $state(false);
 	let hydrated = $state(false);
+	let compactCalendar = $state(false);
 
 	const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 	const km = (meters: number) => `${Math.round((meters / 1000) * 10) / 10} km`;
@@ -69,6 +70,14 @@
 	const calendarDays = $derived(calendarModel.days);
 	const calendarRows = $derived(calendarModel.rows);
 	const calendarEvents = $derived(calendarDays.flatMap((day) => day.events));
+	const compactCalendarEvents = $derived(
+		calendarDays
+			.filter((day) => day.inSelectedMonth || day.isToday || !isQuietCalendarDay(day))
+			.flatMap((day) => day.events)
+	);
+	const navigableCalendarEvents = $derived(
+		compactCalendar ? compactCalendarEvents : calendarEvents
+	);
 	const selectedEvent = $derived(
 		calendarEvents.find((event) => event.id === selectedEventId) ?? null
 	);
@@ -157,8 +166,6 @@
 	const currentPlanRampEvidence = $derived.by(() => {
 		if (
 			currentSignal?.source !== 'plan' ||
-			(currentTrainingAssessment?.presentation.assessment !== 'above_default' &&
-				currentTrainingAssessment?.presentation.assessment !== 'high_increase') ||
 			requiredWeeklyIncreasePercent === null ||
 			defaultWeeklyIncreasePercent === null
 		) {
@@ -169,9 +176,17 @@
 
 	onMount(() => {
 		hydrated = true;
+		const compactQuery = window.matchMedia('(max-width: 820px)');
+		const updateCompactCalendar = () => {
+			compactCalendar = compactQuery.matches;
+		};
+		updateCompactCalendar();
+		compactQuery.addEventListener('change', updateCompactCalendar);
 		const updateOverflow = () => {
 			calendarOverflowing = Boolean(
-				calendarScroll && calendarScroll.scrollWidth > calendarScroll.clientWidth + 1
+				!compactQuery.matches &&
+				calendarScroll &&
+				calendarScroll.scrollWidth > calendarScroll.clientWidth + 1
 			);
 		};
 		const observer = new ResizeObserver(updateOverflow);
@@ -181,6 +196,7 @@
 		return () => {
 			cancelAnimationFrame(frame);
 			observer.disconnect();
+			compactQuery.removeEventListener('change', updateCompactCalendar);
 		};
 	});
 	const calendarQuery = (month: string) => `month=${month}`;
@@ -188,6 +204,10 @@
 		day.isToday
 			? 'Today. No training scheduled.'
 			: `${day.weekday}, ${day.date}. No training scheduled.`;
+	const dayHeadingLabel = (day: CalendarDay) =>
+		day.inSelectedMonth
+			? day.weekday
+			: `${new Date(`${day.date}T00:00:00`).toLocaleDateString(undefined, { month: 'short' })} ${day.weekday}`;
 	const quietWeekLabel = (row: CalendarWeekRow) => {
 		const selectedDays = row.days.filter((day) => day.inSelectedMonth);
 		const first = selectedDays[0]?.date ?? row.days[0]?.date;
@@ -208,9 +228,11 @@
 	});
 
 	$effect(() => {
-		if (!calendarEvents.some((event) => event.id === focusedEventId)) {
+		if (!navigableCalendarEvents.some((event) => event.id === focusedEventId)) {
 			focusedEventId =
-				calendarEvents.find((event) => event.isToday)?.id ?? calendarEvents[0]?.id ?? null;
+				navigableCalendarEvents.find((event) => event.isToday)?.id ??
+				navigableCalendarEvents[0]?.id ??
+				null;
 		}
 	});
 
@@ -234,23 +256,50 @@
 	}
 
 	function handleCalendarKeydown(event: CalendarEvent, keyboardEvent: KeyboardEvent) {
-		const currentIndex = calendarEvents.findIndex((candidate) => candidate.id === event.id);
+		const currentIndex = navigableCalendarEvents.findIndex(
+			(candidate) => candidate.id === event.id
+		);
 		if (currentIndex < 0) return;
 		let nextIndex: number | null = null;
+		if (compactCalendar) {
+			switch (keyboardEvent.key) {
+				case 'ArrowRight':
+				case 'ArrowDown':
+					nextIndex = Math.min(navigableCalendarEvents.length - 1, currentIndex + 1);
+					break;
+				case 'ArrowLeft':
+				case 'ArrowUp':
+					nextIndex = Math.max(0, currentIndex - 1);
+					break;
+				case 'Home':
+					nextIndex = 0;
+					break;
+				case 'End':
+					nextIndex = navigableCalendarEvents.length - 1;
+					break;
+			}
+			if (nextIndex === null || nextIndex === currentIndex) return;
+			keyboardEvent.preventDefault();
+			focusedEventId = navigableCalendarEvents[nextIndex]?.id ?? focusedEventId;
+			void tick().then(() => {
+				focusCalendarEvent(focusedEventId);
+			});
+			return;
+		}
 		switch (keyboardEvent.key) {
 			case 'ArrowRight':
-				nextIndex = Math.min(calendarEvents.length - 1, currentIndex + 1);
+				nextIndex = Math.min(navigableCalendarEvents.length - 1, currentIndex + 1);
 				break;
 			case 'ArrowLeft':
 				nextIndex = Math.max(0, currentIndex - 1);
 				break;
 			case 'ArrowDown':
-				nextIndex = calendarEvents.findIndex(
+				nextIndex = navigableCalendarEvents.findIndex(
 					(candidate) => candidate.date === addIsoDays(event.date, 7)
 				);
 				break;
 			case 'ArrowUp':
-				nextIndex = calendarEvents.findIndex(
+				nextIndex = navigableCalendarEvents.findIndex(
 					(candidate) => candidate.date === addIsoDays(event.date, -7)
 				);
 				break;
@@ -258,12 +307,12 @@
 				nextIndex = 0;
 				break;
 			case 'End':
-				nextIndex = calendarEvents.length - 1;
+				nextIndex = navigableCalendarEvents.length - 1;
 				break;
 		}
 		if (nextIndex === null || nextIndex < 0 || nextIndex === currentIndex) return;
 		keyboardEvent.preventDefault();
-		focusedEventId = calendarEvents[nextIndex]?.id ?? focusedEventId;
+		focusedEventId = navigableCalendarEvents[nextIndex]?.id ?? focusedEventId;
 		void tick().then(() => {
 			focusCalendarEvent(focusedEventId);
 		});
@@ -271,11 +320,18 @@
 
 	function focusCalendarEvent(eventId: string | null) {
 		if (!eventId) return;
-		const target = document.querySelector<HTMLElement>(
-			`[data-calendar-event-id="${CSS.escape(eventId)}"]`
-		);
+		const selector = `[data-calendar-event-id="${CSS.escape(eventId)}"]`;
+		const target = document.querySelector<HTMLElement>(selector);
 		const disclosure = target?.closest<HTMLDetailsElement>('details.quiet-calendar-week');
-		if (disclosure && !disclosure.open) disclosure.open = true;
+		if (disclosure && !disclosure.open) {
+			disclosure.open = true;
+			void tick().then(() => {
+				requestAnimationFrame(() => {
+					document.querySelector<HTMLElement>(selector)?.focus();
+				});
+			});
+			return;
+		}
 		target?.focus();
 	}
 
@@ -305,61 +361,43 @@
 <section class="training-shell" data-hydrated={hydrated}>
 	<div class="training-calendar-panel">
 		<div class="calendar-toolbar">
-			<div class="training-title-block">
-				<h1 class="section-title">Training calendar</h1>
-				{#if currentSignal?.healthNotice}
-					<aside
-						class="training-health-notice"
-						class:paused={currentSignal.healthNotice.level === 'paused'}
-						aria-label="Current health context"
+			<div class="calendar-heading-row">
+				<div class="training-title-block">
+					<h1 class="section-title">Training calendar</h1>
+					<p class="current-week-readout">
+						<span>This week</span><strong>{currentWeekLabel}</strong>
+					</p>
+				</div>
+				<div class="calendar-month-control" aria-label="Calendar month">
+					<a
+						class="button ghost"
+						href={resolve(`/app?${calendarQuery(calendar.previousMonth)}`)}
+						aria-label="Previous month">Previous</a
 					>
-						<strong>{currentSignal.healthNotice.heading}</strong>
-						<span>{currentSignal.healthNotice.message}</span>
-					</aside>
-				{/if}
-				{#if currentSignal}
-					<details
-						class="plan-assessment"
-						class:bad-message={currentTrainingAssessment?.presentation.attention === 'blocked'}
-						open={currentTrainingAssessment?.presentation.attention === 'blocked'}
+					<strong>{monthTitle}</strong>
+					<a
+						class="button ghost"
+						href={resolve(`/app?${calendarQuery(calendar.nextMonth)}`)}
+						aria-label="Next month">Next</a
 					>
-						<summary>
-							<span
-								>{currentTrainingAssessment?.heading} · {currentTrainingAssessment?.sourceLabel}</span
-							>
-							<strong>{currentTrainingAssessment?.presentation.label}</strong>
-						</summary>
-						{#if currentSignalReasons.length > 0}
-							<ul>
-								{#each currentSignalReasons as reason (reason)}
-									<li>{reason}</li>
-								{/each}
-							</ul>
-						{:else}
-							<p>No current warnings.</p>
-						{/if}
-					</details>
-					{#if currentPlanRampEvidence}
-						<div class="plan-assessment-evidence" role="status">
-							<span>{currentPlanRampEvidence}</span>
-							<a class="button ghost" href={resolve('/app/onboarding')}>Change goal for ramp</a>
-						</div>
-					{/if}
-				{/if}
-				<details class="calendar-state-key">
-					<summary>Calendar states</summary>
-					<div class="calendar-state-legend" aria-label="Calendar state legend">
-						<span data-state="planned">Planned</span>
-						<span data-state="completed">Completed</span>
-						<span data-state="shortened">Shortened</span>
-						<span data-state="skipped">Skipped</span>
-						<span data-state="missed">Missed</span>
-						<span data-state="review">Review</span>
-						<span data-state="rest">Rest</span>
-						<span data-state="removed">Removed</span>
-					</div>
-				</details>
+					<a
+						class="button quiet-today"
+						href={resolve(`/app?${calendarQuery(calendar.currentMonth)}`)}
+						aria-label="Current month"
+						aria-current={calendar.month === calendar.currentMonth ? 'date' : undefined}>Today</a
+					>
+				</div>
 			</div>
+			{#if currentSignal?.healthNotice}
+				<aside
+					class="training-health-notice"
+					class:paused={currentSignal.healthNotice.level === 'paused'}
+					aria-label="Current health context"
+				>
+					<strong>{currentSignal.healthNotice.heading}</strong>
+					<span>{currentSignal.healthNotice.message}</span>
+				</aside>
+			{/if}
 			{#if targetReached}
 				<div class="message compact-message" role="status">
 					<strong>Target date reached.</strong>
@@ -382,7 +420,7 @@
 				</button>
 				<button
 					type="button"
-					class="command-readout interactive"
+					class="command-readout next interactive"
 					disabled={!nextRun}
 					onclick={(mouseEvent) => {
 						if (nextRun) selectEvent(nextRun, mouseEvent.currentTarget);
@@ -404,31 +442,42 @@
 					<strong>{openItems.length === 0 ? 'Clear' : openItemsLabel}</strong>
 				</button>
 			</div>
-			<p class="current-week-readout"><span>This week</span><strong>{currentWeekLabel}</strong></p>
-			<div class="calendar-toolbar-actions">
-				<div class="calendar-month-control" aria-label="Calendar month">
-					<a
-						class="button ghost"
-						href={resolve(`/app?${calendarQuery(calendar.previousMonth)}`)}
-						aria-label="Previous month">Previous</a
+			<div class="calendar-context-row">
+				{#if currentSignal}
+					<details
+						class="plan-assessment"
+						class:bad-message={currentTrainingAssessment?.presentation.attention === 'blocked'}
+						open={currentTrainingAssessment?.presentation.attention === 'blocked'}
 					>
-					<strong>{monthTitle}</strong>
-					<a
-						class="button ghost"
-						href={resolve(`/app?${calendarQuery(calendar.nextMonth)}`)}
-						aria-label="Next month">Next</a
-					>
-				</div>
-				<a
-					class="button"
-					href={resolve(`/app?${calendarQuery(calendar.currentMonth)}`)}
-					aria-label="Current month"
-					aria-current={calendar.month === calendar.currentMonth ? 'date' : undefined}>Today</a
-				>
+						<summary>
+							<span
+								>{currentTrainingAssessment?.heading} · {currentTrainingAssessment?.sourceLabel}</span
+							>
+							<strong>{currentTrainingAssessment?.presentation.label}</strong>
+						</summary>
+						{#if currentSignalReasons.length > 0}
+							<ul>
+								{#each currentSignalReasons as reason (reason)}
+									<li>{reason}</li>
+								{/each}
+							</ul>
+						{:else}
+							<p>No current warnings.</p>
+						{/if}
+					</details>
+				{/if}
+				{#if currentPlanRampEvidence}
+					<p class="plan-assessment-evidence" role="status">
+						<strong>{currentPlanRampEvidence}</strong>
+						<span>Planning comparison, not medical guidance.</span>
+					</p>
+				{/if}
 				{#if targetReached}
-					<a class="button primary" href={resolve('/app/history')}>Review ended plan</a>
+					<a class="button primary context-action" href={resolve('/app/history')}
+						>Review ended plan</a
+					>
 				{:else}
-					<a class="button ghost" href={resolve('/app/onboarding')}
+					<a class="button ghost context-action" href={resolve('/app/onboarding')}
 						>{hasActivePlan ? 'Change goal' : 'Build plan'}</a
 					>
 				{/if}
@@ -436,7 +485,9 @@
 		</div>
 
 		<p id="calendar-keyboard-help" class="sr-only">
-			Use the arrow keys to move between training days. Press Enter to open a day.
+			{compactCalendar
+				? 'Use Up or Left for the previous training day and Down or Right for the next. Press Enter to open a day.'
+				: 'Use Left and Right for adjacent training days and Up and Down for the same weekday. Press Enter to open a day.'}
 		</p>
 		{#if calendarOverflowing}
 			<p id="calendar-scroll-help" class="calendar-scroll-help">
@@ -577,7 +628,7 @@
 										aria-label={`${day.weekday}, ${day.date}`}
 									>
 										<div class="calendar-day-heading">
-											<span>{day.weekday}</span>
+											<span>{dayHeadingLabel(day)}</span>
 											<strong>{day.dayNumber}</strong>
 										</div>
 										<div class="calendar-day-events">
@@ -608,6 +659,19 @@
 				{/each}
 			</div>
 		</div>
+		<details class="calendar-state-key calendar-state-key-bottom">
+			<summary>Calendar state key</summary>
+			<div class="calendar-state-legend" aria-label="Calendar state legend">
+				<span data-state="planned">Planned</span>
+				<span data-state="completed">Completed</span>
+				<span data-state="shortened">Shortened</span>
+				<span data-state="skipped">Skipped</span>
+				<span data-state="missed">Missed</span>
+				<span data-state="review">Review</span>
+				<span data-state="rest">Rest</span>
+				<span data-state="removed">Removed</span>
+			</div>
+		</details>
 	</div>
 
 	{#if selectedEvent}
@@ -627,7 +691,7 @@
 <style>
 	.quiet-calendar-week {
 		min-width: 0;
-		border-bottom: 1px solid var(--line);
+		border-bottom: 1px solid var(--line-passive);
 	}
 
 	.calendar-scroll-help {
@@ -645,7 +709,7 @@
 		min-height: 44px;
 		padding: 0.55rem 0.75rem;
 		color: var(--muted);
-		background: color-mix(in oklab, var(--surface-strong), transparent 30%);
+		background: color-mix(in oklab, var(--surface-soft), transparent 16%);
 		cursor: pointer;
 		list-style: none;
 	}
@@ -681,7 +745,7 @@
 
 	@media (max-width: 520px) {
 		.quiet-calendar-week > summary strong {
-			display: none;
+			font-size: 0.76rem;
 		}
 	}
 </style>

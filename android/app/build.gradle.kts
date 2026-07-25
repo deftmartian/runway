@@ -85,8 +85,8 @@ android {
         applicationId = runwayApplicationId
         minSdk = 23
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.1"
+        versionCode = 5
+        versionName = "0.3.0"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"

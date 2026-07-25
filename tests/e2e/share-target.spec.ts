@@ -416,7 +416,8 @@ test('approved device folder imports once on foreground and stays account-scoped
 			})
 		)
 		.toBe(false);
-	await createAccount(page);
+	const secondEmail = await createAccount(page);
+	await setTrainingTimeZone(secondEmail);
 	await page.goto('/app/import');
 	await openImportSourceSetup(page, 'Browser folder');
 	await expect(page.getByRole('button', { name: 'Allow device folder' })).toBeVisible();

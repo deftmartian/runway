@@ -23,16 +23,16 @@
 	.auth-page {
 		display: grid;
 		place-items: start center;
-		padding-top: clamp(28px, 7vh, 72px);
+		padding-top: clamp(24px, 6vh, 64px);
 	}
 
 	.auth-surface {
-		width: min(100%, 560px);
+		width: min(100%, 520px);
 		padding: clamp(24px, 4vw, 38px);
-		border: 1px solid var(--line);
-		border-top: 4px solid var(--accent);
+		border: 0;
 		border-radius: var(--radius);
-		background: color-mix(in oklab, var(--surface), var(--surface-strong) 46%);
+		background: var(--surface);
+		box-shadow: var(--elevation);
 	}
 
 	.auth-header {
@@ -43,15 +43,17 @@
 
 	.auth-header h1 {
 		margin: 0;
-		font-size: clamp(1.8rem, 5vw, 2.35rem);
+		font-size: clamp(1.8rem, 5vw, 2.2rem);
+		font-weight: 720;
 		line-height: 1.05;
+		letter-spacing: -0.03em;
 	}
 
 	:global(.auth-surface .auth-section) {
 		display: grid;
 		gap: 12px;
 		padding-top: 20px;
-		border-top: 1px solid var(--line);
+		border-top: 1px solid var(--line-passive);
 	}
 
 	:global(.auth-surface .auth-section > h2) {
@@ -61,7 +63,7 @@
 
 	:global(.auth-surface .auth-disclosure) {
 		padding-top: 18px;
-		border-top: 1px solid var(--line);
+		border-top: 1px solid var(--line-passive);
 	}
 
 	:global(.auth-surface .auth-disclosure > summary) {
@@ -85,6 +87,7 @@
 
 		.auth-surface {
 			padding: 22px 18px 26px;
+			box-shadow: var(--elevation-soft);
 		}
 	}
 </style>

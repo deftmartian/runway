@@ -4,10 +4,15 @@ export const migrationIntegrity = JSON.parse(
 	await readFile(new URL('../drizzle/migration-integrity.json', import.meta.url), 'utf8')
 );
 
-const compatibilityMigration = migrationIntegrity.canonical.at(-1);
-if (!compatibilityMigration) throw new Error('Migration integrity manifest is empty.');
+const compatibilityMigrationIndex = migrationIntegrity.canonical.findIndex(
+	(entry) => entry.tag === '0022_forward_compatible_upgrade'
+);
+if (compatibilityMigrationIndex < 0) {
+	throw new Error('Migration integrity manifest is missing the v0.1.1 compatibility migration.');
+}
 
-export const rebasedFinal = [...migrationIntegrity.rebasedV011, compatibilityMigration];
+const rebasedForwardMigrations = migrationIntegrity.canonical.slice(compatibilityMigrationIndex);
+export const rebasedFinal = [...migrationIntegrity.rebasedV011, ...rebasedForwardMigrations];
 
 export async function readMigrationLedger(sql) {
 	const [record] = await sql`
@@ -27,11 +32,7 @@ export function migrationLedgerIsSupported(rows, { final = false } = {}) {
 			sequenceMatches(rows, migrationIntegrity.canonical) || sequenceMatches(rows, rebasedFinal)
 		);
 	}
-	return (
-		canonicalPrefixMatches(rows) ||
-		sequenceMatches(rows, migrationIntegrity.rebasedV011) ||
-		sequenceMatches(rows, rebasedFinal)
-	);
+	return canonicalPrefixMatches(rows) || rebasedPrefixMatches(rows);
 }
 
 export async function assertSupportedMigrationLedger(sql, options) {
@@ -80,6 +81,20 @@ function canonicalPrefixMatches(rows) {
 	return (
 		rows.length <= migrationIntegrity.canonical.length &&
 		rows.every((row, index) => entryMatches(row, migrationIntegrity.canonical[index]))
+	);
+}
+
+function rebasedPrefixMatches(rows) {
+	if (rows.length < migrationIntegrity.rebasedV011.length || rows.length > rebasedFinal.length) {
+		return false;
+	}
+	return (
+		rows
+			.slice(0, migrationIntegrity.rebasedV011.length)
+			.every((row, index) => entryMatches(row, migrationIntegrity.rebasedV011[index])) &&
+		rows
+			.slice(migrationIntegrity.rebasedV011.length)
+			.every((row, index) => entryMatches(row, rebasedForwardMigrations[index]))
 	);
 }
 

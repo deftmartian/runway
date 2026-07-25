@@ -14,6 +14,7 @@
 	let passkeyMessage = $state('');
 	let pendingAction = $state<string | null>(null);
 	let passkeyPending = $state(false);
+	let hydrated = $state(false);
 	let selectedAuthMode = $state<'sign-in' | 'create-account'>('sign-in');
 	let dismissSignupResult = $state(false);
 	const authMode = $derived(
@@ -39,6 +40,7 @@
 			}
 		};
 		syncModeFromHash();
+		hydrated = true;
 		globalThis.addEventListener('hashchange', syncModeFromHash);
 		return () => {
 			globalThis.removeEventListener('hashchange', syncModeFromHash);
@@ -122,12 +124,14 @@
 				type="button"
 				class:active={authMode === 'sign-in'}
 				aria-pressed={authMode === 'sign-in'}
+				disabled={!hydrated}
 				onclick={showSignIn}>Sign in</button
 			>
 			<button
 				type="button"
 				class:active={authMode === 'create-account'}
 				aria-pressed={authMode === 'create-account'}
+				disabled={!hydrated}
 				onclick={showCreateAccount}>Create account</button
 			>
 		</nav>
@@ -244,9 +248,9 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 4px;
 		padding: 4px;
-		border: 1px solid var(--line);
+		border: 0;
 		border-radius: var(--radius-small);
-		background: var(--surface-strong);
+		background: var(--surface-soft);
 	}
 
 	.auth-mode-switch button {
@@ -255,8 +259,8 @@
 	}
 
 	.auth-mode-switch button.active {
-		border-color: var(--line);
+		border-color: var(--line-control);
 		background: var(--surface);
-		box-shadow: 0 1px 2px color-mix(in oklab, var(--text), transparent 92%);
+		box-shadow: none;
 	}
 </style>

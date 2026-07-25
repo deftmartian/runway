@@ -22,7 +22,8 @@
     { "tag": "0019_timed_prescription_structure", "createdAt": "1784186140000", "hash": "d9165fa81806946d380a51ec6e82cadee45b3f5374a87721084a3b05fab5132c" },
     { "tag": "0020_import_generation_barrier", "createdAt": "1784187000000", "hash": "d44a0bcfeeecd719251881034dff019ad0ecc3e8ef8f4e92241d5c6d637bd276" },
     { "tag": "0021_private_activity_traces", "createdAt": "1784260668587", "hash": "51e522d3bb34c2561a28dcd0cf27f08961f2490b41c53af1cf9c31e22ae5e46d" },
-    { "tag": "0022_forward_compatible_upgrade", "createdAt": "1784689856796", "hash": "b0cb88e76bf109c013d2dae85eb76a98dd2ed7cda0b57eae81a740f825dd287d" }
+    { "tag": "0022_forward_compatible_upgrade", "createdAt": "1784689856796", "hash": "b0cb88e76bf109c013d2dae85eb76a98dd2ed7cda0b57eae81a740f825dd287d" },
+    { "tag": "0023_two_factor_attempt_lockout", "createdAt": "1784950010151", "hash": "158ed81d7d986f8d7bb235437619bff0f4d2a7f0a26ebb2430bc4a588cf1e9bc" }
   ],
   "rebasedV011": [
     { "tag": "0000_initial", "createdAt": "1784301464615", "hash": "06d923af8bc0bccff36051bfb7c6d5aade0d32c6a99ea06de8e630bcd3190c87" },
@@ -47,7 +48,9 @@
     "activity.consequence_plan_id",
     "activity.route_trace",
     "activity.heart_rate_series",
-    "athlete_profile.browser_folder_generation"
+    "athlete_profile.browser_folder_generation",
+    "two_factor.failed_verification_count",
+    "two_factor.locked_until"
   ],
   "requiredConstraints": [
     "activity_consequence_plan_user_fk",

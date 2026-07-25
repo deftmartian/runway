@@ -162,6 +162,13 @@
       "when": 1784689856796,
       "tag": "0022_forward_compatible_upgrade",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784950010151,
+      "tag": "0023_two_factor_attempt_lockout",
+      "breakpoints": true
     }
   ]
 }

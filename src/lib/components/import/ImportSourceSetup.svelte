@@ -98,79 +98,86 @@
 		</p>
 	{/if}
 
-	<details class="source-setup" bind:open={setupOpen}>
-		<summary>Add import source</summary>
-		<div id="source-setup-body" class="source-setup-body">
-			<div class="source-choices" role="group" aria-label="Choose an import source">
-				<button
-					type="button"
-					class:selected={selectedImportSource === 'android'}
-					aria-pressed={selectedImportSource === 'android'}
-					onclick={() => {
-						chooseSource('android');
-					}}
-				>
-					<strong>Android folder</strong>
-					<span>Import in the background from the installed app.</span>
-				</button>
-				<button
-					type="button"
-					class:selected={selectedImportSource === 'browser'}
-					aria-pressed={selectedImportSource === 'browser'}
-					onclick={() => {
-						chooseSource('browser');
-					}}
-				>
-					<strong>Browser folder</strong>
-					<span>Check a Gadgetbridge folder while runway is open.</span>
-				</button>
-				<button
-					type="button"
-					class:selected={selectedImportSource === 'nextcloud'}
-					aria-pressed={selectedImportSource === 'nextcloud'}
-					onclick={() => {
-						chooseSource('nextcloud');
-					}}
-				>
-					<strong>Nextcloud</strong>
-					<span>Sync a password-protected shared folder.</span>
-				</button>
-				<button
-					type="button"
-					class:selected={selectedImportSource === 'upload'}
-					aria-pressed={selectedImportSource === 'upload'}
-					onclick={() => {
-						chooseSource('upload');
-					}}
-				>
-					<strong>Upload GPX</strong>
-					<span>Choose one file from this device.</span>
-				</button>
-			</div>
+	{#if importTimeZoneConfigured}
+		<details class="source-setup" bind:open={setupOpen}>
+			<summary>Add import source</summary>
+			<div id="source-setup-body" class="source-setup-body">
+				<div class="source-choices" role="group" aria-label="Choose an import source">
+					<button
+						type="button"
+						class:selected={selectedImportSource === 'android'}
+						aria-pressed={selectedImportSource === 'android'}
+						onclick={() => {
+							chooseSource('android');
+						}}
+					>
+						<strong>Android folder</strong>
+						<span>Import in the background from the installed app.</span>
+					</button>
+					<button
+						type="button"
+						class:selected={selectedImportSource === 'browser'}
+						aria-pressed={selectedImportSource === 'browser'}
+						onclick={() => {
+							chooseSource('browser');
+						}}
+					>
+						<strong>Browser folder</strong>
+						<span>Check a Gadgetbridge folder while runway is open.</span>
+					</button>
+					<button
+						type="button"
+						class:selected={selectedImportSource === 'nextcloud'}
+						aria-pressed={selectedImportSource === 'nextcloud'}
+						onclick={() => {
+							chooseSource('nextcloud');
+						}}
+					>
+						<strong>Nextcloud</strong>
+						<span>Sync a password-protected shared folder.</span>
+					</button>
+					<button
+						type="button"
+						class:selected={selectedImportSource === 'upload'}
+						aria-pressed={selectedImportSource === 'upload'}
+						onclick={() => {
+							chooseSource('upload');
+						}}
+					>
+						<strong>Upload GPX</strong>
+						<span>Choose one file from this device.</span>
+					</button>
+				</div>
 
-			{#if selectedImportSource === 'android'}
-				<AndroidSourceSetup
-					{androidPairing}
-					{androidApplicationId}
-					{activeAction}
-					{scopedEnhance}
-				/>
-				<ImportPrivacy {routeDataMode} />
-			{:else if selectedImportSource === 'nextcloud'}
-				<NextcloudSourceSetup {activeAction} {importTimeZoneConfigured} {scopedEnhance} />
-				<ImportPrivacy {routeDataMode} />
-			{:else if selectedImportSource === 'upload'}
-				<GpxUploadSource
-					{candidates}
-					{activeAction}
-					{importTimeZoneConfigured}
-					{scopedResult}
-					{scopedEnhance}
-				/>
-				<ImportPrivacy {routeDataMode} />
-			{/if}
+				{#if selectedImportSource === 'android'}
+					<AndroidSourceSetup
+						{androidPairing}
+						{androidApplicationId}
+						{activeAction}
+						{scopedEnhance}
+					/>
+					<ImportPrivacy {routeDataMode} />
+				{:else if selectedImportSource === 'nextcloud'}
+					<NextcloudSourceSetup {activeAction} {importTimeZoneConfigured} {scopedEnhance} />
+					<ImportPrivacy {routeDataMode} />
+				{:else if selectedImportSource === 'upload'}
+					<GpxUploadSource
+						{candidates}
+						{activeAction}
+						{importTimeZoneConfigured}
+						{scopedResult}
+						{scopedEnhance}
+					/>
+					<ImportPrivacy {routeDataMode} />
+				{/if}
+			</div>
+		</details>
+	{:else}
+		<div class="source-setup-locked" aria-label="Add import source unavailable">
+			<strong>Add import source</strong>
+			<span>Choose a training time zone in Settings first.</span>
 		</div>
-	</details>
+	{/if}
 
 	<BrowserFolderSource
 		{userId}
@@ -321,6 +328,25 @@
 
 	.source-setup[open] > summary {
 		border-color: var(--accent);
+	}
+
+	.source-setup-locked {
+		display: grid;
+		gap: 3px;
+		width: fit-content;
+		padding: 9px 12px;
+		border-left: 3px solid var(--rest);
+		color: var(--muted);
+		background: var(--surface-soft);
+	}
+
+	.source-setup-locked strong {
+		color: var(--text);
+		font-size: 0.9rem;
+	}
+
+	.source-setup-locked span {
+		font-size: 0.82rem;
 	}
 
 	.source-setup-body {

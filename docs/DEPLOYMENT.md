@@ -530,12 +530,14 @@ changing the running stack:
 docker pull "${RUNWAY_IMAGE}"
 ```
 
-The migration journal is forward-only. v0.1.3 restores the original 22-entry lineage shipped before
-v0.1.1 and adds `0022_forward_compatible_upgrade`; it upgrades either that lineage or the temporary
-three-entry v0.1.1 rebased baseline without replaying existing schema objects. Do not delete tables or
-edit `drizzle.__drizzle_migrations` to work around the v0.1.1 failure. Take a database backup, deploy
-v0.1.3 or later, and let the bundled migration service apply the single pending migration.
-`verify:migrations` exercises a fresh database and both released histories with existing data probes:
+The migration journal is forward-only. v0.1.3 restored the original 22-entry lineage shipped before
+v0.1.1 and added `0022_forward_compatible_upgrade`; it upgrades either that lineage or the temporary
+three-entry v0.1.1 rebased baseline without replaying existing schema objects. Later migrations,
+including the two-factor lockout state in `0023_two_factor_attempt_lockout`, continue from both
+supported histories. Do not delete tables or edit `drizzle.__drizzle_migrations` to work around an
+upgrade failure. Take a database backup, deploy the newer image, and let the bundled migration
+service apply every pending forward migration. `verify:migrations` exercises a fresh database, both
+released canonical predecessors, and the rebased v0.1.1 history with existing data probes:
 
 ```sh
 corepack pnpm verify:migrations

@@ -589,7 +589,7 @@
 		grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
 		gap: 32px;
 		align-items: end;
-		padding: 20px 0 32px;
+		padding: 6px 0 26px;
 	}
 
 	.stats-page-header h1,
@@ -628,6 +628,7 @@
 
 	.stats-signal strong,
 	.risk-value {
+		font-family: var(--measure-font);
 		font-size: 1.18rem;
 		text-transform: capitalize;
 	}
@@ -635,8 +636,8 @@
 	.stats-section {
 		display: grid;
 		gap: 24px;
-		padding: 34px 0;
-		border-top: 1px solid var(--line);
+		padding: 30px 0;
+		border-top: 1px solid var(--line-passive);
 	}
 
 	.first-run {
@@ -678,7 +679,7 @@
 
 	.first-run-plan {
 		margin: 0;
-		border-block: 1px solid var(--line);
+		border-block: 1px solid var(--line-passive);
 	}
 
 	.first-run-plan > div {
@@ -687,7 +688,7 @@
 		justify-content: space-between;
 		gap: 24px;
 		padding: 15px 0;
-		border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+		border-top: 1px solid var(--line-passive);
 	}
 
 	.first-run-plan > div:first-child {
@@ -725,7 +726,7 @@
 	}
 
 	.section-heading > .risk-value {
-		color: var(--completed);
+		color: var(--accent-strong);
 	}
 
 	.section-heading > .risk-value.review {
@@ -761,7 +762,7 @@
 	.data-strip {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
-		border-block: 1px solid var(--line);
+		border-block: 1px solid var(--line-passive);
 	}
 
 	.data-strip > div {
@@ -770,7 +771,7 @@
 		gap: 7px;
 		min-width: 0;
 		padding: 18px;
-		border-left: 1px solid var(--line);
+		border-left: 1px solid var(--line-passive);
 	}
 
 	.data-strip > div:first-child {
@@ -791,6 +792,7 @@
 	.week-row dd {
 		margin: 0;
 		font-weight: 730;
+		font-family: var(--measure-font);
 	}
 
 	.data-strip dd {
@@ -823,7 +825,7 @@
 		gap: 6px;
 		min-width: 0;
 		padding: 0 24px;
-		border-left: 1px solid var(--line);
+		border-left: 1px solid var(--line-passive);
 	}
 
 	.history-breakdown > div:first-child {
@@ -855,7 +857,7 @@
 	}
 
 	.weekly-breakdown > div {
-		border-top: 1px solid var(--line);
+		border-top: 1px solid var(--line-passive);
 	}
 
 	.week-row {
@@ -863,7 +865,7 @@
 		grid-template-columns: minmax(120px, 0.24fr) minmax(0, 1fr);
 		gap: 24px;
 		padding: 18px 0;
-		border-bottom: 1px solid var(--line);
+		border-bottom: 1px solid var(--line-passive);
 	}
 
 	.week-row header {
@@ -920,7 +922,7 @@
 		}
 
 		.data-strip > div:nth-child(n + 3) {
-			border-top: 1px solid var(--line);
+			border-top: 1px solid var(--line-passive);
 		}
 
 		.history-breakdown {
@@ -930,7 +932,7 @@
 
 		.history-breakdown > div {
 			padding: 18px 0 0;
-			border-top: 1px solid var(--line);
+			border-top: 1px solid var(--line-passive);
 			border-left: 0;
 		}
 
@@ -962,7 +964,7 @@
 		.data-strip > div:first-child,
 		.data-strip > div:nth-child(3) {
 			padding: 14px 0;
-			border-top: 1px solid var(--line);
+			border-top: 1px solid var(--line-passive);
 			border-left: 0;
 		}
 

@@ -191,8 +191,8 @@ export async function inspectBackupArchive(connection, inputPath) {
 /** @param {PostgresConnection} connection */
 export async function verifyRestoredDatabase(connection) {
 	/** @type {{
-	 * canonical: Array<{ createdAt: string, hash: string }>,
-	 * rebasedV011: Array<{ createdAt: string, hash: string }>,
+	 * canonical: Array<{ tag: string, createdAt: string, hash: string }>,
+	 * rebasedV011: Array<{ tag: string, createdAt: string, hash: string }>,
 	 * requiredTables: string[],
 	 * requiredColumns: string[],
 	 * requiredConstraints: string[],
@@ -201,12 +201,17 @@ export async function verifyRestoredDatabase(connection) {
 	const integrity = JSON.parse(
 		await readFile(new URL('../drizzle/migration-integrity.json', import.meta.url), 'utf8')
 	);
-	const compatibilityMigration = integrity.canonical.at(-1);
-	if (!compatibilityMigration) throw new Error('The migration integrity manifest is empty.');
-	const supportedLedgers = [
-		integrity.canonical,
-		[...integrity.rebasedV011, compatibilityMigration]
+	const compatibilityMigrationIndex = integrity.canonical.findIndex(
+		(entry) => entry.tag === '0022_forward_compatible_upgrade'
+	);
+	if (compatibilityMigrationIndex < 0) {
+		throw new Error('The migration integrity manifest is missing the compatibility migration.');
+	}
+	const rebasedFinal = [
+		...integrity.rebasedV011,
+		...integrity.canonical.slice(compatibilityMigrationIndex)
 	];
+	const supportedLedgers = [integrity.canonical, rebasedFinal];
 	const ledgerChecks = supportedLedgers.map((entries) => {
 		const expected = JSON.stringify(entries.map((entry) => [entry.createdAt, entry.hash]));
 		return `coalesce((select jsonb_agg(jsonb_build_array(created_at::text, hash) order by created_at, id) from drizzle.__drizzle_migrations), '[]'::jsonb) = '${expected}'::jsonb`;

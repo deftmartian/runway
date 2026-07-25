@@ -40,7 +40,7 @@ test('established onboarding creates the distance phase from a repeatable baseli
 	await expect(page.locator('.plan-assessment-evidence')).toContainText(
 		/needed each week · .* runway default/
 	);
-	await expect(page.getByRole('link', { name: 'Change goal for ramp' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Change goal', exact: true })).toBeVisible();
 
 	const state = await getCurrentGoalPlanState(await getUserId(email));
 	expect(state).toMatchObject({
@@ -94,6 +94,31 @@ test('a two-run established baseline can create a plan from two available days o
 		distance: '5k',
 		phase: 'distance'
 	});
+});
+
+test('first-plan setup keeps all progress labels visible at 320px', async ({ page }) => {
+	await page.setViewportSize({ width: 320, height: 800 });
+	await createAccount(page);
+
+	for (const label of ['Goal', 'Starting point', 'Schedule', 'Review']) {
+		await expect(page.getByRole('button', { name: new RegExp(label) })).toBeVisible();
+	}
+	await expect(page.getByRole('navigation', { name: 'App navigation' })).toHaveCount(0);
+	await expectNoHorizontalOverflow(page);
+});
+
+test('detected timezone does not mark untouched first-plan setup as unsaved', async ({ page }) => {
+	await createAccount(page);
+	let exitPrompts = 0;
+	page.on('dialog', async (dialog) => {
+		exitPrompts += 1;
+		await dialog.accept();
+	});
+
+	await page.getByRole('button', { name: 'Sign out' }).click();
+	await expect(page).toHaveURL(/\/$/);
+	await expect(page.getByRole('heading', { name: 'runway' })).toBeVisible();
+	expect(exitPrompts).toBe(0);
 });
 
 test('a two-day half-marathon plan requires an explicit concentration acknowledgement', async ({
@@ -532,6 +557,27 @@ test('current pain saves a pending goal without creating workouts', async ({ pag
 	expect(state.workoutCount).toBe(0);
 });
 
+test('change-goal setup uses a focused shell and confirms a dirty calendar exit', async ({
+	page
+}) => {
+	await createPlan(page);
+	await page.goto('/app/onboarding');
+
+	await expect(page.getByRole('link', { name: 'Back to calendar' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'App navigation' })).toHaveCount(0);
+	await page.getByLabel('Race distance').selectOption('10k');
+
+	const dismissed = page.waitForEvent('dialog');
+	await page.getByRole('link', { name: 'Back to calendar' }).click();
+	await (await dismissed).dismiss();
+	await expect(page).toHaveURL(/\/app\/onboarding$/);
+
+	const accepted = page.waitForEvent('dialog');
+	await page.getByRole('link', { name: 'Back to calendar' }).click();
+	await (await accepted).accept();
+	await expect(page).toHaveURL(/\/app$/);
+});
+
 test('active goal can be replaced from the app flow', async ({ page }) => {
 	await createPlan(page);
 	await page.getByRole('link', { name: 'Change goal', exact: true }).click();
@@ -554,7 +600,8 @@ test('active goal can be replaced from the app flow', async ({ page }) => {
 	await goToOnboardingStep(page, 'Review');
 	await expect(page.getByRole('button', { name: 'Replace active plan' })).toBeVisible();
 
+	await page.getByRole('link', { name: 'Back to calendar' }).click();
 	await page.getByRole('link', { name: 'History' }).click();
-	await expect(page.getByRole('heading', { name: 'Past plans' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
 	await expect(page.getByText('Goal changed')).toBeVisible();
 });

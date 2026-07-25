@@ -67,6 +67,7 @@ try {
 		const requiredColumns = {
 			activity: ['consequence_plan_id', 'heart_rate_series', 'route_trace'],
 			athlete_profile: ['activity_import_generation', 'route_data_mode'],
+			two_factor: ['failed_verification_count', 'locked_until'],
 			workout: ['interval_structure', 'prescription_kind']
 		};
 		const columns = await sql`

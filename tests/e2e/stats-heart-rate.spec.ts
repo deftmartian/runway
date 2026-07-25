@@ -64,7 +64,7 @@ test('heart-rate imports stay descriptive while stats show the measured zones', 
 	page
 }) => {
 	const email = await createAccount(page);
-	await page.getByRole('link', { name: 'Settings' }).click();
+	await page.goto('/app/settings');
 	await page.getByText('Heart-rate zones', { exact: true }).click();
 	await page.getByLabel('Sex used for estimates').selectOption('female');
 	await page.getByLabel('Age').fill('35');
@@ -146,7 +146,7 @@ test('heart-rate stats remain available without an active plan', async ({ page }
 
 test('settings keeps training profile values visible after save', async ({ page }) => {
 	await createAccount(page);
-	await page.getByRole('link', { name: 'Settings' }).click();
+	await page.goto('/app/settings');
 	await page.getByText('Heart-rate zones', { exact: true }).click();
 	await expect(page.getByLabel('Age')).toHaveValue('');
 	await expect(page.getByLabel('Max heart rate')).toHaveValue('');

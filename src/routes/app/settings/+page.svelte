@@ -125,7 +125,7 @@
 	}
 
 	.page-heading {
-		padding: 8px 0 24px;
+		padding: 4px 0 22px;
 	}
 
 	.page-heading h1 {
@@ -134,7 +134,8 @@
 	}
 
 	.page-heading h1 {
-		font-size: clamp(2rem, 5vw, 3rem);
+		font-size: clamp(1.75rem, 4vw, 2rem);
+		letter-spacing: -0.035em;
 	}
 
 	.page-heading .message {
@@ -148,7 +149,7 @@
 				grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
 				column-gap: clamp(24px, 5vw, 64px);
 				padding: 30px 0;
-				border-top: 1px solid var(--line);
+				border-top: 1px solid var(--line-passive);
 			}
 
 			.section-heading {
@@ -176,7 +177,7 @@
 
 			.settings-group + .settings-group {
 				padding-top: 28px;
-				border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-top: 1px solid var(--line-passive);
 			}
 
 			.settings-group:last-child {
@@ -264,7 +265,7 @@
 
 			.zone-fieldset {
 				padding-top: 20px;
-				border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-top: 1px solid var(--line-passive);
 			}
 
 			.settings-ledger {
@@ -272,12 +273,12 @@
 			}
 
 			.settings-control {
-				border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-top: 1px solid var(--line-passive);
 			}
 
 			.security-control:last-child,
 			.data-control:last-of-type {
-				border-bottom: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-bottom: 1px solid var(--line-passive);
 			}
 
 			.settings-control > summary {
@@ -373,7 +374,7 @@
 				justify-content: space-between;
 				gap: 16px;
 				padding: 14px 0;
-				border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-top: 1px solid var(--line-passive);
 			}
 
 			.passkey-row > div {
@@ -396,7 +397,7 @@
 				justify-items: start;
 				gap: 14px;
 				padding-bottom: 18px;
-				border-bottom: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-bottom: 1px solid var(--line-passive);
 			}
 
 			.route-privacy-form fieldset {
@@ -444,7 +445,7 @@
 				align-items: flex-start;
 				gap: 10px;
 				padding: 12px 0;
-				border-bottom: 1px solid color-mix(in oklab, var(--line), transparent 50%);
+				border-bottom: 1px solid var(--line-passive);
 			}
 
 			.health-flags label span {
@@ -459,7 +460,7 @@
 
 			.clear-health-context {
 				padding-top: 16px;
-				border-top: 1px solid color-mix(in oklab, var(--line), transparent 35%);
+				border-top: 1px solid var(--line-passive);
 			}
 
 			.mobile-account-actions {

@@ -39,7 +39,7 @@ for (const viewport of viewports) {
 
 		test(`authenticated app states render cleanly on ${viewport.name}`, async ({ page }) => {
 			await page.emulateMedia({ colorScheme: 'light' });
-			await seedVisualAccount(page, viewport.name);
+			await seedVisualAccount(page, viewport.name, `onboarding-first-plan-${viewport.name}.png`);
 			await page.goto('/app/onboarding');
 			await expect(page.getByRole('heading', { name: 'Change goal' })).toBeVisible();
 			await stableScreenshot(page, `onboarding-${viewport.name}.png`);
@@ -88,6 +88,17 @@ for (const viewport of viewports) {
 	});
 }
 
+test('dark mode public, auth, and offline surfaces have visual coverage', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await page.goto('/');
+	await stableScreenshot(page, 'public-home-dark-desktop.png');
+	await page.goto('/login');
+	await stableScreenshot(page, 'login-dark-desktop.png');
+	await page.goto('/offline.html');
+	await stableScreenshot(page, 'offline-dark-desktop.png');
+});
+
 test('dark mode app state has visual coverage', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.emulateMedia({ colorScheme: 'dark' });
@@ -101,16 +112,19 @@ test('dark mode app state has visual coverage', async ({ page }) => {
 				canvas: getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim()
 			}))
 		)
-		.toEqual({ systemDark: true, canvas: '#0a1212' });
+		.toEqual({ systemDark: true, canvas: '#0d151d' });
 	await waitForCalendarReady(page);
 	await stableScreenshot(page, 'calendar-dark-desktop.png');
+	await page.goto('/app/settings');
+	await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+	await stableScreenshot(page, 'settings-dark-desktop.png');
 });
 
 async function waitForCalendarReady(page: Page) {
 	await expect(page.locator('section.training-shell')).toHaveAttribute('data-hydrated', 'true');
 }
 
-async function seedVisualAccount(page: Page, fixtureName: string) {
+async function seedVisualAccount(page: Page, fixtureName: string, firstPlanScreenshot?: string) {
 	const email = `visual-${fixtureName}@example.test`;
 	await page.goto('/login');
 	await page
@@ -123,6 +137,7 @@ async function seedVisualAccount(page: Page, fixtureName: string) {
 	await signup.getByLabel('Name').fill('Visual Runner');
 	await signup.getByRole('button', { name: 'Create account' }).click();
 	await expect(page).toHaveURL(/\/app\/onboarding$/);
+	if (firstPlanScreenshot) await stableScreenshot(page, firstPlanScreenshot);
 	const target = new Date(testNowIso);
 	target.setUTCDate(target.getUTCDate() + 20 * 7);
 	await page.getByLabel(/Established week/).check();

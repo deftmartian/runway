@@ -5,12 +5,19 @@ import { db } from './index';
 type LedgerRow = { hash: string; createdAt: string };
 type NamedRow = { name: string };
 
-const compatibilityMigration = migrationIntegrity.canonical.at(-1);
-if (!compatibilityMigration) throw new Error('The migration integrity manifest is empty.');
+const compatibilityMigrationIndex = migrationIntegrity.canonical.findIndex(
+	(entry) => entry.tag === '0022_forward_compatible_upgrade'
+);
+if (compatibilityMigrationIndex < 0) {
+	throw new Error('Migration integrity manifest is missing the v0.1.1 compatibility migration.');
+}
 
 const supportedFinalLedgers = [
 	migrationIntegrity.canonical,
-	[...migrationIntegrity.rebasedV011, compatibilityMigration]
+	[
+		...migrationIntegrity.rebasedV011,
+		...migrationIntegrity.canonical.slice(compatibilityMigrationIndex)
+	]
 ];
 
 export async function databaseIsReady(): Promise<boolean> {

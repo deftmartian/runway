@@ -1,27 +1,33 @@
 :root {
 	color-scheme: light;
-	--canvas: #f1f0ea;
-	--surface: #f8f7f2;
-	--surface-strong: #fffdfa;
-	--text: #18211f;
-	--muted: #596963;
-	--line: #c9d0ca;
-	--rail: #24322f;
-	--tick: #98a39f;
-	--accent: #216f70;
-	--accent-strong: #145f66;
-	--on-accent: #f8fffd;
-	--completed: #327552;
-	--rest: #64736f;
-	--review: #91610c;
-	--danger: #a94451;
+	--canvas: #f4f7fa;
+	--surface: #fff;
+	--surface-soft: #eaf1f5;
+	--surface-strong: #fff;
+	--text: #16232d;
+	--muted: #536571;
+	--line-passive: #d8e1e7;
+	--line-control: #718b9b;
+	--line: var(--line-passive);
+	--rail: #253846;
+	--tick: #a8b7c1;
+	--accent: #176b93;
+	--accent-strong: #0f5b81;
+	--on-accent: #fff;
+	--completed: #2f7958;
+	--rest: #687985;
+	--review: #a45f18;
+	--danger: #b33f52;
 	--radius: 10px;
 	--radius-small: 6px;
+	--measure-font: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+	--elevation: 0 12px 34px rgb(22 35 45 / 0.08);
+	--elevation-soft: 0 3px 12px rgb(22 35 45 / 0.06);
 	--safe-area-top: env(safe-area-inset-top, 0px);
 	--safe-area-right: env(safe-area-inset-right, 0px);
 	--safe-area-bottom: env(safe-area-inset-bottom, 0px);
 	--safe-area-left: env(safe-area-inset-left, 0px);
-	--content: min(1440px, calc(100vw - 40px - var(--safe-area-left) - var(--safe-area-right)));
+	--content: min(1320px, calc(100vw - 48px - var(--safe-area-left) - var(--safe-area-right)));
 	font-family:
 		ui-sans-serif,
 		system-ui,
@@ -34,41 +40,51 @@
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
 		color-scheme: dark;
-		--canvas: #0a1212;
-		--surface: #111c1b;
-		--surface-strong: #182624;
-		--text: #eff6f2;
-		--muted: #a5b6af;
-		--line: #31443f;
-		--rail: #d4e2dd;
-		--tick: #4c625c;
-		--accent: #65c4bd;
-		--accent-strong: #9cd6d0;
-		--on-accent: #071311;
-		--completed: #82ca9b;
-		--rest: #a2b5ae;
-		--review: #e0b260;
-		--danger: #ed8791;
+		--canvas: #0d151d;
+		--surface: #141f29;
+		--surface-soft: #1b2a36;
+		--surface-strong: #22333f;
+		--text: #edf4f7;
+		--muted: #a9bac4;
+		--line-passive: #2f414e;
+		--line-control: #688293;
+		--line: var(--line-passive);
+		--rail: #d8e5eb;
+		--tick: #506776;
+		--accent: #6db9e1;
+		--accent-strong: #9ad4f1;
+		--on-accent: #081720;
+		--completed: #73c89a;
+		--rest: #a5b2ba;
+		--review: #f0ab61;
+		--danger: #f18b98;
+		--elevation: 0 16px 42px rgb(0 0 0 / 0.28);
+		--elevation-soft: 0 4px 14px rgb(0 0 0 / 0.2);
 	}
 }
 
 :root[data-theme='dark'] {
 	color-scheme: dark;
-	--canvas: #0a1212;
-	--surface: #111c1b;
-	--surface-strong: #182624;
-	--text: #eff6f2;
-	--muted: #a5b6af;
-	--line: #31443f;
-	--rail: #d4e2dd;
-	--tick: #4c625c;
-	--accent: #65c4bd;
-	--accent-strong: #9cd6d0;
-	--on-accent: #071311;
-	--completed: #82ca9b;
-	--rest: #a2b5ae;
-	--review: #e0b260;
-	--danger: #ed8791;
+	--canvas: #0d151d;
+	--surface: #141f29;
+	--surface-soft: #1b2a36;
+	--surface-strong: #22333f;
+	--text: #edf4f7;
+	--muted: #a9bac4;
+	--line-passive: #2f414e;
+	--line-control: #688293;
+	--line: var(--line-passive);
+	--rail: #d8e5eb;
+	--tick: #506776;
+	--accent: #6db9e1;
+	--accent-strong: #9ad4f1;
+	--on-accent: #081720;
+	--completed: #73c89a;
+	--rest: #a5b2ba;
+	--review: #f0ab61;
+	--danger: #f18b98;
+	--elevation: 0 16px 42px rgb(0 0 0 / 0.28);
+	--elevation-soft: 0 4px 14px rgb(0 0 0 / 0.2);
 }
 
 * {
@@ -171,7 +187,7 @@ pre {
 .page {
 	width: var(--content);
 	margin: 0 auto;
-	padding: 22px 0 calc(40px + var(--safe-area-bottom));
+	padding: 14px 0 calc(48px + var(--safe-area-bottom));
 }
 
 .topbar {
@@ -183,12 +199,12 @@ pre {
 	justify-content: space-between;
 	gap: 12px;
 	width: 100%;
-	margin: 0 0 22px;
-	padding: 10px max(20px, calc((100vw - 1440px) / 2 + 20px));
+	margin: 0 0 14px;
+	padding: 8px max(24px, calc((100vw - 1320px) / 2 + 24px));
 	border: 0;
 	border-bottom: 1px solid var(--line);
 	border-radius: 0;
-	background: color-mix(in oklab, var(--surface-strong), transparent 7%);
+	background: color-mix(in oklab, var(--surface), transparent 5%);
 	backdrop-filter: blur(18px);
 }
 
@@ -205,12 +221,15 @@ pre {
 .nav {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 2px;
 	overflow-x: auto;
 }
 
 .nav form {
 	display: inline-flex;
+	margin-left: 8px;
+	padding-left: 8px;
+	border-left: 1px solid var(--line-passive);
 }
 
 .public-controls {
@@ -228,7 +247,7 @@ button {
 	justify-content: center;
 	min-height: 44px;
 	padding: 0 14px;
-	border: 1px solid var(--line);
+	border: 1px solid var(--line-control);
 	border-radius: var(--radius-small);
 	color: var(--text);
 	background: var(--surface);
@@ -237,6 +256,13 @@ button {
 	transition:
 		background 160ms ease,
 		border-color 160ms ease;
+}
+
+.nav a,
+.nav button {
+	border-color: transparent;
+	background: transparent;
+	box-shadow: none;
 }
 
 .theme-toggle {
@@ -286,17 +312,21 @@ button:disabled {
 .nav button:hover,
 .button:hover,
 button:hover {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 55%);
-	background: color-mix(in oklab, var(--accent), transparent 90%);
+	border-color: var(--accent);
+	background: color-mix(in oklab, var(--accent), transparent 91%);
+}
+
+.nav a:hover,
+.nav button:hover {
+	border-color: transparent;
+	background: var(--surface-soft);
 }
 
 .nav a.active,
 .nav a[aria-current='page'] {
-	border-color: transparent;
-	border-bottom-color: var(--accent);
-	border-radius: 0;
-	background: transparent;
-	box-shadow: inset 0 -2px var(--accent);
+	color: var(--accent-strong);
+	background: var(--surface-soft);
+	box-shadow: none;
 }
 
 .button.primary,
@@ -304,17 +334,20 @@ button.primary {
 	border-color: transparent;
 	color: var(--on-accent);
 	background: var(--accent);
+	box-shadow: none;
 }
 
 .button.primary:hover,
 button.primary:hover {
-	border-color: color-mix(in oklab, var(--accent), var(--rail) 28%);
-	background: color-mix(in oklab, var(--accent), var(--rail) 14%);
+	border-color: transparent;
+	background: var(--accent-strong);
 }
 
 .button.ghost,
 button.ghost {
+	border-color: transparent;
 	background: transparent;
+	box-shadow: none;
 }
 
 button.danger {
@@ -325,21 +358,21 @@ button.danger {
 
 .hero {
 	display: grid;
-	grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-	gap: clamp(22px, 4vw, 52px);
+	grid-template-columns: minmax(0, 0.92fr) minmax(320px, 1.08fr);
+	gap: clamp(28px, 5vw, 72px);
 	align-items: start;
 }
 
 .landing-instrument {
-	min-height: min(720px, calc(100vh - 140px));
-	min-height: min(720px, calc(100dvh - 140px));
-	align-items: stretch;
+	min-height: min(650px, calc(100vh - 100px));
+	min-height: min(650px, calc(100dvh - 100px));
+	align-items: center;
 }
 
 .landing-copy {
 	position: relative;
 	align-content: center;
-	padding: clamp(36px, 6vw, 72px) clamp(8px, 2vw, 24px) clamp(36px, 6vw, 72px) 0;
+	padding: clamp(24px, 4vw, 52px) clamp(8px, 2vw, 24px) clamp(24px, 4vw, 52px) 0;
 	border: 0;
 	border-radius: 0;
 	background: transparent;
@@ -399,19 +432,16 @@ button.danger {
 .runway-visual {
 	display: grid;
 	align-content: stretch;
-	gap: 22px;
-	min-height: 100%;
-	padding: clamp(22px, 4vw, 38px);
-	border: 1px solid var(--line);
+	gap: 20px;
+	min-height: min(560px, calc(100dvh - 150px));
+	padding: clamp(22px, 4vw, 42px);
+	border: 0;
 	border-radius: var(--radius);
 	background:
-		linear-gradient(90deg, color-mix(in oklab, var(--rail), transparent 90%) 1px, transparent 1px) 0
-			0 / 52px 100%,
-		linear-gradient(
-			180deg,
-			color-mix(in oklab, var(--surface-strong), transparent 0%),
-			var(--surface)
-		);
+		linear-gradient(90deg, color-mix(in oklab, var(--rail), transparent 92%) 1px, transparent 1px) 0
+			0 / 56px 100%,
+		var(--surface);
+	box-shadow: var(--elevation);
 }
 
 .runway-visual-top,
@@ -449,7 +479,7 @@ button.danger {
 			transparent 0 34px,
 			color-mix(in oklab, var(--tick), transparent 20%) 34px 36px
 		),
-		color-mix(in oklab, var(--line), transparent 22%);
+		var(--surface-soft);
 	overflow: hidden;
 }
 
@@ -473,28 +503,47 @@ button.danger {
 }
 
 .tick {
+	position: relative;
 	display: grid;
 	place-items: center;
 	min-height: 68px;
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: var(--radius-small);
-	background: color-mix(in oklab, var(--surface-strong), var(--surface) 24%);
-	font-weight: 760;
+	background: var(--surface-soft);
+	font-weight: 690;
+	overflow: hidden;
+}
+
+.tick::before {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 4px;
+	background: var(--rest);
+	content: '';
 }
 
 .tick.done {
-	border-color: color-mix(in oklab, var(--completed), var(--line) 36%);
-	background: color-mix(in oklab, var(--completed), transparent 90%);
+	background: color-mix(in oklab, var(--completed), var(--surface) 91%);
+}
+
+.tick.done::before {
+	background: var(--completed);
 }
 
 .tick.plan {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 36%);
-	box-shadow: inset 4px 0 0 color-mix(in oklab, var(--accent), transparent 30%);
+	background: color-mix(in oklab, var(--accent), var(--surface) 91%);
+}
+
+.tick.plan::before {
+	background: var(--accent);
 }
 
 .tick.review {
-	border-color: color-mix(in oklab, var(--review), var(--line) 30%);
-	background: color-mix(in oklab, var(--review), transparent 90%);
+	background: color-mix(in oklab, var(--review), var(--surface) 92%);
+}
+
+.tick.review::before {
+	background: var(--review);
 }
 
 .tick.rest {
@@ -547,9 +596,9 @@ button.danger {
 
 .headline {
 	margin: 0;
-	font-size: 3.5rem;
-	line-height: 0.96;
-	letter-spacing: 0;
+	font-size: clamp(2.9rem, 6vw, 4.8rem);
+	line-height: 0.94;
+	letter-spacing: -0.045em;
 }
 
 .lede {
@@ -561,8 +610,9 @@ button.danger {
 
 .section-title {
 	margin: 0 0 12px;
-	font-size: 1.5rem;
-	letter-spacing: 0;
+	font-size: clamp(1.65rem, 2.4vw, 2rem);
+	line-height: 1.1;
+	letter-spacing: -0.025em;
 }
 
 .panel-heading {
@@ -1162,7 +1212,7 @@ label:not(.gpx-match-option):has(> input[type='radio']) {
 }
 
 .badge.good {
-	color: var(--completed);
+	color: var(--accent-strong);
 }
 
 .badge.warn {
@@ -1263,18 +1313,18 @@ select,
 textarea {
 	width: 100%;
 	min-height: 44px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
+	border: 1px solid var(--line-control);
+	border-radius: var(--radius-small);
 	padding: 11px 12px;
 	color: var(--text);
-	background: var(--surface-strong);
+	background: var(--surface);
 }
 
 input[type='file']::file-selector-button {
 	min-height: 38px;
 	margin-right: 12px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
+	border: 1px solid var(--line-control);
+	border-radius: var(--radius-small);
 	padding: 0 12px;
 	color: var(--text);
 	background: var(--surface);
@@ -1486,16 +1536,15 @@ details[open] > summary .source-cue::after {
 
 .training-calendar-panel {
 	min-width: 0;
-	padding: clamp(8px, 1.8vw, 20px) 0;
+	padding: 2px 0 20px;
 	background: transparent;
 }
 
 .calendar-toolbar {
 	display: grid;
-	grid-template-columns: minmax(230px, 0.65fr) minmax(360px, 1fr);
-	gap: 14px;
-	align-items: start;
-	margin-bottom: 18px;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 10px;
+	margin-bottom: 12px;
 }
 
 .calendar-toolbar .section-title {
@@ -1508,24 +1557,36 @@ details[open] > summary .source-cue::after {
 
 .training-title-block {
 	display: grid;
-	gap: 8px;
+	gap: 3px;
+}
+
+.calendar-heading-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
 }
 
 .training-command-strip {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
-	gap: 8px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 2px;
+	padding: 4px;
+	border-radius: var(--radius);
+	background: var(--surface);
+	box-shadow: none;
 }
 
 .command-readout {
 	display: grid;
 	align-content: space-between;
 	gap: 8px;
-	min-height: 80px;
+	min-height: 66px;
 	padding: 12px 14px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	background: color-mix(in oklab, var(--surface-strong), var(--surface) 24%);
+	border: 0;
+	border-radius: calc(var(--radius) - 3px);
+	background: transparent;
+	box-shadow: none;
 	text-align: left;
 }
 
@@ -1533,7 +1594,7 @@ details[open] > summary .source-cue::after {
 	min-width: 0;
 	color: var(--muted);
 	font-size: 0.72rem;
-	font-weight: 780;
+	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
 	overflow-wrap: anywhere;
@@ -1542,66 +1603,73 @@ details[open] > summary .source-cue::after {
 .command-readout strong {
 	min-width: 0;
 	font-size: clamp(0.95rem, 1.2vw, 1.18rem);
+	font-weight: 690;
 	line-height: 1.15;
 	overflow-wrap: anywhere;
 }
 
 .command-readout.current {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 58%);
-	box-shadow: inset 3px 0 0 color-mix(in oklab, var(--accent), transparent 10%);
+	box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .command-readout.interactive:not(.review, :disabled) {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 42%);
-	background: color-mix(in oklab, var(--accent), var(--surface-strong) 92%);
-	box-shadow: inset 0 3px 0 color-mix(in oklab, var(--accent), transparent 18%);
+	background: transparent;
+}
+
+.command-readout.next:not(:disabled) {
+	background: color-mix(in oklab, var(--accent), var(--surface) 89%);
+	box-shadow: none;
 }
 
 .command-readout.review:not(:disabled) {
-	border-color: color-mix(in oklab, var(--review), var(--line) 52%);
-	background: color-mix(in oklab, var(--review), var(--surface-strong) 94%);
-	box-shadow: inset 3px 0 0 color-mix(in oklab, var(--review), transparent 14%);
+	background: color-mix(in oklab, var(--review), var(--surface) 94%);
+	box-shadow: inset 3px 0 0 var(--review);
 }
 
 button.command-readout {
 	width: 100%;
-	min-height: 80px;
+	min-height: 66px;
 	padding: 12px 14px;
 	justify-content: stretch;
 }
 
 button.command-readout.interactive:not(.review, :disabled):hover {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 30%);
-	background: color-mix(in oklab, var(--accent), var(--surface-strong) 87%);
-	box-shadow: inset 0 3px 0 color-mix(in oklab, var(--accent), transparent 8%);
+	border-color: transparent;
+	background: color-mix(in oklab, var(--accent), var(--surface) 85%);
+	box-shadow: none;
 }
 
 button.command-readout.review:not(:disabled):hover {
-	border-color: color-mix(in oklab, var(--review), var(--line) 34%);
-	background: color-mix(in oklab, var(--review), var(--surface-strong) 90%);
-	box-shadow: inset 3px 0 0 color-mix(in oklab, var(--review), transparent 6%);
+	border-color: transparent;
+	background: color-mix(in oklab, var(--review), var(--surface) 89%);
+	box-shadow: inset 3px 0 0 var(--review);
 }
 
 .current-week-readout {
 	display: flex;
 	gap: 8px;
 	align-items: baseline;
-	margin: 8px 0 0;
-	padding-left: 4px;
+	margin: 0;
 	color: var(--muted);
 	font-size: 0.86rem;
 }
 
 .current-week-readout strong {
 	color: var(--text);
+	font-family: var(--measure-font);
+	font-size: 0.82rem;
 }
 
 .calendar-state-key > summary {
 	min-height: 44px;
-	padding: 12px 4px;
+	padding: 10px 2px;
 	color: var(--muted);
 	font-size: 0.84rem;
 	cursor: pointer;
+}
+
+.calendar-state-key-bottom {
+	margin-top: 8px;
 }
 
 .calendar-state-legend {
@@ -1663,9 +1731,8 @@ button.command-readout.review:not(:disabled):hover {
 .plan-assessment {
 	display: grid;
 	min-width: 0;
-	padding: 10px 4px;
-	border-top: 1px solid var(--line);
-	border-bottom: 1px solid var(--line);
+	padding: 0;
+	border: 0;
 }
 
 .plan-assessment > summary {
@@ -1673,7 +1740,7 @@ button.command-readout.review:not(:disabled):hover {
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
-	min-height: 44px;
+	min-height: 40px;
 	cursor: pointer;
 }
 
@@ -1701,17 +1768,32 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .plan-assessment-evidence {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	padding: 10px 4px 2px;
+	display: grid;
+	gap: 1px;
+	margin: 0;
+	padding: 5px 0;
 	color: var(--muted);
-	font-size: 0.86rem;
+	font-size: 0.78rem;
 }
 
-.plan-assessment-evidence .button {
-	flex: 0 0 auto;
+.plan-assessment-evidence strong {
+	color: var(--text);
+	font-family: var(--measure-font);
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.calendar-context-row {
+	display: grid;
+	grid-template-columns: minmax(230px, 1fr) minmax(250px, auto) auto;
+	gap: 12px 20px;
+	align-items: center;
+	min-height: 44px;
+	padding: 0 4px;
+}
+
+.calendar-context-row .context-action {
+	justify-self: end;
 }
 
 .training-health-notice {
@@ -1735,62 +1817,60 @@ button.command-readout.review:not(:disabled):hover {
 	color: var(--muted);
 }
 
-.calendar-toolbar-actions {
-	grid-column: 1 / -1;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: center;
-	justify-content: flex-end;
-	padding-top: 8px;
-	border-top: 1px solid color-mix(in oklab, var(--line), transparent 22%);
-}
-
 .calendar-month-control {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 2px;
 	align-items: center;
 	justify-content: flex-end;
-	min-width: min(100%, 360px);
+	min-width: min(100%, 410px);
 }
 
 .calendar-month-control strong {
 	min-width: 118px;
+	font-family: var(--measure-font);
+	font-size: 0.9rem;
 	text-align: center;
 }
 
+.calendar-month-control .button {
+	min-height: 40px;
+	padding-inline: 10px;
+	border-color: transparent;
+	background: transparent;
+}
+
+.calendar-month-control .button:hover {
+	border-color: transparent;
+	background: var(--surface-soft);
+}
+
 .calendar-month-control .button[aria-current='date'] {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 35%);
-	background: color-mix(in oklab, var(--accent), transparent 84%);
+	color: var(--accent-strong);
+	background: var(--surface-soft);
 }
 
 .calendar-month-scroll {
 	min-width: 0;
 	overflow-x: auto;
 	border-radius: var(--radius);
-	border: 1px solid color-mix(in oklab, var(--line), transparent 10%);
-	background:
-		repeating-linear-gradient(
-			90deg,
-			transparent 0 68px,
-			color-mix(in oklab, var(--tick), transparent 72%) 68px 69px
-		),
-		color-mix(in oklab, var(--surface), var(--surface-strong) 18%);
+	border: 0;
+	background: var(--surface);
+	box-shadow: none;
 }
 
 .calendar-weekday-row {
 	display: grid;
 	grid-template-columns: repeat(7, minmax(0, 1fr));
-	border-bottom: 1px solid var(--line);
-	background: var(--surface-strong);
+	border-bottom: 1px solid var(--line-passive);
+	background: var(--surface);
 }
 
 .calendar-weekday {
 	padding: 10px 12px;
 	color: var(--muted);
 	font-size: 0.78rem;
-	font-weight: 760;
+	font-weight: 680;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 }
@@ -1803,7 +1883,7 @@ button.command-readout.review:not(:disabled):hover {
 .calendar-month-week {
 	display: grid;
 	min-width: 0;
-	border-bottom: 1px solid var(--line);
+	border-bottom: 1px solid var(--line-passive);
 }
 
 .calendar-month-week:last-child {
@@ -1816,17 +1896,14 @@ button.command-readout.review:not(:disabled):hover {
 	gap: 10px;
 	align-items: center;
 	min-width: 0;
-	padding: 11px 10px;
-	border-bottom: 1px solid var(--line);
-	background:
-		linear-gradient(90deg, color-mix(in oklab, var(--rail), transparent 92%) 1px, transparent 1px) 0
-			0 / 28px 100%,
-		color-mix(in oklab, var(--surface-strong), transparent 8%);
+	padding: 9px 10px;
+	border-bottom: 1px solid var(--line-passive);
+	background: var(--surface-soft);
 }
 
 .calendar-week-load.current {
-	background: color-mix(in oklab, var(--accent), var(--surface-strong) 92%);
-	box-shadow: inset 3px 0 0 color-mix(in oklab, var(--accent), transparent 16%);
+	background: color-mix(in oklab, var(--accent), var(--surface) 92%);
+	box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .calendar-week-load.current .week-load-meta span {
@@ -1842,7 +1919,7 @@ button.command-readout.review:not(:disabled):hover {
 .week-load-meta span {
 	color: var(--muted);
 	font-size: 0.78rem;
-	font-weight: 760;
+	font-weight: 680;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 }
@@ -1850,6 +1927,7 @@ button.command-readout.review:not(:disabled):hover {
 .week-load-meta strong {
 	overflow: hidden;
 	color: var(--text);
+	font-family: var(--measure-font);
 	font-size: 0.88rem;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1859,14 +1937,14 @@ button.command-readout.review:not(:disabled):hover {
 	position: relative;
 	overflow: hidden;
 	height: 12px;
-	border-radius: 2px;
+	border-radius: 999px;
 	background:
 		repeating-linear-gradient(
 			90deg,
 			transparent 0 10%,
 			color-mix(in oklab, var(--tick), transparent 35%) 10% calc(10% + 1px)
 		),
-		color-mix(in oklab, var(--line), transparent 24%);
+		color-mix(in oklab, var(--line-passive), var(--surface) 20%);
 }
 
 .week-load-track svg {
@@ -1880,7 +1958,7 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .week-load-completion {
-	fill: var(--accent);
+	fill: var(--completed);
 }
 
 .week-load-tags {
@@ -1903,8 +1981,8 @@ button.command-readout.review:not(:disabled):hover {
 	min-width: 0;
 	min-height: clamp(112px, 11.2vw, 166px);
 	padding: 10px;
-	border-right: 1px solid var(--line);
-	background: color-mix(in oklab, var(--surface), var(--surface-strong) 12%);
+	border-right: 1px solid var(--line-passive);
+	background: var(--surface);
 }
 
 .calendar-month-day:nth-child(7n) {
@@ -1912,7 +1990,7 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-month-day.outside-month {
-	background: color-mix(in oklab, var(--surface-strong), transparent 42%);
+	background: color-mix(in oklab, var(--surface-soft), var(--surface) 36%);
 }
 
 .calendar-month-day.compact-empty {
@@ -1920,12 +1998,8 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-month-day.today {
-	background:
-		linear-gradient(180deg, color-mix(in oklab, var(--accent), transparent 91%), transparent 72%),
-		var(--surface);
-	box-shadow:
-		inset 0 0 0 1px color-mix(in oklab, var(--accent), transparent 26%),
-		inset 0 4px 0 color-mix(in oklab, var(--accent), transparent 20%);
+	background: color-mix(in oklab, var(--accent), var(--surface) 95%);
+	box-shadow: none;
 }
 
 .calendar-day-heading {
@@ -1939,7 +2013,18 @@ button.command-readout.review:not(:disabled):hover {
 
 .calendar-day-heading strong {
 	color: var(--text);
+	font-family: var(--measure-font);
 	font-size: 1rem;
+}
+
+.calendar-month-day.today .calendar-day-heading strong {
+	display: grid;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	place-items: center;
+	background: var(--accent);
+	color: var(--on-accent);
 }
 
 .calendar-day-events {
@@ -1956,8 +2041,11 @@ button.command-readout.review:not(:disabled):hover {
 	width: 100%;
 	min-height: 44px;
 	padding: 8px 9px 8px 12px;
+	border: 0;
+	border-radius: var(--radius-small);
 	text-align: left;
-	background: var(--surface-strong);
+	background: var(--surface-soft);
+	box-shadow: none;
 	overflow: hidden;
 }
 
@@ -1995,8 +2083,7 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event.actual {
-	border-color: color-mix(in oklab, var(--completed), var(--line) 52%);
-	background: color-mix(in oklab, var(--completed), transparent 90%);
+	background: color-mix(in oklab, var(--completed), var(--surface) 91%);
 }
 
 .calendar-event.actual::before {
@@ -2004,14 +2091,13 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event[data-status='planned'] {
-	border-color: color-mix(in oklab, var(--accent), var(--line) 64%);
-	box-shadow: inset 3px 0 0 color-mix(in oklab, var(--accent), transparent 38%);
+	background: color-mix(in oklab, var(--accent), var(--surface) 93%);
+	box-shadow: none;
 }
 
 .calendar-event.rest {
 	color: color-mix(in oklab, var(--text), var(--muted) 18%);
-	border-color: color-mix(in oklab, var(--rest), var(--line) 72%);
-	background: color-mix(in oklab, var(--rest), transparent 96%);
+	background: color-mix(in oklab, var(--rest), var(--surface) 95%);
 }
 
 .calendar-event.rest::before {
@@ -2019,9 +2105,8 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event.open {
-	border-style: dashed;
-	border-color: color-mix(in oklab, var(--accent), var(--line) 62%);
-	background: color-mix(in oklab, var(--accent), transparent 95%);
+	border: 0;
+	background: transparent;
 }
 
 .calendar-event.open::before {
@@ -2029,8 +2114,7 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event.review {
-	border-color: color-mix(in oklab, var(--review), var(--line) 35%);
-	background: color-mix(in oklab, var(--review), transparent 93%);
+	background: color-mix(in oklab, var(--review), var(--surface) 92%);
 }
 
 .calendar-event.review::before {
@@ -2043,8 +2127,7 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event.needs-feedback {
-	border-color: color-mix(in oklab, var(--review), var(--line) 35%);
-	background: color-mix(in oklab, var(--review), transparent 94%);
+	background: color-mix(in oklab, var(--review), var(--surface) 93%);
 }
 
 .calendar-event.needs-feedback::before,
@@ -2057,13 +2140,11 @@ button.command-readout.review:not(:disabled):hover {
 .calendar-event[data-status='skipped'],
 .calendar-event[data-status='missed'],
 .calendar-event[data-status='needs_review'] {
-	border-color: color-mix(in oklab, var(--review), var(--line) 35%);
-	background: color-mix(in oklab, var(--review), transparent 93%);
+	background: color-mix(in oklab, var(--review), var(--surface) 92%);
 }
 
 .calendar-event[data-status='shortened'] {
-	border-color: color-mix(in oklab, var(--review), var(--line) 42%);
-	background: color-mix(in oklab, var(--review), transparent 94%);
+	background: color-mix(in oklab, var(--review), var(--surface) 93%);
 }
 
 .calendar-event[data-status='shortened']::before,
@@ -2072,12 +2153,11 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event.hard-effort {
-	border-color: color-mix(in oklab, var(--review), var(--line) 36%);
+	background: color-mix(in oklab, var(--review), var(--surface) 94%);
 }
 
 .calendar-event.pain {
-	border-color: color-mix(in oklab, var(--danger), var(--line) 30%);
-	background: color-mix(in oklab, var(--danger), transparent 90%);
+	background: color-mix(in oklab, var(--danger), var(--surface) 90%);
 }
 
 .calendar-event.pain::before {
@@ -2085,9 +2165,8 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .calendar-event.selected {
-	border-color: var(--accent);
-	background: color-mix(in oklab, var(--accent), transparent 84%);
-	box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent), transparent 30%);
+	background: color-mix(in oklab, var(--accent), var(--surface) 84%);
+	box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .calendar-empty {
@@ -2100,9 +2179,9 @@ button.command-readout.review:not(:disabled):hover {
 	width: fit-content;
 	min-height: 28px;
 	padding: 4px 8px;
-	border: 1px solid color-mix(in oklab, var(--accent), var(--line) 48%);
-	border-radius: var(--radius);
-	background: color-mix(in oklab, var(--accent), transparent 91%);
+	border: 0;
+	border-radius: var(--radius-small);
+	background: var(--surface-soft);
 }
 
 .event-detail-backdrop {
@@ -2136,10 +2215,10 @@ button.command-readout.review:not(:disabled):hover {
 	margin: auto;
 	overflow: auto;
 	padding: var(--event-detail-padding);
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: var(--radius);
 	background: var(--surface);
-	box-shadow: 0 28px 90px color-mix(in oklab, #000, transparent 64%);
+	box-shadow: var(--elevation);
 }
 
 .event-detail-header {
@@ -2152,7 +2231,7 @@ button.command-readout.review:not(:disabled):hover {
 	justify-content: space-between;
 	margin: calc(-1 * var(--event-detail-padding)) calc(-1 * var(--event-detail-padding)) 0;
 	padding: var(--event-detail-padding) var(--event-detail-padding) 12px;
-	border-bottom: 1px solid var(--line);
+	border-bottom: 1px solid var(--line-passive);
 	background: color-mix(in oklab, var(--surface), transparent 2%);
 }
 
@@ -2176,7 +2255,7 @@ button.command-readout.review:not(:disabled):hover {
 	gap: 4px;
 	min-width: 0;
 	padding: 10px 0;
-	border-bottom: 1px solid var(--line);
+	border-bottom: 1px solid var(--line-passive);
 }
 
 .event-detail-grid dt,
@@ -2198,8 +2277,9 @@ button.command-readout.review:not(:disabled):hover {
 }
 
 .event-detail-grid dd strong {
+	font-family: var(--measure-font);
 	font-size: 1.1rem;
-	font-weight: 760;
+	font-weight: 680;
 }
 
 .interval-prescription {
@@ -2240,9 +2320,9 @@ button.command-readout.review:not(:disabled):hover {
 	display: grid;
 	gap: 10px;
 	padding: 14px;
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: var(--radius);
-	background: var(--surface-strong);
+	background: var(--surface-soft);
 }
 
 .event-actions h3 {
@@ -2257,8 +2337,8 @@ button.command-readout.review:not(:disabled):hover {
 
 .decision-actions {
 	display: grid;
-	gap: 1px;
-	background: var(--line);
+	gap: 0;
+	background: transparent;
 }
 
 .decision-option {
@@ -2267,7 +2347,12 @@ button.command-readout.review:not(:disabled):hover {
 	gap: 12px;
 	align-items: center;
 	padding: 10px;
-	background: var(--surface);
+	border-bottom: 1px solid var(--line-passive);
+	background: transparent;
+}
+
+.decision-option:last-child {
+	border-bottom: 0;
 }
 
 .inline-action-form {
@@ -2290,9 +2375,9 @@ button.command-readout.review:not(:disabled):hover {
 
 .training-source-details {
 	padding: 12px;
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: var(--radius);
-	background: color-mix(in oklab, var(--surface-strong), transparent 16%);
+	background: var(--surface-soft);
 }
 
 .training-source-details summary {
@@ -2639,12 +2724,8 @@ details.setup-codes > summary {
 		transform: none;
 		width: 100%;
 		max-height: calc(100vh - 112px);
-		border-color: color-mix(in oklab, var(--accent), var(--line) 58%);
-		background:
-			linear-gradient(90deg, color-mix(in oklab, var(--rail), transparent 94%) 1px, transparent 1px)
-				0 0 / 42px 100%,
-			var(--surface);
-		box-shadow: 0 22px 70px color-mix(in oklab, #000, transparent 90%);
+		background: var(--surface);
+		box-shadow: var(--elevation);
 	}
 
 	.event-detail-grid {
@@ -2679,6 +2760,7 @@ details.setup-codes > summary {
 	.plan-assessment-evidence {
 		align-items: flex-start;
 		flex-direction: column;
+		padding-block: 7px;
 	}
 
 	.history-intro,
@@ -2748,7 +2830,36 @@ details.setup-codes > summary {
 
 	.hero {
 		grid-template-columns: 1fr;
+		gap: 20px;
 		min-height: auto;
+	}
+
+	.landing-copy {
+		padding: 14px 0 2px;
+	}
+
+	.landing-instrument {
+		min-height: auto;
+	}
+
+	.runway-visual {
+		gap: 14px;
+		min-height: 310px;
+		padding: 20px;
+	}
+
+	.runway-rail {
+		gap: 10px;
+		padding: 8px 0;
+	}
+
+	.runway-week {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+
+	.tick {
+		min-height: 54px;
 	}
 
 	.grid {
@@ -2835,31 +2946,21 @@ details.setup-codes > summary {
 		display: block;
 	}
 
-	.calendar-toolbar,
-	.calendar-toolbar-actions {
-		align-items: stretch;
-		justify-content: stretch;
-	}
-
-	.calendar-toolbar {
-		grid-template-columns: 1fr;
-	}
-
-	.calendar-toolbar-actions {
+	.calendar-heading-row {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
 	}
 
 	.calendar-month-control {
 		display: grid;
-		grid-column: 1 / -1;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: auto minmax(0, 1fr) auto auto;
+		gap: 2px;
 		width: 100%;
-		justify-content: stretch;
+		min-width: 0;
 	}
 
 	.calendar-month-control strong {
-		grid-column: 1 / -1;
+		grid-column: 2;
 		grid-row: 1;
 		min-width: 0;
 		align-self: center;
@@ -2869,17 +2970,33 @@ details.setup-codes > summary {
 
 	.calendar-month-control a:nth-of-type(1) {
 		grid-column: 1;
-		grid-row: 2;
+		grid-row: 1;
 	}
 
 	.calendar-month-control a:nth-of-type(2) {
-		grid-column: 2;
-		grid-row: 2;
+		grid-column: 3;
+		grid-row: 1;
 	}
 
-	.calendar-month-control .button,
-	.calendar-toolbar-actions > .button {
-		width: 100%;
+	.calendar-month-control a:nth-of-type(3) {
+		grid-column: 4;
+		grid-row: 1;
+	}
+
+	.calendar-month-control .button {
+		width: auto;
+		padding-inline: 8px;
+		font-size: 0.86rem;
+	}
+
+	.calendar-context-row {
+		grid-template-columns: 1fr;
+		gap: 2px;
+		padding: 0 2px;
+	}
+
+	.calendar-context-row .context-action {
+		justify-self: start;
 	}
 
 	.calendar-week-load {
@@ -2909,35 +3026,71 @@ details.setup-codes > summary {
 		text-align: center;
 	}
 
-	.calendar-weekday-row,
-	.calendar-month-grid {
-		min-width: 42rem;
+	.calendar-month-scroll {
+		overflow-x: visible;
+		background: transparent;
+		box-shadow: none;
 	}
 
-	.calendar-month-day {
-		min-height: 96px;
-		padding: 6px;
-	}
-
-	.calendar-month-day.compact-empty {
-		min-height: 42px;
-	}
-
-	.calendar-day-heading {
-		align-items: center;
-		justify-content: center;
-		font-size: 0.7rem;
-	}
-
-	.calendar-day-heading span {
+	.calendar-weekday-row {
 		display: none;
 	}
 
+	.calendar-month-grid {
+		min-width: 0;
+	}
+
+	.calendar-month-row {
+		grid-template-columns: 1fr;
+	}
+
+	.calendar-month-day {
+		grid-template-columns: 68px minmax(0, 1fr);
+		gap: 10px;
+		min-height: 58px;
+		padding: 7px 8px;
+		border-right: 0;
+		border-bottom: 1px solid var(--line-passive);
+	}
+
+	.calendar-month-day:last-child {
+		border-bottom: 0;
+	}
+
+	.calendar-month-day.outside-month.compact-empty {
+		display: none;
+	}
+
+	.calendar-month-day.compact-empty {
+		min-height: 52px;
+	}
+
+	.calendar-day-heading {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 5px;
+		align-items: center;
+		justify-content: start;
+		align-self: start;
+		min-height: 44px;
+		font-size: 0.72rem;
+	}
+
+	.calendar-day-heading span {
+		display: block;
+	}
+
 	.calendar-day-heading strong {
-		font-size: 0.82rem;
+		font-size: 0.84rem;
+	}
+
+	.calendar-month-day.today .calendar-day-heading strong {
+		width: 26px;
+		height: 26px;
 	}
 
 	.calendar-day-events {
+		align-content: center;
 		gap: 4px;
 	}
 
@@ -2945,10 +3098,9 @@ details.setup-codes > summary {
 		align-content: start;
 		justify-items: start;
 		min-height: 44px;
-		padding: 6px 6px 6px 10px;
-		border-radius: 7px;
-		font-size: 0.72rem;
-		line-height: 1.12;
+		padding: 7px 9px 7px 12px;
+		font-size: 0.78rem;
+		line-height: 1.2;
 	}
 
 	.calendar-event::before {
@@ -3134,15 +3286,11 @@ details.setup-codes > summary {
 	}
 
 	.headline {
-		font-size: 2.5rem;
+		font-size: 2.75rem;
 	}
 
 	.landing-capabilities {
 		grid-template-columns: 1fr;
-	}
-
-	.runway-week {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
 	.training-command-strip {

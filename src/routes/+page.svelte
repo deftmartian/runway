@@ -97,11 +97,10 @@
 	.product-loop {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0;
+		gap: 12px;
 		max-width: 680px;
 		margin: clamp(16px, 3vw, 28px) 0 4px;
 		padding: 0;
-		border-block: 1px solid var(--line);
 		list-style: none;
 	}
 
@@ -110,12 +109,12 @@
 		align-content: start;
 		gap: 5px;
 		min-width: 0;
-		padding: 15px 12px 17px 0;
+		padding: 12px 4px 0 0;
+		border-top: 2px solid var(--line-passive);
 	}
 
 	.product-loop li + li {
-		padding-left: 12px;
-		border-left: 1px solid var(--line);
+		padding-left: 0;
 	}
 
 	.product-loop span {
@@ -127,7 +126,8 @@
 	}
 
 	.product-loop strong {
-		font-size: 1rem;
+		font-size: 0.98rem;
+		font-weight: 690;
 	}
 
 	.product-loop small {
@@ -153,18 +153,23 @@
 	}
 
 	@media (max-width: 760px) {
+		.landing-copy {
+			gap: 10px;
+		}
+
 		.product-loop {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 8px 16px;
+			margin-top: 6px;
 		}
 
-		.product-loop li:nth-child(3) {
-			padding-left: 0;
-			border-top: 1px solid var(--line);
-			border-left: 0;
+		.product-loop li {
+			padding-top: 8px;
 		}
 
-		.product-loop li:nth-child(4) {
-			border-top: 1px solid var(--line);
+		.product-loop small {
+			font-size: 0.76rem;
+			line-height: 1.25;
 		}
 	}
 </style>

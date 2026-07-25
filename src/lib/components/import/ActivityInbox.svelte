@@ -400,7 +400,11 @@
 		{:else}
 			<div class="empty-state">
 				<strong>No imported activities.</strong>
-				<p>Choose an import source below, or upload one GPX now.</p>
+				<p>
+					{importTimeZoneConfigured
+						? 'Choose an import source below, or upload one GPX now.'
+						: 'Set a training time zone above before choosing a source or uploading GPX.'}
+				</p>
 				<form
 					method="post"
 					action="?/importGpx"
