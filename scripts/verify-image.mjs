@@ -55,7 +55,7 @@ console.log(`${image} has no fixed high or critical OS or library advisories.`);
 
 async function verifyRuntimeDependencies(imageReference) {
 	const script = String.raw`
-		import { readFileSync } from 'node:fs';
+		import { closeSync, openSync, readFileSync, readdirSync, readSync } from 'node:fs';
 		import { createRequire } from 'node:module';
 		import { dirname, join } from 'node:path';
 
@@ -104,6 +104,45 @@ async function verifyRuntimeDependencies(imageReference) {
 				);
 			}
 		}
+
+		const elfArtifacts = [];
+		for (const root of ['/app/build', '/app/node_modules']) {
+			visit(root);
+		}
+		if (elfArtifacts.length > 0) {
+			throw new Error(
+				'Cross-platform build stages require architecture-neutral app artifacts; found ELF files: ' +
+				elfArtifacts.slice(0, 10).join(', ')
+			);
+		}
+
+		function visit(directory) {
+			for (const entry of readdirSync(directory, { withFileTypes: true })) {
+				const path = join(directory, entry.name);
+				if (entry.isDirectory()) {
+					visit(path);
+					continue;
+				}
+				if (!entry.isFile()) continue;
+				const descriptor = openSync(path, 'r');
+				const header = Buffer.alloc(4);
+				let bytesRead;
+				try {
+					bytesRead = readSync(descriptor, header, 0, header.length, 0);
+				} finally {
+					closeSync(descriptor);
+				}
+				if (
+					bytesRead === header.length &&
+					header[0] === 0x7f &&
+					header[1] === 0x45 &&
+					header[2] === 0x4c &&
+					header[3] === 0x46
+				) {
+					elfArtifacts.push(path);
+				}
+			}
+		}
 	`;
 	await run('docker', [
 		'run',
@@ -116,7 +155,7 @@ async function verifyRuntimeDependencies(imageReference) {
 		script
 	]);
 	console.log(
-		`${imageReference} has an internally consistent Better Auth runtime dependency graph.`
+		`${imageReference} has a consistent Better Auth graph and architecture-neutral app artifacts.`
 	);
 }
 

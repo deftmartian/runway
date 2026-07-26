@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS deps
+# Build and production-dependency artifacts are architecture-neutral. Running
+# these stages on the builder avoids emulating pnpm, Rollup, and Vite for every
+# target architecture. scripts/verify-image.mjs rejects native ELF artifacts
+# if a future runtime dependency invalidates that contract.
+FROM --platform=$BUILDPLATFORM node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS deps
 
 WORKDIR /app
 ENV CI=true

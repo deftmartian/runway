@@ -153,6 +153,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
       - name: Build immutable multi-architecture candidate
         if: github.event_name != 'pull_request'
+        id: candidate
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -166,9 +167,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=runway-container
       - name: Load exact published AMD64 candidate
         if: github.event_name != 'pull_request'
+        env:
+          RUNWAY_CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}
         run: |
-          docker pull --platform linux/amd64 "$RUNWAY_CANDIDATE_IMAGE"
-          docker tag "$RUNWAY_CANDIDATE_IMAGE" "$RUNWAY_IMAGE"
+          [[ "$RUNWAY_CANDIDATE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          candidate_ref="${REGISTRY}/${IMAGE_NAME}@${RUNWAY_CANDIDATE_DIGEST}"
+          docker pull --platform linux/amd64 "$candidate_ref"
+          docker tag "$candidate_ref" "$RUNWAY_IMAGE"
+          echo "RUNWAY_VERIFIED_CANDIDATE=$candidate_ref" >> "$GITHUB_ENV"
       - name: Scan local runtime candidate
         run: node scripts/verify-image.mjs "${RUNWAY_IMAGE}"
       - name: Verify whole-project Compose lifecycle
@@ -187,10 +193,11 @@ jobs:
           node scripts/verify-rebased-migrations.mjs
       - name: Verify exact ARM64 candidate runtime and migration contract
         if: github.event_name != 'pull_request'
-        run: >-
-          docker run --rm --platform linux/arm64 --network host
-          -e DATABASE_URL=postgres://runway:${POSTGRES_PASSWORD}@127.0.0.1:5432/runway
-          "$RUNWAY_CANDIDATE_IMAGE" node scripts/run-migrations.mjs
+        env:
+          DATABASE_URL: postgres://runway:${{ env.POSTGRES_PASSWORD }}@127.0.0.1:5432/runway
+          RUNWAY_EXPECTED_BUILD_ID: ${{ github.sha }}
+          RUNWAY_ARM64_SITE_URL: http://127.0.0.1:4110
+        run: node scripts/verify-arm64-image.mjs "$RUNWAY_VERIFIED_CANDIDATE"
       - name: Container diagnostics
         if: failure()
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml ps && docker compose -f compose.yaml -f deploy/compose.production.yaml logs --no-color --tail=200 app worker migrate db
@@ -207,7 +214,7 @@ jobs:
             if [ -n "$tag" ]; then tags+=(--tag "$tag"); fi
           done <<< "$FINAL_IMAGE_TAGS"
           test "${#tags[@]}" -gt 0
-          docker buildx imagetools create "${tags[@]}" "$RUNWAY_CANDIDATE_IMAGE"
+          docker buildx imagetools create "${tags[@]}" "$RUNWAY_VERIFIED_CANDIDATE"
 
   android-build:
     name: unsigned Android APK

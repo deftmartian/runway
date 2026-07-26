@@ -5,6 +5,8 @@ const checkWorkflow = await readFile('.github/workflows/check.yml', 'utf8');
 const browserWorkflow = await readFile('.github/workflows/browser.yml', 'utf8');
 const dockerfile = await readFile('Dockerfile', 'utf8');
 const dockerignore = await readFile('.dockerignore', 'utf8');
+const imageVerifier = await readFile('scripts/verify-image.mjs', 'utf8');
+const armImageVerifier = await readFile('scripts/verify-arm64-image.mjs', 'utf8');
 const errors = [];
 
 for (const [name, contents] of [
@@ -41,10 +43,12 @@ for (const required of [
 	'platforms: linux/amd64,linux/arm64',
 	'push: true',
 	'tags: ${{ env.RUNWAY_CANDIDATE_IMAGE }}',
-	'docker pull --platform linux/amd64 "$RUNWAY_CANDIDATE_IMAGE"',
+	'RUNWAY_CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}',
+	'docker pull --platform linux/amd64 "$candidate_ref"',
+	'echo "RUNWAY_VERIFIED_CANDIDATE=$candidate_ref" >> "$GITHUB_ENV"',
 	'RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}',
-	'docker run --rm --platform linux/arm64',
-	'docker buildx imagetools create "${tags[@]}" "$RUNWAY_CANDIDATE_IMAGE"'
+	'node scripts/verify-arm64-image.mjs "$RUNWAY_VERIFIED_CANDIDATE"',
+	'docker buildx imagetools create "${tags[@]}" "$RUNWAY_VERIFIED_CANDIDATE"'
 ]) {
 	if (!imageJob.includes(required)) errors.push(`release image job is missing: ${required}`);
 }
@@ -75,6 +79,9 @@ const candidateBuild = section(
 if (candidateBuild.includes('steps.meta.outputs.tags')) {
 	errors.push('unverified final image aliases are applied during the candidate build');
 }
+if (!candidateBuild.includes('id: candidate')) {
+	errors.push('published candidate digest is not captured from the one multi-architecture build');
+}
 
 const promotion = section(
 	imageJob,
@@ -83,6 +90,9 @@ const promotion = section(
 );
 if (!promotion.includes("if: github.event_name != 'pull_request'")) {
 	errors.push('pull requests are not excluded from final image promotion');
+}
+if (promotion.includes('"$RUNWAY_CANDIDATE_IMAGE"')) {
+	errors.push('final promotion follows a mutable candidate tag instead of the verified digest');
 }
 if (
 	!workflow.includes(
@@ -101,6 +111,33 @@ if (!workflow.includes("make_latest: 'legacy'")) {
 }
 if (!dockerfile.includes('/app/scripts/migration-state.mjs ./scripts/migration-state.mjs')) {
 	errors.push('runtime image does not contain the shared migration-state validator');
+}
+if (!dockerfile.includes('FROM --platform=$BUILDPLATFORM node:')) {
+	errors.push('architecture-neutral build stages are not pinned to the native build platform');
+}
+if (
+	!imageVerifier.includes("for (const root of ['/app/build', '/app/node_modules'])") ||
+	!imageVerifier.includes('Cross-platform build stages require architecture-neutral app artifacts')
+) {
+	errors.push('runtime image verification does not reject architecture-specific app artifacts');
+}
+if (
+	!workflow.includes('RUNWAY_EXPECTED_BUILD_ID: ${{ github.sha }}') ||
+	!workflow.includes('RUNWAY_ARM64_SITE_URL: http://127.0.0.1:4110')
+) {
+	errors.push(
+		'published ARM64 verification is missing exact build identity or app startup coverage'
+	);
+}
+if (
+	!imageJob.includes('RUNWAY_CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}') ||
+	!imageJob.includes('RUNWAY_VERIFIED_CANDIDATE=$candidate_ref') ||
+	!armImageVerifier.includes(
+		'Published ARM64 verification requires an immutable manifest digest'
+	) ||
+	!armImageVerifier.includes("candidate.platform?.architecture === 'arm64'")
+) {
+	errors.push('published image verification does not follow immutable platform manifest digests');
 }
 if (!dockerignore.split(/\r?\n/u).includes('android/')) {
 	errors.push('Android sources and signing artifacts are not excluded from the web image context');
