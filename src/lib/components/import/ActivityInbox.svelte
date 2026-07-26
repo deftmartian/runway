@@ -13,7 +13,7 @@
 		ScopedEnhanceFactory,
 		ScopedImportResult
 	} from './import-view-model';
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	let {
 		activities,
@@ -44,6 +44,7 @@
 	};
 
 	let emptyGpxInput = $state<HTMLInputElement>();
+	let emptyGpxReady = $state(false);
 	let activityList = $state<HTMLDivElement>();
 	let handledGpxResult = $state<ScopedImportResult | null>(null);
 	let activityTraceDetails = $state<
@@ -66,6 +67,10 @@
 	const reviewImportResult = $derived(
 		inboxResult?.section === 'gpx' || inboxResult?.section === 'empty-gpx'
 	);
+
+	onMount(() => {
+		emptyGpxReady = true;
+	});
 
 	const km = (meters: number) => `${Math.round((meters / 1000) * 10) / 10} km`;
 	const isoDay = (date: Date | string) =>
@@ -127,7 +132,7 @@
 	}
 
 	function chooseEmptyGpx() {
-		if (!emptyGpxInput) return;
+		if (!emptyGpxReady || !emptyGpxInput) return;
 		emptyGpxInput.value = '';
 		emptyGpxInput.click();
 	}
@@ -544,7 +549,7 @@
 					<button
 						type="button"
 						class="primary"
-						disabled={activeAction !== null || !importTimeZoneConfigured}
+						disabled={activeAction !== null || !importTimeZoneConfigured || !emptyGpxReady}
 						onclick={chooseEmptyGpx}
 					>
 						{actionPending('empty-import-gpx') ? 'Importing…' : 'Upload GPX'}

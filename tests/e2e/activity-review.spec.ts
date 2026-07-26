@@ -71,8 +71,10 @@ test('an empty inbox offers a direct review-only GPX upload', async ({ page }) =
 	await expect(sourceChoices.getByRole('button', { name: /^Android folder/ })).toBeVisible();
 	await expect(sourceChoices.getByRole('button', { name: /^Browser folder/ })).toBeVisible();
 	await expect(sourceChoices.getByRole('button', { name: /^Nextcloud/ })).toBeVisible();
+	const uploadButton = page.getByRole('button', { name: 'Upload GPX', exact: true });
+	await expect(uploadButton).toBeEnabled();
 	const chooser = page.waitForEvent('filechooser');
-	await page.getByRole('button', { name: 'Upload GPX', exact: true }).click();
+	await uploadButton.click();
 	await (
 		await chooser
 	).setFiles({
