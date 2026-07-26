@@ -518,11 +518,10 @@ rejection. A direct HTTP origin check intentionally cannot prove the TLS/HSTS bo
 
 Successful image-affecting changes on `main` publish a tested AMD64/ARM64 image to
 `ghcr.io/deftmartian/runway`. The publisher writes `latest` and `sha-<full-commit-sha>` tags; version
-tags also publish the exact release tag and normalized semantic-version tags. The image carries OCI
-source, revision, license, description, provenance, and SBOM metadata. Release tags run the browser
-gate again and advance `latest` only after the same container verification succeeds. The tag
-workflow creates or updates the matching GitHub Release only after the image-backed production stack
-passes.
+tags publish the exact release tag and normalized semantic-version tags without moving `latest`.
+The image carries OCI source, revision, license, description, provenance, and SBOM metadata. Release
+tags run the browser gate again, and the tag workflow creates or updates the matching GitHub Release
+only after the image-backed production stack passes.
 
 After the first successful publish, a repository owner must confirm that the linked `runway` package
 is public in [GitHub's package settings](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
@@ -565,6 +564,27 @@ Start or update a standard production stack with the base file and production ov
 
 ```sh
 docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
+```
+
+### Arcane updates
+
+Treat runway as a Compose project in Arcane. Do not use Arcane's per-container Update action or
+automatic container updater for `app`, `worker`, or `migrate`: a scoped update cannot reliably
+include the successful one-shot migration service. The Compose labels opt all three services out of
+that unsafe path.
+
+After selecting a tested immutable `RUNWAY_IMAGE`, use **Project → Redeploy**. The Arcane project
+must use the same effective configuration as the base file plus `deploy/compose.production.yaml`;
+importing the base development file alone is not a production deployment. A successful
+`migrate` container is expected to show `Exited (0)`, while `app` and `worker` must be running and
+healthy. Arcane may still describe that healthy shape as partially running until
+[its one-shot service issue](https://github.com/getarcaneapp/arcane/issues/3305) is resolved.
+
+Repository verification exercises a fresh project, a changed-image project redeploy, and a
+same-image idempotent rerun:
+
+```sh
+RUNWAY_COMPOSE_TEST_IMAGE=runway:local corepack pnpm verify:compose:lifecycle
 ```
 
 For the optional VLAN deployment, add the network overlay:

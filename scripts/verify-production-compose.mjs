@@ -108,6 +108,11 @@ for (const service of ['app', 'worker', 'migrate']) {
 	if (standard.services[service]?.build) {
 		throw new Error(`Production Compose must not build the ${service} service locally.`);
 	}
+	if (standard.services[service]?.labels?.['com.getarcaneapp.arcane.updater'] !== 'false') {
+		throw new Error(
+			`Production Compose must prevent Arcane from partially updating the ${service} service.`
+		);
+	}
 }
 if (standard.services.migrate.command?.join(' ') !== 'node scripts/run-migrations.mjs') {
 	throw new Error('The migration service must use the migrator bundled in the runtime image.');

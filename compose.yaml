@@ -2,6 +2,11 @@ services:
   app:
     image: ${RUNWAY_IMAGE:-ghcr.io/deftmartian/runway:latest}
     restart: always
+    labels:
+      # Arcane's scoped container updater cannot include this project's exited
+      # one-shot migrator. Use Arcane Project Redeploy so migrations, web, and
+      # worker reconcile as one unit.
+      com.getarcaneapp.arcane.updater: 'false'
     init: true
     read_only: true
     tmpfs:
@@ -81,6 +86,8 @@ services:
   worker:
     image: ${RUNWAY_IMAGE:-ghcr.io/deftmartian/runway:latest}
     restart: always
+    labels:
+      com.getarcaneapp.arcane.updater: 'false'
     init: true
     read_only: true
     tmpfs:
@@ -154,6 +161,8 @@ services:
   migrate:
     image: ${RUNWAY_IMAGE:-ghcr.io/deftmartian/runway:latest}
     restart: 'no'
+    labels:
+      com.getarcaneapp.arcane.updater: 'false'
     depends_on:
       db:
         condition: service_healthy

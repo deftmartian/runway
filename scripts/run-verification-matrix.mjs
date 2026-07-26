@@ -36,7 +36,11 @@ const groups = [
 	{
 		id: 'container',
 		name: 'container',
-		steps: [['verify:docker'], ['verify:image', '--', 'runway:latest']]
+		steps: [
+			['verify:docker'],
+			['verify:compose:lifecycle'],
+			['verify:image', '--', 'runway:latest']
+		]
 	}
 ];
 

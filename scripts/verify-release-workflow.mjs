@@ -38,6 +38,7 @@ const orderedSteps = [
 	'Build immutable multi-architecture candidate',
 	'Load exact published AMD64 candidate',
 	'Scan local runtime candidate',
+	'Verify whole-project Compose lifecycle',
 	'Start image-backed production stack',
 	'Verify exact-image upgrades from both released migration histories',
 	'Verify exact ARM64 candidate runtime and migration contract',

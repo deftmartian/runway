@@ -161,6 +161,10 @@ jobs:
           docker tag "$RUNWAY_CANDIDATE_IMAGE" "$RUNWAY_IMAGE"
       - name: Scan local runtime candidate
         run: node scripts/verify-image.mjs "${RUNWAY_IMAGE}"
+      - name: Verify whole-project Compose lifecycle
+        env:
+          RUNWAY_COMPOSE_TEST_IMAGE: ${{ env.RUNWAY_IMAGE }}
+        run: node scripts/verify-compose-lifecycle.mjs
       - name: Start image-backed production stack
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
       - name: Verify production runtime and PWA revision

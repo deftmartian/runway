@@ -162,7 +162,7 @@ backup with `corepack pnpm db:backup -- <new-file>` and
 `corepack pnpm db:backup:verify -- <file>`. Production deployments should use HTTPS, keep registration
 closed, and pin an immutable image reference. The
 [deployment guide](docs/DEPLOYMENT.md) covers the full environment contract, reverse proxy, OIDC,
-SMTP, imports, backups, and health checks.
+SMTP, imports, backups, health checks, and the required whole-project update flow for Arcane.
 
 ## Development Quick Start
 
