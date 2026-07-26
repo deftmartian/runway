@@ -16,6 +16,21 @@ for (const [name, contents] of [
 	}
 }
 
+for (const releaseGatePath of [
+	'tests/e2e/**',
+	'tests/visual/**',
+	'tests/support/**',
+	'playwright.config.ts',
+	'playwright.visual.config.ts'
+]) {
+	const occurrences = workflow.split(`- ${releaseGatePath}`).length - 1;
+	if (occurrences !== 2) {
+		errors.push(
+			`container publication must react to ${releaseGatePath} changes on pull requests and pushes`
+		);
+	}
+}
+
 const imageJob = section(workflow, '  image:', '  android-build:');
 for (const required of [
 	'needs: [checks, browser, android-release]',
