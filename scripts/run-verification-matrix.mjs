@@ -22,6 +22,7 @@ const groups = [
 		id: 'deployment',
 		name: 'data and deployment',
 		steps: [
+			['verify:actions'],
 			['verify:migrations'],
 			['verify:compose'],
 			['verify:compose:production'],

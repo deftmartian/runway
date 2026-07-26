@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -7,6 +7,9 @@ const scannerImage = 'runway-dependency-scanner:local';
 const root = resolve('.');
 const scanDirectory = mkdtempSync(join(tmpdir(), 'runway-dependency-scan-'));
 const androidRuntimeLock = join(scanDirectory, 'gradle.lockfile');
+const trivyTemporaryDirectory = join(scanDirectory, 'trivy');
+const hostUser = `${process.getuid()}:${process.getgid()}`;
+mkdirSync(trivyTemporaryDirectory);
 
 try {
 	writeFileSync(androidRuntimeLock, releaseRuntimeGradleLock(), { encoding: 'utf8', mode: 0o600 });
@@ -25,6 +28,15 @@ try {
 		'--rm',
 		'--network',
 		'bridge',
+		'--cap-drop',
+		'ALL',
+		'--security-opt',
+		'no-new-privileges',
+		'--read-only',
+		'--user',
+		hostUser,
+		'--volume',
+		`${trivyTemporaryDirectory}:/tmp`,
 		'--volume',
 		`${resolve(root, 'package.json')}:/workspace/package.json:ro`,
 		'--volume',
@@ -33,6 +45,8 @@ try {
 		`${scanDirectory}:/workspace/android-release:ro`,
 		scannerImage,
 		'fs',
+		'--cache-dir',
+		'/tmp/trivy-cache',
 		'--scanners',
 		'vuln',
 		'--pkg-types',

@@ -227,7 +227,7 @@ source-built artifact without private material. The check points Gradle at an is
 so it never reads an operator's local key configuration. Both commands verify their merged manifest
 contains only the reviewed operational and Health Connect permissions and exported components, with
 backups and release cleartext/debugging disabled. Neither command produces a directly distributable release. The
-repository check workflow runs the same commands with JDK 17, Android platform 36, and build tools
+repository CI quality lane runs the same commands with JDK 17, Android platform 36, and build tools
 36.0.0. Version tags use a separate protected signing job. Its `android-release` environment must
 hold the four signing secrets and a `RUNWAY_ANDROID_CERT_SHA256` variable containing the expected
 release-certificate fingerprint; a missing or changed identity blocks publication. Release

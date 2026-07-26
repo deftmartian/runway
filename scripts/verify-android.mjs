@@ -177,7 +177,7 @@ for (const required of [
 	'RUNWAY_ANDROID_CERT_SHA256',
 	'The APK signer does not match the pinned Android release certificate.',
 	'name: signed-android-release',
-	'needs: [image, android-release]',
+	'needs: [image-publish, android-release]',
 	'application/vnd.android.package-archive'
 ]) {
 	if (!releaseWorkflow.includes(required)) {

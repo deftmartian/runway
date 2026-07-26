@@ -310,6 +310,12 @@ Trust boundaries:
 
 ## Required Security Checks
 
+- Pull-request jobs have read-only repository access, do not retain checkout credentials, and cannot
+  publish packages or mount the Docker socket into repository-controlled containers.
+- Manual CI runs verify local candidates but cannot sign Android artifacts, promote images, or create
+  releases.
+- Version tags must resolve into default-branch history, be protected from unauthorized creation or
+  movement by a `refs/tags/v*` repository ruleset, and pass the protected Android environment.
 - Auth routes tested for sign-in, sign-out, and protected-route redirect.
 - Password reset tested for unknown email, duplicate requests, expired token, reused token, bad token, and successful reset.
 - SMTP failure behavior tested without leaking tokens, credentials, or provider internals.

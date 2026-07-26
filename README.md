@@ -1,7 +1,6 @@
 # runway
 
-[![Check](https://github.com/deftmartian/runway/actions/workflows/check.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/check.yml)
-[![Container](https://github.com/deftmartian/runway/actions/workflows/container.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/container.yml)
+[![CI](https://github.com/deftmartian/runway/actions/workflows/container.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/container.yml)
 [![GHCR](https://img.shields.io/badge/container-ghcr.io-1f758f.svg)](https://github.com/deftmartian/runway/pkgs/container/runway)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
@@ -208,6 +207,7 @@ corepack pnpm check
 corepack pnpm test:unit
 corepack pnpm test:e2e
 corepack pnpm test:visual
+corepack pnpm verify:actions
 corepack pnpm verify:migrations
 corepack pnpm verify:compose
 corepack pnpm verify:compose:production
@@ -218,7 +218,9 @@ corepack pnpm verify:image -- runway:local
 Browser suites and the local production-preview gate allocate ephemeral PostgreSQL databases, so
 verification never migrates or reuses the configured development database. Functional and visual
 checks also receive isolated preview ports and do not share account, rate-limit, or training state.
-Visual snapshot changes still require browser and diff inspection.
+Hosted CI divides the functional suite between two independent jobs and runs visual coverage beside
+them; each job has its own PostgreSQL service and remains serial internally. Visual snapshot changes
+still require browser and diff inspection.
 
 To verify the built application, start the production preview in one terminal:
 

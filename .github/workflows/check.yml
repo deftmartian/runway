@@ -5,20 +5,35 @@ name: Check
 
 on:
   workflow_call:
-  pull_request:
-  push:
-    branches: [main, master]
-
-concurrency:
-  group: runway-check-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    inputs:
+      full:
+        description: Run code, deployment, and Android checks in addition to documentation checks.
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
+  docs:
+    name: documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Documentation and publication metadata
+        run: node scripts/verify-docs.mjs
+
   checks:
     name: ${{ matrix.name }}
+    if: inputs.full
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -34,6 +49,8 @@ jobs:
             name: Android
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Validate Gradle wrapper
         if: matrix.task == 'android'
         uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
@@ -65,9 +82,6 @@ jobs:
       - name: Production dependency advisory gate
         if: matrix.task == 'web'
         run: corepack pnpm verify:dependencies
-      - name: Documentation and publication metadata
-        if: matrix.task == 'web'
-        run: corepack pnpm verify:docs
       - name: Static, unit, and production build checks
         if: matrix.task == 'web'
         run: corepack pnpm verify
@@ -87,6 +101,9 @@ jobs:
       - name: Exact-artifact release promotion contract
         if: matrix.task == 'deployment'
         run: corepack pnpm verify:release
+      - name: GitHub Actions syntax and expression contract
+        if: matrix.task == 'deployment'
+        run: corepack pnpm verify:actions
 
       - name: Android selectable-server static contract
         if: matrix.task == 'android'

@@ -13,6 +13,7 @@ export default defineConfig({
 	testDir: 'tests/e2e',
 	testMatch: '**/*.spec.ts',
 	forbidOnly: Boolean(process.env['CI']),
+	fullyParallel: true,
 	workers: 1,
 	use: {
 		baseURL: previewUrl,

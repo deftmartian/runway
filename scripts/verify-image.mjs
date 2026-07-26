@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const [firstArgument, secondArgument] = process.argv.slice(2);
 const image = firstArgument === '--' ? secondArgument : firstArgument;
@@ -7,32 +10,55 @@ if (!image || image.startsWith('-') || /\s/.test(image)) {
 }
 
 const scannerImage = 'runway-image-scanner:local';
+const hostUser = `${process.getuid()}:${process.getgid()}`;
 
 await verifyRuntimeDependencies(image);
 await run('docker', ['build', '--pull', '--file', 'Dockerfile.audit', '--tag', scannerImage, '.']);
-const report = JSON.parse(
-	await capture('docker', [
-		'run',
-		'--rm',
-		'--network',
-		'bridge',
-		'--volume',
-		'/var/run/docker.sock:/var/run/docker.sock:ro',
-		scannerImage,
-		'image',
-		'--quiet',
-		'--format',
-		'json',
-		'--scanners',
-		'vuln',
-		'--severity',
-		'HIGH,CRITICAL',
-		'--ignore-unfixed',
-		'--no-progress',
-		'--skip-version-check',
-		image
-	])
-);
+const scanDirectory = await mkdtemp(join(tmpdir(), 'runway-image-scan-'));
+let report;
+try {
+	const archive = join(scanDirectory, 'image.tar');
+	const trivyTemporaryDirectory = join(scanDirectory, 'trivy');
+	await mkdir(trivyTemporaryDirectory);
+	await run('docker', ['save', '--output', archive, image]);
+	report = JSON.parse(
+		await capture('docker', [
+			'run',
+			'--rm',
+			'--network',
+			'bridge',
+			'--cap-drop',
+			'ALL',
+			'--security-opt',
+			'no-new-privileges',
+			'--read-only',
+			'--user',
+			hostUser,
+			'--volume',
+			`${trivyTemporaryDirectory}:/tmp`,
+			'--volume',
+			`${archive}:/scan/runway-image.tar:ro`,
+			scannerImage,
+			'image',
+			'--input',
+			'/scan/runway-image.tar',
+			'--cache-dir',
+			'/tmp/trivy-cache',
+			'--quiet',
+			'--format',
+			'json',
+			'--scanners',
+			'vuln',
+			'--severity',
+			'HIGH,CRITICAL',
+			'--ignore-unfixed',
+			'--no-progress',
+			'--skip-version-check'
+		])
+	);
+} finally {
+	await rm(scanDirectory, { force: true, recursive: true });
+}
 
 const findings = (report.Results ?? []).flatMap((result) =>
 	(result.Vulnerabilities ?? []).map((vulnerability) => ({

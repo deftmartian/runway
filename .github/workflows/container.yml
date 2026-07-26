@@ -1,67 +1,16 @@
-name: Container
+name: CI
 
-# Build only for image inputs; main and version-tag runs publish the tested artifact.
+# One authoritative graph avoids duplicate checks and keeps publication gated on
+# the exact quality, browser, Android, and image results from this run.
 on:
   pull_request:
-    paths:
-      - Dockerfile
-      - Dockerfile.audit
-      - .dockerignore
-      - compose.yaml
-      - deploy/compose.production.yaml
-      - deploy/compose.ipvlan.yaml
-      - drizzle/**
-      - src/**
-      - static/**
-      - scripts/**
-      - tests/e2e/**
-      - tests/visual/**
-      - tests/support/**
-      - tests/fixtures/migrations/**
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .npmrc
-      - playwright.config.ts
-      - playwright.visual.config.ts
-      - svelte.config.js
-      - vite.config.ts
-      - .github/workflows/container.yml
-      - .github/workflows/check.yml
-      - .github/workflows/browser.yml
   push:
     branches: [main, master]
     tags: ['v*']
-    paths:
-      - Dockerfile
-      - Dockerfile.audit
-      - .dockerignore
-      - compose.yaml
-      - deploy/compose.production.yaml
-      - deploy/compose.ipvlan.yaml
-      - drizzle/**
-      - src/**
-      - static/**
-      - scripts/**
-      - tests/e2e/**
-      - tests/visual/**
-      - tests/support/**
-      - tests/fixtures/migrations/**
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .npmrc
-      - playwright.config.ts
-      - playwright.visual.config.ts
-      - svelte.config.js
-      - vite.config.ts
-      - .github/workflows/container.yml
-      - .github/workflows/check.yml
-      - .github/workflows/browser.yml
   workflow_dispatch:
 
 concurrency:
-  group: runway-container-${{ github.ref }}
+  group: runway-ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -72,23 +21,169 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  scope:
+    name: classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      browser: ${{ steps.scope.outputs.browser }}
+      image: ${{ steps.scope.outputs.image }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed files
+        id: scope
+        run: node scripts/classify-ci-changes.mjs
+
   checks:
-    name: release check matrix
+    name: quality
+    needs: scope
+    permissions:
+      contents: read
     uses: ./.github/workflows/check.yml
+    with:
+      full: ${{ needs.scope.outputs.full == 'true' }}
 
   browser:
-    name: release browser suites
+    name: browser
+    if: needs.scope.outputs.browser == 'true'
+    needs: scope
+    permissions:
+      contents: read
     uses: ./.github/workflows/browser.yml
 
-  image:
+  release-source:
+    name: release source ancestry
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the tagged commit in default-branch history
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          tagged_commit="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          default_ref="refs/remotes/origin/${DEFAULT_BRANCH}"
+          git rev-parse --verify "$default_ref"
+          if ! git merge-base --is-ancestor "$tagged_commit" "$default_ref"; then
+            echo "::error::Version tags must point to a commit in ${DEFAULT_BRANCH} history."
+            exit 1
+          fi
+
+  image-verify:
+    name: unprivileged image verification
     if: >-
       ${{
         always() &&
+        (
+          github.event_name != 'push' ||
+          (
+            github.ref != format('refs/heads/{0}', github.event.repository.default_branch) &&
+            startsWith(github.ref, 'refs/tags/v') == false
+          )
+        ) &&
+        needs.scope.result == 'success' &&
+        needs.scope.outputs.image == 'true' &&
+        needs.checks.result == 'success' &&
+        needs.browser.result == 'success'
+      }}
+    needs: [scope, checks, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      RUNWAY_IMAGE: runway-candidate-local:${{ github.sha }}
+      APP_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
+      MIGRATION_DATABASE_URL: postgres://runway:runway_ci_database_password@db:5432/runway
+      POSTGRES_PASSWORD: runway_ci_database_password
+      ORIGIN: https://runway.example.test
+      PUBLIC_APP_ORIGIN: https://runway.example.test
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.32.0 --activate
+      - name: Install migration verification dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Configure ephemeral auth secret
+        run: echo "BETTER_AUTH_SECRET=$(node scripts/generate-secret.mjs)" >> "$GITHUB_ENV"
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build local unprivileged candidate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.RUNWAY_IMAGE }}
+          build-args: RUNWAY_BUILD_ID=${{ github.sha }}
+          provenance: false
+          cache-from: type=gha,scope=runway-container-untrusted
+          cache-to: type=gha,mode=max,scope=runway-container-untrusted
+      - name: Scan local runtime candidate
+        run: node scripts/verify-image.mjs "${RUNWAY_IMAGE}"
+      - name: Verify whole-project Compose lifecycle
+        env:
+          RUNWAY_COMPOSE_TEST_IMAGE: ${{ env.RUNWAY_IMAGE }}
+        run: node scripts/verify-compose-lifecycle.mjs
+      - name: Start image-backed production stack
+        run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
+      - name: Verify production runtime and PWA revision
+        run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
+      - name: Verify exact-image upgrades from both released migration histories
+        env:
+          RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}
+        run: |
+          node scripts/verify-upgrade-migrations.mjs
+          node scripts/verify-rebased-migrations.mjs
+      - name: Container diagnostics
+        if: failure()
+        run: |
+          docker compose -f compose.yaml -f deploy/compose.production.yaml ps || true
+          docker compose -f compose.yaml -f deploy/compose.production.yaml logs --no-color --tail=200 app worker migrate db || true
+      - name: Stop containers
+        if: always()
+        run: docker compose -f compose.yaml -f deploy/compose.production.yaml down --volumes
+
+  image-publish:
+    name: trusted image publication
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'push' &&
+        (
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+          startsWith(github.ref, 'refs/tags/v')
+        ) &&
+        needs.scope.result == 'success' &&
+        needs.scope.outputs.image == 'true' &&
         needs.checks.result == 'success' &&
         needs.browser.result == 'success' &&
-        (startsWith(github.ref, 'refs/tags/v') == false || needs.android-release.result == 'success')
+        (
+          startsWith(github.ref, 'refs/tags/v') == false ||
+          (
+            needs.release-source.result == 'success' &&
+            needs.android-release.result == 'success'
+          )
+        )
       }}
-    needs: [checks, browser, android-release]
+    needs: [scope, checks, browser, release-source, android-release]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -104,6 +199,8 @@ jobs:
       PUBLIC_APP_ORIGIN: https://runway.example.test
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -115,32 +212,16 @@ jobs:
       - name: Configure ephemeral auth secret
         run: echo "BETTER_AUTH_SECRET=$(node scripts/generate-secret.mjs)" >> "$GITHUB_ENV"
       - name: Set up QEMU for published candidates
-        if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Build local pull-request candidate
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          push: false
-          tags: ${{ env.RUNWAY_IMAGE }}
-          build-args: RUNWAY_BUILD_ID=${{ github.sha }}
-          provenance: false
-          cache-from: type=gha,scope=runway-container
-          cache-to: type=gha,mode=max,scope=runway-container
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate verified image metadata
-        if: github.event_name != 'pull_request'
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
@@ -152,7 +233,6 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - name: Build immutable multi-architecture candidate
-        if: github.event_name != 'pull_request'
         id: candidate
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -163,10 +243,9 @@ jobs:
           build-args: RUNWAY_BUILD_ID=${{ github.sha }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=runway-container
-          cache-to: type=gha,mode=max,scope=runway-container
+          cache-from: type=gha,scope=runway-container-release
+          cache-to: type=gha,mode=max,scope=runway-container-release
       - name: Load exact published AMD64 candidate
-        if: github.event_name != 'pull_request'
         env:
           RUNWAY_CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}
         run: |
@@ -192,7 +271,6 @@ jobs:
           node scripts/verify-upgrade-migrations.mjs
           node scripts/verify-rebased-migrations.mjs
       - name: Verify exact ARM64 candidate runtime and migration contract
-        if: github.event_name != 'pull_request'
         env:
           DATABASE_URL: postgres://runway:${{ env.POSTGRES_PASSWORD }}@127.0.0.1:5432/runway
           RUNWAY_EXPECTED_BUILD_ID: ${{ github.sha }}
@@ -200,12 +278,13 @@ jobs:
         run: node scripts/verify-arm64-image.mjs "$RUNWAY_VERIFIED_CANDIDATE"
       - name: Container diagnostics
         if: failure()
-        run: docker compose -f compose.yaml -f deploy/compose.production.yaml ps && docker compose -f compose.yaml -f deploy/compose.production.yaml logs --no-color --tail=200 app worker migrate db
+        run: |
+          docker compose -f compose.yaml -f deploy/compose.production.yaml ps || true
+          docker compose -f compose.yaml -f deploy/compose.production.yaml logs --no-color --tail=200 app worker migrate db || true
       - name: Stop containers
         if: always()
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml down --volumes
       - name: Promote exact verified candidate manifest
-        if: github.event_name != 'pull_request'
         env:
           FINAL_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -218,13 +297,16 @@ jobs:
 
   android-build:
     name: unsigned Android APK
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: release-source
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -266,7 +348,7 @@ jobs:
 
   android-release:
     name: signed Android APK
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: android-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -359,8 +441,8 @@ jobs:
 
   release:
     name: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [image, android-release]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [image-publish, android-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -442,3 +524,42 @@ jobs:
                 data: fs.readFileSync(file)
               });
             }
+
+  ci-result:
+    name: CI result
+    if: always()
+    needs:
+      - scope
+      - checks
+      - browser
+      - release-source
+      - image-verify
+      - image-publish
+      - android-build
+      - android-release
+      - release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      REF: ${{ github.ref }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      BROWSER_REQUIRED: ${{ needs.scope.outputs.browser }}
+      IMAGE_REQUIRED: ${{ needs.scope.outputs.image }}
+      SCOPE_RESULT: ${{ needs.scope.result }}
+      CHECKS_RESULT: ${{ needs.checks.result }}
+      BROWSER_RESULT: ${{ needs.browser.result }}
+      IMAGE_VERIFY_RESULT: ${{ needs.image-verify.result }}
+      IMAGE_PUBLISH_RESULT: ${{ needs.image-publish.result }}
+      RELEASE_SOURCE_RESULT: ${{ needs.release-source.result }}
+      ANDROID_BUILD_RESULT: ${{ needs.android-build.result }}
+      ANDROID_RELEASE_RESULT: ${{ needs.android-release.result }}
+      RELEASE_RESULT: ${{ needs.release.result }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Require every applicable gate
+        run: node scripts/verify-ci-results.mjs

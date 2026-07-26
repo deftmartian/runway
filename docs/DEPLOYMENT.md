@@ -523,6 +523,26 @@ The image carries OCI source, revision, license, description, provenance, and SB
 tags run the browser gate again, and the tag workflow creates or updates the matching GitHub Release
 only after the image-backed production stack passes.
 
+One top-level CI workflow owns change classification, quality, browser, image, Android, and release
+results. Documentation-only changes run the publication-metadata check; Android-only changes run the
+quality matrix without browser or image work; image-affecting and unknown new file types cross the
+full browser and exact-image gates. Functional browser coverage is split between two independent
+PostgreSQL-backed jobs, with visual coverage running in parallel. Pull requests and manual dispatches
+can build and exercise a local candidate but have no package-write permission. Only a trusted
+`push` to the default branch or a version tag can publish; manual dispatch never signs or publishes.
+
+Configure branch protection to require the aggregate **CI result** check. It fails when an applicable
+lane fails or is unexpectedly skipped, while preserving a stable status for documentation-only
+changes. Do not require the callable `Check` or `Browser` workflow names separately; they have no
+direct triggers and are intentionally owned by the top-level graph.
+
+Protect `refs/tags/v*` with a repository ruleset that limits tag creation, update, and deletion to
+release maintainers; require signed tags if the repository's release policy supports them. The
+workflow rejects a version tag whose commit is not in the current default-branch history, but only
+GitHub's ruleset can control who creates or moves the ref. Keep required reviewers on the
+`android-release` environment so a tag cannot access signing material without an independent
+approval.
+
 After the first successful publish, a repository owner must confirm that the linked `runway` package
 is public in [GitHub's package settings](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 Public GHCR packages can be pulled anonymously; a package that remains private requires
@@ -555,7 +575,8 @@ corepack pnpm verify:image -- "${RUNWAY_IMAGE}"
 `verify:dependencies` scans the pnpm production dependency graph; `verify:image` scans the selected
 runtime image's OS packages and libraries. Both use the digest-pinned Trivy release and fail on fixed
 high or critical advisories. The dependency scanner receives only `package.json` and `pnpm-lock.yaml`
-as read-only mounts and never prints or uploads the lockfile. Node, PostgreSQL, the Dockerfile
+as read-only mounts and never prints or uploads the lockfile. The image scanner receives an exported
+read-only image archive with dropped capabilities and no Docker socket. Node, PostgreSQL, the Dockerfile
 frontend, the scanner, and GitHub Actions are pinned to reviewed immutable digests or commit SHAs.
 Grouped weekly Dependabot updates keep those inputs reviewable, while the maintenance workflow
 rechecks the unchanged lockfile and published image against newly disclosed advisories.
