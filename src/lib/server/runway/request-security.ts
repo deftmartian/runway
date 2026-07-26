@@ -48,8 +48,10 @@ export function isAndroidNativeApiRequest(request: Request, pathname: string): b
 	if (method !== 'POST') return false;
 	const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
 	if (pathname === '/api/android/pair') return contentType.startsWith('application/json');
-	if (pathname !== '/api/android/import') return false;
 	if (!request.headers.get('authorization')?.startsWith('Bearer rwy1_')) return false;
+	if (pathname === '/api/android/health-connect/changes')
+		return contentType.startsWith('application/json');
+	if (pathname !== '/api/android/import') return false;
 	return ['application/gpx+xml', 'application/x-gpx+xml'].some(
 		(allowed) => contentType === allowed || contentType.startsWith(`${allowed};`)
 	);

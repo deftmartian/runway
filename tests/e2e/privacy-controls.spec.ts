@@ -6,6 +6,7 @@ import {
 	getBulkActivityDeletionState,
 	getCurrentGoalPlanState,
 	getFirstActivityId,
+	getHealthConnectRoutePrivacyState,
 	getHealthContext,
 	getPlannedRuns,
 	getUserId,
@@ -13,6 +14,7 @@ import {
 	openImportSourceSetup,
 	seedUserVerificationRecords,
 	seedImportedActivityRecords,
+	seedHealthConnectActivity,
 	seedManualActivityRecords,
 	setTrainingTimeZone,
 	setUserSessionCreatedAt
@@ -149,6 +151,41 @@ test('privacy copy names the training export and retained GPX fields', async ({ 
 	await expect(disclosure).toContainText('including the first and last points');
 });
 
+test('discarding route maps also clears a pending Health Connect correction', async ({ page }) => {
+	const email = await createAccount(page);
+	await setTrainingTimeZone(email);
+	const userId = await getUserId(email);
+	await page.goto('/app/settings');
+	await page.locator('summary').filter({ hasText: 'Route maps' }).click();
+	await page.getByLabel(/^Keep the route trace/).check();
+	await page.getByRole('button', { name: 'Save route privacy' }).click();
+	await expect(page.getByText('Route maps enabled for future imports.')).toBeVisible();
+
+	const seeded = await seedHealthConnectActivity(userId, 'correction');
+	await expect
+		.poll(() => getHealthConnectRoutePrivacyState(seeded.activityId, seeded.mappingId))
+		.toEqual({ activityRetained: true, pendingRetained: true });
+
+	await page.goto('/app/settings');
+	await page.locator('summary').filter({ hasText: 'Route maps' }).click();
+	await page.getByLabel(/^Discard route points/).check();
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Save route privacy' }).click();
+	await expect(page.getByText(/Route points will be discarded after import/)).toBeVisible();
+	await expect
+		.poll(() => getHealthConnectRoutePrivacyState(seeded.activityId, seeded.mappingId))
+		.toEqual({ activityRetained: false, pendingRetained: false });
+
+	await page.goto('/app/import');
+	const record = page.locator('details.activity-record').first();
+	await record.locator('summary').click();
+	await record.getByRole('button', { name: 'Accept correction' }).click();
+	await expect(page.getByText('Health Connect correction applied.')).toBeVisible();
+	await expect
+		.poll(() => getHealthConnectRoutePrivacyState(seeded.activityId, seeded.mappingId))
+		.toEqual({ activityRetained: false, pendingRetained: false });
+});
+
 test('bulk activity deletion remains complete beyond a request-sized bind list', async ({
 	page
 }) => {
@@ -170,8 +207,8 @@ test('bulk activity deletion remains complete beyond a request-sized bind list',
 	await page.goto('/app/settings');
 	await page.getByText('Imported activity data', { exact: true }).click();
 	page.once('dialog', (dialog) => dialog.accept());
-	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
-	await expect(page.getByText('Deleted 2500 imported GPX activities.')).toBeVisible();
+	await page.getByRole('button', { name: 'Delete imported activities' }).click();
+	await expect(page.getByText('Deleted 2500 imported activities.')).toBeVisible();
 	await expect
 		.poll(() => getBulkActivityDeletionState(userId))
 		.toEqual({
@@ -211,8 +248,8 @@ test('bulk activity deletion removes activity-derived adjustment state from expo
 	await page.goto('/app/settings');
 	await page.getByText('Imported activity data', { exact: true }).click();
 	page.once('dialog', (dialog) => dialog.accept());
-	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
-	await expect(page.getByText('Deleted 1 imported GPX activity.')).toBeVisible();
+	await page.getByRole('button', { name: 'Delete imported activities' }).click();
+	await expect(page.getByText('Deleted 1 imported activity.')).toBeVisible();
 
 	const exportResponse = await page.request.post('/app/settings/export.json', {
 		headers: { origin: new URL(page.url()).origin }

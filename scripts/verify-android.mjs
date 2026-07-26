@@ -15,6 +15,10 @@ const requiredFiles = [
 	'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
 	'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml',
 	'android/app/src/main/res/drawable/ic_launcher_monochrome.xml',
+	'android/app/src/main/res/values-v27/styles.xml',
+	'android/app/src/main/res/values-night-v27/styles.xml',
+	'android/app/src/main/res/values-v31/colors.xml',
+	'android/app/src/main/res/values-night-v31/colors.xml',
 	'android/signing.properties.example',
 	'scripts/verify-android-artifact.mjs',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
@@ -27,6 +31,8 @@ const requiredFiles = [
 	'android/app/src/main/java/com/deftmartian/runway/TreeAccessStore.kt',
 	'android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt',
 	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
+	'android/app/src/main/java/com/deftmartian/runway/HealthConnectSync.kt',
+	'android/app/src/main/java/com/deftmartian/runway/HealthConnectWorker.kt',
 	'android/app/src/androidTest/java/com/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
 	'android/gradle/wrapper/gradle-wrapper.properties',
@@ -67,16 +73,37 @@ for (const file of xmlFiles) {
 }
 
 const manifest = read('android/app/src/main/AndroidManifest.xml');
-const permissions = [...manifest.matchAll(/<uses-permission\s+android:name="([^"]+)"/g)].map(
-	(match) => match[1]
+const permissions = new Set(
+	[...manifest.matchAll(/<uses-permission\s+android:name="([^"]+)"/g)].map((match) => match[1])
 );
-if (permissions.length !== 1 || permissions[0] !== 'android.permission.INTERNET') {
-	errors.push('Android must request only android.permission.INTERNET');
+const expectedSourcePermissions = new Set([
+	'android.permission.INTERNET',
+	'android.permission.health.READ_EXERCISE',
+	'android.permission.health.READ_DISTANCE',
+	'android.permission.health.READ_HEART_RATE',
+	'android.permission.health.READ_SPEED',
+	'android.permission.health.READ_STEPS_CADENCE',
+	'android.permission.health.READ_ELEVATION_GAINED',
+	'android.permission.health.READ_EXERCISE_ROUTES',
+	'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND'
+]);
+const unexpectedSourcePermissions = [...permissions].filter(
+	(permission) => !expectedSourcePermissions.has(permission)
+);
+const missingSourcePermissions = [...expectedSourcePermissions].filter(
+	(permission) => !permissions.has(permission)
+);
+if (unexpectedSourcePermissions.length || missingSourcePermissions.length) {
+	errors.push(
+		`Android source permissions differ from the reviewed Health Connect allowlist (missing: ${missingSourcePermissions.join(', ') || 'none'}; unexpected: ${unexpectedSourcePermissions.join(', ') || 'none'})`
+	);
 }
 for (const required of [
 	'.RunwayLauncherActivity',
 	'.ServerConnectionActivity',
 	'.NativeFolderSettingsActivity',
+	'<package android:name="com.google.android.apps.healthdata" />',
+	'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE',
 	'android:icon="@mipmap/ic_launcher"'
 ]) {
 	if (!manifest.includes(required)) errors.push(`AndroidManifest.xml is missing ${required}`);
@@ -92,6 +119,7 @@ for (const required of [
 	'compileSdk = 36',
 	'targetSdk = 36',
 	'androidx.browser:browser:1.10.0',
+	'androidx.health.connect:connect-client:1.1.0',
 	'verifyServerSelectionRelease',
 	'assembleRelease',
 	'runwayOrigin',
@@ -196,6 +224,14 @@ for (const required of [
 	'android.permission.WAKE_LOCK',
 	'android.permission.RECEIVE_BOOT_COMPLETED',
 	'android.permission.FOREGROUND_SERVICE',
+	'android.permission.health.READ_EXERCISE',
+	'android.permission.health.READ_DISTANCE',
+	'android.permission.health.READ_HEART_RATE',
+	'android.permission.health.READ_SPEED',
+	'android.permission.health.READ_STEPS_CADENCE',
+	'android.permission.health.READ_ELEVATION_GAINED',
+	'android.permission.health.READ_EXERCISE_ROUTES',
+	'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND',
 	'DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 	'protectionLevel="signature"',
 	'instance-bound build contract',
@@ -243,6 +279,7 @@ for (const required of [
 	'androidx.core:core-ktx:',
 	'androidx.work:work-runtime:',
 	'androidx.browser:browser:',
+	'androidx.health.connect:connect-client:',
 	'releaseRuntimeClasspath'
 ]) {
 	if (!dependencyLock.includes(required))
@@ -376,6 +413,54 @@ for (const required of [
 		);
 	}
 }
+
+const healthConnect = read('android/app/src/main/java/com/deftmartian/runway/HealthConnectSync.kt');
+for (const required of [
+	'ExerciseSessionRecord.EXERCISE_TYPE_RUNNING',
+	'ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL',
+	'HEALTH_CONNECT_BACKGROUND_PERMISSION',
+	'ExerciseRouteResult.ConsentRequired',
+	'HealthConnectClient.getSdkStatus',
+	'HealthConnectAvailability.UpdateRequired',
+	'while (pageToken != null)',
+	'MAX_SAMPLES_PER_RUN = 600'
+]) {
+	if (!healthConnect.includes(required)) {
+		errors.push(`Android Health Connect contract is missing ${required}`);
+	}
+}
+for (const forbidden of ['insertRecords(', 'updateRecords(', 'deleteRecords(']) {
+	if (healthConnect.includes(forbidden)) {
+		errors.push(`Android Health Connect import must not write provider data: ${forbidden}`);
+	}
+}
+const healthWorker = read(
+	'android/app/src/main/java/com/deftmartian/runway/HealthConnectWorker.kt'
+);
+for (const required of [
+	'AndroidHealthConnectGateway(applicationContext)',
+	'gateway.supportsBackgroundRead()',
+	'gateway.hasBackgroundPermission()',
+	'serverStore.isCurrent(connection)',
+	'HealthSyncResult.NeedsAttention'
+]) {
+	if (!healthWorker.includes(required)) {
+		errors.push(`Android Health Connect background worker is missing ${required}`);
+	}
+}
+const apiClient = read('android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt');
+for (const required of [
+	'HealthConnectPayloadSerializer',
+	'MAX_HEALTH_CONNECT_PAYLOAD_BYTES = 240 * 1024',
+	'HealthConnectApiResult.Rejected'
+]) {
+	if (!apiClient.includes(required)) {
+		errors.push(`Android Health Connect request batching is missing ${required}`);
+	}
+}
+if (/ExerciseRoute|routeOverrides|includeRoutes\s*=\s*true/.test(healthWorker)) {
+	errors.push('Android Health Connect background worker must not read routes');
+}
 if (folderSettings.includes('private fun buildContent()')) {
 	errors.push(
 		'Android folder settings must use the reviewed resource layout, not a programmatic stack'
@@ -446,6 +531,14 @@ const stringResources = new Set(
 );
 for (const match of kotlin.matchAll(/R\.string\.([A-Za-z0-9_]+)/g)) {
 	if (!stringResources.has(match[1])) errors.push(`missing Android string resource: ${match[1]}`);
+}
+for (const required of [
+	'health_connect_permission_needed',
+	'health_connect_route_consent',
+	'health_connect_background_permission_needed'
+]) {
+	if (!stringResources.has(required))
+		errors.push(`missing Health Connect string resource: ${required}`);
 }
 
 if (errors.length > 0) {

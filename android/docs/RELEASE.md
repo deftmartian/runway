@@ -33,9 +33,10 @@ corepack pnpm verify:android:release
 corepack pnpm verify:android:version
 ```
 
-These check Kotlin, resources, lint, unit tests, dependency locks, the merged permission and exported
-component allowlists, disabled backups, release cleartext/debuggable flags, the server-selection
-contract, and the unsigned F-Droid path. They do not replace device testing.
+These check Kotlin, resources, lint, unit tests, dependency locks, the merged operational and Health
+Connect permission/exported-component allowlists, disabled backups, release cleartext/debuggable
+flags, the server-selection contract, and the unsigned F-Droid path. They do not replace device
+testing.
 
 Copy `android/signing.properties.example` to the ignored `android/signing.properties` and point it
 at the operator-owned keystore. Keep passwords and aliases in that ignored file or materialize it from
@@ -81,8 +82,10 @@ version tags, and add these environment secrets:
 The signing step materializes the keystore only in the ephemeral runner and removes it with a shell
 exit trap. No checkout, package script, Gradle task, or third-party build action receives those
 secrets, and the keystore is never uploaded. Missing or partial signing secrets fail the tag job; the
-GitHub release is not created without an installable APK. `verify:android:version` also requires the
-tag, web version, Android `versionName`/`versionCode`, and F-Droid metadata to agree.
+GitHub release is not created without an installable APK. `verify:android:version` requires the tag,
+web version, Android `versionName`/`versionCode`, and the committed personal-repository F-Droid
+template to agree. The operator must still verify the copied metadata in the actual F-Droid
+repository before publishing it.
 
 ## Publish through a personal F-Droid repository
 
@@ -130,6 +133,8 @@ Attach to each internal release record:
 - signed APK, APK SHA-256, signer fingerprint, application id, source commit, and clean-tree evidence;
 - unit, lint, emulator, physical-device, Custom Tab, share, server-switch, and folder results;
 - first-run, invalid-server, incompatible-version, TLS-failure, and cross-origin isolation results;
+- Health Connect provider-status, running/treadmill filtering, permission revocation, optional
+  background-read, per-route foreground-consent, and route-privacy-mode results;
 - dependency, SBOM, license, permission, and manifest review;
 - server/mobile API compatibility range;
 - install, upgrade, rollback, signing-key recovery, and F-Droid index verification;

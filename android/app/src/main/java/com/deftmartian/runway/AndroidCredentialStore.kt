@@ -19,6 +19,7 @@ data class AndroidCredential(
     val deviceId: String,
     val token: String,
     val expiresAtEpochMs: Long,
+    val importGeneration: Long = 0,
 ) {
     fun isExpired(nowEpochMs: Long = System.currentTimeMillis()): Boolean = expiresAtEpochMs <= nowEpochMs
 }
@@ -131,6 +132,7 @@ class AndroidCredentialStore(context: Context, origin: String) {
             .put("deviceId", credential.deviceId)
             .put("token", credential.token)
             .put("expiresAtEpochMs", credential.expiresAtEpochMs)
+            .put("importGeneration", credential.importGeneration)
             .toString()
             .toByteArray(StandardCharsets.UTF_8)
         val ciphertext = cipher.doFinal(plaintext)
@@ -157,6 +159,7 @@ class AndroidCredentialStore(context: Context, origin: String) {
             deviceId = payload.getString("deviceId"),
             token = payload.getString("token"),
             expiresAtEpochMs = payload.getLong("expiresAtEpochMs"),
+            importGeneration = payload.optLong("importGeneration", 0),
         )
     }.getOrNull()
 

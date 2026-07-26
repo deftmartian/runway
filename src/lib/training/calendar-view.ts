@@ -87,7 +87,7 @@ export type TrainingPlanAdjustment = {
 export type TrainingCalendarActivity = {
 	id: string;
 	workoutId: string | null;
-	source: 'manual' | 'gpx';
+	source: 'manual' | 'gpx' | 'health_connect';
 	reviewState: 'review' | 'accepted';
 	occurredAt: Date;
 	occurredDate: string;

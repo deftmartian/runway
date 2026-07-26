@@ -113,7 +113,11 @@ export function actualDistance(event: CalendarEvent) {
 export function actualPace(event: CalendarEvent) {
 	if (event.activity) {
 		const pace = formatPace(event.activity.averagePaceSecondsPerKm);
-		return event.activity.source === 'gpx' ? `${pace} elapsed` : `${pace} reported`;
+		return event.activity.source === 'gpx'
+			? `${pace} elapsed`
+			: event.activity.source === 'health_connect'
+				? `${pace} recorded`
+				: `${pace} reported`;
 	}
 	if (event.feedback?.completedDistanceMeters && event.feedback.completedDurationSeconds) {
 		return formatPace(

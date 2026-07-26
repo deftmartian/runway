@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import ActivityVisuals from '$lib/components/training/ActivityVisuals.svelte';
 	import StateMarker from '$lib/components/visual/StateMarker.svelte';
+	import { healthConnectRecordPresentation } from '$lib/health-connect/presentation';
 	import type { ActivityRouteTrace, HeartRateSeries } from '$lib/training/types';
 	import type {
 		ImportedActivityPage,
@@ -92,6 +93,18 @@
 			(candidate) => dateDistanceDays(isoDay(candidate.scheduledDate), activityDate) <= 3
 		);
 	};
+	const sourceLabel = (activity: ImportedActivityPage['items'][number]) =>
+		activity.healthConnect
+			? healthConnectRecordPresentation(activity.healthConnect).sourceLabel
+			: activity.source === 'health_connect'
+				? 'Health Connect'
+				: activity.source.toUpperCase();
+	const sourceTimingLabel = (activity: ImportedActivityPage['items'][number]) =>
+		activity.source === 'gpx'
+			? 'elapsed'
+			: activity.source === 'health_connect'
+				? 'recorded'
+				: 'reported';
 
 	async function loadActivityTrace(event: Event, activityId: string) {
 		const disclosure = event.currentTarget;
@@ -205,6 +218,9 @@
 		{#each activities.items as activity (activity.id)}
 			{@const matchingCandidates = candidatesForActivity(activity.activityDate)}
 			{@const traceDetail = activityTraceDetail(activity.id)}
+			{@const healthConnectPresentation = activity.healthConnect
+				? healthConnectRecordPresentation(activity.healthConnect)
+				: null}
 			<details
 				class="activity-record"
 				class:needs-review={activity.reviewState === 'review'}
@@ -224,11 +240,14 @@
 					<span class="record-copy">
 						<strong>{day(activity.activityDate)} · {km(activity.distanceMeters)}</strong>
 						<span class="record-meta">
-							{activity.source.toUpperCase()} · {duration(activity.durationSeconds)}
-							{activity.source === 'gpx' ? 'elapsed' : 'reported'}{activity.source === 'gpx'
+							{sourceLabel(activity)} · {duration(activity.durationSeconds)}
+							{sourceTimingLabel(activity)}{activity.source === 'gpx'
 								? ` · ${activity.routeSummary.pointCount} route points`
 								: ''}
 						</span>
+						{#if healthConnectPresentation}
+							<span class="record-provenance">{healthConnectPresentation.provenanceLabel}</span>
+						{/if}
 						{#if activity.matchedWorkoutPurpose}
 							<span class="record-outcome">
 								{activity.matchedWorkoutPurpose} · {day(
@@ -269,6 +288,106 @@
 				</div>
 
 				<div class="record-decisions">
+					{#if healthConnectPresentation?.stateNotice}
+						<section
+							class="decision-group source-decision"
+							aria-labelledby={`source-state-${activity.id}`}
+						>
+							<h2 id={`source-state-${activity.id}`}>Source update</h2>
+							<p>{healthConnectPresentation.stateNotice}</p>
+							{#if activity.healthConnect?.recordState === 'pending_correction'}
+								<form
+									method="post"
+									action="?/resolveHealthConnectRecord"
+									use:enhance={scopedEnhance(`health-correction-${activity.id}`, 'activities')}
+								>
+									<input
+										type="hidden"
+										name="mappingId"
+										value={healthConnectPresentation.mappingId}
+									/>
+									<input type="hidden" name="decision" value="accept_correction" />
+									<button class="primary" disabled={activeAction !== null}>Accept correction</button
+									>
+								</form>
+								<form
+									method="post"
+									action="?/resolveHealthConnectRecord"
+									use:enhance={scopedEnhance(`health-keep-${activity.id}`, 'activities')}
+								>
+									<input
+										type="hidden"
+										name="mappingId"
+										value={healthConnectPresentation.mappingId}
+									/>
+									<input type="hidden" name="decision" value="keep_current" />
+									<button disabled={activeAction !== null}>Keep current record</button>
+								</form>
+							{:else}
+								<form
+									method="post"
+									action="?/resolveHealthConnectRecord"
+									use:enhance={scopedEnhance(`health-delete-${activity.id}`, 'activities')}
+									onsubmit={confirmDeleteActivity}
+								>
+									<input
+										type="hidden"
+										name="mappingId"
+										value={healthConnectPresentation.mappingId}
+									/>
+									<input type="hidden" name="decision" value="delete_from_runway" />
+									<button class="danger" disabled={activeAction !== null}>Remove from runway</button
+									>
+								</form>
+								<form
+									method="post"
+									action="?/resolveHealthConnectRecord"
+									use:enhance={scopedEnhance(`health-retain-${activity.id}`, 'activities')}
+								>
+									<input
+										type="hidden"
+										name="mappingId"
+										value={healthConnectPresentation.mappingId}
+									/>
+									<input type="hidden" name="decision" value="retain_in_runway" />
+									<button disabled={activeAction !== null}>Keep in runway</button>
+								</form>
+							{/if}
+						</section>
+					{/if}
+
+					{#if activity.healthConnect?.duplicateCandidate}
+						<section
+							class="decision-group source-decision"
+							aria-labelledby={`duplicate-${activity.id}`}
+						>
+							<h2 id={`duplicate-${activity.id}`}>Possible duplicate</h2>
+							<p>
+								Another {km(activity.healthConnect.duplicateCandidate.distanceMeters)} activity on {day(
+									activity.healthConnect.duplicateCandidate.activityDate
+								)} already exists as {activity.healthConnect.duplicateCandidate.sourceLabel}.
+							</p>
+							<form
+								method="post"
+								action="?/resolveHealthConnectDuplicate"
+								use:enhance={scopedEnhance(`health-duplicate-${activity.id}`, 'activities')}
+							>
+								<input type="hidden" name="mappingId" value={activity.healthConnect.mappingId} />
+								<input type="hidden" name="decision" value="keep_health_connect" />
+								<button class="primary" disabled={activeAction !== null}>Keep this record</button>
+							</form>
+							<form
+								method="post"
+								action="?/resolveHealthConnectDuplicate"
+								use:enhance={scopedEnhance(`health-use-existing-${activity.id}`, 'activities')}
+							>
+								<input type="hidden" name="mappingId" value={activity.healthConnect.mappingId} />
+								<input type="hidden" name="decision" value="use_existing" />
+								<button disabled={activeAction !== null}>Use existing record</button>
+							</form>
+						</section>
+					{/if}
+
 					{#if !activity.workoutId}
 						<section class="decision-group" aria-labelledby={`match-${activity.id}`}>
 							<h2 id={`match-${activity.id}`}>Link to the plan</h2>
@@ -363,7 +482,7 @@
 						<section class="decision-group" aria-labelledby={`unlink-${activity.id}`}>
 							<h2 id={`unlink-${activity.id}`}>Plan link</h2>
 							<p>
-								{activity.source === 'gpx' && !activity.extraPlanImpactConfirmed
+								{activity.source !== 'manual' && !activity.extraPlanImpactConfirmed
 									? 'Unlinking returns this imported activity to Review. It will stop counting in calendar actuals and training summaries until you accept a new role.'
 									: 'Unlinking removes the plan match. The already accepted activity remains part of actual training.'}
 							</p>
@@ -558,6 +677,11 @@
 		font-size: 0.9rem;
 	}
 
+	.record-provenance {
+		color: var(--muted);
+		font-size: 0.8rem;
+	}
+
 	.summary-action {
 		display: inline-flex;
 		align-items: center;
@@ -617,6 +741,15 @@
 
 	.decision-group p {
 		margin: 0;
+	}
+
+	.source-decision {
+		gap: 12px;
+		background: color-mix(in oklab, var(--surface), var(--review) 7%);
+	}
+
+	.source-decision form {
+		justify-self: start;
 	}
 
 	.match-form,

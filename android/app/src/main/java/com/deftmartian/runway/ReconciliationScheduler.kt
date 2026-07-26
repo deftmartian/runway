@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit
 object ReconciliationScheduler {
     internal const val ONE_TIME_WORK_NAME = "runway-folder-check"
     internal const val PERIODIC_WORK_NAME = "runway-folder-reconciliation"
+    internal const val HEALTH_CONNECT_WORK_NAME = "runway-health-connect-sync"
 
     fun runOnce(context: Context) {
         val request = oneTimeRequest(MAX_DRAIN_WORKERS)
@@ -51,7 +52,24 @@ object ReconciliationScheduler {
         WorkManager.getInstance(context).run {
             cancelUniqueWork(ONE_TIME_WORK_NAME)
             cancelUniqueWork(PERIODIC_WORK_NAME)
+            cancelUniqueWork(HEALTH_CONNECT_WORK_NAME)
         }
+    }
+
+    fun enableHealthConnectPeriodic(context: Context) {
+        val request = PeriodicWorkRequest.Builder(HealthConnectWorker::class.java, 6, TimeUnit.HOURS)
+            .setConstraints(reconciliationConstraints())
+            .setBackoffCriteria(BackoffPolicy.LINEAR, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            HEALTH_CONNECT_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
+    fun disableHealthConnectPeriodic(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(HEALTH_CONNECT_WORK_NAME)
     }
 
     internal fun continueBacklog(context: Context, remainingWorkers: Int) {

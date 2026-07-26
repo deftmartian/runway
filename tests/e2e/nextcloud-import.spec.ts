@@ -76,7 +76,7 @@ test('Nextcloud share sync backfills files, tracks revisions, and honors deletio
 		await page.goto('/app/settings');
 		await page.getByText('Imported activity data', { exact: true }).click();
 		page.once('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
+		await page.getByRole('button', { name: 'Delete imported activities' }).click();
 		await expect(
 			page.getByText('Disconnected 1 import folder so it cannot sync the activity back.')
 		).toBeVisible();
@@ -102,8 +102,8 @@ test('privacy deletion cancels a Share import that is still uploading', async ({
 
 	await page.getByText('Imported activity data', { exact: true }).click();
 	page.once('dialog', (dialog) => dialog.accept());
-	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
-	await expect(page.getByText('Deleted 0 imported GPX activities.')).toBeVisible();
+	await page.getByRole('button', { name: 'Delete imported activities' }).click();
+	await expect(page.getByText('Deleted 0 imported activities.')).toBeVisible();
 
 	heldShare.finish();
 	const shareResponse = await heldShare.response;

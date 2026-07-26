@@ -9,6 +9,10 @@ import {
 	androidPairingRequest,
 	athleteProfile,
 	auditEvent,
+	healthConnectConnection,
+	healthConnectExternalActivity,
+	healthConnectRequestReceipt,
+	healthConnectTombstone,
 	importSource,
 	importSourceItem,
 	planAdjustment,
@@ -319,7 +323,7 @@ export async function unlinkActivityFromWorkout(userId: string, activityId: stri
 			.set({
 				workoutId: null,
 				reviewState:
-					targetActivity.source === 'gpx' && !targetActivity.extraPlanImpactConfirmed
+					targetActivity.source !== 'manual' && !targetActivity.extraPlanImpactConfirmed
 						? 'review'
 						: 'accepted',
 				deviation: 'unplanned',
@@ -521,78 +525,127 @@ export async function updateActivityFeedback(
 export async function deleteActivityRecord(userId: string, activityId: string) {
 	return db.transaction(async (tx) => {
 		await lockActivityOwner(tx, userId);
-		const [targetActivity] = await tx
-			.select({
-				id: activity.id,
-				workoutId: activity.workoutId,
-				source: activity.source,
-				fileHash: activityImport.fileHash
-			})
-			.from(activity)
-			.leftJoin(
-				activityImport,
-				and(eq(activityImport.activityId, activity.id), eq(activityImport.userId, userId))
-			)
-			.where(and(eq(activity.userId, userId), eq(activity.id, activityId)))
-			.limit(1)
-			.for('update', { of: activity });
-		if (!targetActivity) throw new Error('Activity not found.');
-		const activityAdjustments = await tx
-			.select({ id: planAdjustment.id, workoutId: planAdjustment.workoutId })
-			.from(planAdjustment)
-			.where(
-				and(eq(planAdjustment.userId, userId), eq(planAdjustment.triggerId, targetActivity.id))
-			);
-		await eraseLedgerAdjustments(tx, { userId, targets: activityAdjustments });
-		if (targetActivity.workoutId) {
-			await tx
-				.delete(workoutFeedback)
-				.where(
-					and(
-						eq(workoutFeedback.userId, userId),
-						eq(workoutFeedback.workoutId, targetActivity.workoutId)
-					)
-				);
-		}
-		if (targetActivity.fileHash) {
-			await tx
-				.insert(activityDeletionTombstone)
-				.values({ userId, fileHash: targetActivity.fileHash })
-				.onConflictDoNothing();
-		}
+		await deleteActivityRecordInTransaction(tx, userId, activityId);
+	});
+}
+
+/**
+ * Erases an activity and reverses its ledger effects inside the caller's
+ * transaction. The caller must hold the per-account activity mutation lock.
+ */
+export async function deleteActivityRecordInTransaction(
+	tx: RunwayTransaction,
+	userId: string,
+	activityId: string
+): Promise<void> {
+	const [targetActivity] = await tx
+		.select({
+			id: activity.id,
+			workoutId: activity.workoutId,
+			source: activity.source,
+			fileHash: activityImport.fileHash
+		})
+		.from(activity)
+		.leftJoin(
+			activityImport,
+			and(eq(activityImport.activityId, activity.id), eq(activityImport.userId, userId))
+		)
+		.where(and(eq(activity.userId, userId), eq(activity.id, activityId)))
+		.limit(1)
+		.for('update', { of: activity });
+	if (!targetActivity) throw new Error('Activity not found.');
+	const activityAdjustments = await tx
+		.select({ id: planAdjustment.id, workoutId: planAdjustment.workoutId })
+		.from(planAdjustment)
+		.where(and(eq(planAdjustment.userId, userId), eq(planAdjustment.triggerId, targetActivity.id)));
+	await eraseLedgerAdjustments(tx, { userId, targets: activityAdjustments });
+	if (targetActivity.workoutId) {
 		await tx
-			.delete(auditEvent)
+			.delete(workoutFeedback)
 			.where(
 				and(
-					eq(auditEvent.userId, userId),
-					sql`${auditEvent.detail} ->> 'activityId' = ${targetActivity.id}`
+					eq(workoutFeedback.userId, userId),
+					eq(workoutFeedback.workoutId, targetActivity.workoutId)
 				)
 			);
-		// Keep the keyed remote-item marker so a connected source does not fetch the
-		// same file again. The marker contains no reversible path, and clearing the
-		// activity reference lets the private activity itself be deleted.
+	}
+	if (targetActivity.fileHash) {
 		await tx
-			.update(importSourceItem)
-			.set({ activityId: null })
+			.insert(activityDeletionTombstone)
+			.values({ userId, fileHash: targetActivity.fileHash })
+			.onConflictDoNothing();
+	}
+	const healthConnectMappings = await tx
+		.select({
+			id: healthConnectExternalActivity.id,
+			externalKey: healthConnectExternalActivity.externalKey
+		})
+		.from(healthConnectExternalActivity)
+		.where(
+			and(
+				eq(healthConnectExternalActivity.userId, userId),
+				eq(healthConnectExternalActivity.activityId, targetActivity.id)
+			)
+		)
+		.for('update');
+	if (healthConnectMappings.length > 0) {
+		await tx
+			.insert(healthConnectTombstone)
+			.values(
+				healthConnectMappings.map(({ externalKey }) => ({
+					userId,
+					externalKey
+				}))
+			)
+			.onConflictDoNothing();
+		await tx
+			.update(healthConnectExternalActivity)
+			.set({
+				activityId: null,
+				pendingAction: 'none',
+				pendingActivity: null,
+				deletedAt: new Date(),
+				updatedAt: new Date()
+			})
 			.where(
-				and(eq(importSourceItem.userId, userId), eq(importSourceItem.activityId, targetActivity.id))
+				inArray(
+					healthConnectExternalActivity.id,
+					healthConnectMappings.map(({ id }) => id)
+				)
 			);
-		await tx
-			.delete(activityImport)
-			.where(
-				and(eq(activityImport.userId, userId), eq(activityImport.activityId, targetActivity.id))
-			);
-		await tx
-			.delete(activity)
-			.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
+	}
+	await tx
+		.delete(auditEvent)
+		.where(
+			and(
+				eq(auditEvent.userId, userId),
+				sql`${auditEvent.detail} ->> 'activityId' = ${targetActivity.id}`
+			)
+		);
+	// Keep the keyed remote-item marker so a connected source does not fetch the
+	// same file again. The marker contains no reversible path, and clearing the
+	// activity reference lets the private activity itself be deleted.
+	await tx
+		.update(importSourceItem)
+		.set({ activityId: null })
+		.where(
+			and(eq(importSourceItem.userId, userId), eq(importSourceItem.activityId, targetActivity.id))
+		);
+	await tx
+		.delete(activityImport)
+		.where(
+			and(eq(activityImport.userId, userId), eq(activityImport.activityId, targetActivity.id))
+		);
+	await tx
+		.delete(activity)
+		.where(and(eq(activity.userId, userId), eq(activity.id, targetActivity.id)));
 
-		await tx.insert(auditEvent).values({
-			userId,
-			eventType: 'activity.deleted',
-			detail: {
-				source: targetActivity.source
-			}
-		});
+	await tx.insert(auditEvent).values({
+		userId,
+		eventType: 'activity.deleted',
+		detail: {
+			source: targetActivity.source
+		}
 	});
 }
 
@@ -603,7 +656,7 @@ export async function deleteActivityData(userId: string) {
 		const [activityCountRow] = await tx
 			.select({ count: sql<number>`count(*)::int` })
 			.from(activity)
-			.where(and(eq(activity.userId, userId), eq(activity.source, 'gpx')));
+			.where(and(eq(activity.userId, userId), inArray(activity.source, ['gpx', 'health_connect'])));
 		const [sourceCountRow] = await tx
 			.select({ count: sql<number>`count(*)::int` })
 			.from(importSource)
@@ -631,6 +684,11 @@ export async function deleteActivityData(userId: string) {
 			.set({ revokedAt: now, updatedAt: now })
 			.where(and(eq(androidDevice.userId, userId), isNull(androidDevice.revokedAt)));
 		await tx.delete(androidImportRequest).where(eq(androidImportRequest.userId, userId));
+		await tx
+			.delete(healthConnectRequestReceipt)
+			.where(eq(healthConnectRequestReceipt.userId, userId));
+		await tx.delete(healthConnectConnection).where(eq(healthConnectConnection.userId, userId));
+		await tx.delete(healthConnectTombstone).where(eq(healthConnectTombstone.userId, userId));
 
 		await tx.execute(sql`
 			insert into ${activityDeletionTombstone} (user_id, file_hash)
@@ -655,7 +713,7 @@ export async function deleteActivityData(userId: string) {
 					and(
 						eq(activity.id, planAdjustment.triggerId),
 						eq(activity.userId, userId),
-						eq(activity.source, 'gpx')
+						inArray(activity.source, ['gpx', 'health_connect'])
 					)
 				)
 				.where(
@@ -676,7 +734,7 @@ export async function deleteActivityData(userId: string) {
 					and(
 						eq(activity.id, planAdjustment.triggerId),
 						eq(activity.userId, userId),
-						eq(activity.source, 'gpx')
+						inArray(activity.source, ['gpx', 'health_connect'])
 					)
 				)
 				.where(
@@ -694,7 +752,7 @@ export async function deleteActivityData(userId: string) {
 						select 1
 						from ${activity} as imported_activity
 						where imported_activity.user_id = ${userId}
-							and imported_activity.source = 'gpx'
+							and imported_activity.source in ('gpx', 'health_connect')
 							and imported_activity.id::text = ${auditEvent.detail} ->> 'activityId'
 					)`
 			)
@@ -706,7 +764,7 @@ export async function deleteActivityData(userId: string) {
 						select 1
 						from ${activity} as imported_activity
 						where imported_activity.user_id = ${userId}
-							and imported_activity.source = 'gpx'
+							and imported_activity.source in ('gpx', 'health_connect')
 							and imported_activity.workout_id = ${workoutFeedback.workoutId}
 					)`
 			)
@@ -714,7 +772,9 @@ export async function deleteActivityData(userId: string) {
 
 		await tx.delete(activityImport).where(eq(activityImport.userId, userId));
 		await tx.delete(importSourceItem).where(eq(importSourceItem.userId, userId));
-		await tx.delete(activity).where(and(eq(activity.userId, userId), eq(activity.source, 'gpx')));
+		await tx
+			.delete(activity)
+			.where(and(eq(activity.userId, userId), inArray(activity.source, ['gpx', 'health_connect'])));
 
 		await tx.insert(auditEvent).values({
 			userId,

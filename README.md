@@ -25,15 +25,18 @@ rest, missed work, recovery spacing, and current review item visible together.
 
 ### Android: the complete app plus native folder access
 
-| Connect a self-hosted server                                                          | Configure automatic GPX imports                                                       |
-| :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------ |
-| ![The runway Android server connection screen](docs/images/runway-android-server.png) | ![The runway Android folder setup screen](docs/images/runway-android-folder.png)      |
-| The universal APK verifies the server before opening sign-in.                         | Native Android retains the approved Gadgetbridge folder and schedules bounded checks. |
+| Connect a self-hosted server                                                          | Configure Android imports                                                        |
+| :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- |
+| ![The runway Android server connection screen](docs/images/runway-android-server.png) | ![The runway Android import setup screen](docs/images/runway-android-folder.png) |
+| The universal APK verifies the server before opening sign-in.                         | Keep Gadgetbridge folder access and choose optional Health Connect run imports.  |
 
 The Android package is a complete way to use runway, not a companion. It opens the full web product
 in an origin-visible Custom Tab and adds the capabilities the PWA cannot reliably own: durable folder
-access, background reconciliation, and Android GPX shares. See [Android architecture](docs/ANDROID.md) and
-[build instructions](android/README.md).
+access, background reconciliation, Android GPX shares, and an optional Health Connect import for
+running and treadmill-running sessions. It reads only the explicitly approved exercise and workout
+metrics, never writes to Health Connect, and asks separately for optional background reads and each
+route while the native screen is open. Routes remain subject to the server's route-privacy setting.
+See [Android architecture](docs/ANDROID.md) and [build instructions](android/README.md).
 
 Versioned GitHub releases are wired to include a verified, signed APK alongside the container image.
 The release is blocked if the protected Android signing identity is unavailable or differs from its
@@ -60,24 +63,24 @@ from the built debug APK running on the documented API 35 emulator.
 
 ## Ways to run runway
 
-| Surface       | Best for                                           | Capability boundary                                                                                 |
-| ------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Browser       | Any modern desktop or mobile browser               | Complete product; manual, share-target, Nextcloud, and foreground-approved-folder imports.          |
-| Installed PWA | Home-screen use with offline shell and OS sharing  | Same complete product; browser folder permission remains browser-managed and is checked while open. |
-| Android app   | Self-hosters who want durable Gadgetbridge imports | User-selected HTTPS server, visible browser origin, native folder grant, background checks, shares. |
+| Surface       | Best for                                          | Capability boundary                                                                                                                                     |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser       | Any modern desktop or mobile browser              | Complete product; manual, share-target, Nextcloud, and foreground-approved-folder imports.                                                              |
+| Installed PWA | Home-screen use with offline shell and OS sharing | Same complete product; browser folder permission remains browser-managed and is checked while open.                                                     |
+| Android app   | Self-hosters who want durable imports             | User-selected HTTPS server, visible browser origin, native folder grant, background checks, GPX shares, and optional running-only Health Connect reads. |
 
 ## What It Does
 
-| Area              | Behavior                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Planning          | Builds an editable running plan from an established baseline, a foundation phase, or a short timed calibration.     |
-| Calendar          | Shows generated recommendations, the current plan, recorded work, rest, recovery spacing, and week load.            |
-| Workout editing   | Moves, changes, adds, removes, resets, and undoes future non-race workouts with a consequence preview.              |
-| Activity review   | Accepts manual or GPX activity facts first, suggests possible matches, and leaves ambiguous records for the runner. |
-| Activity detail   | Shows a locally rendered route map coloured by relative speed and a heart-rate trace with exact retained samples.   |
-| Decisions         | Offers keep, reduce, rest, repeat, or rebalance choices after material deviations; nothing applies until confirmed. |
-| History and stats | Preserves plan phases, edits, feedback-driven changes, archived plans, exact values, and plan-versus-actual traces. |
-| Ownership         | Runs as a private PWA with local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure.        |
+| Area              | Behavior                                                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Planning          | Builds an editable running plan from an established baseline, a foundation phase, or a short timed calibration.             |
+| Calendar          | Shows generated recommendations, the current plan, recorded work, rest, recovery spacing, and week load.                    |
+| Workout editing   | Moves, changes, adds, removes, resets, and undoes future non-race workouts with a consequence preview.                      |
+| Activity review   | Accepts manual, GPX, or Health Connect facts first, suggests possible matches, and leaves ambiguous records for the runner. |
+| Activity detail   | Shows a locally rendered route map coloured by relative speed and a heart-rate trace with exact retained samples.           |
+| Decisions         | Offers keep, reduce, rest, repeat, or rebalance choices after material deviations; nothing applies until confirmed.         |
+| History and stats | Preserves plan phases, edits, feedback-driven changes, archived plans, exact values, and plan-versus-actual traces.         |
+| Ownership         | Runs as a private PWA with local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure.                |
 
 ### Planning paths
 
@@ -100,11 +103,14 @@ cp .env.example .env
 openssl rand -hex 24
 openssl rand -hex 24
 corepack pnpm secret:generate
+corepack pnpm secret:generate
 ```
 
 Put the first OpenSSL value in `POSTGRES_PASSWORD` and `MIGRATION_DATABASE_URL`; use the second for
-the restricted `runway_runtime` account in `APP_DATABASE_URL`. Put the generated
-`runway-secret-v1_…` value in `BETTER_AUTH_SECRET`. The published image is a production
+the restricted `runway_runtime` account in `APP_DATABASE_URL`. Put the first generated
+`runway-secret-v1_…` value in `BETTER_AUTH_SECRET` and the second in
+`ANDROID_CREDENTIAL_SECRET`; keeping the Android key stable prevents auth-key rotation from changing
+opaque Health Connect identities. The published image is a production
 artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
 
 ```dotenv
@@ -113,6 +119,7 @@ POSTGRES_PASSWORD="<first generated value>"
 MIGRATION_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
 APP_DATABASE_URL="postgres://runway_runtime:<second generated value>@db:5432/runway"
 BETTER_AUTH_SECRET="<generated runway-secret-v1 value>"
+ANDROID_CREDENTIAL_SECRET="<separate generated runway-secret-v1 value>"
 ORIGIN="https://runway.example.com"
 PUBLIC_APP_ORIGIN="https://runway.example.com"
 ALLOW_LOCAL_SIGNUPS="true"

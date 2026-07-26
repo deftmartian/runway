@@ -1,5 +1,6 @@
 import type {
 	HeartRateActivitySummary,
+	HeartRateSeries,
 	HeartRateSettings,
 	HeartRateZone,
 	HeartRateZoneKey,
@@ -128,6 +129,37 @@ export function summarizeHeartRateEffort(
 		effort: 'unknown',
 		highSeconds,
 		highShare,
+		secondsByZone,
+		settingsSource: normalized.source
+	};
+}
+
+export function summarizeHeartRateSeriesEffort(
+	series: HeartRateSeries | null | undefined,
+	durationSeconds: number,
+	settings: HeartRateSettings | null | undefined
+): HeartRateActivitySummary | null {
+	const normalized = normalizeHeartRateSettings(settings);
+	if (!normalized || !series || series.points.length === 0 || durationSeconds <= 0) return null;
+
+	const secondsByZone = emptySecondsByZone();
+	for (let index = 0; index < series.points.length - 1; index += 1) {
+		const sample = series.points[index];
+		const next = series.points[index + 1];
+		if (!sample || !next) continue;
+		const intervalStart = Math.min(durationSeconds, Math.max(0, sample.elapsedSeconds));
+		const intervalEnd = Math.min(durationSeconds, Math.max(intervalStart, next.elapsedSeconds));
+		const seconds = intervalEnd - intervalStart;
+		if (seconds <= 0) continue;
+		secondsByZone[zoneForBpm(sample.bpm, normalized.zones).key] += seconds;
+	}
+
+	const highSeconds = secondsByZone.z4 + secondsByZone.z5;
+	const totalSeconds = Object.values(secondsByZone).reduce((sum, seconds) => sum + seconds, 0);
+	return {
+		effort: 'unknown',
+		highSeconds,
+		highShare: totalSeconds > 0 ? Math.round((highSeconds / totalSeconds) * 100) / 100 : 0,
 		secondsByZone,
 		settingsSource: normalized.source
 	};

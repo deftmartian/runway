@@ -175,15 +175,26 @@ one manual, share-target, browser-folder, or Nextcloud import operation per user
 
 The normal Android app verifies a user-selected runway server and launches the complete PWA in an
 origin-visible browser Custom Tab rather than WebView. There is no origin-bound build variant. Native code owns the
-persisted Storage Access Framework read grant, bounded shares, folder settings, and inexact WorkManager
-reconciliation. An authenticated PWA session creates a ten-minute, single-use pairing code. Android
-exchanges it for a one-year, revocable credential limited to `/api/android/status` and
-`/api/android/import`; the status route also lets that credential revoke itself during a server switch.
+persisted Storage Access Framework read grant, bounded shares, folder settings, inexact WorkManager
+reconciliation, and optional Health Connect ingestion. Health Connect availability comes from its SDK
+status rather than Play/ROM heuristics. It reads only running and treadmill-running exercise sessions,
+with distance, heart rate, speed, cadence, and elevation metrics after explicit permission. The
+separate background-read permission enables optional six-hour sync; routes require per-record
+foreground consent and are never read by the background worker. The client never writes Health
+Connect data. An authenticated PWA session creates a ten-minute, single-use pairing code. Android
+exchanges it for a one-year, revocable credential limited to `/api/android/status`,
+`/api/android/import`, and `/api/android/health-connect/changes`; the status route also lets that
+credential revoke itself during a server switch.
 The server stores only its hash and Android encrypts it in an origin-keyed slot with a Keystore-backed
 AES-GCM key. Each GPX request has a stable UUID receipt and user-scoped content key, enters Review,
 and uses the same parser, import-generation barrier, duplicate checks, and privacy rules as browser
 imports. Receipt claims lock the account and revalidate device revocation and expiry, closing the race
-between initial bearer authentication and privacy deletion. The boundary and remaining production
+between initial bearer authentication and privacy deletion. Health Connect activities use the same
+review boundary and idempotent device receipts; their write transaction revalidates the device under
+the same account lock. The Android client sends byte-bounded chunks and advances its provider cursor
+only after every chunk is accepted. The server enforces the runner's route-data mode:
+non-private settings retain a redacted route summary even if foreground route consent was granted.
+The boundary and remaining production
 gates are documented in [ANDROID.md](ANDROID.md).
 
 The public `GET /api/android/instance` endpoint exposes only product identity, supported Android API

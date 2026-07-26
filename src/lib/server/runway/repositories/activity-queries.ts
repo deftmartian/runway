@@ -1,6 +1,12 @@
 import { and, asc, desc, eq, isNull, lte, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
-import { activity, workout, workoutFeedback } from '$lib/server/db/schema';
+import {
+	activity,
+	healthConnectExternalActivity,
+	workout,
+	workoutFeedback
+} from '$lib/server/db/schema';
 import { getTrainingReadContext, type TrainingReadContext } from './training-read-context';
 
 export async function getImportWorkoutCandidates(userId: string, context?: TrainingReadContext) {
@@ -46,6 +52,7 @@ export async function getActivityRecords(
 ) {
 	const limit = Math.min(200, Math.max(1, Math.trunc(options.limit ?? 100)));
 	const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+	const duplicateActivity = alias(activity, 'health_connect_duplicate_activity');
 	const [rows, [count]] = await Promise.all([
 		db
 			.select({
@@ -68,10 +75,32 @@ export async function getActivityRecords(
 				routeSummary: activity.routeSummary,
 				createdAt: activity.createdAt,
 				matchedWorkoutPurpose: workout.purpose,
-				matchedWorkoutDate: workout.scheduledDate
+				matchedWorkoutDate: workout.scheduledDate,
+				healthConnectOriginLabel: healthConnectExternalActivity.originLabel,
+				healthConnectMappingId: healthConnectExternalActivity.id,
+				healthConnectPendingAction: healthConnectExternalActivity.pendingAction,
+				healthConnectDuplicateActivityId:
+					healthConnectExternalActivity.duplicateCandidateActivityId,
+				healthConnectDuplicateActivityDate: duplicateActivity.activityDate,
+				healthConnectDuplicateDistanceMeters: duplicateActivity.distanceMeters,
+				healthConnectDuplicateSource: duplicateActivity.source
 			})
 			.from(activity)
 			.leftJoin(workout, and(eq(activity.workoutId, workout.id), eq(workout.userId, userId)))
+			.leftJoin(
+				healthConnectExternalActivity,
+				and(
+					eq(healthConnectExternalActivity.activityId, activity.id),
+					eq(healthConnectExternalActivity.userId, userId)
+				)
+			)
+			.leftJoin(
+				duplicateActivity,
+				and(
+					eq(duplicateActivity.id, healthConnectExternalActivity.duplicateCandidateActivityId),
+					eq(duplicateActivity.userId, userId)
+				)
+			)
 			.where(eq(activity.userId, userId))
 			.orderBy(
 				sql`case when ${activity.workoutId} is null then 0 else 1 end`,
@@ -85,7 +114,61 @@ export async function getActivityRecords(
 			.where(eq(activity.userId, userId))
 	]);
 	return {
-		items: rows.slice(0, limit),
+		items: rows.slice(0, limit).map((row) => {
+			return {
+				id: row.id,
+				workoutId: row.workoutId,
+				source: row.source,
+				reviewState: row.reviewState,
+				occurredAt: row.occurredAt,
+				activityDate: row.activityDate,
+				distanceMeters: row.distanceMeters,
+				durationSeconds: row.durationSeconds,
+				averagePaceSecondsPerKm: row.averagePaceSecondsPerKm,
+				averageHeartRate: row.averageHeartRate,
+				maxHeartRate: row.maxHeartRate,
+				heartRateSummary: row.heartRateSummary,
+				feltHard: row.feltHard,
+				pain: row.pain,
+				extraPlanImpactConfirmed: row.extraPlanImpactConfirmed,
+				consequence: row.consequence,
+				routeSummary: row.routeSummary,
+				createdAt: row.createdAt,
+				matchedWorkoutPurpose: row.matchedWorkoutPurpose,
+				matchedWorkoutDate: row.matchedWorkoutDate,
+				healthConnect:
+					row.source === 'health_connect' && row.healthConnectMappingId
+						? {
+								mappingId: row.healthConnectMappingId,
+								recordState:
+									row.healthConnectPendingAction === 'correction'
+										? ('pending_correction' as const)
+										: row.healthConnectPendingAction === 'source_delete'
+											? ('pending_source_deletion' as const)
+											: ('current' as const),
+								originLabel: row.healthConnectOriginLabel,
+								recordedAt: row.occurredAt,
+								duplicateCandidate:
+									row.healthConnectDuplicateActivityId &&
+									row.healthConnectDuplicateActivityDate &&
+									row.healthConnectDuplicateDistanceMeters !== null &&
+									row.healthConnectDuplicateSource
+										? {
+												activityId: row.healthConnectDuplicateActivityId,
+												activityDate: row.healthConnectDuplicateActivityDate,
+												distanceMeters: row.healthConnectDuplicateDistanceMeters,
+												sourceLabel:
+													row.healthConnectDuplicateSource === 'health_connect'
+														? 'a Health Connect import'
+														: row.healthConnectDuplicateSource === 'gpx'
+															? 'a GPX import'
+															: 'a manual entry'
+											}
+										: null
+							}
+						: null
+			};
+		}),
 		total: count?.total ?? 0,
 		nextOffset: rows.length > limit ? offset + limit : null
 	};

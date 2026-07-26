@@ -883,6 +883,228 @@ export async function seedImportedActivityRecords(userId: string, count: number)
 	}
 }
 
+export async function seedHealthConnectActivity(
+	userId: string,
+	pendingAction: 'none' | 'correction' | 'source_delete' = 'none'
+): Promise<{ activityId: string; mappingId: string }> {
+	const sql = postgres(
+		process.env['DATABASE_URL'] ?? 'postgres://runway:runway_dev_password@127.0.0.1:5432/runway',
+		{ max: 1 }
+	);
+	try {
+		return await sql.begin(async (transaction) => {
+			const [device] = await transaction<{ id: string }[]>`
+				insert into android_device (
+					user_id,
+					label,
+					token_hash,
+					expires_at
+				)
+				values (
+					${userId},
+					'Android test device',
+					${`test-health-connect-${randomBytes(24).toString('hex')}`},
+					timestamptz '2030-01-01 00:00:00Z'
+				)
+				returning id
+			`;
+			if (!device) throw new Error('Health Connect test device was not created.');
+
+			const [connection] = await transaction<{ id: string }[]>`
+				insert into health_connect_connection (
+					user_id,
+					device_id,
+					last_synced_at
+				)
+				values (
+					${userId},
+					${device.id},
+					timestamptz '2026-05-14 12:30:00Z'
+				)
+				returning id
+			`;
+			if (!connection) throw new Error('Health Connect test connection was not created.');
+
+			const [activityRecord] = await transaction<{ id: string }[]>`
+				insert into activity (
+					user_id,
+					source,
+					review_state,
+					occurred_at,
+					activity_date,
+					distance_meters,
+					duration_seconds,
+					average_pace_seconds_per_km,
+					average_heart_rate,
+					max_heart_rate,
+					heart_rate_series,
+					route_trace,
+					route_summary
+				)
+				values (
+					${userId},
+					'health_connect',
+					'review',
+					timestamptz '2026-05-14 12:00:00Z',
+					date '2026-05-14',
+					3200,
+					1800,
+					562.5,
+					142,
+					168,
+					${sql.json({
+						version: 1,
+						sourceSampleCount: 3,
+						points: [
+							{ elapsedSeconds: 0, bpm: 120 },
+							{ elapsedSeconds: 900, bpm: 168 },
+							{ elapsedSeconds: 1800, bpm: 138 }
+						]
+					})},
+					${sql.json({
+						version: 1,
+						sourcePointCount: 3,
+						points: [
+							{
+								latitudeE6: 45_000_000,
+								longitudeE6: -63_000_000,
+								elapsedSeconds: 0,
+								segmentIndex: 0,
+								speedMetersPerSecond: 1.8
+							},
+							{
+								latitudeE6: 45_001_000,
+								longitudeE6: -63_001_000,
+								elapsedSeconds: 900,
+								segmentIndex: 0,
+								speedMetersPerSecond: 2
+							},
+							{
+								latitudeE6: 45_002_000,
+								longitudeE6: -63_002_000,
+								elapsedSeconds: 1800,
+								segmentIndex: 0,
+								speedMetersPerSecond: 1.7
+							}
+						]
+					})},
+					${sql.json({
+						pointCount: 3,
+						startEndRedacted: false,
+						hasElevation: false,
+						traceRetained: true
+					})}
+				)
+				returning id
+			`;
+			if (!activityRecord) throw new Error('Health Connect test activity was not created.');
+
+			const [mapping] = await transaction<{ id: string }[]>`
+				insert into health_connect_external_activity (
+					user_id,
+					connection_id,
+					external_key,
+					origin_key,
+					origin_label,
+					fingerprint,
+					activity_id,
+					pending_action,
+					pending_activity,
+					deleted_at
+				)
+				values (
+					${userId},
+					${connection.id},
+					${randomBytes(32).toString('hex')},
+					${randomBytes(32).toString('hex')},
+					'Watch recorder',
+					${randomBytes(32).toString('hex')},
+					${activityRecord.id},
+					${pendingAction},
+					${
+						pendingAction === 'correction'
+							? sql.json({
+									occurredAt: '2026-05-14T12:05:00.000Z',
+									activityDate: '2026-05-14',
+									distanceMeters: 3300,
+									durationSeconds: 1820,
+									averagePaceSecondsPerKm: 551.52,
+									averageHeartRate: 144,
+									maxHeartRate: 170,
+									heartRateSummary: null,
+									averageCadence: 168,
+									heartRateSeries: null,
+									routeTrace: {
+										version: 1,
+										sourcePointCount: 2,
+										points: [
+											{
+												latitudeE6: 45_003_000,
+												longitudeE6: -63_003_000,
+												elapsedSeconds: 0,
+												segmentIndex: 0,
+												speedMetersPerSecond: 1.8
+											},
+											{
+												latitudeE6: 45_004_000,
+												longitudeE6: -63_004_000,
+												elapsedSeconds: 1820,
+												segmentIndex: 0,
+												speedMetersPerSecond: 1.9
+											}
+										]
+									},
+									routeSummary: {
+										pointCount: 2,
+										startEndRedacted: false,
+										hasElevation: false,
+										traceRetained: true
+									}
+								})
+							: null
+					},
+					${pendingAction === 'source_delete' ? new Date('2026-05-14T12:35:00.000Z') : null}
+				)
+				returning id
+			`;
+			if (!mapping) throw new Error('Health Connect test mapping was not created.');
+			return { activityId: activityRecord.id, mappingId: mapping.id };
+		});
+	} finally {
+		await sql.end();
+	}
+}
+
+export async function getHealthConnectRoutePrivacyState(
+	activityId: string,
+	mappingId: string
+): Promise<{ activityRetained: boolean; pendingRetained: boolean }> {
+	const sql = postgres(
+		process.env['DATABASE_URL'] ?? 'postgres://runway:runway_dev_password@127.0.0.1:5432/runway',
+		{ max: 1 }
+	);
+	try {
+		const [row] = await sql<{ activityRetained: boolean; pendingRetained: boolean }[]>`
+			select
+				activity.route_trace is not null as "activityRetained",
+				coalesce(
+					mapping.pending_activity -> 'routeTrace' is not null
+					and mapping.pending_activity -> 'routeTrace' <> 'null'::jsonb,
+					false
+				) as "pendingRetained"
+			from activity
+			inner join health_connect_external_activity as mapping
+				on mapping.activity_id = activity.id
+			where activity.id = ${activityId}
+				and mapping.id = ${mappingId}
+		`;
+		if (!row) throw new Error('Health Connect test route state was not found.');
+		return row;
+	} finally {
+		await sql.end();
+	}
+}
+
 export async function getBulkActivityDeletionState(userId: string): Promise<{
 	gpxActivities: number;
 	manualActivities: number;

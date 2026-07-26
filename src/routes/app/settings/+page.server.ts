@@ -6,6 +6,7 @@ import { auth } from '$lib/server/auth';
 import { isFreshAuthSession } from '$lib/server/runway/auth-config';
 import { readAuditRetentionPolicy } from '$lib/server/runway/audit-retention';
 import { buildIdentity } from '$lib/server/runway/build-identity';
+import { getHealthConnectConnectionStatus } from '$lib/server/runway/health-connect';
 import {
 	accountSecurityRateLimitBuckets,
 	consumeSecurityRateLimit
@@ -49,9 +50,10 @@ export const load: PageServerLoad = async (event) => {
 		profile?.heartRateSettings ??
 		(validAge === null ? null : defaultHeartRateSettings(validAge, sexForEstimates));
 	const floors = heartRateSettings ? zoneFloors(heartRateSettings) : null;
-	const [passkeys, accounts] = await Promise.all([
+	const [passkeys, accounts, healthConnect] = await Promise.all([
 		auth.api.listPasskeys({ headers: event.request.headers }),
-		auth.api.listUserAccounts({ headers: event.request.headers })
+		auth.api.listUserAccounts({ headers: event.request.headers }),
+		getHealthConnectConnectionStatus(event.locals.user.id)
 	]);
 	const hasCredentialAccount = accounts.some((account) => account.providerId === 'credential');
 	return {
@@ -73,7 +75,8 @@ export const load: PageServerLoad = async (event) => {
 		about: {
 			release: buildIdentity.release,
 			commit: buildIdentity.commit,
-			serverOrigin: event.url.origin
+			serverOrigin: event.url.origin,
+			healthConnect
 		},
 		auditRetention: readAuditRetentionPolicy(),
 		profile: {
@@ -172,7 +175,7 @@ export const actions: Actions = {
 			scope: 'privacy',
 			message:
 				routeDataMode === 'private'
-					? 'Route maps enabled for future GPX imports.'
+					? 'Route maps enabled for future imports.'
 					: `Route points will be discarded after import.${clearedMessage}`
 		};
 	},
@@ -330,13 +333,13 @@ export const actions: Actions = {
 		} catch {
 			return fail(500, {
 				scope: 'privacy',
-				message: 'Imported GPX activities could not be deleted. Try again.'
+				message: 'Imported activities could not be deleted. Try again.'
 			});
 		}
 		const activityMessage =
 			result.count === 1
-				? 'Deleted 1 imported GPX activity.'
-				: `Deleted ${result.count} imported GPX activities.`;
+				? 'Deleted 1 imported activity.'
+				: `Deleted ${result.count} imported activities.`;
 		const sourceMessage =
 			result.disconnectedImportSources === 0
 				? ''

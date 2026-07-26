@@ -23,7 +23,8 @@
     { "tag": "0020_import_generation_barrier", "createdAt": "1784187000000", "hash": "d44a0bcfeeecd719251881034dff019ad0ecc3e8ef8f4e92241d5c6d637bd276" },
     { "tag": "0021_private_activity_traces", "createdAt": "1784260668587", "hash": "51e522d3bb34c2561a28dcd0cf27f08961f2490b41c53af1cf9c31e22ae5e46d" },
     { "tag": "0022_forward_compatible_upgrade", "createdAt": "1784689856796", "hash": "b0cb88e76bf109c013d2dae85eb76a98dd2ed7cda0b57eae81a740f825dd287d" },
-    { "tag": "0023_two_factor_attempt_lockout", "createdAt": "1784950010151", "hash": "158ed81d7d986f8d7bb235437619bff0f4d2a7f0a26ebb2430bc4a588cf1e9bc" }
+    { "tag": "0023_two_factor_attempt_lockout", "createdAt": "1784950010151", "hash": "158ed81d7d986f8d7bb235437619bff0f4d2a7f0a26ebb2430bc4a588cf1e9bc" },
+    { "tag": "0024_groovy_excalibur", "createdAt": "1785036829490", "hash": "c0849e223490e1b595dcf3b9c68330f9edb3d1e3c882b3974424d17debc420ba" }
   ],
   "rebasedV011": [
     { "tag": "0000_initial", "createdAt": "1784301464615", "hash": "06d923af8bc0bccff36051bfb7c6d5aade0d32c6a99ea06de8e630bcd3190c87" },
@@ -42,7 +43,11 @@
     "android_device",
     "android_import_request",
     "android_pairing_request",
-    "import_operation_lease"
+    "import_operation_lease",
+    "health_connect_connection",
+    "health_connect_external_activity",
+    "health_connect_request_receipt",
+    "health_connect_tombstone"
   ],
   "requiredColumns": [
     "activity.consequence_plan_id",
@@ -50,15 +55,21 @@
     "activity.heart_rate_series",
     "athlete_profile.browser_folder_generation",
     "two_factor.failed_verification_count",
-    "two_factor.locked_until"
+    "two_factor.locked_until",
+    "health_connect_external_activity.pending_activity",
+    "health_connect_external_activity.duplicate_candidate_activity_id"
   ],
   "requiredConstraints": [
     "activity_consequence_plan_user_fk",
-    "athlete_profile_browser_folder_generation_nonnegative"
+    "athlete_profile_browser_folder_generation_nonnegative",
+    "health_connect_external_activity_pending_action_known",
+    "health_connect_external_activity_pending_state_consistent",
+    "health_connect_connection_id_user_unique"
   ],
   "requiredIndexes": [
     "plan_adjustment_active_decision_unique",
     "android_device_token_hash_unique",
-    "android_import_request_device_request_unique"
+    "android_import_request_device_request_unique",
+    "health_connect_request_receipt_device_request_unique"
   ]
 }

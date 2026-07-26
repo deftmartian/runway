@@ -57,7 +57,7 @@
 					if (key === 'deleteActivityData') privacyAttention = 'activityData';
 					if (result.type !== 'success' && key === 'deleteActivityData') {
 						privacyClientMessage =
-							'The folder was disconnected, but imported GPX activities were not deleted. Try again, or reconnect the folder from Import.';
+							'The folder was disconnected, but imported activities were not deleted. Try again, or reconnect the folder from Import.';
 					}
 					if (result.type !== 'redirect' && key === 'deleteAccount') {
 						accountDeletionClientMessage =
@@ -114,6 +114,7 @@
 		release={data.about.release}
 		commit={data.about.commit}
 		serverOrigin={data.about.serverOrigin}
+		healthConnect={data.about.healthConnect}
 	/>
 </main>
 

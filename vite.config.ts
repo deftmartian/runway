@@ -5,7 +5,15 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		watch: {
-			ignored: ['**/.runway-live/**', '**/.svelte-kit-*/**']
+			ignored: [
+				'**/.runway-live/**',
+				'**/.svelte-kit-*/**',
+				'**/android/.gradle/**',
+				'**/android/**/build/**',
+				'**/android-release/**',
+				'**/playwright-report/**',
+				'**/test-results/**'
+			]
 		}
 	},
 	test: {

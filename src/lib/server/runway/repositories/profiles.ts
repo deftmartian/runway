@@ -1,9 +1,15 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { activity, athleteProfile, auditEvent } from '$lib/server/db/schema';
+import {
+	activity,
+	athleteProfile,
+	auditEvent,
+	healthConnectExternalActivity
+} from '$lib/server/db/schema';
 import { addDays, isValidTimeZone } from '$lib/training/date';
 import { buildHeartRateSettings } from '$lib/training/heart-rate';
 import type { SexForEstimates } from '$lib/training/types';
+import { lockActivityOwner } from './mutation-locks';
 import type { RunwayTransaction } from './transaction';
 
 export async function getAthleteProfile(userId: string) {
@@ -27,6 +33,7 @@ export async function getActivityImportGeneration(userId: string): Promise<numbe
 export async function updateAthleteTimeZone(userId: string, timeZone: string) {
 	if (!isValidTimeZone(timeZone)) throw new Error('Choose a valid IANA time zone.');
 	return db.transaction(async (tx) => {
+		await lockActivityOwner(tx, userId);
 		await tx
 			.insert(athleteProfile)
 			.values({ userId, timeZone })
@@ -40,6 +47,10 @@ export async function updateAthleteTimeZone(userId: string, timeZone: string) {
 
 export async function updateRouteDataMode(userId: string, routeDataMode: 'discard' | 'private') {
 	return db.transaction(async (tx) => {
+		// Route erasure must serialize with Health Connect correction acceptance. Without
+		// the same account lock, a correction that already read a private pending trace
+		// could write it back after this transaction discarded every route.
+		await lockActivityOwner(tx, userId);
 		await tx
 			.insert(athleteProfile)
 			.values({ userId, routeDataMode })
@@ -59,17 +70,54 @@ export async function updateRouteDataMode(userId: string, routeDataMode: 'discar
 						.where(and(eq(activity.userId, userId), isNotNull(activity.routeTrace)))
 						.returning({ id: activity.id })
 				: [];
+		const clearedPending =
+			routeDataMode === 'discard'
+				? await tx
+						.update(healthConnectExternalActivity)
+						.set({
+							pendingActivity: sql`
+								jsonb_set(
+									jsonb_set(
+										${healthConnectExternalActivity.pendingActivity},
+										'{routeTrace}',
+										'null'::jsonb,
+										true
+									),
+									'{routeSummary}',
+									coalesce(
+										${healthConnectExternalActivity.pendingActivity} -> 'routeSummary',
+										'{}'::jsonb
+									) || '{"startEndRedacted":true,"traceRetained":false}'::jsonb,
+									true
+								)
+							`
+						})
+						.where(
+							and(
+								eq(healthConnectExternalActivity.userId, userId),
+								isNotNull(healthConnectExternalActivity.pendingActivity),
+								sql`${healthConnectExternalActivity.pendingActivity} -> 'routeTrace' is not null`,
+								sql`${healthConnectExternalActivity.pendingActivity} -> 'routeTrace' <> 'null'::jsonb`
+							)
+						)
+						.returning({ id: healthConnectExternalActivity.id })
+				: [];
 
 		await tx.insert(auditEvent).values({
 			userId,
 			eventType: 'profile.route_privacy_updated',
 			detail: {
 				routeDataMode,
-				clearedRouteCount: cleared.length
+				clearedRouteCount: cleared.length,
+				clearedPendingRouteCount: clearedPending.length
 			}
 		});
 
-		return { routeDataMode, clearedRouteCount: cleared.length };
+		return {
+			routeDataMode,
+			clearedRouteCount: cleared.length,
+			clearedPendingRouteCount: clearedPending.length
+		};
 	});
 }
 

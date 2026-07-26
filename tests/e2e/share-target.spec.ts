@@ -222,8 +222,8 @@ test('activity deletion rejects a device-folder upload held after generation cap
 	await page.goto('/app/settings');
 	await page.getByText('Imported activity data', { exact: true }).click();
 	page.once('dialog', (dialog) => dialog.accept());
-	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
-	await expect(page.getByText('Deleted 0 imported GPX activities.')).toBeVisible();
+	await page.getByRole('button', { name: 'Delete imported activities' }).click();
+	await expect(page.getByText('Deleted 0 imported activities.')).toBeVisible();
 
 	heldImport.finish();
 	await expect(heldImport.response).resolves.toEqual({ status: 200, body: { result: 'deleted' } });
@@ -496,8 +496,8 @@ test('a second tab disconnects a stale folder scan before it can upload with a n
 	await generationHeld;
 	await otherTab.getByText('Imported activity data', { exact: true }).click();
 	otherTab.once('dialog', (dialog) => dialog.accept());
-	await otherTab.getByRole('button', { name: 'Delete imported GPX activities' }).click();
-	await expect(otherTab.getByText('Deleted 0 imported GPX activities.')).toBeVisible();
+	await otherTab.getByRole('button', { name: 'Delete imported activities' }).click();
+	await expect(otherTab.getByText('Deleted 0 imported activities.')).toBeVisible();
 	await expect(controlMessage).resolves.toEqual({ type: 'disconnected', userId });
 
 	releaseGeneration();

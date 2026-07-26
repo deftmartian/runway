@@ -4,8 +4,8 @@ The Android build is a full way to use runway, not a secondary companion. On fir
 universal build asks for the runner's self-hosted server, verifies its narrow Android compatibility
 contract, and opens the complete PWA in a browser Custom Tab with the origin visible. Native Android
 code exists only where the browser capability model is insufficient: durable Storage Access Framework
-grants, background reconciliation, operating-system shares, server selection, and a small
-folder-settings surface.
+grants, background reconciliation, operating-system shares, optional Health Connect reads, server
+selection, and a small folder-settings surface.
 
 The source lives in [`android/`](../android/). AndroidX Browser opens the selected origin in a Custom
 Tab with visible origin controls, never an embedded WebView.
@@ -92,13 +92,43 @@ but one trigger may chain up to eight bounded workers to reduce a known backlog.
 last outcome and a lower-bound backlog count.
 
 The app requests no location, activity-recognition, broad storage, contacts, advertising, or Play
-Services permission, and it requests no dangerous or runtime permission. The source manifest declares
-internet access. WorkManager contributes the normal `ACCESS_NETWORK_STATE`, `WAKE_LOCK`,
-`RECEIVE_BOOT_COMPLETED`, and `FOREGROUND_SERVICE` permissions needed for constrained, reliable
-reconciliation plus an app-scoped signature permission for safe dynamic receivers. The build gate
-checks the merged artifact against that exact permission allowlist, an exact exported
-component/permission map, disabled backups, and release cleartext/debuggable flags. It fails on any
-unexpected addition.
+Services permission. Health Connect access is an explicit, user-granted runtime permission: runway
+reads `ExerciseSession`, distance, heart rate, speed, steps cadence, and elevation-gained records.
+It accepts only running and treadmill-running sessions, never writes Health Connect data, and does
+not read routes unless the runner grants consent for that individual route from the foreground native
+screen. Optional six-hour reconciliation requires the separately granted Health Connect background
+read permission; routes are never read in background. Provider availability is determined through
+Health Connect's SDK status, so availability and update-needed states do not rely on Play-Store or
+device/ROM heuristics. The manifest declares only the Health Connect provider package for package
+visibility on pre-framework devices; it does not request broad package visibility.
+
+The source manifest also declares internet access. WorkManager contributes the normal
+`ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, and `FOREGROUND_SERVICE` permissions
+needed for constrained reconciliation plus an app-scoped signature permission for safe dynamic
+receivers. The build gate checks the merged artifact against this exact operational and Health Connect
+allowlist, an exact exported component/permission map, disabled backups, and release
+cleartext/debuggable flags. It fails on any unexpected addition.
+
+## Health Connect import
+
+After the Android device has been paired with the selected runway server, the native Folder screen
+can request the running-session permission. The first successful foreground sync imports a bounded
+30-day window; later changes are incremental. Metric-only changes conservatively re-read that same
+window so a session summary is updated rather than silently left stale. Health Connect records enter
+the same review and correction decisions as other imports; they do not change a plan automatically.
+
+The client follows every provider page in that 30-day window, serializes the exact UTF-8 request
+body once, and splits it at 100 changes or 240 KiB, whichever comes first. A provider cursor advances
+only after every chunk is accepted under the still-current server and credential generation.
+Transient failures remain retryable; an invalid, individually oversized, or server-rejected record
+becomes a persistent **Needs attention** state instead of an endless background retry.
+
+The Android client sends the selected session facts and approved metrics to the paired server over the
+scoped device credential. Source record identifiers are not exposed in the web UI. If a runner grants
+an individual route, the server retains the trace only when that runner's server-side route privacy
+mode permits private route data; otherwise it records a redacted summary. This setting is enforced by
+the server, not by a client-side promise. No Health Connect writes, deletions, or provider-management
+operations are performed.
 
 ## Native upload and authentication boundary
 
@@ -113,10 +143,11 @@ The implemented pairing and upload flow is:
    non-sensitive timestamps.
 4. Android binds the credential to the selected origin and encrypts both with AES-GCM under a
    non-exportable Android Keystore key. App backup and device transfer exclude every runway data domain.
-5. The credential is accepted only by `/api/android/status` (status and self-disconnection) and
-   `/api/android/import`. Import requires a GPX-specific content type, UUID request id, SHA-256 content
-   digest, and no content encoding. The server authenticates and rate-limits before reading at most
-   10 MB from the request stream.
+5. The credential is accepted only by `/api/android/status` (status and self-disconnection),
+   `/api/android/import`, and `/api/android/health-connect/changes`. GPX import requires a
+   GPX-specific content type, UUID request id, SHA-256 content digest, and no content encoding. The
+   Health Connect endpoint requires bounded versioned JSON, a UUID request id, and the current
+   activity-import generation. Both paths authenticate and rate-limit before reading a bounded body.
 6. The request id is claimed before parsing while the user's account row is locked and the device is
    revalidated. This closes the gap between initial bearer authentication and concurrent device
    revocation or privacy deletion. Completed receipts return the original stable result; an id reused
@@ -163,7 +194,7 @@ The Android app is not ready for external release until there is evidence for:
 - encrypted credentials and a threat model for malicious providers, shares, servers, intents, backups,
   logs, screenshots, browser fallback, and rooted devices;
 - parser corpus/fuzz coverage and adversarial Android provider/stream tests;
-- upgrade, Custom Tab, share, permission-revocation, offline, and background tests on the
+- upgrade, Custom Tab, share, Health Connect permission/revocation/route-consent, offline, and background tests on the
   supported Android range, Pixel, Samsung, and one aggressive background-management OEM;
 - accessibility, dark theme, small screen, large text, keyboard, screen reader, and localization passes
   across both the PWA and native folder sheet;
@@ -173,9 +204,9 @@ The Android app is not ready for external release until there is evidence for:
 - privacy policy, support contact, incident response, release notes, and opt-in diagnostics that exclude
   file names, URIs, coordinates, GPX bytes, auth material, and training or injury data.
 
-The mobile API now supports real review-only imports. External distribution still waits on the
-remaining signing, device-matrix, upgrade, accessibility, incident-response, and release-evidence
-gates above.
+The mobile API now supports real review-only imports, including the constrained Health Connect path.
+External distribution still waits on the remaining signing, device-matrix, upgrade, accessibility,
+incident-response, and release-evidence gates above.
 
 ## Local and continuous verification
 
@@ -194,8 +225,8 @@ the selectable-server configuration passes, the removed bound-origin property is
 release packaging fails without `android/signing.properties`, and the explicit F-Droid path can produce an unsigned
 source-built artifact without private material. The check points Gradle at an isolated nonexistent signing file,
 so it never reads an operator's local key configuration. Both commands verify their merged manifest
-contains only the reviewed normal operational permissions and exported components, with backups and
-release cleartext/debugging disabled. Neither command produces a directly distributable release. The
+contains only the reviewed operational and Health Connect permissions and exported components, with
+backups and release cleartext/debugging disabled. Neither command produces a directly distributable release. The
 repository check workflow runs the same commands with JDK 17, Android platform 36, and build tools
 36.0.0. Version tags use a separate protected signing job. Its `android-release` environment must
 hold the four signing secrets and a `RUNWAY_ANDROID_CERT_SHA256` variable containing the expected

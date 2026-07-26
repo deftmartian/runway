@@ -25,15 +25,22 @@
 			? candidates.filter((candidate) => dateDistanceDays(candidate.scheduledDate, event.date) <= 3)
 			: candidates
 	);
+	const sourceLabel = $derived(
+		event.activity?.source === 'gpx'
+			? 'GPX import'
+			: event.activity?.source === 'health_connect'
+				? 'Health Connect'
+				: 'Recorded manually'
+	);
 </script>
 
 {#if event.activity}
 	<div class="event-detail-list">
 		<div>
 			<span class="muted">Source</span>
-			<strong>{event.activity.source === 'gpx' ? 'GPX import' : 'Recorded manually'}</strong>
+			<strong>{sourceLabel}</strong>
 		</div>
-		{#if event.activity.source === 'gpx'}
+		{#if event.activity.source !== 'manual'}
 			<div>
 				<span class="muted">Route points</span>
 				<strong>{event.activity.routeSummary.pointCount}</strong>

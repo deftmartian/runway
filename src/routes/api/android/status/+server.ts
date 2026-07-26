@@ -1,4 +1,7 @@
 import { json } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
+import { db } from '$lib/server/db';
+import { athleteProfile } from '$lib/server/db/schema';
 import {
 	authenticateAndroidDevice,
 	revokeAndroidDevice,
@@ -30,13 +33,19 @@ export const GET: RequestHandler = async (event) => {
 	if (!(await touchAndroidDevice(device.id))) {
 		return json({ result: 'unauthorized' }, { status: 401 });
 	}
+	const [profile] = await db
+		.select({ activityImportGeneration: athleteProfile.activityImportGeneration })
+		.from(athleteProfile)
+		.where(eq(athleteProfile.userId, device.userId))
+		.limit(1);
 	return json({
 		result: 'connected',
 		deviceId: device.id,
 		label: device.label,
 		expiresAt: device.expiresAt.toISOString(),
 		expiresAtEpochMs: device.expiresAt.getTime(),
-		lastImportedAt: device.lastImportedAt?.toISOString() ?? null
+		lastImportedAt: device.lastImportedAt?.toISOString() ?? null,
+		activityImportGeneration: profile?.activityImportGeneration ?? 0
 	});
 };
 

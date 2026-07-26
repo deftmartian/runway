@@ -8,6 +8,7 @@ object ServerConnectionReset {
         ReconciliationScheduler.cancelAll(appContext)
         AndroidCredentialStore.clearLegacyState(appContext)
         if (origin != null) {
+            HealthConnectCursorStore(appContext, origin).clearAll()
             val credentialStore = AndroidCredentialStore(appContext, origin)
             credentialStore.load()?.let { credential ->
                 HandledImportStore(appContext).clearForDevice(credential.deviceId)

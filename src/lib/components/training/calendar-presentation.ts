@@ -67,7 +67,7 @@ const stateLabels: Record<CalendarPresentationState, { label: string; compactLab
 
 export function presentCalendarEvent(event: CalendarEvent): CalendarEventPresentation {
 	const flags: CalendarStateFlag[] = [];
-	if (event.activity?.source === 'gpx') flags.push('imported');
+	if (event.activity && event.activity.source !== 'manual') flags.push('imported');
 	if (event.activity?.workoutId) flags.push('linked');
 	if (event.activity?.extraPlanImpactConfirmed && !event.activity.workoutId) {
 		flags.push('counted_extra');

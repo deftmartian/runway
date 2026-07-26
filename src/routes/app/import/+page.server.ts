@@ -17,6 +17,10 @@ import {
 	getAthleteProfile
 } from '$lib/server/runway/repositories/profiles';
 import { resolveAndroidApplicationId } from '$lib/server/runway/android-instance';
+import {
+	resolveHealthConnectDuplicate,
+	resolveHealthConnectRecord
+} from '$lib/server/runway/health-connect';
 import { maxGpxImportBytes } from '$lib/import-limits';
 import {
 	createAndroidPairingRequest,
@@ -316,6 +320,52 @@ export const actions: Actions = {
 		} catch (error) {
 			return fail(400, { message: activityRecordError(error, 'Activity could not be deleted.') });
 		}
+	},
+	resolveHealthConnectRecord: async (event) => {
+		if (!event.locals.user) throw redirect(302, '/login');
+		const formData = await event.request.formData();
+		const mapping = activityIdSchema.safeParse({ activityId: formString(formData, 'mappingId') });
+		const decision = formString(formData, 'decision');
+		if (!mapping.success || !isHealthConnectRecordDecision(decision)) {
+			return fail(400, { message: 'Choose a Health Connect record decision.' });
+		}
+		try {
+			await resolveHealthConnectRecord(event.locals.user.id, mapping.data.activityId, decision);
+			return {
+				message:
+					decision === 'accept_correction'
+						? 'Health Connect correction applied.'
+						: decision === 'delete_from_runway'
+							? 'Activity removed from runway.'
+							: 'Health Connect source decision saved.'
+			};
+		} catch (error) {
+			return fail(400, {
+				message: activityRecordError(error, 'Health Connect record could not be updated.')
+			});
+		}
+	},
+	resolveHealthConnectDuplicate: async (event) => {
+		if (!event.locals.user) throw redirect(302, '/login');
+		const formData = await event.request.formData();
+		const mapping = activityIdSchema.safeParse({ activityId: formString(formData, 'mappingId') });
+		const decision = formString(formData, 'decision');
+		if (!mapping.success || !isHealthConnectDuplicateDecision(decision)) {
+			return fail(400, { message: 'Choose a duplicate record decision.' });
+		}
+		try {
+			await resolveHealthConnectDuplicate(event.locals.user.id, mapping.data.activityId, decision);
+			return {
+				message:
+					decision === 'keep_health_connect'
+						? 'Health Connect record kept.'
+						: 'Existing activity kept.'
+			};
+		} catch (error) {
+			return fail(400, {
+				message: activityRecordError(error, 'Duplicate record could not be resolved.')
+			});
+		}
 	}
 };
 
@@ -458,7 +508,27 @@ function activityRecordError(error: unknown, fallback: string): string {
 		'Activity is no longer available for linking.',
 		'Workout is no longer available for linking.',
 		'Linked workout not found.',
-		'Activity is no longer linked to this workout.'
+		'Activity is no longer linked to this workout.',
+		'Health Connect record is not available.',
+		'Source deletion is not pending.',
+		'Correction is not pending.',
+		'Unlink this accepted activity before applying a correction.',
+		'Stop counting this activity as extra before applying a correction.',
+		'Duplicate candidate is not available.'
 	]);
 	return knownMessages.has(message) ? message : fallback;
+}
+
+function isHealthConnectRecordDecision(
+	value: string
+): value is 'accept_correction' | 'keep_current' | 'delete_from_runway' | 'retain_in_runway' {
+	return ['accept_correction', 'keep_current', 'delete_from_runway', 'retain_in_runway'].includes(
+		value
+	);
+}
+
+function isHealthConnectDuplicateDecision(
+	value: string
+): value is 'keep_health_connect' | 'use_existing' {
+	return value === 'keep_health_connect' || value === 'use_existing';
 }

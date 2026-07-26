@@ -14,10 +14,22 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.contracts.ExerciseRouteRequestContract
+import androidx.health.connect.client.records.ExerciseRoute
 import androidx.core.view.ViewCompat
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.Executors
+
+internal val NATIVE_IMPORTS_ACCESSIBILITY_HEADING_IDS = intArrayOf(
+    R.id.screen_heading,
+    R.id.server_section_heading,
+    R.id.pairing_heading,
+    R.id.folder_heading,
+    R.id.background_heading,
+    R.id.health_connect_heading,
+)
 
 class NativeFolderSettingsActivity : ComponentActivity() {
     private enum class AutomationMutation {
@@ -46,10 +58,42 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private lateinit var backgroundStatus: TextView
     private lateinit var lastCheckStatus: TextView
     private lateinit var backgroundButton: Button
+    private lateinit var healthConnectStatus: TextView
+    private lateinit var healthConnectPermission: Button
+    private lateinit var healthConnectSync: Button
+    private lateinit var healthConnectBackground: Button
 
     private var backgroundEnabled = false
     private val workRunningByName = mutableMapOf<String, Boolean>()
     private var pickerConnection: ServerConnection? = null
+    private var healthConnectBackgroundEnabled = false
+    private var healthConnectPermissionsGranted = false
+    private var healthConnectBackgroundSupported = false
+    private var pendingRouteConsentRecordId: String? = null
+    private val routeOverrides = mutableMapOf<String, ExerciseRoute>()
+    private var routePromptConsumed = false
+
+    private val requestHealthConnectPermissions = registerForActivityResult(
+        PermissionController.createRequestPermissionResultContract(),
+    ) {
+        queryHealthConnectPermissions()
+        refreshHealthConnectState()
+    }
+
+    private val requestExerciseRoute = registerForActivityResult(ExerciseRouteRequestContract()) { route ->
+        val recordId = pendingRouteConsentRecordId ?: return@registerForActivityResult
+        pendingRouteConsentRecordId = null
+        if (route != null) {
+            routeOverrides[recordId] = route
+            // The prior foreground pass has already advanced the change cursor. Rebaseline so the
+            // consent result is sent as an explicit session upsert rather than waiting for a new
+            // provider mutation that may never arrive.
+            HealthConnectCursorStore(this, serverOrigin).clear()
+            syncHealthConnectForeground(newAction = false)
+        } else {
+            healthConnectStatus.setText(R.string.health_connect_route_not_granted)
+        }
+    }
 
     private val chooseDirectory = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -120,9 +164,11 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         bindActions()
         refreshScreen()
         refreshBackgroundWorkState()
+        refreshHealthConnectWorkState()
         observeReconciliationWork()
         refreshLastCheckStatus()
         verifyPairingStatus()
+        queryHealthConnectPermissions()
     }
 
     override fun onDestroy() {
@@ -146,13 +192,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     }
 
     private fun bindViews() {
-        listOf(
-            R.id.screen_heading,
-            R.id.server_section_heading,
-            R.id.pairing_heading,
-            R.id.folder_heading,
-            R.id.background_heading,
-        ).forEach { headingId ->
+        NATIVE_IMPORTS_ACCESSIBILITY_HEADING_IDS.forEach { headingId ->
             ViewCompat.setAccessibilityHeading(findViewById<View>(headingId), true)
         }
         setupStatus = findViewById(R.id.setup_status)
@@ -173,6 +213,10 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         backgroundStatus = findViewById(R.id.background_status)
         lastCheckStatus = findViewById(R.id.last_check_status)
         backgroundButton = findViewById(R.id.background_action)
+        healthConnectStatus = findViewById(R.id.health_connect_status)
+        healthConnectPermission = findViewById(R.id.health_connect_permission)
+        healthConnectSync = findViewById(R.id.health_connect_sync)
+        healthConnectBackground = findViewById(R.id.health_connect_background)
         findViewById<TextView>(R.id.server_origin_status).text = serverOrigin
         findViewById<Button>(R.id.change_server).apply {
             setOnClickListener {
@@ -237,6 +281,54 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 }
                 AutomationMutation.ServerChanged -> finish()
             }
+        }
+        healthConnectPermission.setOnClickListener {
+            if (!requireCurrentServer()) return@setOnClickListener
+            android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.health_connect_title)
+                .setMessage(R.string.health_connect_permission_needed)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.health_connect_grant_permission) { _, _ ->
+                    requestHealthConnectPermissions.launch(HEALTH_CONNECT_PERMISSIONS)
+                }
+                .show()
+        }
+        healthConnectSync.setOnClickListener { syncHealthConnectForeground() }
+        healthConnectBackground.setOnClickListener {
+            if (!requireCurrentServer()) return@setOnClickListener
+            if (healthConnectBackgroundEnabled) {
+                ReconciliationScheduler.disableHealthConnectPeriodic(this)
+                healthConnectBackgroundEnabled = false
+            } else {
+                healthConnectBackground.isEnabled = false
+                executor.execute {
+                    val gateway = AndroidHealthConnectGateway(this)
+                    val granted = runCatching {
+                        gateway.supportsBackgroundRead() && gateway.hasBackgroundPermission()
+                    }.getOrDefault(false)
+                    runOnUiThread {
+                        if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                        if (!granted) {
+                            android.app.AlertDialog.Builder(this)
+                                .setTitle(R.string.health_connect_title)
+                                .setMessage(R.string.health_connect_background_permission_needed)
+                                .setNegativeButton(R.string.cancel, null)
+                                .setPositiveButton(R.string.health_connect_grant_permission) { _, _ ->
+                                    requestHealthConnectPermissions.launch(
+                                        HEALTH_CONNECT_PERMISSIONS + HEALTH_CONNECT_BACKGROUND_PERMISSION,
+                                    )
+                                }
+                                .show()
+                        } else {
+                            ReconciliationScheduler.enableHealthConnectPeriodic(this)
+                            healthConnectBackgroundEnabled = true
+                        }
+                        refreshHealthConnectState()
+                    }
+                }
+                return@setOnClickListener
+            }
+            refreshHealthConnectState()
         }
         findViewById<Button>(R.id.return_to_runway).setOnClickListener {
             if (!requireCurrentServer()) return@setOnClickListener
@@ -342,10 +434,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 false
             }
             if (result == DeviceStatusApiResult.Unauthorized && !credentialCleared) return@execute
+            if (result is DeviceStatusApiResult.Connected &&
+                result.importGeneration != credential.importGeneration &&
+                !credentialStore.replace(credentialState, credential.copy(importGeneration = result.importGeneration))
+            ) return@execute
             runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (result) {
-                    DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
+                    is DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
                     DeviceStatusApiResult.Unauthorized -> {
                         backgroundEnabled = false
                         pairingStatus.setText(R.string.pairing_expired_or_revoked)
@@ -381,6 +477,27 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
     }
 
+    private fun refreshHealthConnectWorkState() {
+        executor.execute {
+            if (!isCurrentServer()) return@execute
+            val enabled = runCatching {
+                WorkManager.getInstance(this)
+                    .getWorkInfosForUniqueWork(ReconciliationScheduler.HEALTH_CONNECT_WORK_NAME)
+                    .get()
+                    .any { info ->
+                        info.state == WorkInfo.State.ENQUEUED ||
+                            info.state == WorkInfo.State.RUNNING ||
+                            info.state == WorkInfo.State.BLOCKED
+                    }
+            }.getOrNull() ?: return@execute
+            runOnUiThread {
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                healthConnectBackgroundEnabled = enabled
+                refreshHealthConnectState()
+            }
+        }
+    }
+
     private fun observeReconciliationWork() {
         listOf(
             ReconciliationScheduler.ONE_TIME_WORK_NAME,
@@ -394,6 +511,17 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                     refreshLastCheckStatus()
                 }
         }
+        WorkManager.getInstance(this)
+            .getWorkInfosForUniqueWorkLiveData(ReconciliationScheduler.HEALTH_CONNECT_WORK_NAME)
+            .observe(this) { workInfos ->
+                if (!isCurrentServer()) return@observe
+                healthConnectBackgroundEnabled = workInfos.any { info ->
+                    info.state == WorkInfo.State.ENQUEUED ||
+                        info.state == WorkInfo.State.RUNNING ||
+                        info.state == WorkInfo.State.BLOCKED
+                }
+                refreshHealthConnectState()
+            }
     }
 
     private fun refreshLastCheckStatus() {
@@ -484,9 +612,166 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             },
         )
         setupIndicator.backgroundTintList = ColorStateList.valueOf(
-            getColor(if (isReady()) R.color.runway_status else R.color.runway_attention),
+            getColor(
+                if (accountConnected && folderState !is TreeAccessState.PermissionRequired) {
+                    R.color.runway_status
+                } else {
+                    R.color.runway_attention
+                },
+            ),
         )
         refreshAutomationState()
+        refreshHealthConnectState()
+    }
+
+    private fun refreshHealthConnectState() {
+        if (!::healthConnectStatus.isInitialized) return
+        val gateway = AndroidHealthConnectGateway(this)
+        val availability = gateway.availability()
+        val connected = credentialStore.load() != null
+        val permitted = availability == HealthConnectAvailability.Available && healthConnectPermissionsGranted
+        healthConnectPermission.visibility = if (!connected || permitted) View.GONE else View.VISIBLE
+        healthConnectSync.visibility = if (connected && permitted) View.VISIBLE else View.GONE
+        healthConnectBackground.visibility =
+            if (connected && permitted && healthConnectBackgroundSupported) View.VISIBLE else View.GONE
+        healthConnectSync.isEnabled = connected && permitted
+        healthConnectBackground.isEnabled = connected && permitted && healthConnectBackgroundSupported
+        healthConnectBackground.setText(
+            if (healthConnectBackgroundEnabled) {
+                R.string.health_connect_disable_background
+            } else {
+                R.string.health_connect_enable_background
+            },
+        )
+        healthConnectStatus.setText(
+            when {
+                !connected -> R.string.health_connect_pairing_needed
+                availability == HealthConnectAvailability.Unavailable -> R.string.health_connect_unavailable
+                availability == HealthConnectAvailability.UpdateRequired -> R.string.health_connect_update_required
+                !permitted -> R.string.health_connect_permission_needed
+                HealthConnectCursorStore(this, serverOrigin).needsAttention() ->
+                    R.string.health_connect_needs_attention
+                healthConnectBackgroundEnabled -> R.string.health_connect_background_enabled
+                else -> R.string.health_connect_ready
+            },
+        )
+    }
+
+    private fun queryHealthConnectPermissions() {
+        if (!::healthConnectStatus.isInitialized) return
+        executor.execute {
+            val gateway = AndroidHealthConnectGateway(this)
+            val available = gateway.availability() == HealthConnectAvailability.Available
+            val granted = available && runCatching { gateway.hasPermissions() }.getOrDefault(false)
+            val backgroundSupported = available &&
+                runCatching { gateway.supportsBackgroundRead() }.getOrDefault(false)
+            val backgroundGranted = backgroundSupported &&
+                runCatching { gateway.hasBackgroundPermission() }.getOrDefault(false)
+            if (!backgroundSupported || !backgroundGranted) {
+                ReconciliationScheduler.disableHealthConnectPeriodic(this)
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                healthConnectPermissionsGranted = granted
+                healthConnectBackgroundSupported = backgroundSupported
+                refreshHealthConnectState()
+            }
+        }
+    }
+
+    private fun syncHealthConnectForeground(newAction: Boolean = true) {
+        if (!requireCurrentServer()) return
+        if (newAction) {
+            routePromptConsumed = false
+            routeOverrides.clear()
+        }
+        val credentialState = credentialStore.snapshot()
+        if (credentialState.credential == null) {
+            refreshHealthConnectState()
+            return
+        }
+        healthConnectSync.isEnabled = false
+        healthConnectStatus.setText(R.string.health_connect_syncing)
+        executor.execute {
+            val cursor = HealthConnectCursorStore(this, serverOrigin)
+            val refreshed = refreshHealthCredential(
+                AndroidHealthCredentialRepository(credentialStore),
+                credentialState,
+                cursor,
+            ) { credential -> RunwayApiClient(serverOrigin).status(credential) }
+            val currentState = when (refreshed) {
+                is HealthCredentialRefresh.Ready -> refreshed.state
+                HealthCredentialRefresh.PairingRequired -> {
+                    deliverHealthSyncOutcome(HealthSyncResult.PairingRequired, null)
+                    return@execute
+                }
+                HealthCredentialRefresh.Retryable -> {
+                    deliverHealthSyncOutcome(HealthSyncResult.Retryable, null)
+                    return@execute
+                }
+            }
+            val gateway = AndroidHealthConnectGateway(this, includeRoutes = true, routeOverrides = routeOverrides)
+            val outcome = HealthConnectSyncCoordinator(
+                gateway = gateway,
+                send = { _, payload ->
+                    if (!ServerConnectionStore(this).isCurrent(serverConnection)) {
+                        return@HealthConnectSyncCoordinator HealthConnectApiResult.Retryable
+                    }
+                    credentialStore.useIfCurrent(currentState) { current ->
+                        RunwayApiClient(serverOrigin).syncHealthConnectChanges(current, payload)
+                    } ?: HealthConnectApiResult.Retryable
+                },
+                cursor = cursor,
+            ).sync(serverConnection, currentState)
+            if (outcome == HealthSyncResult.PairingRequired) {
+                ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
+                    if (credentialStore.clearIfCurrent(currentState)) {
+                        currentState.credential?.let { credential ->
+                            HandledImportStore(this).clearForDevice(credential.deviceId)
+                        }
+                        cursor.clearAll()
+                        ReconciliationScheduler.cancelAll(this)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            deliverHealthSyncOutcome(outcome, gateway)
+        }
+    }
+
+    private fun deliverHealthSyncOutcome(outcome: HealthSyncResult, gateway: AndroidHealthConnectGateway?) {
+        runOnUiThread {
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                healthConnectStatus.setText(
+                    when (outcome) {
+                        HealthSyncResult.Synced -> R.string.health_connect_synced
+                        HealthSyncResult.PermissionRequired -> R.string.health_connect_permission_needed
+                        HealthSyncResult.Unavailable -> R.string.health_connect_unavailable
+                        HealthSyncResult.UpdateRequired -> R.string.health_connect_update_required
+                        HealthSyncResult.PairingRequired -> R.string.health_connect_pairing_needed
+                        HealthSyncResult.Retryable -> R.string.health_connect_retryable
+                        HealthSyncResult.NeedsAttention -> R.string.health_connect_needs_attention
+                    },
+                )
+                refreshHealthConnectState()
+                gateway?.routeConsentRecordId?.takeIf { !routePromptConsumed }?.let { recordId ->
+                    pendingRouteConsentRecordId = recordId
+                    routePromptConsumed = true
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle(R.string.health_connect_title)
+                        .setMessage(R.string.health_connect_route_consent)
+                        .setNegativeButton(R.string.cancel) { _, _ ->
+                            pendingRouteConsentRecordId = null
+                        }
+                        .setPositiveButton(R.string.health_connect_route_allow) { _, _ ->
+                            requestExerciseRoute.launch(recordId)
+                        }
+                        .setOnCancelListener { pendingRouteConsentRecordId = null }
+                        .show()
+                }
+        }
     }
 
     private fun refreshAutomationState(keepStatus: Boolean = false) {

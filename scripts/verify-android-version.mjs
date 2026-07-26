@@ -17,12 +17,12 @@ const fdroidVersionCode = Number(
 
 if (versionName !== packageMetadata.version || fdroidVersionName !== versionName) {
 	fail(
-		`web (${packageMetadata.version}), Android (${versionName}), and F-Droid (${fdroidVersionName}) versions must match`
+		`web (${packageMetadata.version}), Android (${versionName}), and the committed F-Droid template (${fdroidVersionName}) versions must match`
 	);
 }
 if (!Number.isSafeInteger(versionCode) || versionCode <= 0 || fdroidVersionCode !== versionCode) {
 	fail(
-		`Android and F-Droid versionCode must be the same positive integer (found ${versionCode} and ${fdroidVersionCode})`
+		`Android and the committed F-Droid template versionCode must be the same positive integer (found ${versionCode} and ${fdroidVersionCode})`
 	);
 }
 
@@ -37,7 +37,7 @@ if (tag && tag !== `v${versionName}`) {
 }
 
 console.log(
-	`Android release version ${versionName} (${versionCode}) matches web and F-Droid metadata.`
+	`Android release version ${versionName} (${versionCode}) matches web metadata and the committed F-Droid template.`
 );
 
 function singleMatch(source, pattern, label) {

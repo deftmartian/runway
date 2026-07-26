@@ -1,1 +1,1 @@
-Full self-hosted runway app with durable Gadgetbridge GPX folder access.
+Self-hosted running planner with GPX folders and optional Health Connect run imports.

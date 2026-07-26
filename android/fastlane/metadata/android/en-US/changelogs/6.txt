@@ -1,0 +1,3 @@
+Optional Health Connect import now reads running and treadmill-running sessions only. Exercise and
+metric access is explicit, background reads are optional, routes require per-run foreground consent,
+and runway never writes to Health Connect.

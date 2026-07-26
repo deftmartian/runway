@@ -100,7 +100,7 @@
 								name="routeDataMode"
 								value="private"
 								bind:group={routeDataMode}
-							/><span><strong>Keep the route trace</strong> for maps on future GPX imports.</span
+							/><span><strong>Keep the route trace</strong> for maps on future imports.</span
 							></label
 						>
 						<label
@@ -155,23 +155,24 @@
 			>
 			<div class="control-body">
 				<p class="section-note">
-					Deleting imported GPX activities also disconnects import folders and clears this browser’s
-					folder access. Manual runs remain. File fingerprints stay behind as deletion markers, so
-					the same private files are not silently imported again. This cannot be undone.
+					Deleting imported activities also disconnects import folders and paired Android devices,
+					and clears this browser’s folder access. Manual runs remain. GPX fingerprints stay behind
+					as deletion markers, so the same private files are not silently imported again. This
+					cannot be undone.
 				</p>
 				<form
 					method="post"
 					action="?/deleteActivityData"
 					use:enhance={enhanceSettingsAction(
 						'deleteActivityData',
-						'Delete imported GPX activities and import records, disconnect import folders, and clear this browser’s folder access? Manual runs remain. This cannot be undone.'
+						'Delete imported activities and import records, disconnect import folders and paired Android devices, and clear this browser’s folder access? Manual runs remain. This cannot be undone.'
 					)}
 					aria-busy={settingsActionPending === 'deleteActivityData'}
 				>
 					<button class="danger" disabled={settingsActionPending !== null}
 						>{settingsActionPending === 'deleteActivityData'
-							? 'Deleting imported GPX activities…'
-							: 'Delete imported GPX activities'}</button
+							? 'Deleting imported activities…'
+							: 'Delete imported activities'}</button
 					>
 				</form>
 			</div>

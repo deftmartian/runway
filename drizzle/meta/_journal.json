@@ -169,6 +169,13 @@
       "when": 1784950010151,
       "tag": "0023_two_factor_attempt_lockout",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785036829490,
+      "tag": "0024_groovy_excalibur",
+      "breakpoints": true
     }
   ]
 }

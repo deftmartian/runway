@@ -74,7 +74,7 @@ export const workoutPrescriptionKind = pgEnum('workout_prescription_kind', [
 	'timed',
 	'rest'
 ]);
-export const activitySource = pgEnum('activity_source', ['manual', 'gpx']);
+export const activitySource = pgEnum('activity_source', ['manual', 'gpx', 'health_connect']);
 export const activityReviewState = pgEnum('activity_review_state', ['review', 'accepted']);
 export const deviationClassification = pgEnum('deviation_classification', [
 	'near_plan',
@@ -756,6 +756,153 @@ export const androidImportRequest = pgTable(
 			columns: [table.deviceId, table.userId],
 			foreignColumns: [androidDevice.id, androidDevice.userId]
 		}).onDelete('cascade')
+	]
+);
+
+/** Android Health Connect is a review-only source. External record identifiers
+ * are stored only as keyed blind identifiers, never as provider identifiers. */
+export const healthConnectConnection = pgTable(
+	'health_connect_connection',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		deviceId: uuid('device_id').notNull(),
+		connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
+		lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull()
+	},
+	(table) => [
+		unique('health_connect_connection_id_user_unique').on(table.id, table.userId),
+		uniqueIndex('health_connect_connection_device_unique').on(table.deviceId),
+		index('health_connect_connection_user_idx').on(table.userId),
+		foreignKey({
+			name: 'health_connect_connection_device_user_fk',
+			columns: [table.deviceId, table.userId],
+			foreignColumns: [androidDevice.id, androidDevice.userId]
+		}).onDelete('cascade')
+	]
+);
+
+export const healthConnectExternalActivity = pgTable(
+	'health_connect_external_activity',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		connectionId: uuid('connection_id').notNull(),
+		externalKey: text('external_key').notNull(),
+		originKey: text('origin_key').notNull(),
+		originLabel: text('origin_label').notNull(),
+		fingerprint: text('fingerprint').notNull(),
+		activityId: uuid('activity_id'),
+		pendingAction: text('pending_action').notNull().default('none'),
+		pendingActivity: jsonb('pending_activity').$type<{
+			occurredAt: string;
+			activityDate: string;
+			distanceMeters: number;
+			durationSeconds: number;
+			averagePaceSecondsPerKm: number;
+			averageHeartRate: number | null;
+			maxHeartRate: number | null;
+			heartRateSummary: HeartRateActivitySummary | null;
+			averageCadence: number | null;
+			heartRateSeries: HeartRateSeries | null;
+			routeTrace: ActivityRouteTrace | null;
+			routeSummary: {
+				pointCount: number;
+				startEndRedacted: boolean;
+				hasElevation: boolean;
+				traceRetained: boolean;
+			};
+		} | null>(),
+		duplicateCandidateActivityId: uuid('duplicate_candidate_activity_id'),
+		deletedAt: timestamp('deleted_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull()
+	},
+	(table) => [
+		uniqueIndex('health_connect_external_activity_connection_key_unique').on(
+			table.connectionId,
+			table.externalKey
+		),
+		index('health_connect_external_activity_user_fingerprint_idx').on(
+			table.userId,
+			table.fingerprint
+		),
+		check(
+			'health_connect_external_activity_pending_action_known',
+			sql`${table.pendingAction} in ('none', 'correction', 'source_delete')`
+		),
+		check(
+			'health_connect_external_activity_pending_state_consistent',
+			sql`(${table.pendingAction} = 'none' and ${table.pendingActivity} is null) or (${table.pendingAction} = 'correction' and ${table.pendingActivity} is not null) or (${table.pendingAction} = 'source_delete' and ${table.pendingActivity} is null)`
+		),
+		foreignKey({
+			name: 'health_connect_external_activity_connection_user_fk',
+			columns: [table.connectionId, table.userId],
+			foreignColumns: [healthConnectConnection.id, healthConnectConnection.userId]
+		}).onDelete('cascade'),
+		foreignKey({
+			name: 'health_connect_external_activity_activity_fk',
+			columns: [table.activityId],
+			foreignColumns: [activity.id]
+		}).onDelete('set null'),
+		foreignKey({
+			name: 'health_connect_external_activity_duplicate_fk',
+			columns: [table.duplicateCandidateActivityId],
+			foreignColumns: [activity.id]
+		}).onDelete('set null')
+	]
+);
+
+export const healthConnectRequestReceipt = pgTable(
+	'health_connect_request_receipt',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		deviceId: uuid('device_id').notNull(),
+		requestId: uuid('request_id').notNull(),
+		payloadKey: text('payload_key').notNull(),
+		result: text('result').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+	},
+	(table) => [
+		uniqueIndex('health_connect_request_receipt_device_request_unique').on(
+			table.deviceId,
+			table.requestId
+		),
+		foreignKey({
+			name: 'health_connect_request_receipt_device_user_fk',
+			columns: [table.deviceId, table.userId],
+			foreignColumns: [androidDevice.id, androidDevice.userId]
+		}).onDelete('cascade')
+	]
+);
+
+export const healthConnectTombstone = pgTable(
+	'health_connect_tombstone',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		externalKey: text('external_key').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+	},
+	(table) => [
+		uniqueIndex('health_connect_tombstone_user_key_unique').on(table.userId, table.externalKey)
 	]
 );
 

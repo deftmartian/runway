@@ -86,9 +86,23 @@ describe('state-changing request origin checks', () => {
 				'x-runway-client': 'runway-android/1'
 			}
 		});
+		const healthConnect = new Request(
+			'https://runway.example.test/api/android/health-connect/changes',
+			{
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer rwy1_device_secret',
+					'content-type': 'application/json',
+					'x-runway-client': 'runway-android/1'
+				}
+			}
+		);
 		expect(isAndroidNativeApiRequest(pairing, '/api/android/pair')).toBe(true);
 		expect(isAndroidNativeApiRequest(upload, '/api/android/import')).toBe(true);
 		expect(isAndroidNativeApiRequest(disconnect, '/api/android/status')).toBe(true);
+		expect(isAndroidNativeApiRequest(healthConnect, '/api/android/health-connect/changes')).toBe(
+			true
+		);
 	});
 
 	test('rejects malformed native device disconnection requests', () => {

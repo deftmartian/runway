@@ -13,6 +13,7 @@ import {
 	getFirstActivityId,
 	getActivityDates,
 	seedManualActivityRecords,
+	seedHealthConnectActivity,
 	getPlanAdjustmentTypes,
 	hasDistanceAdjustment,
 	activityExists,
@@ -25,6 +26,38 @@ import { gpxForDistance } from './support/import-fixtures';
 
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(fixedBrowserClockScript());
+});
+
+test('Settings states that Health Connect is an Android-backed source', async ({ page }) => {
+	await createAccount(page);
+	await page.goto('/app/settings');
+
+	const healthConnect = page.locator('[data-health-connect-status]');
+	await expect(healthConnect.getByRole('heading', { name: 'Health Connect' })).toBeVisible();
+	await expect(healthConnect).toContainText('Not connected');
+	await expect(healthConnect).toContainText('paired Android app');
+	await expectNoCriticalAxeViolations(page);
+});
+
+test('Health Connect source deletions remain a visible runner decision', async ({ page }) => {
+	const email = await createAccount(page);
+	await setTrainingTimeZone(email);
+	await seedHealthConnectActivity(await getUserId(email), 'source_delete');
+	await page.goto('/app/import');
+
+	const record = page.locator('details.activity-record').first();
+	await expect(record.locator('summary')).toContainText('Health Connect');
+	await expect(record.locator('summary')).toContainText('Recorded by Watch recorder');
+	await record.locator('summary').click();
+	await expect(record.getByRole('heading', { name: 'Source update' })).toBeVisible();
+	await expect(record).toContainText('The source deleted this record.');
+	await expect(record.getByRole('button', { name: 'Remove from runway' })).toBeVisible();
+	await record.getByRole('button', { name: 'Keep in runway' }).click();
+
+	await expect(page.getByText('Health Connect source decision saved.')).toBeVisible();
+	await expect(record.getByRole('heading', { name: 'Source update' })).toHaveCount(0);
+	await expect(record).toContainText('Health Connect');
+	await expectNoCriticalAxeViolations(page);
 });
 
 test('an empty inbox offers a direct review-only GPX upload', async ({ page }) => {

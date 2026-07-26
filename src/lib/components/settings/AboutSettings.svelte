@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import LedgerRow from '$lib/components/visual/LedgerRow.svelte';
+	import {
+		healthConnectConnectionPresentation,
+		type HealthConnectConnection
+	} from '$lib/health-connect/presentation';
 	import { serviceWorkerSetupState, type ServiceWorkerSetupState } from '$lib/pwa/lifecycle';
 	import { sourceCodeUrl } from '$lib/project';
 
@@ -10,8 +14,19 @@
 	let {
 		release,
 		commit,
-		serverOrigin
-	}: { release: string; commit: string | null; serverOrigin: string } = $props();
+		serverOrigin,
+		healthConnect = {
+			state: 'not_connected',
+			deviceLabel: null,
+			lastSyncedAt: null,
+			message: null
+		}
+	}: {
+		release: string;
+		commit: string | null;
+		serverOrigin: string;
+		healthConnect?: HealthConnectConnection;
+	} = $props();
 
 	let browserOrigin = $state('');
 	let checking = $state(true);
@@ -29,6 +44,7 @@
 	const connectionAnnouncement = $derived(
 		`Server ${serverStatus.toLowerCase()}. Data service ${dataStatus.toLowerCase()}.`
 	);
+	const healthConnectStatus = $derived(healthConnectConnectionPresentation(healthConnect));
 
 	onMount(() => {
 		browserOrigin = globalThis.location.origin;
@@ -198,6 +214,24 @@
 		<LedgerRow label="Data service" value={dataStatus} />
 		<LedgerRow label="Web connection" detail="WebSocket is not used" value={transport} />
 		<LedgerRow label="Browser app" value={browserAppStateLabel($serviceWorkerSetupState)} />
+	</div>
+
+	<div class="settings-group connection-group" data-health-connect-status>
+		<div class="group-heading">
+			<h3>Health Connect</h3>
+			<p>
+				Run records arrive through the paired Android app. This browser does not read Health
+				Connect.
+			</p>
+		</div>
+		<LedgerRow
+			label="Import status"
+			detail={healthConnectStatus.detail}
+			value={healthConnectStatus.status}
+		/>
+		{#if healthConnect.deviceLabel}
+			<LedgerRow label="Android device" value={healthConnect.deviceLabel} />
+		{/if}
 	</div>
 </section>
 

@@ -1,5 +1,132 @@
 import { z } from 'zod';
 
+const healthConnectRecordId = z
+	.string()
+	.min(1)
+	.max(256)
+	.regex(/^[A-Za-z0-9._:-]+$/);
+const healthConnectTimestamp = z.iso.datetime({ offset: true });
+const healthConnectHeartRateSeries = z.object({
+	version: z.literal(1),
+	sourceSampleCount: z.number().int().min(1).max(100_000),
+	points: z
+		.array(
+			z.object({
+				elapsedSeconds: z.number().int().min(0).max(86_400),
+				bpm: z.number().int().min(30).max(260)
+			})
+		)
+		.min(1)
+		.max(600)
+});
+const healthConnectRouteTrace = z.object({
+	version: z.literal(1),
+	sourcePointCount: z.number().int().min(2).max(100_000),
+	points: z
+		.array(
+			z.object({
+				latitudeE6: z.number().int().min(-90_000_000).max(90_000_000),
+				longitudeE6: z.number().int().min(-180_000_000).max(180_000_000),
+				elapsedSeconds: z.number().int().min(0).max(86_400),
+				segmentIndex: z.number().int().min(0).max(10_000),
+				speedMetersPerSecond: z.number().min(0).max(30).nullable()
+			})
+		)
+		.min(2)
+		.max(600)
+});
+export const healthConnectChangesSchema = z
+	.object({
+		version: z.literal(1),
+		changes: z
+			.array(
+				z.discriminatedUnion('op', [
+					z.object({
+						op: z.literal('upsert'),
+						recordId: healthConnectRecordId,
+						originKey: healthConnectRecordId,
+						originLabel: z.string().trim().min(1).max(100),
+						startedAt: healthConnectTimestamp,
+						durationSeconds: z.number().int().min(1).max(86_400),
+						distanceMeters: z.number().int().min(1).max(500_000),
+						averageHeartRate: z.number().int().min(30).max(240).optional(),
+						maxHeartRate: z.number().int().min(30).max(260).optional(),
+						averageCadence: z.number().int().min(1).max(300).optional(),
+						elevationGainMeters: z.number().int().min(0).max(20_000).optional(),
+						averageSpeedMetersPerSecond: z.number().min(0).max(30).optional(),
+						heartRateSeries: healthConnectHeartRateSeries.optional(),
+						routeTrace: healthConnectRouteTrace.optional()
+					}),
+					z.object({ op: z.literal('delete'), recordId: healthConnectRecordId })
+				])
+			)
+			.min(1)
+			.max(100)
+	})
+	.superRefine((value, context) => {
+		for (const [index, change] of value.changes.entries()) {
+			if (change.op !== 'upsert') continue;
+			if (
+				new Date(change.startedAt).getTime() + change.durationSeconds * 1_000 >
+				Date.now() + 5 * 60 * 1_000
+			)
+				context.addIssue({
+					code: 'custom',
+					path: ['changes', index, 'startedAt'],
+					message: 'Health Connect runs cannot be in the future.'
+				});
+			for (const [pointIndex, point] of (change.heartRateSeries?.points ?? []).entries()) {
+				const previous = change.heartRateSeries?.points[pointIndex - 1];
+				if (
+					point.elapsedSeconds > change.durationSeconds ||
+					(previous && point.elapsedSeconds <= previous.elapsedSeconds)
+				) {
+					context.addIssue({
+						code: 'custom',
+						path: ['changes', index, 'heartRateSeries', 'points', pointIndex, 'elapsedSeconds'],
+						message: 'Health Connect heart-rate samples must be ordered within the activity.'
+					});
+				}
+			}
+			if (
+				change.heartRateSeries &&
+				change.heartRateSeries.sourceSampleCount < change.heartRateSeries.points.length
+			) {
+				context.addIssue({
+					code: 'custom',
+					path: ['changes', index, 'heartRateSeries', 'sourceSampleCount'],
+					message: 'Health Connect heart-rate source count cannot be below retained samples.'
+				});
+			}
+			for (const [pointIndex, point] of (change.routeTrace?.points ?? []).entries()) {
+				const previous = change.routeTrace?.points[pointIndex - 1];
+				if (
+					point.elapsedSeconds > change.durationSeconds ||
+					(previous &&
+						(point.elapsedSeconds < previous.elapsedSeconds ||
+							point.segmentIndex < previous.segmentIndex))
+				) {
+					context.addIssue({
+						code: 'custom',
+						path: ['changes', index, 'routeTrace', 'points', pointIndex, 'elapsedSeconds'],
+						message:
+							'Health Connect route points must be ordered within the activity and its segments.'
+					});
+				}
+			}
+			if (
+				change.routeTrace &&
+				change.routeTrace.sourcePointCount < change.routeTrace.points.length
+			) {
+				context.addIssue({
+					code: 'custom',
+					path: ['changes', index, 'routeTrace', 'sourcePointCount'],
+					message: 'Health Connect route source count cannot be below retained points.'
+				});
+			}
+		}
+	});
+
 export const authEmailSchema = z
 	.string()
 	.trim()

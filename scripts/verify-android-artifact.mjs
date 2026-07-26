@@ -29,6 +29,14 @@ const allowedPermissions = new Set([
 	'android.permission.WAKE_LOCK',
 	'android.permission.RECEIVE_BOOT_COMPLETED',
 	'android.permission.FOREGROUND_SERVICE',
+	'android.permission.health.READ_EXERCISE',
+	'android.permission.health.READ_DISTANCE',
+	'android.permission.health.READ_HEART_RATE',
+	'android.permission.health.READ_SPEED',
+	'android.permission.health.READ_STEPS_CADENCE',
+	'android.permission.health.READ_ELEVATION_GAINED',
+	'android.permission.health.READ_EXERCISE_ROUTES',
+	'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND',
 	privateReceiverPermission
 ]);
 const unexpected = [...permissions].filter((permission) => !allowedPermissions.has(permission));
@@ -63,7 +71,12 @@ const exportedComponents = [
 const expectedExported = new Map([
 	['activity:com.deftmartian.runway.ShareReceiverActivity', null],
 	['activity:com.deftmartian.runway.NativeFolderSettingsActivity', null],
+	[
+		'activity:com.deftmartian.runway.HealthConnectPermissionsRationaleActivity',
+		'android.permission.START_VIEW_PERMISSION_USAGE'
+	],
 	['activity:com.deftmartian.runway.ServerConnectionActivity', null],
+	['service:androidx.health.platform.client.impl.sdkservice.HealthDataSdkService', null],
 	[
 		'service:androidx.work.impl.background.systemjob.SystemJobService',
 		'android.permission.BIND_JOB_SERVICE'
@@ -111,9 +124,17 @@ if (buildConfig.includes('RUNWAY_INSTANCE_BOUND') || buildConfig.includes('RUNWA
 if (manifest.includes('android:autoVerify="true"')) {
 	fail('selectable-server artifact must not claim an Android App Link origin');
 }
+if (
+	!manifest.includes('<package android:name="com.google.android.apps.healthdata" />') ||
+	!manifest.includes('androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE')
+) {
+	fail(
+		'artifact is missing Health Connect package visibility or its pre-Android-14 rationale entry'
+	);
+}
 
 console.log(
-	`Android ${variant} selectable-server artifact verified with no dangerous or unexpected permissions.`
+	`Android ${variant} selectable-server artifact verified against the reviewed operational and Health Connect permission allowlist.`
 );
 
 function capitalize(value) {

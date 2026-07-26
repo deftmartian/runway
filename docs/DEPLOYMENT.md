@@ -21,8 +21,10 @@ Set these before running the production app:
 - `PUBLIC_APP_ORIGIN=https://<runway-host>`
 - `PUBLIC_SOURCE_URL=https://<source-host>/<repository>` for the corresponding source of the deployed version
 - `IMPORT_SECRET_KEY` or a strong `BETTER_AUTH_SECRET`
-- optional `ANDROID_CREDENTIAL_SECRET` to keep Android pairing and import-receipt HMACs independent
-  of auth-key rotation; otherwise a strong `BETTER_AUTH_SECRET` is used
+- `ANDROID_CREDENTIAL_SECRET` before pairing an Android device in production, so pairing,
+  import-receipt HMACs, and opaque Health Connect identifiers remain independent of auth-key
+  rotation; if omitted, a strong `BETTER_AUTH_SECRET` is used and Android imports inherit its
+  rotation consequences
 - optional `ANDROID_APPLICATION_ID` only when distributing a renamed Android package; the canonical
   package defaults to `com.deftmartian.runway`
 - `NEXTCLOUD_ALLOWED_ORIGINS=https://<nextcloud-host>[:port]` before enabling share sync
@@ -167,11 +169,13 @@ Nextcloud share credentials. Set a dedicated `IMPORT_SECRET_KEY` and reconnect e
 sources under it before retiring an auth key. `AUTH_RATE_LIMIT_SECRET` can likewise keep HMAC-keyed
 security-rate-limit identities independent of auth-key rotation.
 
-`ANDROID_CREDENTIAL_SECRET` does the same for unconsumed ten-minute Android pairing codes and
-user-scoped import receipt keys. Android bearer credentials are random and only their SHA-256 hashes
-are stored; changing this HMAC key does not reveal or rotate those bearer credentials, but it
-invalidates unconsumed pairing codes and prevents an old request id from replaying against its prior
-receipt. Prefer a separate stable value before distributing an Android build.
+`ANDROID_CREDENTIAL_SECRET` does the same for unconsumed ten-minute Android pairing codes,
+user-scoped import receipt keys, and the blind indexes used for Health Connect record, origin, and
+duplicate fingerprints. Android bearer credentials are random and only their SHA-256 hashes are
+stored; changing this HMAC key does not reveal or rotate those bearer credentials, but it invalidates
+unconsumed pairing codes, separates old request ids from their prior receipts, and changes how
+provider records are identified. Set a separate stable value before pairing the first Android device
+and restore it with the database; do not rotate it as part of an auth-key change.
 
 ### Backup And Restore Contract
 
@@ -403,7 +407,10 @@ For a complete installed Android experience with reliable access after the brows
 use the Android design in [ANDROID.md](ANDROID.md). The normal APK lets the runner choose this public
 HTTPS origin and verifies `/api/android/instance` before opening sign in. It uses an origin-visible
 Custom Tab; there is no instance-bound build mode. Native folder access, origin-scoped
-device pairing, bounded background upload, and review-only import are present. External distribution
+device pairing, bounded background upload, review-only import, and optional running-only Health
+Connect reads are present. Health Connect reads explicit exercise/metric permissions, can use a
+separately approved background read, asks per route while foregrounded, never writes to Health
+Connect, and applies this server's route-data privacy mode before retaining a route trace. External distribution
 still depends on the signing, device-matrix, accessibility, upgrade, and release-evidence gates
 recorded there.
 

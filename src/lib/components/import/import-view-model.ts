@@ -1,5 +1,6 @@
 import type { SubmitFunction } from '@sveltejs/kit';
 import type { HeartRateActivitySummary } from '$lib/training/types';
+import type { HealthConnectProvenance } from '$lib/health-connect/presentation';
 
 export type ImportSection = 'activities' | 'sources' | 'gpx' | 'empty-gpx';
 
@@ -22,6 +23,7 @@ export type ImportedActivitySummary = {
 	id: string;
 	workoutId: string | null;
 	source: string;
+	healthConnect?: HealthConnectProvenance | null;
 	reviewState: 'review' | 'accepted';
 	activityDate: Date | string;
 	distanceMeters: number;

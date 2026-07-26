@@ -25,7 +25,7 @@ import type { RunwayTransaction } from './transaction';
 
 type UnlinkedActivityPlanInput = {
 	id: string;
-	source: 'manual' | 'gpx';
+	source: 'manual' | 'gpx' | 'health_connect';
 	activityDate: string;
 	distanceMeters: number;
 	durationSeconds: number | null;

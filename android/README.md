@@ -3,7 +3,8 @@
 This project packages the complete self-hosted runway PWA as an Android app. The normal build asks
 for the runner's server on first launch, verifies that it is a compatible runway instance, and opens
 the full product in a browser Custom Tab. Small native activities own Android-only capabilities:
-server selection, persisted Gadgetbridge folder access, scheduled reconciliation, and GPX shares.
+server selection, persisted Gadgetbridge folder access, scheduled reconciliation, GPX shares, and an
+optional running-only Health Connect import.
 
 It is not a separate companion product and it does not reimplement the planning UI. It also does not
 use a generic WebView. Every build keeps browser origin controls visible and lets the runner change
@@ -60,13 +61,34 @@ The native page:
 The exported GPX share activity accepts one `content://` URI, checks its grant/type/size, and reads it
 off the UI thread with a 10 MB limit. Names, URIs, XML, coordinates, and metadata are not logged.
 
+## Health Connect runs
+
+After pairing the selected runway server, the Folder screen can request Health Connect access for
+running and treadmill-running sessions only. The requested reads are exercise sessions, distance,
+heart rate, speed, steps cadence, and elevation gained. runway never writes Health Connect data.
+The first foreground sync reads the last 30 days; later syncs use Health Connect changes. Optional
+six-hour background sync requires a separately granted background-read permission and never reads
+routes. A route needs a separate consent for that specific run while the native screen is open.
+
+The 30-day read follows every provider page. Exact serialized requests are split below 240 KiB and
+100 changes, and the provider cursor is saved only after all chunks are accepted while the selected
+server and credential are still current. A terminal payload rejection is shown as **Needs
+attention** instead of being retried forever.
+
+Health Connect availability and update-required states come from the provider SDK status, not Play
+Store, device, or ROM detection. A granted route is sent through the same scoped pairing boundary as
+the run summary, but the server retains its trace only when the runner's server-side route privacy
+setting permits private route data. Otherwise runway keeps a redacted summary. Imported runs stay in
+Review until the runner accepts them; no import silently changes a plan.
+
 ## Pairing and imports
 
 Open **Import sources** in the signed-in PWA and create a pairing code. Open the Android **Folder**
 screen, enter the code and a device label, then choose the Gadgetbridge directory. The code expires
 after ten minutes and works once. Android receives a random, one-year credential limited to device
-status and bounded GPX import; runway stores only its hash and the app encrypts it under an Android
-Keystore key. It never copies browser cookies or asks for the account password.
+status, bounded GPX import, and bounded Health Connect changes; runway stores only its hash and the
+app encrypts it under an Android Keystore key. It never copies browser cookies or asks for the
+account password.
 
 Each folder worker uploads at most one unhandled GPX and prefers the newest provider-dated file. A
 manual or periodic trigger can chain up to eight bounded workers while a backlog remains, without
@@ -80,7 +102,7 @@ Both paths use stable request ids, strict size bounds, and the existing review-o
 duplicate, and terminally rejected content revisions are marked handled locally; network and server
 failures retry. Disconnect a device from the PWA if it is lost or no longer trusted. Deleting imported
 GPX data revokes all active Android
-devices before removing the records so background work cannot recreate them.
+devices before removing GPX and Health Connect records so background work cannot recreate them.
 
 ## Build prerequisites
 
@@ -137,7 +159,8 @@ The first command reviews the static Android/browser/security contract. The seco
 `test`, `assembleDebug`, and `assembleDebugAndroidTest`. The third rejects the removed origin-bound property, rejects an unsigned
 normal release, and builds only the explicitly unsigned F-Droid source
 artifact without private key material. The build and release gates inspect their merged manifests and
-reject permissions or exported components outside the reviewed allowlists. They also assert disabled
+reject operational or Health Connect permissions and exported components outside the reviewed
+allowlists. They also assert disabled
 backups and release cleartext/debuggable flags. CI runs these exact commands; a green build does not
 replace emulator, physical-device, Custom Tab, large-text, or TalkBack checks.
 

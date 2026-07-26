@@ -27,7 +27,7 @@ const compatibilityMigration = forwardMigrations[0];
 if (
 	compatibilityMigrationIndex < 0 ||
 	forwardMigrations[0]?.tag !== '0022_forward_compatible_upgrade' ||
-	latestMigration?.tag !== '0023_two_factor_attempt_lockout'
+	latestMigration?.tag !== '0024_groovy_excalibur'
 ) {
 	throw new Error('Rebased-history verification requires the complete forward migration chain.');
 }

@@ -74,6 +74,19 @@ and browsers cannot set the custom headers cross-site without a CORS preflight t
 allow. Neither route accepts browser cookies as Android authentication. Rate limits apply before and
 after device authentication, and the import route authenticates before reading a bounded body.
 
+Health Connect uses the same origin-bound, scoped Android device credential but a separate bounded
+changes endpoint. The native client reads only explicitly granted running or treadmill-running sessions
+and the distance, heart-rate, speed, cadence, and elevation metrics used to summarize them; it never
+writes Health Connect data. Background reading is separately optional. Route access is requested
+per record only while the native screen is foregrounded, and never from the background worker. A
+granted route is not a retention override: the server applies the runner's route-data privacy mode
+before storing a trace, retaining only a redacted summary when private route retention is disabled.
+Health Connect provider availability is checked through the SDK status, not Play Store, OEM, or ROM
+guesswork. The Android client measures the exact serialized body, splits below the server limit, and
+advances its provider cursor only after all chunks are accepted. The write transaction revalidates
+device revocation and expiry after taking the account lock, so bearer authentication cannot outlive
+a completed disconnect.
+
 Before saving a server, Android calls public `GET /api/android/instance` with the versioned client
 header. The bounded response exposes only runway identity, the supported Android API range, and the
 release version. Android follows no redirect and requires valid HTTPS outside debug-only private
@@ -269,20 +282,20 @@ Red-team this flow with expired shares, wrong passwords, unprotected shares, non
 
 ## Threat Model
 
-| Risk                         | Control                                                                                                           |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Account takeover             | Better Auth sessions, secure cookies, 2FA, passkeys, rate limiting, no custom password hashing.                   |
-| Password reset abuse         | Generic reset responses, hashed single-use tokens, short expiry, rate limiting, audit events, safe email errors.  |
-| Cross-user data exposure     | Server-side user scoping on every query, no client-supplied ownership.                                            |
-| Route privacy leak           | Do not log raw GPX; no public feeds/maps; the current release stores aggregate import data before route display.  |
-| Nextcloud share leak         | Seal tokens/passwords, blind-index remote state, allowlist exact origins, and do not log tokens/URLs/paths.       |
-| Android credential theft     | Hash server copies, encrypt the device copy with Android Keystore, scope routes, expire, rate-limit, and revoke.  |
-| Duplicate or stale imports   | Account-locked claims, device revalidation, scoped hashes, tombstones, unique constraints, and generation checks. |
-| Health-adjacent overclaiming | Training logic flags risk and suggests conservative adjustments; it does not diagnose or treat.                   |
-| CSRF/session misuse          | SameSite cookies, exact-Origin mutations, and a narrowly gated authenticated native-share navigation exception.   |
-| Unsafe file upload           | GPX size limits, XML parsing without entity expansion features, aggregate extraction only.                        |
-| Open registration surprise   | Local signups controlled by configuration. Operators can disable local auth or OIDC signup.                       |
-| N+1 data leaks/perf collapse | Calendar, import, stats, settings, and history use bounded queries and aggregates.                                |
+| Risk                         | Control                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account takeover             | Better Auth sessions, secure cookies, 2FA, passkeys, rate limiting, no custom password hashing.                                                         |
+| Password reset abuse         | Generic reset responses, hashed single-use tokens, short expiry, rate limiting, audit events, safe email errors.                                        |
+| Cross-user data exposure     | Server-side user scoping on every query, no client-supplied ownership.                                                                                  |
+| Route privacy leak           | Do not log raw GPX or Health Connect routes; no public feeds/maps; server route mode redacts Health Connect traces unless private retention is enabled. |
+| Nextcloud share leak         | Seal tokens/passwords, blind-index remote state, allowlist exact origins, and do not log tokens/URLs/paths.                                             |
+| Android credential theft     | Hash server copies, encrypt the device copy with Android Keystore, scope routes, expire, rate-limit, and revoke.                                        |
+| Duplicate or stale imports   | Account-locked claims, device revalidation, scoped hashes, tombstones, unique constraints, and generation checks.                                       |
+| Health-adjacent overclaiming | Training logic flags risk and suggests conservative adjustments; it does not diagnose or treat.                                                         |
+| CSRF/session misuse          | SameSite cookies, exact-Origin mutations, and a narrowly gated authenticated native-share navigation exception.                                         |
+| Unsafe file upload           | GPX size limits, XML parsing without entity expansion features, aggregate extraction only.                                                              |
+| Open registration surprise   | Local signups controlled by configuration. Operators can disable local auth or OIDC signup.                                                             |
+| N+1 data leaks/perf collapse | Calendar, import, stats, settings, and history use bounded queries and aggregates.                                                                      |
 
 Trust boundaries:
 

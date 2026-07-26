@@ -116,7 +116,7 @@ test('Android pairing imports idempotently and privacy deletion revokes the devi
 	await page.goto('/app/settings');
 	await page.getByText('Imported activity data', { exact: true }).click();
 	page.once('dialog', (dialog) => dialog.accept());
-	await page.getByRole('button', { name: 'Delete imported GPX activities' }).click();
+	await page.getByRole('button', { name: 'Delete imported activities' }).click();
 	await expect(
 		page.getByText('Disconnected 1 Android device so it cannot import the activity again.')
 	).toBeVisible();

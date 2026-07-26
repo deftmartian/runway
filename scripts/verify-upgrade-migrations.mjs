@@ -16,8 +16,8 @@ const supportedCanonicalPredecessors = [
 	{ tag: '0022_forward_compatible_upgrade', repairDuplicateDecisions: false }
 ];
 
-if (latestMigration?.tag !== '0023_two_factor_attempt_lockout') {
-	throw new Error('Upgrade verification requires the current two-factor lockout migration.');
+if (latestMigration?.tag !== '0024_groovy_excalibur') {
+	throw new Error('Upgrade verification requires the current Health Connect migration.');
 }
 
 if (baseDatabaseUrl === defaultDatabaseUrl) {

@@ -83,10 +83,11 @@ android {
 
     defaultConfig {
         applicationId = runwayApplicationId
-        minSdk = 23
+        // Health Connect's Jetpack client supports Android 8.0.
+        minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.4.0"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -145,6 +146,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("androidx.browser:browser:1.10.0")
+    implementation("androidx.health.connect:connect-client:1.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("com.google.guava:guava:33.4.8-android")
 
     testImplementation("junit:junit:4.13.2")
 }

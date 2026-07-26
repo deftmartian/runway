@@ -9,6 +9,10 @@ import {
 	athleteProfile,
 	auditEvent,
 	goal,
+	healthConnectConnection,
+	healthConnectExternalActivity,
+	healthConnectRequestReceipt,
+	healthConnectTombstone,
 	importSource,
 	importSourceItem,
 	planAdjustment,
@@ -27,11 +31,27 @@ import {
 	writePagedJsonArray
 } from '$lib/server/runway/staged-json-export';
 
-const exportVersion = 3;
-const redactions = [
+export const trainingDataExportVersion = 4;
+export const healthConnectExportContract = Object.freeze({
+	sections: {
+		connections: 'healthConnectConnections',
+		activities: 'healthConnectActivities',
+		requestReceipts: 'healthConnectRequestReceipts',
+		tombstones: 'healthConnectTombstones'
+	},
+	opaqueKeys: {
+		record: 'recordKey',
+		origin: 'originKey',
+		fingerprint: 'fingerprintKey',
+		request: 'requestKey',
+		payload: 'payloadKey'
+	}
+});
+export const trainingDataExportRedactions = [
 	'import source share tokens and sealed passwords',
 	'import item remote paths, etags, and content hashes',
-	'Android bearer token hashes and content digest keys'
+	'Android bearer token hashes and content digest keys',
+	'Health Connect provider record identifiers; only opaque client request UUIDs and server-keyed record, origin, fingerprint, and payload keys are stored and exported'
 ] as const;
 
 async function writePropertyName(sink: JsonSink, name: string, first = false): Promise<void> {
@@ -65,7 +85,7 @@ async function stageUserDataSnapshot(userId: string): Promise<StagedJsonArtifact
 		await db.transaction(
 			async (tx) => {
 				await sink.write('{');
-				await writeJsonProperty(sink, 'version', exportVersion, true);
+				await writeJsonProperty(sink, 'version', trainingDataExportVersion, true);
 				await writeJsonProperty(sink, 'exportedAt', exportedAt);
 
 				const [account] = await tx
@@ -235,6 +255,98 @@ async function stageUserDataSnapshot(userId: string): Promise<StagedJsonArtifact
 						.limit(limit)
 						.offset(offset)
 				);
+				await writeArrayProperty(
+					sink,
+					healthConnectExportContract.sections.connections,
+					(offset, limit) =>
+						tx
+							.select({
+								id: healthConnectConnection.id,
+								deviceId: healthConnectConnection.deviceId,
+								connectedAt: healthConnectConnection.connectedAt,
+								lastSyncedAt: healthConnectConnection.lastSyncedAt,
+								createdAt: healthConnectConnection.createdAt,
+								updatedAt: healthConnectConnection.updatedAt
+							})
+							.from(healthConnectConnection)
+							.where(eq(healthConnectConnection.userId, userId))
+							.orderBy(asc(healthConnectConnection.createdAt), asc(healthConnectConnection.id))
+							.limit(limit)
+							.offset(offset)
+				);
+				await writeArrayProperty(
+					sink,
+					healthConnectExportContract.sections.activities,
+					(offset, limit) =>
+						tx
+							.select({
+								id: healthConnectExternalActivity.id,
+								connectionId: healthConnectExternalActivity.connectionId,
+								[healthConnectExportContract.opaqueKeys.record]:
+									healthConnectExternalActivity.externalKey,
+								[healthConnectExportContract.opaqueKeys.origin]:
+									healthConnectExternalActivity.originKey,
+								originLabel: healthConnectExternalActivity.originLabel,
+								[healthConnectExportContract.opaqueKeys.fingerprint]:
+									healthConnectExternalActivity.fingerprint,
+								activityId: healthConnectExternalActivity.activityId,
+								pendingAction: healthConnectExternalActivity.pendingAction,
+								pendingActivity: healthConnectExternalActivity.pendingActivity,
+								duplicateCandidateActivityId:
+									healthConnectExternalActivity.duplicateCandidateActivityId,
+								deletedAt: healthConnectExternalActivity.deletedAt,
+								createdAt: healthConnectExternalActivity.createdAt,
+								updatedAt: healthConnectExternalActivity.updatedAt
+							})
+							.from(healthConnectExternalActivity)
+							.where(eq(healthConnectExternalActivity.userId, userId))
+							.orderBy(
+								asc(healthConnectExternalActivity.createdAt),
+								asc(healthConnectExternalActivity.id)
+							)
+							.limit(limit)
+							.offset(offset)
+				);
+				await writeArrayProperty(
+					sink,
+					healthConnectExportContract.sections.requestReceipts,
+					(offset, limit) =>
+						tx
+							.select({
+								id: healthConnectRequestReceipt.id,
+								deviceId: healthConnectRequestReceipt.deviceId,
+								[healthConnectExportContract.opaqueKeys.request]:
+									healthConnectRequestReceipt.requestId,
+								[healthConnectExportContract.opaqueKeys.payload]:
+									healthConnectRequestReceipt.payloadKey,
+								result: healthConnectRequestReceipt.result,
+								createdAt: healthConnectRequestReceipt.createdAt
+							})
+							.from(healthConnectRequestReceipt)
+							.where(eq(healthConnectRequestReceipt.userId, userId))
+							.orderBy(
+								asc(healthConnectRequestReceipt.createdAt),
+								asc(healthConnectRequestReceipt.id)
+							)
+							.limit(limit)
+							.offset(offset)
+				);
+				await writeArrayProperty(
+					sink,
+					healthConnectExportContract.sections.tombstones,
+					(offset, limit) =>
+						tx
+							.select({
+								id: healthConnectTombstone.id,
+								[healthConnectExportContract.opaqueKeys.record]: healthConnectTombstone.externalKey,
+								createdAt: healthConnectTombstone.createdAt
+							})
+							.from(healthConnectTombstone)
+							.where(eq(healthConnectTombstone.userId, userId))
+							.orderBy(asc(healthConnectTombstone.createdAt), asc(healthConnectTombstone.id))
+							.limit(limit)
+							.offset(offset)
+				);
 				await writeArrayProperty(sink, 'deletionTombstones', (offset, limit) =>
 					tx
 						.select()
@@ -244,7 +356,7 @@ async function stageUserDataSnapshot(userId: string): Promise<StagedJsonArtifact
 						.limit(limit)
 						.offset(offset)
 				);
-				await writeJsonProperty(sink, 'redactions', redactions);
+				await writeJsonProperty(sink, 'redactions', trainingDataExportRedactions);
 				await writeArrayProperty(sink, 'auditEvents', (offset, limit) =>
 					tx
 						.select()
@@ -268,7 +380,7 @@ export async function prepareUserDataExport(userId: string): Promise<StagedJsonA
 			await db.insert(auditEvent).values({
 				userId,
 				eventType: 'account.export',
-				detail: { version: exportVersion, byteLength: artifact.byteLength }
+				detail: { version: trainingDataExportVersion, byteLength: artifact.byteLength }
 			});
 		}
 	);

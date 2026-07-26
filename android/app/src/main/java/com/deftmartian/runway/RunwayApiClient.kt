@@ -21,8 +21,162 @@ sealed interface ImportApiResult {
     data object Retryable : ImportApiResult
 }
 
+sealed interface HealthConnectApiResult {
+    data object Accepted : HealthConnectApiResult
+    data object Unauthorized : HealthConnectApiResult
+    data object Retryable : HealthConnectApiResult
+    data object Rejected : HealthConnectApiResult
+}
+
+internal data class HealthConnectRequestPayload(
+    val bytes: ByteArray,
+    val changeCount: Int,
+)
+
+internal sealed interface HealthConnectPayloadResult {
+    data class Prepared(val payload: HealthConnectRequestPayload) : HealthConnectPayloadResult
+    data object Invalid : HealthConnectPayloadResult
+}
+
+/**
+ * The coordinator measures this exact byte array, and the API client sends it unchanged. Keeping
+ * serialization on one seam prevents a size estimate from drifting away from the request body.
+ */
+internal object HealthConnectPayloadSerializer {
+    fun serialize(
+        upserts: List<HealthConnectRun>,
+        deletes: List<String>,
+    ): HealthConnectPayloadResult = runCatching {
+        if (upserts.any { !isValid(it) } || deletes.any { !isValidRecordId(it) }) {
+            return@runCatching HealthConnectPayloadResult.Invalid
+        }
+        val changeCount = upserts.size + deletes.size
+        if (changeCount == 0) return@runCatching HealthConnectPayloadResult.Invalid
+        val json = buildString {
+            append("{\"version\":").append(HEALTH_CONNECT_SCHEMA_VERSION).append(",\"changes\":[")
+            var firstChange = true
+            fun separateChange() {
+                if (firstChange) firstChange = false else append(',')
+            }
+            for (run in upserts) {
+                separateChange()
+                append("{\"op\":\"upsert\",\"recordId\":\"").append(run.id)
+                    .append("\",\"originKey\":\"").append(run.sourcePackage)
+                    .append("\",\"originLabel\":\"").append(run.sourcePackage.take(100))
+                    .append("\",\"startedAt\":\"")
+                    .append(java.time.Instant.ofEpochMilli(run.startEpochMs))
+                    .append("\",\"durationSeconds\":").append(durationSeconds(run))
+                    .append(",\"distanceMeters\":").append(run.distanceMeters!!.toInt())
+                run.averageHeartRateBpm?.let { append(",\"averageHeartRate\":").append(it.toInt()) }
+                run.maxHeartRateBpm?.let { append(",\"maxHeartRate\":").append(it.toInt()) }
+                run.averageCadenceRpm?.let { append(",\"averageCadence\":").append(it.toInt()) }
+                run.elevationGainMeters?.let { append(",\"elevationGainMeters\":").append(it.toInt()) }
+                run.averageSpeedMetersPerSecond?.let {
+                    append(",\"averageSpeedMetersPerSecond\":").append(it)
+                }
+                if (run.heartRateSamples.isNotEmpty()) {
+                    append(",\"heartRateSeries\":{\"version\":1,\"sourceSampleCount\":")
+                        .append(run.heartRateSourceSampleCount).append(",\"points\":[")
+                    run.heartRateSamples.forEachIndexed { index, sample ->
+                        if (index > 0) append(',')
+                        append("{\"elapsedSeconds\":").append(sample.elapsedSeconds)
+                            .append(",\"bpm\":").append(sample.bpm).append('}')
+                    }
+                    append("]}")
+                }
+                if (run.routePoints.size >= 2) {
+                    append(",\"routeTrace\":{\"version\":1,\"sourcePointCount\":")
+                        .append(run.routeSourcePointCount).append(",\"points\":[")
+                    run.routePoints.forEachIndexed { index, point ->
+                        if (index > 0) append(',')
+                        append("{\"latitudeE6\":").append(point.latitudeE6)
+                            .append(",\"longitudeE6\":").append(point.longitudeE6)
+                            .append(",\"elapsedSeconds\":").append(point.elapsedSeconds)
+                            .append(",\"segmentIndex\":0,\"speedMetersPerSecond\":")
+                            .append(point.speedMetersPerSecond ?: "null")
+                            .append('}')
+                    }
+                    append("]}")
+                }
+                append('}')
+            }
+            for (id in deletes) {
+                separateChange()
+                append("{\"op\":\"delete\",\"recordId\":\"").append(id).append("\"}")
+            }
+            append("]}")
+        }
+        val bytes = json.toByteArray(StandardCharsets.UTF_8)
+        HealthConnectPayloadResult.Prepared(HealthConnectRequestPayload(bytes, changeCount))
+    }.getOrDefault(HealthConnectPayloadResult.Invalid)
+
+    private fun isValid(run: HealthConnectRun): Boolean {
+        val duration = durationSeconds(run)
+        val distance = run.distanceMeters?.takeIf(Double::isFinite)?.toInt()
+        if (
+            !isValidRecordId(run.id) || !isValidRecordId(run.sourcePackage) ||
+            duration !in 1..86_400 || distance == null || distance !in 1..500_000 ||
+            run.endEpochMs > System.currentTimeMillis() + FUTURE_HEADROOM_MS ||
+            !optionalIntIn(run.averageHeartRateBpm, 30..240) ||
+            !optionalIntIn(run.maxHeartRateBpm, 30..260) ||
+            !optionalIntIn(run.averageCadenceRpm, 1..300) ||
+            !optionalIntIn(run.elevationGainMeters, 0..20_000) ||
+            !optionalDoubleIn(run.averageSpeedMetersPerSecond, 0.0..30.0)
+        ) return false
+        if (
+            run.heartRateSamples.size > 600 ||
+            (run.heartRateSamples.isNotEmpty() && run.heartRateSourceSampleCount !in 1..100_000)
+        ) return false
+        var previousElapsed = -1
+        for (sample in run.heartRateSamples) {
+            if (
+                sample.elapsedSeconds !in 0..duration ||
+                sample.elapsedSeconds <= previousElapsed ||
+                sample.bpm !in 30..260
+            ) return false
+            previousElapsed = sample.elapsedSeconds
+        }
+        if (
+            run.routePoints.size > 600 ||
+            (run.routePoints.size >= 2 && run.routeSourcePointCount !in 2..100_000)
+        ) return false
+        for (point in run.routePoints) {
+            if (
+                point.elapsedSeconds !in 0..duration ||
+                point.latitudeE6 !in -90_000_000..90_000_000 ||
+                point.longitudeE6 !in -180_000_000..180_000_000 ||
+                !optionalDoubleIn(point.speedMetersPerSecond, 0.0..30.0)
+            ) return false
+        }
+        return true
+    }
+
+    private fun durationSeconds(run: HealthConnectRun): Int {
+        val durationMs = run.endEpochMs - run.startEpochMs
+        return if (durationMs <= 0 || durationMs > Int.MAX_VALUE.toLong() * 1_000) {
+            -1
+        } else {
+            (durationMs / 1_000).toInt()
+        }
+    }
+
+    private fun optionalIntIn(value: Double?, range: IntRange): Boolean =
+        value == null || (value.isFinite() && value.toInt() in range)
+
+    private fun optionalDoubleIn(value: Double?, range: ClosedFloatingPointRange<Double>): Boolean =
+        value == null || (value.isFinite() && value in range)
+
+    private fun isValidRecordId(value: String): Boolean =
+        value.length in 1..256 && value.all { character ->
+            character in 'A'..'Z' || character in 'a'..'z' || character in '0'..'9' ||
+                character in "._:-"
+        }
+
+    private const val FUTURE_HEADROOM_MS = 5 * 60 * 1_000L
+}
+
 sealed interface DeviceStatusApiResult {
-    data object Connected : DeviceStatusApiResult
+    data class Connected(val importGeneration: Long) : DeviceStatusApiResult
     data object Unauthorized : DeviceStatusApiResult
     data object Retryable : DeviceStatusApiResult
 }
@@ -94,6 +248,7 @@ class RunwayApiClient(origin: String) {
                     deviceId = payload.getString("deviceId"),
                     token = payload.getString("token"),
                     expiresAtEpochMs = payload.getLong("expiresAtEpochMs"),
+                    importGeneration = payload.optLong("importGeneration", 0),
                 ),
             )
         }.getOrDefault(PairingApiResult.Invalid)
@@ -118,6 +273,7 @@ class RunwayApiClient(origin: String) {
                 "Content-Type" to "application/gpx+xml",
                 "X-Runway-Content-SHA256" to digest,
                 "X-Runway-Request-Id" to requestId,
+                "X-Runway-Activity-Generation" to credential.importGeneration.toString(),
             ),
             body = bytes,
         ) ?: return ImportApiResult.Retryable
@@ -144,6 +300,39 @@ class RunwayApiClient(origin: String) {
         }.getOrDefault(ImportApiResult.Retryable)
     }
 
+    /** Sends only a versioned running-session delta; Health Connect data is never written by runway. */
+    internal fun syncHealthConnectChanges(
+        credential: AndroidCredential,
+        payload: HealthConnectRequestPayload,
+        requestId: String = UUID.randomUUID().toString(),
+    ): HealthConnectApiResult {
+        if (credential.isExpired() || credential.origin != serverOrigin) {
+            return HealthConnectApiResult.Unauthorized
+        }
+        if (
+            payload.changeCount !in 1..MAX_HEALTH_CONNECT_CHANGES ||
+            payload.bytes.size > MAX_HEALTH_CONNECT_PAYLOAD_BYTES
+        ) return HealthConnectApiResult.Rejected
+        val response = request(
+            path = "/api/android/health-connect/changes",
+            method = "POST",
+            headers = mapOf(
+                "Authorization" to "Bearer ${credential.token}",
+                "Content-Type" to "application/json",
+                "X-Runway-Request-Id" to requestId,
+                "X-Runway-Activity-Generation" to credential.importGeneration.toString(),
+            ),
+            body = payload.bytes,
+        ) ?: return HealthConnectApiResult.Retryable
+        return when {
+            response.status == HttpURLConnection.HTTP_UNAUTHORIZED -> HealthConnectApiResult.Unauthorized
+            response.status == 408 || response.status == 409 ||
+                response.status == 429 || response.status >= 500 -> HealthConnectApiResult.Retryable
+            response.status in 200..299 -> HealthConnectApiResult.Accepted
+            else -> HealthConnectApiResult.Rejected
+        }
+    }
+
     fun status(credential: AndroidCredential): DeviceStatusApiResult {
         if (credential.isExpired() || credential.origin != serverOrigin) {
             return DeviceStatusApiResult.Unauthorized
@@ -154,7 +343,11 @@ class RunwayApiClient(origin: String) {
             headers = mapOf("Authorization" to "Bearer ${credential.token}"),
         ) ?: return DeviceStatusApiResult.Retryable
         return when {
-            response.status == HttpURLConnection.HTTP_OK -> DeviceStatusApiResult.Connected
+            response.status == HttpURLConnection.HTTP_OK -> runCatching {
+                DeviceStatusApiResult.Connected(
+                    JSONObject(response.body).getLong("activityImportGeneration"),
+                )
+            }.getOrDefault(DeviceStatusApiResult.Retryable)
             response.status == HttpURLConnection.HTTP_UNAUTHORIZED -> DeviceStatusApiResult.Unauthorized
             else -> DeviceStatusApiResult.Retryable
         }
@@ -231,6 +424,10 @@ class RunwayApiClient(origin: String) {
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
         const val MAX_RESPONSE_BYTES = 64L * 1024L
+        const val MAX_HEALTH_CONNECT_CHANGES = 100
         val handledImportResults = setOf("imported", "duplicate", "quarantined")
     }
 }
+
+/** Leaves 16 KiB below the server's exact 256 KiB request-body limit. */
+internal const val MAX_HEALTH_CONNECT_PAYLOAD_BYTES = 240 * 1024
