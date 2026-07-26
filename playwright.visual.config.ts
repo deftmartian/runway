@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { defineConfig } from '@playwright/test';
+import { testBuildCommit } from './tests/support/test-build';
 import { testDate } from './tests/support/test-clock';
 
 const previewUrl = process.env['PLAYWRIGHT_BASE_URL'] ?? 'http://127.0.0.1:4174';
@@ -45,6 +46,7 @@ export default defineConfig({
 				process.env['RUNWAY_KIT_OUT_DIR'] ?? `.svelte-kit-playwright-visual-${runId}`,
 			RUNWAY_PREVIEW_DIR:
 				process.env['RUNWAY_PREVIEW_DIR'] ?? `.runway-live/playwright-visual-${runId}`,
+			RUNWAY_BUILD_ID: process.env['RUNWAY_BUILD_ID'] ?? testBuildCommit,
 			RUNWAY_FIXED_DATE: testDate,
 			BODY_SIZE_LIMIT: process.env['BODY_SIZE_LIMIT'] ?? '12M',
 			LOCAL_AUTH_ENABLED: process.env['LOCAL_AUTH_ENABLED'] ?? 'true',

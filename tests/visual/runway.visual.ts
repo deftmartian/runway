@@ -83,6 +83,9 @@ for (const viewport of viewports) {
 			await page.goto('/app/settings');
 			await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 			await expect(page.getByRole('region', { name: 'Install runway' })).toBeVisible();
+			await expect(
+				page.getByRole('region', { name: 'About' }).getByText('Connected', { exact: true })
+			).toBeVisible();
 			await stableScreenshot(page, `settings-${viewport.name}.png`);
 		});
 	});
@@ -117,6 +120,9 @@ test('dark mode app state has visual coverage', async ({ page }) => {
 	await stableScreenshot(page, 'calendar-dark-desktop.png');
 	await page.goto('/app/settings');
 	await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+	await expect(
+		page.getByRole('region', { name: 'About' }).getByText('Connected', { exact: true })
+	).toBeVisible();
 	await stableScreenshot(page, 'settings-dark-desktop.png');
 });
 
@@ -287,6 +293,8 @@ async function normalizeVisualSafeArea(page: Page) {
 		for (const edge of ['top', 'right', 'bottom', 'left']) {
 			document.documentElement.style.setProperty(`--safe-area-${edge}`, '0px', 'important');
 		}
+		const serverOrigin = document.querySelector('[data-server-origin] .ledger-row > strong');
+		if (serverOrigin) serverOrigin.textContent = 'http://runway.test';
 	});
 }
 

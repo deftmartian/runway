@@ -110,7 +110,11 @@
 		{settingsActionPending}
 		{enhanceSettingsAction}
 	/>
-	<AboutSettings />
+	<AboutSettings
+		release={data.about.release}
+		commit={data.about.commit}
+		serverOrigin={data.about.serverOrigin}
+	/>
 </main>
 
 <style>

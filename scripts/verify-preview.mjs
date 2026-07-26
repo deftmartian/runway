@@ -263,6 +263,13 @@ try {
 	if (liveBody.build !== liveBody.version || liveBody.release !== packageMetadata.version) {
 		failures.push('Health identity does not match the application release and build.');
 	}
+	const expectedCommit =
+		typeof liveBody.build === 'string' && /^[0-9a-f]{40}$/i.test(liveBody.build)
+			? liveBody.build.toLowerCase()
+			: null;
+	if (liveBody.commit !== expectedCommit) {
+		failures.push('Health build identity does not expose a truthful commit.');
+	}
 } catch {
 	failures.push('/health/live did not return valid JSON.');
 }

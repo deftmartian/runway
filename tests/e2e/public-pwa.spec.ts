@@ -101,6 +101,27 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 }) => {
 	await createAccount(page);
 	await page.goto('/app/settings');
+	const liveResponse = await page.request.get('/health/live');
+	expect(liveResponse.ok()).toBe(true);
+	const buildIdentity = (await liveResponse.json()) as {
+		release: string;
+		commit: string | null;
+	};
+	expect(buildIdentity.commit).toMatch(/^[0-9a-f]{40}$/);
+	const about = page.getByRole('region', { name: 'About' });
+	await expect(about.getByText('Release', { exact: true })).toBeVisible();
+	await expect(about.getByText(`v${buildIdentity.release}`, { exact: true })).toBeVisible();
+	await expect(about.locator('[data-build-commit] strong')).toHaveText(buildIdentity.commit ?? '');
+	await expect(about.locator('[data-server-origin] strong')).toHaveText(new URL(page.url()).origin);
+	await expect(about.getByText('Connected', { exact: true })).toBeVisible();
+	await expect(about.getByText('Ready', { exact: true })).toBeVisible();
+	await expect(about.getByText('WebSocket is not used', { exact: true })).toBeVisible();
+	await expect(about.getByText('HTTP requests', { exact: true })).toBeVisible();
+	await expect(about.getByText('Offline support ready', { exact: true })).toBeVisible();
+	await expectNoCriticalAxeViolations(page);
+	await about.getByRole('button', { name: 'Check again' }).click();
+	await expect(about.getByText('Connected', { exact: true })).toBeVisible();
+	await expect(about.getByRole('button', { name: 'Check again' })).toBeEnabled();
 	await expect(page.getByRole('link', { name: 'Setup', exact: true })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Inbox', exact: true })).toBeVisible();
 	await page.getByText('Time zone', { exact: true }).click();
@@ -150,10 +171,12 @@ test('PWA lifecycle shows connection state and a quiet install shortcut', async 
 		await expect(
 			page.getByText('Reconnect to view or change private training data.')
 		).toBeVisible();
+		await expect(about.getByText('Offline', { exact: true }).first()).toBeVisible();
 	} finally {
 		await context.setOffline(false);
 	}
 	await expect(page.getByText('Back online')).toBeVisible();
+	await expect(about.getByText('Connected', { exact: true })).toBeVisible();
 });
 
 async function dispatchInstallPrompt(page: Page) {

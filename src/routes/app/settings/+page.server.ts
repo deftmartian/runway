@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { auth } from '$lib/server/auth';
 import { isFreshAuthSession } from '$lib/server/runway/auth-config';
 import { readAuditRetentionPolicy } from '$lib/server/runway/audit-retention';
+import { buildIdentity } from '$lib/server/runway/build-identity';
 import {
 	accountSecurityRateLimitBuckets,
 	consumeSecurityRateLimit
@@ -68,6 +69,11 @@ export const load: PageServerLoad = async (event) => {
 		authCapabilities: {
 			localPassword: hasCredentialAccount,
 			oidc: accounts.some((account) => account.providerId === 'authentik')
+		},
+		about: {
+			release: buildIdentity.release,
+			commit: buildIdentity.commit,
+			serverOrigin: event.url.origin
 		},
 		auditRetention: readAuditRetentionPolicy(),
 		profile: {
