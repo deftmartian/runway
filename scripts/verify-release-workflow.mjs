@@ -76,6 +76,9 @@ if (
 ) {
 	errors.push('latest is not restricted to the default branch');
 }
+if (!workflow.includes('group: runway-container-${{ github.ref }}')) {
+	errors.push('container publication does not cancel older runs for the same branch or tag');
+}
 if (!workflow.includes("make_latest: 'legacy'")) {
 	errors.push(
 		'GitHub Releases can move latest backward instead of using semantic-version ordering'

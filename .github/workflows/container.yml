@@ -51,7 +51,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: runway-container-${{ github.sha }}
+  group: runway-container-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
