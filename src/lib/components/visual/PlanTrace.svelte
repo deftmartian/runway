@@ -173,7 +173,7 @@
 		align-items: center;
 		gap: 6px;
 		font-size: 0.78rem;
-		font-weight: 700;
+		font-weight: 650;
 	}
 
 	header li span {
@@ -183,7 +183,9 @@
 	}
 
 	header li.recommended span {
-		background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px);
+		height: 0;
+		border-top: 2px dashed currentColor;
+		background: transparent;
 	}
 
 	header li.actual span {

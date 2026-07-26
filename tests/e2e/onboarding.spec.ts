@@ -320,7 +320,13 @@ test('foundation-only onboarding works at a mobile viewport without inventing di
 	await expect(panel.getByRole('heading', { name: 'Saved result' })).toBeVisible();
 	await expect(panel.getByText('2.2 km', { exact: true })).toBeVisible();
 	await panel.getByRole('button', { name: 'Close training detail' }).click();
-	await expect(page.locator('.calendar-week-load').first()).toContainText('29 min done of 86 min');
+	const timedWeekLoad = page.getByRole('group', {
+		name: 'Week 1 generated, current, and actual duration load'
+	});
+	await expect(timedWeekLoad).toBeVisible();
+	await expect(timedWeekLoad).toContainText(/Generated\s+86 min/);
+	await expect(timedWeekLoad).toContainText(/Current\s+86 min/);
+	await expect(timedWeekLoad).toContainText(/Actual\s+29 min/);
 	await page.getByRole('link', { name: 'History' }).click();
 	await page.getByRole('link', { name: 'Plan record' }).click();
 	await expect(

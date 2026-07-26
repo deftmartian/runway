@@ -44,7 +44,7 @@
 	.auth-header h1 {
 		margin: 0;
 		font-size: clamp(1.8rem, 5vw, 2.2rem);
-		font-weight: 720;
+		font-weight: 690;
 		line-height: 1.05;
 		letter-spacing: -0.03em;
 	}

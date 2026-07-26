@@ -11,6 +11,8 @@ export type TrainingCalendarWeek = {
 	id: string;
 	weekNumber: number;
 	startDate: string;
+	generatedDistanceMeters: number;
+	generatedDurationSeconds: number;
 	targetDistanceMeters: number;
 	targetDurationSeconds: number;
 	hasMixedLoad?: boolean;

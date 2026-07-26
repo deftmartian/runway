@@ -157,6 +157,8 @@ describe('presentCalendarWeekAssessment', () => {
 		id: 'week-2',
 		weekNumber: 2,
 		startDate: '2026-07-27',
+		generatedDistanceMeters: 10_750,
+		generatedDurationSeconds: 0,
 		targetDistanceMeters: 10_750,
 		targetDurationSeconds: 0,
 		eventDistanceMeters: 0,

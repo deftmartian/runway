@@ -183,8 +183,7 @@
 			border: 0;
 			border-bottom: 1px solid var(--line);
 			border-radius: 0;
-			background: color-mix(in oklab, var(--canvas), transparent 6%);
-			backdrop-filter: blur(14px);
+			background: var(--canvas);
 		}
 
 		.desktop-nav {
@@ -219,8 +218,7 @@
 			padding: 7px max(6px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom))
 				max(6px, env(safe-area-inset-left));
 			border-top: 1px solid var(--line);
-			background: color-mix(in oklab, var(--canvas), transparent 4%);
-			backdrop-filter: blur(16px);
+			background: var(--surface);
 		}
 
 		.mobile-nav a {

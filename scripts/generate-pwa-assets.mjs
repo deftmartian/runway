@@ -34,7 +34,7 @@ const documentationScreenshotSpecs = [
 		output: 'docs/images/runway-calendar-desktop.png'
 	},
 	{
-		source: 'tests/visual/runway.visual.ts-snapshots/calendar-mobile-linux.png',
+		source: 'static/pwa/screenshots/calendar-mobile.png',
 		output: 'docs/images/runway-calendar-mobile.png'
 	}
 ];

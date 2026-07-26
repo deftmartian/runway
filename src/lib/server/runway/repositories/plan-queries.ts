@@ -331,6 +331,8 @@ export async function getPlanWeeks(userId: string, planId: string) {
 		);
 		return {
 			...week,
+			generatedDistanceMeters: week.targetDistanceMeters,
+			generatedDurationSeconds: week.targetDurationSeconds,
 			hasMixedLoad:
 				weekWorkouts.some(
 					(record) =>

@@ -2,15 +2,18 @@
 
 ## Product Feel
 
-runway is a self-hosted training instrument. It should feel clear, crafted, and useful under repeated daily use. Clean must not become sterile: measured colour, strong composition, and expressive data visuals should make the product pleasant to return to.
+runway is a self-hosted training instrument with the rhythm of a well-kept running log. It should
+feel clear, crafted, and useful under repeated daily use. Clean must not become sterile: warm
+surfaces, measured colour, strong composition, and expressive data visuals should make the product
+pleasant to return to.
 
 The interface is not a generic admin dashboard, calendar skin, fitness social product, or motivational coach. Its visual identity comes from runway rails, centerlines, distance ticks, plan traces, route shapes, heart-rate traces, tabular measurements, and visible decision history. Data visualizations are the most expressive surfaces; surrounding controls stay quieter so the app feels polished rather than busy.
 
 ## Canvas And Geometry
 
-- Light mode uses a pale blue-gray canvas with white and soft-cloud surfaces.
-- Dark mode uses midnight blue-charcoal with distinct slate surface layers.
-- The body has no ruled-paper pattern, gradient wash, or decorative texture.
+- Light mode uses a warm cloud canvas with near-white paper and soft mineral surfaces.
+- Dark mode uses warm charcoal with distinct moss-slate surface layers.
+- The body has no ruled-paper pattern, gradient wash, glass blur, or decorative texture.
 - Structural surfaces use a `10px` radius.
 - Controls use a `6px` radius.
 - Pills are reserved for statuses and switches.
@@ -30,20 +33,20 @@ green never implies medical safety.
 
 | Role             | Light     | Dark      | Use                                             |
 | ---------------- | --------- | --------- | ----------------------------------------------- |
-| canvas           | `#F4F7FA` | `#0D151D` | app background                                  |
-| surface          | `#FFFFFF` | `#141F29` | primary reading and working surface             |
-| surface soft     | `#EAF1F5` | `#1B2A36` | selected regions and grouped controls           |
-| surface strong   | `#FFFFFF` | `#22333F` | overlays and raised controls                    |
-| text             | `#16232D` | `#EDF4F7` | primary text                                    |
-| muted text       | `#536571` | `#A9BAC4` | secondary text                                  |
-| passive line     | `#D8E1E7` | `#2F414E` | decorative separator only                       |
-| control line     | `#718B9B` | `#688293` | control and selected boundary                   |
-| action/planned   | `#176B93` | `#6DB9E1` | selected and generated-plan emphasis            |
-| action strong    | `#0F5B81` | `#9AD4F1` | links, focus, and strong interactive accent     |
-| completed actual | `#2F7958` | `#73C89A` | accepted recorded work                          |
-| review           | `#A45F18` | `#F0AB61` | unresolved or elevated attention                |
-| danger           | `#B33F52` | `#F18B98` | destructive actions and blocked states          |
-| rest             | `#687985` | `#A5B2BA` | passive recovery state, always paired with text |
+| canvas           | `#F4F2EC` | `#151A18` | app background                                  |
+| surface          | `#FFFDF8` | `#1D2421` | primary reading and working surface             |
+| surface soft     | `#ECEFE9` | `#27302C` | selected regions and grouped controls           |
+| surface strong   | `#FFFAF2` | `#303A35` | overlays and raised controls                    |
+| text             | `#1D2926` | `#F0EEE7` | primary text                                    |
+| muted text       | `#596963` | `#B3BBB4` | secondary text                                  |
+| passive line     | `#D7DDD6` | `#3A4640` | decorative separator only                       |
+| control line     | `#71837A` | `#70847A` | control and selected boundary                   |
+| action/planned   | `#236B80` | `#79BBCD` | selected and generated-plan emphasis            |
+| action strong    | `#15566D` | `#A1D5E2` | links, focus, and strong interactive accent     |
+| completed actual | `#3E7658` | `#87BF98` | accepted recorded work                          |
+| review           | `#A45F35` | `#E1A076` | unresolved or elevated attention                |
+| danger           | `#AA4650` | `#EF8C94` | destructive actions and blocked states          |
+| rest             | `#6F7D76` | `#ADB6AF` | passive recovery state, always paired with text |
 
 Required text meets 4.5:1 contrast. Control, selection, focus, and status edges meet 3:1 or have
 an equivalent non-color affordance; passive lines can be quieter because spacing and alignment
@@ -66,6 +69,7 @@ The app uses one token set, named by job:
 | `--tick`           | ticks and inactive trace structure           |
 | `--accent`         | current/selected/generated-plan emphasis     |
 | `--accent-strong`  | keyboard focus and strong interactive accent |
+| `--accent-soft`    | quiet selected or paired setup surface       |
 | `--on-accent`      | text/icons on filled accent controls         |
 | `--completed`      | recorded/stable work                         |
 | `--review`         | unresolved, missed, or elevated attention    |
@@ -79,6 +83,10 @@ Do not introduce page-local aliases such as `--background`, `--panel`, `--good`,
 Use the native system sans-serif stack. Do not load a branding font.
 
 Use `ui-monospace` (with system monospace fallbacks) for dates, duration, distance, pace, heart rate, load, chart axes, and exact tables. Use tabular numerals throughout. Headings can be strong, but should not turn every route into a marketing page.
+
+Prefer sentence case and weights between 600 and 700. Uppercase is limited to very short calendar
+or chart axes where it materially improves scanning; section kickers and helper labels stay in
+sentence case.
 
 Copy is calm, factual, and compact:
 
@@ -119,7 +127,9 @@ These are Svelte components, not a UI framework. Add a dependency only when it s
 
 ### Application shell
 
-Desktop navigation is a flat application rail with tab-like links and a current-position underline. Mobile keeps five destinations with restrained line icons and text labels. The mark is an inline SVG, not a capsule logo or lone brand dot.
+Desktop navigation is a flat application rail with tab-like links and a current-position underline.
+Mobile keeps five destinations with restrained line icons and text labels. Navigation surfaces are
+opaque; they do not use glass blur. The mark is an inline SVG, not a capsule logo or lone brand dot.
 
 ### Onboarding
 
@@ -127,7 +137,13 @@ Four steps only: Goal, Starting point, Schedule, Review. Each step has one job. 
 
 ### Calendar
 
-The calendar is the product center. It shows planned, edited, actual, missed, skipped, review, rest, removed, and multi-activity states. Weekly load rails distinguish recommendation, current plan, and completion. Empty future dates retain a quiet add-workout affordance. Desktop uses the inspector; mobile uses a focused sheet.
+The calendar is the product center. The connected `Today → Next → Review` sequence answers the
+current decision before the month ledger begins. Week chapters pair an exact date range with three
+labelled, non-colour-dependent lanes: generated recommendation, current plan, and actual work.
+Mixed distance and timed prescriptions do not collapse into a false scalar. The ledger shows
+planned, edited, actual, missed, skipped, review, rest, removed, and multi-activity states. Empty
+future dates retain a quiet add-workout affordance. Desktop uses the inspector; mobile uses a
+focused sheet.
 
 ### Activity inbox
 
@@ -212,6 +228,9 @@ The checked-in Linux baselines use Playwright Chromium on Debian 13 with DejaVu 
 browser CI job pins that rendering environment; do not refresh baselines from a different font
 stack and accept the resulting diff without inspecting it.
 
-Deterministic coverage should include public home, login/recovery, all onboarding modes, empty/active/edited calendars, day inspector/sheet, activity review, generated/current/actual stats, history ledger, settings/security, mobile/desktop/wide viewports, and dark mode.
+Deterministic coverage should include public home, login/recovery, all onboarding modes,
+empty/active/edited calendars, an interrupted week with shortened/completed/missed/rest/planned
+states, day inspector/sheet, activity review, generated/current/actual stats, history ledger,
+settings/security, mobile/desktop/wide viewports, and dark mode.
 
 Before accepting a browser-facing pass, verify keyboard navigation, screen-reader names, Axe results, 200% zoom, text enlargement, reduced motion, and no horizontal overflow.

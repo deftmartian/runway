@@ -390,25 +390,15 @@
 	.heart-chart {
 		border: 1px solid var(--line);
 		border-radius: 10px;
-		background: color-mix(in oklab, var(--surface), var(--background) 35%);
+		background: color-mix(in oklab, var(--surface), var(--canvas) 35%);
 	}
 
 	.route-map {
-		background:
-			radial-gradient(
-				circle at 20% 18%,
-				color-mix(in oklab, var(--accent), transparent 91%),
-				transparent 36%
-			),
-			color-mix(in oklab, var(--surface), var(--background) 35%);
+		background: color-mix(in oklab, var(--surface), var(--canvas) 35%);
 	}
 
 	.heart-chart {
-		background: linear-gradient(
-			180deg,
-			color-mix(in oklab, var(--accent), var(--surface) 94%),
-			color-mix(in oklab, var(--surface), var(--background) 38%)
-		);
+		background: color-mix(in oklab, var(--accent), var(--surface) 95%);
 	}
 
 	.map-grid,
@@ -441,13 +431,13 @@
 
 	.route-start {
 		fill: var(--completed);
-		stroke: var(--background);
+		stroke: var(--canvas);
 		stroke-width: 2;
 	}
 
 	.route-finish {
 		fill: var(--danger);
-		stroke: var(--background);
+		stroke: var(--canvas);
 		stroke-width: 2;
 	}
 

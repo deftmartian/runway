@@ -3,6 +3,7 @@ import { fixedBrowserClockScript, testDate } from '../support/test-clock';
 import {
 	createAccount,
 	createPlan,
+	fillValidPlanIntake,
 	getUserId,
 	setTrainingTimeZone,
 	getPlannedRuns,
@@ -23,8 +24,11 @@ test('training calendar month controls are URL-backed', async ({ page }) => {
 	const nextMonth = shiftCalendarMonth(currentMonth, 1);
 	await expect(page.locator('.calendar-month-week:visible').first()).toBeVisible();
 	await expect(page.locator('.calendar-week-load').first()).toBeVisible();
-	await expect(page.locator('.week-load-track').first()).toBeVisible();
-	await expect(page.getByText(/done of/).first()).toBeVisible();
+	const firstWeekComparison = page.locator('.week-load-comparison').first();
+	await expect(firstWeekComparison).toBeVisible();
+	for (const label of ['Generated', 'Current', 'Actual']) {
+		await expect(firstWeekComparison.getByText(label, { exact: true })).toBeVisible();
+	}
 	await expect(page.locator('.calendar-weekday-row')).toBeVisible();
 	const visibleDayCount = await page.locator('.calendar-month-day').count();
 	expect(visibleDayCount).toBeGreaterThanOrEqual(35);
@@ -43,6 +47,39 @@ test('training calendar month controls are URL-backed', async ({ page }) => {
 
 	await page.getByRole('link', { name: 'Current month' }).click();
 	await expect(page).toHaveURL(new RegExp(`/app\\?month=${currentMonth}`));
+});
+
+test('current decision sequence exposes a stable order and actionable state', async ({ page }) => {
+	await createPlan(page);
+	await page.goto('/app');
+
+	const decision = page.getByRole('region', { name: 'Current decision' });
+	await expect(decision).toBeVisible();
+	const steps = decision.getByRole('button');
+	await expect(steps).toHaveCount(3);
+	await expect(steps.nth(0)).toHaveAccessibleName(/^Today\b/);
+	await expect(steps.nth(1)).toHaveAccessibleName(/^Next\b/);
+	await expect(steps.nth(2)).toHaveAccessibleName(/^Review\b/);
+	await expect(steps.nth(2)).toBeEnabled();
+	await expect(steps.nth(2)).toHaveAccessibleName(/missed run/);
+
+	await steps.nth(2).click();
+	await expect(page.locator('#event-detail-panel')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(steps.nth(2)).toBeFocused();
+});
+
+test('current decision keeps a clear review state non-actionable', async ({ page }) => {
+	await createAccount(page);
+	await page.goto('/app/onboarding');
+	await fillValidPlanIntake(page);
+	await page.getByRole('button', { name: 'Create plan' }).click();
+	await page.waitForURL(/\/app$/);
+
+	const decision = page.getByRole('region', { name: 'Current decision' });
+	const review = decision.getByRole('button', { name: 'Review Clear' });
+	await expect(review).toBeVisible();
+	await expect(review).toBeDisabled();
 });
 
 test('authenticated app avoids horizontal overflow on mobile and desktop', async ({ page }) => {

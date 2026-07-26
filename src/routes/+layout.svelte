@@ -37,8 +37,8 @@
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-title" content="runway" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-	<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F7FA" />
-	<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D151D" />
+	<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F2EC" />
+	<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151A18" />
 </svelte:head>
 
 {@render children()}

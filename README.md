@@ -15,10 +15,10 @@ future workouts.
 
 ## The product at a glance
 
-| Desktop web                                                                                  | Installed mobile PWA                                                                         |
-| :------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- |
-| ![The runway desktop training calendar](docs/images/runway-calendar-desktop.png)             | ![The runway mobile training calendar](docs/images/runway-calendar-mobile.png)               |
-| A month, weekly load, recovery spacing, and the selected day's next decision in one surface. | The same plan and activity record, reflowed around the day rather than reduced to a summary. |
+| Desktop web                                                                          | Installed mobile PWA                                                             |
+| :----------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
+| ![The runway desktop training calendar](docs/images/runway-calendar-desktop.png)     | ![The runway mobile training calendar](docs/images/runway-calendar-mobile.png)   |
+| Today, next run, open review work, and generated/current/actual load in one surface. | The same current decision and week trace, reflowed into a one-handed day ledger. |
 
 The calendar is the main operating surface. It keeps the recommendation, current plan, actual work,
 rest, missed work, recovery spacing, and current review item visible together.

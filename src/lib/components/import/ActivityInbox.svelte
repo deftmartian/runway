@@ -594,7 +594,7 @@
 		padding-left: 10px;
 		border-left: 3px solid var(--review);
 		font-size: 0.82rem;
-		font-weight: 780;
+		font-weight: 680;
 		white-space: nowrap;
 	}
 
@@ -693,7 +693,7 @@
 		background: var(--surface-strong);
 		color: var(--text);
 		font-size: 0.9rem;
-		font-weight: 760;
+		font-weight: 680;
 	}
 
 	.needs-review .summary-action {

@@ -31,9 +31,7 @@
 	}
 
 	.measurement-readout > span {
-		font-weight: 700;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
+		font-weight: 650;
 	}
 
 	strong {

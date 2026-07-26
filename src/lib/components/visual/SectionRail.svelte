@@ -53,9 +53,7 @@
 	header p {
 		color: var(--accent);
 		font-size: 0.72rem;
-		font-weight: 760;
-		letter-spacing: 0.09em;
-		text-transform: uppercase;
+		font-weight: 680;
 	}
 
 	header h2 {

@@ -10,8 +10,14 @@ export type CalendarWeekLoad = {
 	id: string;
 	label: string;
 	week: TrainingCalendarWeek;
-	rampValue: number;
-	completionValue: number;
+	metric: 'distance' | 'duration' | 'mixed';
+	generatedValue: number;
+	currentValue: number;
+	actualValue: number;
+	generatedPercent: number;
+	currentPercent: number;
+	actualPercent: number;
+	isEdited: boolean;
 	isCurrent: boolean;
 };
 
@@ -217,34 +223,60 @@ function buildCalendarRows(
 
 function buildWeekLoads(payload: TrainingCalendarPayload): CalendarWeekLoad[] {
 	if (payload.weeks.length === 0 || !payload.planScale) return [];
-	const usesDuration = payload.weeks.some(
-		(week) => week.targetDurationSeconds > 0 && week.targetDistanceMeters === 0
-	);
-	const peak = Math.max(
+	const metricForWeek = (week: TrainingCalendarWeek): CalendarWeekLoad['metric'] => {
+		const hasDistance = week.generatedDistanceMeters > 0 || week.targetDistanceMeters > 0;
+		const hasDuration = week.generatedDurationSeconds > 0 || week.targetDurationSeconds > 0;
+		if (week.hasMixedLoad || (hasDistance && hasDuration)) return 'mixed';
+		return hasDuration ? 'duration' : 'distance';
+	};
+	const distancePeak = Math.max(
 		1,
-		usesDuration
-			? Math.max(...payload.weeks.map((week) => week.targetDurationSeconds))
-			: payload.planScale.peakMeters
+		payload.planScale.peakMeters,
+		...payload.weeks.flatMap((week) => [
+			week.generatedDistanceMeters,
+			week.targetDistanceMeters,
+			week.completedDistanceMeters
+		])
 	);
-	return payload.weeks.map((week) => ({
-		id: week.id,
-		label: `Week ${week.weekNumber}`,
-		week,
-		rampValue: Math.max(
-			8,
-			Math.min(
-				100,
-				Math.round(
-					((usesDuration ? week.targetDurationSeconds : week.targetDistanceMeters) / peak) * 100
-				)
-			)
-		),
-		completionValue: Math.min(
-			100,
-			Math.round(
-				((usesDuration ? week.completedDurationSeconds : week.completedDistanceMeters) / peak) * 100
-			)
-		),
-		isCurrent: payload.today >= week.startDate && payload.today <= addIsoDays(week.startDate, 6)
-	}));
+	const durationPeak = Math.max(
+		1,
+		...payload.weeks.flatMap((week) => [
+			week.generatedDurationSeconds,
+			week.targetDurationSeconds,
+			week.completedDurationSeconds
+		])
+	);
+	const percentage = (value: number, peak: number) =>
+		value <= 0 ? 0 : Math.max(4, Math.min(100, Math.round((value / peak) * 100)));
+
+	return payload.weeks.map((week) => {
+		const metric = metricForWeek(week);
+		const generatedValue =
+			metric === 'duration' ? week.generatedDurationSeconds : week.generatedDistanceMeters;
+		const currentValue =
+			metric === 'duration' ? week.targetDurationSeconds : week.targetDistanceMeters;
+		const actualValue =
+			metric === 'duration' ? week.completedDurationSeconds : week.completedDistanceMeters;
+		const peak = metric === 'duration' ? durationPeak : distancePeak;
+		return {
+			id: week.id,
+			label: `Week ${week.weekNumber}`,
+			week,
+			metric,
+			generatedValue,
+			currentValue,
+			actualValue,
+			generatedPercent: metric === 'mixed' ? 0 : percentage(generatedValue, peak),
+			currentPercent: metric === 'mixed' ? 0 : percentage(currentValue, peak),
+			actualPercent: metric === 'mixed' ? 0 : percentage(actualValue, peak),
+			isEdited:
+				generatedValue !== currentValue ||
+				payload.workouts.some(
+					(workout) =>
+						workout.weekId === week.id &&
+						(workout.isEdited || workout.isRemoved || workout.recommended === null)
+				),
+			isCurrent: payload.today >= week.startDate && payload.today <= addIsoDays(week.startDate, 6)
+		};
+	});
 }

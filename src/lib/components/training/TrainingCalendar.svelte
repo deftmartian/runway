@@ -220,6 +220,19 @@
 			});
 		return `${format(first, true)}–${format(last, first.slice(0, 7) !== last.slice(0, 7))}`;
 	};
+	const weekDateRange = (row: CalendarWeekRow) => {
+		const first = row.days[0]?.date;
+		const last = row.days.at(-1)?.date;
+		if (!first || !last) return '';
+		const format = (date: string) =>
+			new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+				month: 'short',
+				day: 'numeric'
+			});
+		return `${format(first)}–${format(last)}`;
+	};
+	const loadValue = (value: number, metric: NonNullable<CalendarWeekRow['load']>['metric']) =>
+		metric === 'duration' ? minutes(value) : km(value);
 
 	$effect(() => {
 		if (selectedEventId && !calendarEvents.some((event) => event.id === selectedEventId)) {
@@ -406,42 +419,48 @@
 					>
 				</div>
 			{/if}
-			<div class="training-command-strip" aria-label="Training summary">
-				<button
-					type="button"
-					class="command-readout current interactive"
-					disabled={!todayEvent}
-					onclick={(mouseEvent) => {
-						if (todayEvent) selectEvent(todayEvent, mouseEvent.currentTarget);
-					}}
-				>
-					<span>Today</span>
-					<strong>{todayStatus}</strong>
-				</button>
-				<button
-					type="button"
-					class="command-readout next interactive"
-					disabled={!nextRun}
-					onclick={(mouseEvent) => {
-						if (nextRun) selectEvent(nextRun, mouseEvent.currentTarget);
-					}}
-				>
-					<span>Next</span>
-					<strong>{nextRun ? nextRunLabel.replace('Next: ', '') : 'No planned run'}</strong>
-				</button>
-				<button
-					type="button"
-					class="command-readout interactive review"
-					disabled={openItems.length === 0}
-					onclick={(mouseEvent) => {
-						const firstOpenItem = openItems[0];
-						if (firstOpenItem) selectEvent(firstOpenItem, mouseEvent.currentTarget);
-					}}
-				>
-					<span>Review</span>
-					<strong>{openItems.length === 0 ? 'Clear' : openItemsLabel}</strong>
-				</button>
-			</div>
+			<section class="training-decision-sequence" aria-labelledby="training-decision-title">
+				<header>
+					<h2 id="training-decision-title">Current decision</h2>
+					<span>Today → next → review</span>
+				</header>
+				<div class="training-command-strip">
+					<button
+						type="button"
+						class="command-readout current interactive"
+						disabled={!todayEvent}
+						onclick={(mouseEvent) => {
+							if (todayEvent) selectEvent(todayEvent, mouseEvent.currentTarget);
+						}}
+					>
+						<span><i aria-hidden="true">1</i>Today</span>
+						<strong>{todayStatus}</strong>
+					</button>
+					<button
+						type="button"
+						class="command-readout next interactive"
+						disabled={!nextRun}
+						onclick={(mouseEvent) => {
+							if (nextRun) selectEvent(nextRun, mouseEvent.currentTarget);
+						}}
+					>
+						<span><i aria-hidden="true">2</i>Next</span>
+						<strong>{nextRun ? nextRunLabel.replace('Next: ', '') : 'No planned run'}</strong>
+					</button>
+					<button
+						type="button"
+						class="command-readout interactive review"
+						disabled={openItems.length === 0}
+						onclick={(mouseEvent) => {
+							const firstOpenItem = openItems[0];
+							if (firstOpenItem) selectEvent(firstOpenItem, mouseEvent.currentTarget);
+						}}
+					>
+						<span><i aria-hidden="true">3</i>Review</span>
+						<strong>{openItems.length === 0 ? 'Clear' : openItemsLabel}</strong>
+					</button>
+				</div>
+			</section>
 			<div class="calendar-context-row">
 				{#if currentSignal}
 					<details
@@ -527,8 +546,6 @@
 						<section class="calendar-month-week" aria-label={row.label}>
 							{#if row.load}
 								{@const load = row.load}
-								{@const durationLoad =
-									load.week.targetDurationSeconds > 0 && load.week.targetDistanceMeters === 0}
 								{@const weekIndex = calendar.weeks.findIndex((week) => week.id === load.week.id)}
 								{@const weekAssessment = presentCalendarWeekAssessment({
 									week: load.week,
@@ -538,12 +555,12 @@
 								})}
 								<div class="calendar-week-load" class:current={load.isCurrent}>
 									<div class="week-load-meta">
-										<span>{load.label}</span>
-										<strong
-											>{durationLoad
-												? `${minutes(load.week.completedDurationSeconds)} done of ${minutes(load.week.targetDurationSeconds)}`
-												: `${km(load.week.completedDistanceMeters)} done of ${km(load.week.targetDistanceMeters)}`}</strong
-										>
+										<p>
+											<span>{load.label}</span>
+											{#if load.isCurrent}<strong>This week</strong>{/if}
+											{#if load.isEdited}<em>Plan changed</em>{/if}
+										</p>
+										<h2>{weekDateRange(row)}</h2>
 										{#if load.week.eventDistanceMeters > 0}
 											<small>
 												Goal event {km(load.week.eventCompletedDistanceMeters)} of {km(
@@ -552,47 +569,39 @@
 											</small>
 										{/if}
 									</div>
-									<div
-										class="week-load-track"
-										role="progressbar"
-										aria-label={`${load.label}: ${durationLoad ? minutes(load.week.completedDurationSeconds) : km(load.week.completedDistanceMeters)} done of ${durationLoad ? minutes(load.week.targetDurationSeconds) : km(load.week.targetDistanceMeters)}`}
-										aria-valuemin="0"
-										aria-valuemax={durationLoad
-											? load.week.targetDurationSeconds
-											: load.week.targetDistanceMeters}
-										aria-valuenow={Math.min(
-											durationLoad
-												? load.week.completedDurationSeconds
-												: load.week.completedDistanceMeters,
-											durationLoad
-												? load.week.targetDurationSeconds
-												: load.week.targetDistanceMeters
-										)}
-									>
-										<svg
-											aria-hidden="true"
-											focusable="false"
-											viewBox="0 0 100 8"
-											preserveAspectRatio="none"
+									{#if load.metric === 'mixed'}
+										<p class="mixed-load-note">
+											Mixed distance and timed runs. Compare the individual prescriptions below.
+										</p>
+									{:else}
+										<div
+											class="week-load-comparison"
+											role="group"
+											aria-label={`${load.label} generated, current, and actual ${load.metric} load`}
 										>
-											<rect
-												class="week-load-target"
-												x="0"
-												y="0"
-												width={load.rampValue}
-												height="8"
-												rx="4"
-											/>
-											<rect
-												class="week-load-completion"
-												x="0"
-												y="0"
-												width={load.completionValue}
-												height="8"
-												rx="4"
-											/>
-										</svg>
-									</div>
+											<div class="week-load-lane generated">
+												<span>Generated</span>
+												<i aria-hidden="true"
+													><b style={`--week-load: ${load.generatedPercent}%`}></b></i
+												>
+												<strong>{loadValue(load.generatedValue, load.metric)}</strong>
+											</div>
+											<div class="week-load-lane planned">
+												<span>Current</span>
+												<i aria-hidden="true"
+													><b style={`--week-load: ${load.currentPercent}%`}></b></i
+												>
+												<strong>{loadValue(load.currentValue, load.metric)}</strong>
+											</div>
+											<div class="week-load-lane actual">
+												<span>Actual</span>
+												<i aria-hidden="true"
+													><b style={`--week-load: ${load.actualPercent}%`}></b></i
+												>
+												<strong>{loadValue(load.actualValue, load.metric)}</strong>
+											</div>
+										</div>
+									{/if}
 									<div class="week-load-tags">
 										{#if weekAssessment.phaseLabel}<span class="badge"
 												>{weekAssessment.phaseLabel}</span
@@ -727,9 +736,7 @@
 	.quiet-calendar-week > summary span {
 		margin-inline-end: auto;
 		font-size: 0.8rem;
-		font-weight: 720;
-		letter-spacing: 0.03em;
-		text-transform: uppercase;
+		font-weight: 680;
 	}
 
 	.quiet-calendar-week > summary strong {

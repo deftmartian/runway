@@ -72,6 +72,8 @@ describe('calendar month boundaries', () => {
 					id: 'week-1',
 					weekNumber: 1,
 					startDate: '2026-07-13',
+					generatedDistanceMeters: 5_000,
+					generatedDurationSeconds: 0,
 					targetDistanceMeters: 5_000,
 					targetDurationSeconds: 0,
 					eventDistanceMeters: 0,

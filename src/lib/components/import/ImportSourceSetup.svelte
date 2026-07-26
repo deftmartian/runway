@@ -312,7 +312,7 @@
 		background: var(--surface-strong);
 		color: var(--text);
 		font-size: 0.9rem;
-		font-weight: 760;
+		font-weight: 680;
 		cursor: pointer;
 		list-style: none;
 	}

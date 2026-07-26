@@ -65,12 +65,31 @@ for (const viewport of viewports) {
 			await stableElementScreenshot(restDialog, `rest-day-modal-${viewport.name}.png`);
 			await page.getByText('Close', { exact: true }).click();
 
+			await recordShortenedMissedRun(page);
 			await page.goto('/app/import');
 			await expect(page.getByRole('heading', { name: 'Activity inbox' })).toBeVisible();
 			await stableScreenshot(page, `import-empty-${viewport.name}.png`);
 
 			await createImportRecords(page);
 			await stableScreenshot(page, `import-records-${viewport.name}.png`);
+
+			if (viewport.name === 'mobile' || viewport.name === 'desktop') {
+				await page.goto('/app');
+				await waitForCalendarReady(page);
+				await expect(page.locator('.calendar-event.actual[data-status="shortened"]')).toBeVisible();
+				await expect(page.locator('.calendar-event.actual[data-status="completed"]')).toBeVisible();
+				await expect(page.locator('.calendar-event[data-status="missed"]').first()).toBeVisible();
+				await expect(page.locator('.calendar-event.rest').first()).toBeVisible();
+				await expect(page.locator('.calendar-event[data-status="planned"]').first()).toBeVisible();
+				if (viewport.name === 'mobile') {
+					await stableElementScreenshot(
+						page.locator('.calendar-month-grid'),
+						'calendar-interrupted-mobile.png'
+					);
+				} else {
+					await stableScreenshot(page, 'calendar-interrupted-desktop.png');
+				}
+			}
 
 			await page.goto('/app/stats');
 			await expect(page.getByRole('heading', { name: 'Stats' })).toBeVisible();
@@ -115,7 +134,7 @@ test('dark mode app state has visual coverage', async ({ page }) => {
 				canvas: getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim()
 			}))
 		)
-		.toEqual({ systemDark: true, canvas: '#0d151d' });
+		.toEqual({ systemDark: true, canvas: '#151a18' });
 	await waitForCalendarReady(page);
 	await stableScreenshot(page, 'calendar-dark-desktop.png');
 	await page.goto('/app/settings');
@@ -152,11 +171,11 @@ async function seedVisualAccount(page: Page, fixtureName: string, firstPlanScree
 	await page.getByLabel('Priority').selectOption('finish_healthy');
 	await goToOnboardingStep(page, 'Starting point');
 	await page.getByLabel('Weekly distance (km)').fill('12');
-	await page.getByLabel('Runs per week').fill('3');
+	await page.getByLabel('Runs per week').fill('4');
 	await page.getByLabel('Longest recent run (km)').fill('8');
 	await page.getByLabel('Running experience').selectOption('returning');
 	await goToOnboardingStep(page, 'Schedule');
-	await setAvailability(page, ['Mon', 'Wed', 'Sat']);
+	await setAvailability(page, ['Mon', 'Tue', 'Wed', 'Sat']);
 	await page.getByLabel('Training time zone').fill('America/Halifax');
 	await page.getByLabel('Preferred long-run day').selectOption('6');
 	await goToOnboardingStep(page, 'Review');
@@ -231,7 +250,11 @@ async function createImportRecords(page: Page) {
 	const firstSelect = page.locator('select[name="workoutId"]').first();
 	const selectedWorkoutId = await firstSelect.evaluate((select) => {
 		if (!(select instanceof HTMLSelectElement)) return '';
-		return Array.from(select.options).find((option) => option.value)?.value ?? '';
+		return (
+			Array.from(select.options)
+				.filter((option) => option.value)
+				.at(-1)?.value ?? ''
+		);
 	});
 	if (!selectedWorkoutId) throw new Error('Visual fixture needs at least one workout candidate.');
 
@@ -261,6 +284,22 @@ async function createImportRecords(page: Page) {
 	await page.getByRole('button', { name: 'Import', exact: true }).click();
 	await expect(page.getByText(/Added to the activity inbox\./)).toBeVisible();
 	await expect(page.locator('.state-marker').filter({ hasText: 'Needs review' })).toBeVisible();
+}
+
+async function recordShortenedMissedRun(page: Page) {
+	await page
+		.getByRole('button', { name: /Review \d+ missed runs?/ })
+		.first()
+		.click();
+	const panel = trainingDetailPanel(page);
+	await panel.getByText('Record run', { exact: true }).click();
+	await panel.getByLabel('Result').selectOption('done');
+	await panel.getByLabel('Distance completed (km)').fill('0.1');
+	await panel.getByLabel('Duration completed (min, optional)').fill('2');
+	await panel.getByRole('button', { name: /Save feedback/ }).click();
+	await expect(panel.getByRole('heading', { name: 'Saved result' })).toBeVisible();
+	await expect(page.locator('.calendar-event.actual[data-status="shortened"]')).toBeVisible();
+	await panel.getByRole('button', { name: 'Close training detail' }).click();
 }
 
 async function stableScreenshot(page: Page, name: string) {

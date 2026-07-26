@@ -672,9 +672,7 @@
 	.eyebrow {
 		color: var(--muted);
 		font-size: 0.78rem;
-		font-weight: 760;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
+		font-weight: 650;
 	}
 
 	.first-run-plan {
@@ -703,7 +701,7 @@
 
 	.first-run-plan dd {
 		margin: 0;
-		font-weight: 720;
+		font-weight: 680;
 		text-align: right;
 	}
 

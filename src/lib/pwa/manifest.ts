@@ -8,8 +8,8 @@ export const runwayManifest = {
 	start_url: '/app',
 	scope: '/',
 	display: 'standalone',
-	background_color: '#F4F7FA',
-	theme_color: '#176B93',
+	background_color: '#F4F2EC',
+	theme_color: '#236B80',
 	categories: ['fitness', 'productivity'],
 	icons: [
 		{

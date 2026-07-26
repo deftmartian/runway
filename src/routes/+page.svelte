@@ -120,9 +120,8 @@
 	.product-loop span {
 		color: color-mix(in oklab, var(--accent), var(--muted) 34%);
 		font-size: 0.72rem;
-		font-weight: 780;
+		font-weight: 680;
 		font-variant-numeric: tabular-nums;
-		letter-spacing: 0.08em;
 	}
 
 	.product-loop strong {

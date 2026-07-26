@@ -88,7 +88,7 @@
 		background: transparent;
 		color: var(--accent-strong);
 		font-size: 0.86rem;
-		font-weight: 760;
+		font-weight: 680;
 	}
 
 	@media (max-width: 560px) {
