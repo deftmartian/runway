@@ -21,23 +21,13 @@ import { pipeline } from 'node:stream/promises';
  */
 
 /**
- * @typedef {object} ReleasedMigrationLineage
- * @property {string} tag
- * @property {string} commit
- * @property {string} forwardFrom
- * @property {MigrationEntry[]} entries
- */
-
-/**
  * @typedef {object} MigrationIntegrity
  * @property {MigrationEntry[]} canonical
- * @property {ReleasedMigrationLineage} releasedV001
- * @property {ReleasedMigrationLineage} releasedV012
- * @property {MigrationEntry[]} rebasedV011
  * @property {string[]} requiredTables
  * @property {string[]} requiredColumns
  * @property {string[]} requiredConstraints
  * @property {string[]} requiredIndexes
+ * @property {string[]} requiredEnums
  */
 
 /**
@@ -61,30 +51,6 @@ const supportedSslModes = new Set([
 	'verify-ca',
 	'verify-full'
 ]);
-const requiredSupportedPredecessorTables = [
-	'account',
-	'activity',
-	'activity_deletion_tombstone',
-	'activity_import',
-	'athlete_profile',
-	'audit_event',
-	'goal',
-	'import_source',
-	'import_source_item',
-	'passkey',
-	'password_reset_rate_limit',
-	'password_reset_token',
-	'plan_adjustment',
-	'session',
-	'training_plan',
-	'training_week',
-	'two_factor',
-	'user',
-	'verification',
-	'workout',
-	'workout_feedback'
-];
-
 /**
  * @param {string} input
  * @param {string} settingName
@@ -246,13 +212,9 @@ export async function inspectBackupArchive(connection, inputPath) {
 
 /**
  * @param {PostgresConnection} connection
- * @param {{ allowSupportedPredecessor?: boolean }} [options]
- * @returns {Promise<'current' | 'supported-predecessor'>}
+ * @returns {Promise<'current'>}
  */
-export async function verifyRestoredDatabase(
-	connection,
-	{ allowSupportedPredecessor = false } = {}
-) {
+export async function verifyRestoredDatabase(connection) {
 	/** @type {MigrationIntegrity} */
 	const integrity = JSON.parse(
 		await readFile(new URL('../drizzle/migration-integrity.json', import.meta.url), 'utf8')
@@ -285,25 +247,15 @@ export async function verifyRestoredDatabase(
 	}
 	const state = restoredLedgerState(ledger, integrity);
 	if (state === 'unsupported') {
-		throw new Error('The restored database does not have a supported runway migration ledger.');
-	}
-	if (state === 'supported-predecessor') {
-		if (!allowSupportedPredecessor) {
-			throw new Error(
-				'The restored database is an exact supported predecessor and must be migrated before this runway version can use it.'
-			);
-		}
-		if (!(await schemaContains(connection, { tables: requiredSupportedPredecessorTables }))) {
-			throw new Error('The restored predecessor ledger is valid but required tables are missing.');
-		}
-		return state;
+		throw new Error('The restored database does not match the current clean-install baseline.');
 	}
 	if (
 		!(await schemaContains(connection, {
 			tables: integrity.requiredTables,
 			columns: integrity.requiredColumns,
 			constraints: integrity.requiredConstraints,
-			indexes: integrity.requiredIndexes
+			indexes: integrity.requiredIndexes,
+			enums: integrity.requiredEnums
 		}))
 	) {
 		throw new Error(
@@ -316,92 +268,10 @@ export async function verifyRestoredDatabase(
 /**
  * @param {LedgerRow[]} rows
  * @param {MigrationIntegrity} integrity
- * @returns {'current' | 'supported-predecessor' | 'unsupported'}
+ * @returns {'current' | 'unsupported'}
  */
 export function restoredLedgerState(rows, integrity) {
-	const { finalLedgers, supportedPredecessorLedgers } = restoreLineages(integrity);
-	if (finalLedgers.some((expected) => sequenceMatches(rows, expected))) return 'current';
-	if (supportedPredecessorLedgers.some((expected) => sequenceMatches(rows, expected))) {
-		return 'supported-predecessor';
-	}
-	return 'unsupported';
-}
-
-/**
- * @param {MigrationIntegrity} integrity
- * @returns {{ finalLedgers: MigrationEntry[][], supportedPredecessorLedgers: MigrationEntry[][] }}
- */
-function restoreLineages(integrity) {
-	const compatibilityMigrationIndex = integrity.canonical.findIndex(
-		(entry) => entry.tag === '0022_forward_compatible_upgrade'
-	);
-	if (compatibilityMigrationIndex < 0) {
-		throw new Error('The migration integrity manifest is missing the compatibility migration.');
-	}
-	const rebasedFinal = [
-		...integrity.rebasedV011,
-		...integrity.canonical.slice(compatibilityMigrationIndex)
-	];
-	const releasedV001ViaV012 = {
-		tag: 'v0.0.1 upgraded by v0.1.2',
-		forwardFrom: integrity.releasedV012.forwardFrom,
-		entries: [
-			...integrity.releasedV001.entries,
-			...integrity.releasedV012.entries.slice(integrity.releasedV001.entries.length)
-		]
-	};
-	const releasedLineages = [
-		integrity.releasedV001,
-		integrity.releasedV012,
-		releasedV001ViaV012
-	].map((release) => {
-		const forwardMigrationIndex = integrity.canonical.findIndex(
-			(entry) => entry.tag === release.forwardFrom
-		);
-		if (forwardMigrationIndex !== release.entries.length) {
-			throw new Error(
-				`The migration integrity manifest has an invalid ${release.tag} forward cutover.`
-			);
-		}
-		return {
-			entries: release.entries,
-			final: [...release.entries, ...integrity.canonical.slice(forwardMigrationIndex)]
-		};
-	});
-	const canonicalPredecessors = [
-		'0021_private_activity_traces',
-		'0022_forward_compatible_upgrade'
-	].map((tag) => {
-		const index = integrity.canonical.findIndex((entry) => entry.tag === tag);
-		if (index < 0) throw new Error(`The migration integrity manifest is missing ${tag}.`);
-		return integrity.canonical.slice(0, index + 1);
-	});
-	return {
-		finalLedgers: [
-			integrity.canonical,
-			...releasedLineages.map(({ final }) => final),
-			rebasedFinal
-		],
-		supportedPredecessorLedgers: [
-			...canonicalPredecessors,
-			...releasedLineages.flatMap(({ entries, final }) => prefixesFrom(entries, final)),
-			...prefixesFrom(integrity.rebasedV011, rebasedFinal)
-		]
-	};
-}
-
-/**
- * @param {MigrationEntry[]} releasedEntries
- * @param {MigrationEntry[]} finalEntries
- * @returns {MigrationEntry[][]}
- */
-function prefixesFrom(releasedEntries, finalEntries) {
-	/** @type {MigrationEntry[][]} */
-	const prefixes = [];
-	for (let length = releasedEntries.length; length < finalEntries.length; length += 1) {
-		prefixes.push(finalEntries.slice(0, length));
-	}
-	return prefixes;
+	return sequenceMatches(rows, integrity.canonical) ? 'current' : 'unsupported';
 }
 
 /**
@@ -424,12 +294,13 @@ function sequenceMatches(rows, expected) {
  *   tables?: string[],
  *   columns?: string[],
  *   constraints?: string[],
- *   indexes?: string[]
+ *   indexes?: string[],
+ *   enums?: string[]
  * }} requirements
  */
 async function schemaContains(
 	connection,
-	{ tables = [], columns = [], constraints = [], indexes = [] } = {}
+	{ tables = [], columns = [], constraints = [], indexes = [], enums = [] } = {}
 ) {
 	const tableChecks = tables.map((name) => `to_regclass('public."${name}"') is not null`);
 	const columnChecks = columns.map((qualifiedName) => {
@@ -441,7 +312,17 @@ async function schemaContains(
 			`exists (select 1 from information_schema.table_constraints where constraint_schema = 'public' and constraint_name = '${name}')`
 	);
 	const indexChecks = indexes.map((name) => `to_regclass('public."${name}"') is not null`);
-	const checks = [...tableChecks, ...columnChecks, ...constraintChecks, ...indexChecks];
+	const enumChecks = enums.map(
+		(name) =>
+			`exists (select 1 from pg_type as type join pg_namespace as namespace on namespace.oid = type.typnamespace where namespace.nspname = 'public' and type.typtype = 'e' and type.typname = '${name}')`
+	);
+	const checks = [
+		...tableChecks,
+		...columnChecks,
+		...constraintChecks,
+		...indexChecks,
+		...enumChecks
+	];
 	const query = [
 		'select case when',
 		checks.length > 0 ? checks.join(' and ') : 'true',

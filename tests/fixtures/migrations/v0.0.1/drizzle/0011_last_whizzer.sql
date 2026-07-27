@@ -1,2 +1,0 @@
-CREATE TYPE "public"."sex_for_estimates" AS ENUM('female', 'male', 'not_specified');--> statement-breakpoint
-ALTER TABLE "athlete_profile" ADD COLUMN "sex_for_estimates" "sex_for_estimates" DEFAULT 'not_specified' NOT NULL;

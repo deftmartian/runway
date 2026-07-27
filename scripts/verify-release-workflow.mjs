@@ -37,17 +37,6 @@ assertExact('maintenance workflow permissions', maintenanceYaml.permissions, {
 if (checkYaml.on.workflow_call.inputs.full.default !== true) {
 	errors.push('callable check full input does not default to true');
 }
-requireText(
-	check,
-	"fetch-depth: ${{ matrix.task == 'deployment' && '0' || '1' }}",
-	'deployment checks fetch released migration provenance without expanding routine checkouts'
-);
-requireText(
-	check,
-	"RUNWAY_VERIFY_RELEASE_PROVENANCE: 'true'",
-	'deployment checks require released migration provenance'
-);
-
 const functionalJob = browserYaml.jobs.functional;
 const visualJob = browserYaml.jobs.visual;
 assertExact('browser jobs', Object.keys(browserYaml.jobs), ['functional', 'visual']);
@@ -83,7 +72,6 @@ assertExact('unprivileged image step inventory', imageVerifyYaml.steps.map(stepI
 	'Verify whole-project Compose lifecycle',
 	'Start image-backed production stack',
 	'Verify production runtime and PWA revision',
-	'Verify exact-image upgrades from all supported migration histories',
 	'Container diagnostics',
 	'Stop containers'
 ]);
@@ -103,7 +91,6 @@ assertExact('trusted image step inventory', imagePublishYaml.steps.map(stepIdent
 	'Verify whole-project Compose lifecycle',
 	'Start image-backed production stack',
 	'Verify production runtime and PWA revision',
-	'Verify exact-image upgrades from all supported migration histories',
 	'Verify exact ARM64 candidate runtime and migration contract',
 	'Container diagnostics',
 	'Stop containers',
@@ -263,13 +250,6 @@ for (const job of [imageVerifyYaml, imagePublishYaml]) {
 			'SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs'
 		],
 		[
-			'Verify exact-image upgrades from all supported migration histories',
-			[
-				'node scripts/verify-upgrade-migrations.mjs',
-				'node scripts/verify-rebased-migrations.mjs'
-			].join('\n')
-		],
-		[
 			'Stop containers',
 			'docker compose -f compose.yaml -f deploy/compose.production.yaml down --volumes'
 		]
@@ -288,11 +268,6 @@ for (const job of [imageVerifyYaml, imagePublishYaml]) {
 		'Compose lifecycle environment',
 		stepByName(job, 'Verify whole-project Compose lifecycle')?.env,
 		{ RUNWAY_COMPOSE_TEST_IMAGE: '${{ env.RUNWAY_IMAGE }}' }
-	);
-	assertExact(
-		'migration upgrade environment',
-		stepByName(job, 'Verify exact-image upgrades from all supported migration histories')?.env,
-		{ RUNWAY_MIGRATION_IMAGE: '${{ env.RUNWAY_IMAGE }}' }
 	);
 }
 assertRun(
@@ -595,7 +570,6 @@ for (const required of [
 	'RUNWAY_CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}',
 	'docker pull --platform linux/amd64 "$candidate_ref"',
 	'echo "RUNWAY_VERIFIED_CANDIDATE=$candidate_ref" >> "$GITHUB_ENV"',
-	'RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}',
 	'node scripts/verify-arm64-image.mjs "$RUNWAY_VERIFIED_CANDIDATE"',
 	'docker buildx imagetools create "${tags[@]}" "$RUNWAY_VERIFIED_CANDIDATE"'
 ]) {
@@ -612,7 +586,6 @@ for (const [name, job, steps] of [
 			'Verify whole-project Compose lifecycle',
 			'Start image-backed production stack',
 			'Verify production runtime and PWA revision',
-			'Verify exact-image upgrades from all supported migration histories',
 			'Stop containers'
 		]
 	],
@@ -626,7 +599,6 @@ for (const [name, job, steps] of [
 			'Verify whole-project Compose lifecycle',
 			'Start image-backed production stack',
 			'Verify production runtime and PWA revision',
-			'Verify exact-image upgrades from all supported migration histories',
 			'Verify exact ARM64 candidate runtime and migration contract',
 			'Stop containers',
 			'Promote exact verified candidate manifest'

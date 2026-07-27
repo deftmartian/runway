@@ -1,5 +1,5 @@
 CREATE TYPE "public"."activity_review_state" AS ENUM('review', 'accepted');--> statement-breakpoint
-CREATE TYPE "public"."activity_source" AS ENUM('manual', 'gpx');--> statement-breakpoint
+CREATE TYPE "public"."activity_source" AS ENUM('manual', 'gpx', 'health_connect');--> statement-breakpoint
 CREATE TYPE "public"."consequence_choice" AS ENUM('skip_continue', 'reduce_next');--> statement-breakpoint
 CREATE TYPE "public"."deviation_classification" AS ENUM('near_plan', 'short', 'over', 'skipped', 'unplanned', 'not_applicable');--> statement-breakpoint
 CREATE TYPE "public"."goal_kind" AS ENUM('race', 'foundation');--> statement-breakpoint
@@ -68,6 +68,49 @@ CREATE TABLE "activity_import" (
 	CONSTRAINT "activity_import_result_known" CHECK ("activity_import"."result" in ('imported'))
 );
 --> statement-breakpoint
+CREATE TABLE "android_device" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"label" text NOT NULL,
+	"token_hash" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"last_seen_at" timestamp with time zone,
+	"last_imported_at" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "android_device_id_user_unique" UNIQUE("id","user_id"),
+	CONSTRAINT "android_device_label_length" CHECK (length(trim("android_device"."label")) between 1 and 60),
+	CONSTRAINT "android_device_expiry_after_creation" CHECK ("android_device"."expires_at" > "android_device"."created_at")
+);
+--> statement-breakpoint
+CREATE TABLE "android_import_request" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"device_id" uuid NOT NULL,
+	"request_id" uuid NOT NULL,
+	"content_key" text NOT NULL,
+	"state" text DEFAULT 'processing' NOT NULL,
+	"result" text,
+	"reason" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"completed_at" timestamp with time zone,
+	CONSTRAINT "android_import_request_state_known" CHECK ("android_import_request"."state" in ('processing', 'completed')),
+	CONSTRAINT "android_import_request_result_known" CHECK ("android_import_request"."result" is null or "android_import_request"."result" in ('imported', 'duplicate', 'quarantined')),
+	CONSTRAINT "android_import_request_completion_consistent" CHECK (("android_import_request"."state" = 'processing' and "android_import_request"."result" is null and "android_import_request"."completed_at" is null) or ("android_import_request"."state" = 'completed' and "android_import_request"."result" is not null and "android_import_request"."completed_at" is not null))
+);
+--> statement-breakpoint
+CREATE TABLE "android_pairing_request" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"code_hash" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"consumed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "android_pairing_request_expiry_after_creation" CHECK ("android_pairing_request"."expires_at" > "android_pairing_request"."created_at")
+);
+--> statement-breakpoint
 CREATE TABLE "athlete_profile" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" text NOT NULL,
@@ -84,12 +127,14 @@ CREATE TABLE "athlete_profile" (
 	"preferred_long_run_day" integer,
 	"availability" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"activity_import_generation" integer DEFAULT 0 NOT NULL,
+	"browser_folder_generation" integer DEFAULT 0 NOT NULL,
 	"injury_flags" jsonb DEFAULT '{"recentInjury":false,"currentPain":false,"recurringPain":false,"medicalRestriction":false,"notes":""}'::jsonb NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "athlete_profile_age_range" CHECK ("athlete_profile"."age_years" is null or "athlete_profile"."age_years" between 18 and 100),
 	CONSTRAINT "athlete_profile_time_zone_nonempty" CHECK ("athlete_profile"."time_zone" is null or length(trim("athlete_profile"."time_zone")) between 1 and 255),
 	CONSTRAINT "athlete_profile_import_generation_nonnegative" CHECK ("athlete_profile"."activity_import_generation" >= 0),
+	CONSTRAINT "athlete_profile_browser_folder_generation_nonnegative" CHECK ("athlete_profile"."browser_folder_generation" >= 0),
 	CONSTRAINT "athlete_profile_route_data_mode_known" CHECK ("athlete_profile"."route_data_mode" in ('discard', 'private'))
 );
 --> statement-breakpoint
@@ -118,6 +163,62 @@ CREATE TABLE "goal" (
 	CONSTRAINT "goal_id_user_unique" UNIQUE("id","user_id"),
 	CONSTRAINT "goal_kind_distance_consistent" CHECK (("goal"."kind" = 'race' and "goal"."distance" is not null) or ("goal"."kind" = 'foundation' and "goal"."distance" is null)),
 	CONSTRAINT "goal_start_mode_consistent" CHECK (("goal"."start_mode" = 'foundation_only' and "goal"."kind" = 'foundation') or ("goal"."start_mode" <> 'foundation_only'))
+);
+--> statement-breakpoint
+CREATE TABLE "health_connect_connection" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"device_id" uuid NOT NULL,
+	"connected_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"last_synced_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "health_connect_connection_id_user_unique" UNIQUE("id","user_id")
+);
+--> statement-breakpoint
+CREATE TABLE "health_connect_external_activity" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"connection_id" uuid NOT NULL,
+	"external_key" text NOT NULL,
+	"origin_key" text NOT NULL,
+	"origin_label" text NOT NULL,
+	"fingerprint" text NOT NULL,
+	"activity_id" uuid,
+	"pending_action" text DEFAULT 'none' NOT NULL,
+	"pending_activity" jsonb,
+	"duplicate_candidate_activity_id" uuid,
+	"deleted_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "health_connect_external_activity_pending_action_known" CHECK ("health_connect_external_activity"."pending_action" in ('none', 'correction', 'source_delete')),
+	CONSTRAINT "health_connect_external_activity_pending_state_consistent" CHECK (("health_connect_external_activity"."pending_action" = 'none' and "health_connect_external_activity"."pending_activity" is null) or ("health_connect_external_activity"."pending_action" = 'correction' and "health_connect_external_activity"."pending_activity" is not null) or ("health_connect_external_activity"."pending_action" = 'source_delete' and "health_connect_external_activity"."pending_activity" is null))
+);
+--> statement-breakpoint
+CREATE TABLE "health_connect_request_receipt" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"device_id" uuid NOT NULL,
+	"request_id" uuid NOT NULL,
+	"payload_key" text NOT NULL,
+	"result" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "health_connect_tombstone" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"external_key" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "import_operation_lease" (
+	"user_id" text PRIMARY KEY NOT NULL,
+	"token" uuid NOT NULL,
+	"operation" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "import_source" (
@@ -347,7 +448,9 @@ CREATE TABLE "two_factor" (
 	"secret" text NOT NULL,
 	"backup_codes" text NOT NULL,
 	"user_id" text NOT NULL,
-	"verified" boolean DEFAULT true
+	"verified" boolean DEFAULT true,
+	"failed_verification_count" integer DEFAULT 0,
+	"locked_until" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "user" (
@@ -377,9 +480,23 @@ ALTER TABLE "activity" ADD CONSTRAINT "activity_consequence_plan_user_fk" FOREIG
 ALTER TABLE "activity_deletion_tombstone" ADD CONSTRAINT "activity_deletion_tombstone_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_import" ADD CONSTRAINT "activity_import_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_import" ADD CONSTRAINT "activity_import_activity_user_fk" FOREIGN KEY ("activity_id","user_id") REFERENCES "public"."activity"("id","user_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "android_device" ADD CONSTRAINT "android_device_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "android_import_request" ADD CONSTRAINT "android_import_request_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "android_import_request" ADD CONSTRAINT "android_import_request_device_user_fk" FOREIGN KEY ("device_id","user_id") REFERENCES "public"."android_device"("id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "android_pairing_request" ADD CONSTRAINT "android_pairing_request_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "athlete_profile" ADD CONSTRAINT "athlete_profile_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_event" ADD CONSTRAINT "audit_event_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "goal" ADD CONSTRAINT "goal_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_connection" ADD CONSTRAINT "health_connect_connection_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_connection" ADD CONSTRAINT "health_connect_connection_device_user_fk" FOREIGN KEY ("device_id","user_id") REFERENCES "public"."android_device"("id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_external_activity" ADD CONSTRAINT "health_connect_external_activity_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_external_activity" ADD CONSTRAINT "health_connect_external_activity_connection_user_fk" FOREIGN KEY ("connection_id","user_id") REFERENCES "public"."health_connect_connection"("id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_external_activity" ADD CONSTRAINT "health_connect_external_activity_activity_fk" FOREIGN KEY ("activity_id") REFERENCES "public"."activity"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_external_activity" ADD CONSTRAINT "health_connect_external_activity_duplicate_fk" FOREIGN KEY ("duplicate_candidate_activity_id") REFERENCES "public"."activity"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_request_receipt" ADD CONSTRAINT "health_connect_request_receipt_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_request_receipt" ADD CONSTRAINT "health_connect_request_receipt_device_user_fk" FOREIGN KEY ("device_id","user_id") REFERENCES "public"."android_device"("id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "health_connect_tombstone" ADD CONSTRAINT "health_connect_tombstone_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "import_operation_lease" ADD CONSTRAINT "import_operation_lease_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_source" ADD CONSTRAINT "import_source_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_source_item" ADD CONSTRAINT "import_source_item_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_source_item" ADD CONSTRAINT "import_source_item_source_user_fk" FOREIGN KEY ("source_id","user_id") REFERENCES "public"."import_source"("id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -411,6 +528,14 @@ CREATE INDEX "activity_deletion_tombstone_user_created_idx" ON "activity_deletio
 CREATE INDEX "activity_import_user_created_idx" ON "activity_import" USING btree ("user_id","created_at");--> statement-breakpoint
 CREATE INDEX "activity_import_activity_id_idx" ON "activity_import" USING btree ("activity_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "activity_import_user_hash_unique" ON "activity_import" USING btree ("user_id","file_hash");--> statement-breakpoint
+CREATE UNIQUE INDEX "android_device_token_hash_unique" ON "android_device" USING btree ("token_hash");--> statement-breakpoint
+CREATE INDEX "android_device_user_active_idx" ON "android_device" USING btree ("user_id","revoked_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "android_import_request_device_request_unique" ON "android_import_request" USING btree ("device_id","request_id");--> statement-breakpoint
+CREATE INDEX "android_import_request_user_created_idx" ON "android_import_request" USING btree ("user_id","created_at");--> statement-breakpoint
+CREATE INDEX "android_import_request_device_updated_idx" ON "android_import_request" USING btree ("device_id","updated_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "android_pairing_request_code_hash_unique" ON "android_pairing_request" USING btree ("code_hash");--> statement-breakpoint
+CREATE INDEX "android_pairing_request_user_created_idx" ON "android_pairing_request" USING btree ("user_id","created_at");--> statement-breakpoint
+CREATE INDEX "android_pairing_request_expires_idx" ON "android_pairing_request" USING btree ("expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "athlete_profile_user_id_unique" ON "athlete_profile" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "athlete_profile_user_id_idx" ON "athlete_profile" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "athlete_profile_updated_at_idx" ON "athlete_profile" USING btree ("updated_at");--> statement-breakpoint
@@ -420,6 +545,13 @@ CREATE INDEX "audit_event_type_idx" ON "audit_event" USING btree ("event_type");
 CREATE INDEX "goal_user_id_idx" ON "goal" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "goal_user_target_date_idx" ON "goal" USING btree ("user_id","target_date");--> statement-breakpoint
 CREATE UNIQUE INDEX "goal_current_user_unique" ON "goal" USING btree ("user_id") WHERE "goal"."state" in ('pending', 'active');--> statement-breakpoint
+CREATE UNIQUE INDEX "health_connect_connection_device_unique" ON "health_connect_connection" USING btree ("device_id");--> statement-breakpoint
+CREATE INDEX "health_connect_connection_user_idx" ON "health_connect_connection" USING btree ("user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "health_connect_external_activity_connection_key_unique" ON "health_connect_external_activity" USING btree ("connection_id","external_key");--> statement-breakpoint
+CREATE INDEX "health_connect_external_activity_user_fingerprint_idx" ON "health_connect_external_activity" USING btree ("user_id","fingerprint");--> statement-breakpoint
+CREATE UNIQUE INDEX "health_connect_request_receipt_device_request_unique" ON "health_connect_request_receipt" USING btree ("device_id","request_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "health_connect_tombstone_user_key_unique" ON "health_connect_tombstone" USING btree ("user_id","external_key");--> statement-breakpoint
+CREATE INDEX "import_operation_lease_expires_idx" ON "import_operation_lease" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "import_source_user_enabled_idx" ON "import_source" USING btree ("user_id","enabled");--> statement-breakpoint
 CREATE INDEX "import_source_enabled_checked_idx" ON "import_source" USING btree ("enabled","last_checked_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "import_source_user_share_unique" ON "import_source" USING btree ("user_id","share_host","share_token_key");--> statement-breakpoint

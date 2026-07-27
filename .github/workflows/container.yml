@@ -146,12 +146,6 @@ jobs:
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
       - name: Verify production runtime and PWA revision
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
-      - name: Verify exact-image upgrades from all supported migration histories
-        env:
-          RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}
-        run: |
-          node scripts/verify-upgrade-migrations.mjs
-          node scripts/verify-rebased-migrations.mjs
       - name: Container diagnostics
         if: failure()
         run: |
@@ -264,12 +258,6 @@ jobs:
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
       - name: Verify production runtime and PWA revision
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
-      - name: Verify exact-image upgrades from all supported migration histories
-        env:
-          RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}
-        run: |
-          node scripts/verify-upgrade-migrations.mjs
-          node scripts/verify-rebased-migrations.mjs
       - name: Verify exact ARM64 candidate runtime and migration contract
         env:
           DATABASE_URL: postgres://runway:${{ env.POSTGRES_PASSWORD }}@127.0.0.1:5432/runway

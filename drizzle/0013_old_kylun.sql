@@ -1,2 +1,0 @@
-CREATE INDEX "activity_import_activity_id_idx" ON "activity_import" USING btree ("activity_id");--> statement-breakpoint
-CREATE INDEX "workout_user_plan_date_idx" ON "workout" USING btree ("user_id","plan_id","scheduled_date");
