@@ -2,13 +2,14 @@
 
 The Android build is a full way to use runway, not a secondary companion. On first launch, the normal
 universal build asks for the runner's self-hosted server, verifies its narrow Android compatibility
-contract, and opens the complete PWA in a browser Custom Tab with the origin visible. Native Android
+contract, and opens the complete PWA in a browser-hosted Custom Tab. Native Android
 code exists only where the browser capability model is insufficient: durable Storage Access Framework
 grants, background reconciliation, operating-system shares, optional Health Connect reads, server
 selection, and a small folder-settings surface.
 
 The source lives in [`android/`](../android/). AndroidX Browser opens the selected origin in a Custom
-Tab with visible origin controls, never an embedded WebView.
+Tab, never an embedded WebView. The browser owns its controls: runway asks it to collapse the toolbar
+while scrolling down, but the controls remain available when the runner scrolls back or invokes them.
 
 ## Server, package, and trust boundary
 
@@ -45,8 +46,8 @@ identity for the deftmartian-signed distribution. The build accepts
 `-PrunwayApplicationId=…` only for an independently owned distribution, whose operator must keep its
 id and signing certificate stable. Passing the removed `-PrunwayOrigin` property is a build error:
 there is no origin-bound release shape. The web launcher is not externally exported, selected
-servers stay in origin-visible browser UI, and incoming URLs cannot silently replace the configured
-origin. These are security properties and must not be replaced by WebView.
+servers stay in browser-isolated Custom Tab UI, and incoming URLs cannot silently replace the
+configured origin. These are security properties and must not be replaced by WebView.
 
 ## One product, two capability surfaces
 

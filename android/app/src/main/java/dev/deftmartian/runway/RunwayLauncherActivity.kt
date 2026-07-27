@@ -47,8 +47,8 @@ class RunwayLauncherActivity : ComponentActivity() {
         val customTab = CustomTabsIntent.Builder()
             .setDefaultColorSchemeParams(lightColors)
             .setColorSchemeParams(CustomTabsIntent.COLOR_SCHEME_DARK, darkColors)
-            .setShowTitle(true)
-            .setUrlBarHidingEnabled(false)
+            .setShowTitle(false)
+            .setUrlBarHidingEnabled(true)
             .build()
         try {
             customTab.launchUrl(this, url)

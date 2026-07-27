@@ -7,8 +7,8 @@ server selection, persisted Gadgetbridge folder access, scheduled reconciliation
 optional running-only Health Connect import.
 
 It is not a separate companion product and it does not reimplement the planning UI. It also does not
-use a generic WebView. Every build keeps browser origin controls visible and lets the runner change
-servers from the launcher shortcut.
+use a generic WebView. Every build keeps browser controls available, allows them to collapse while
+scrolling, and lets the runner change servers from the launcher shortcut.
 
 | First launch                                                        | Native import setup                                                         |
 | :------------------------------------------------------------------ | :-------------------------------------------------------------------------- |

@@ -67,11 +67,11 @@ distance, duration, and the individual runs in the resulting plan.
 
 ## Web, PWA, and Android
 
-| Surface       | What you get                                                                                                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser       | The complete product in any modern desktop or mobile browser, with manual, file, Nextcloud, and foreground-approved-folder imports.                                                   |
-| Installed PWA | The same product with a home-screen launch, offline shell, OS sharing, and focus-time folder checks. Browser folder permission remains browser-managed.                               |
-| Android app   | The full web product opened in an origin-visible Custom Tab, plus native server selection, durable folder access, background imports, GPX sharing, and optional Health Connect reads. |
+| Surface       | What you get                                                                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser       | The complete product in any modern desktop or mobile browser, with manual, file, Nextcloud, and foreground-approved-folder imports.                                           |
+| Installed PWA | The same product with a home-screen launch, offline shell, OS sharing, and focus-time folder checks. Browser folder permission remains browser-managed.                       |
+| Android app   | The full web product in a browser-hosted Custom Tab, plus native server selection, durable folder access, background imports, GPX sharing, and optional Health Connect reads. |
 
 The Android package is deliberately **not an embedded WebView or a second, native Compose
 frontend**. The web app remains the product UI; the native layer handles capabilities the PWA

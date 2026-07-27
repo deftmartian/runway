@@ -405,10 +405,11 @@ limit, and local capability deletion on sign-out and privacy deletion.
 
 For a complete installed Android experience with reliable access after the browser process is stopped,
 use the Android design in [ANDROID.md](ANDROID.md). The normal APK lets the runner choose this public
-HTTPS origin and verifies `/api/android/instance` before opening sign in. It uses an origin-visible
-Custom Tab; there is no instance-bound build mode. Native folder access, origin-scoped
-device pairing, bounded background upload, review-only import, and optional running-only Health
-Connect reads are present. Health Connect reads explicit exercise/metric permissions, can use a
+HTTPS origin and verifies `/api/android/instance` before opening sign in. It uses a browser-hosted
+Custom Tab whose controls may collapse while scrolling; there is no instance-bound build mode. Native
+folder access, origin-scoped device pairing, bounded background upload, review-only import, and
+optional running-only Health Connect reads are present. Health Connect reads explicit
+exercise/metric permissions, can use a
 separately approved background read, asks per route while foregrounded, never writes to Health
 Connect, and applies this server's route-data privacy mode before retaining a route trace. External distribution
 still depends on the signing, device-matrix, accessibility, upgrade, and release-evidence gates

@@ -304,7 +304,8 @@ for (const required of [
 	'CustomTabsIntent.Builder()',
 	'InstanceOriginPolicy.belongsTo',
 	'ReconciliationScheduler.runOnce(this)',
-	'setUrlBarHidingEnabled(false)',
+	'setShowTitle(false)',
+	'setUrlBarHidingEnabled(true)',
 	'ActivityNotFoundException'
 ]) {
 	if (!launcher.includes(required))

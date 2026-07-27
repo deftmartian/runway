@@ -90,8 +90,9 @@ a completed disconnect.
 Before saving a server, Android calls public `GET /api/android/instance` with the versioned client
 header. The bounded response exposes only runway identity, the supported Android API range, and the
 release version. Android follows no redirect and requires valid HTTPS outside debug-only private
-network use. Every build keeps browser origin controls visible and supports an explicitly selected
-server; the removed origin-bound build property fails configuration.
+network use. Every build uses browser-hosted Custom Tab UI with controls that remain available but may
+collapse while scrolling, and supports an explicitly selected server; the removed origin-bound build
+property fails configuration.
 
 Production Compose keeps the schema-owner URL in the one-shot migrator and gives web and worker a
 separate runtime role limited to table DML, sequence use, and migration-ledger reads. The runtime

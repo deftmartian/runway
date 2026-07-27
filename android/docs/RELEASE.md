@@ -15,8 +15,9 @@ must remain stable. Android update identity is the application id plus signing k
 changing the id breaks in-place upgrades.
 
 Every release uses in-app server selection. The runner chooses a compatible HTTPS runway server on
-first launch, and the app opens it in a Custom Tab with browser origin controls visible. There is no
-instance-bound or TWA build. Passing `-PrunwayOrigin` is an intentional build error.
+first launch, and the app opens it in a browser-hosted Custom Tab whose controls may collapse while
+scrolling. There is no instance-bound or TWA build. Passing `-PrunwayOrigin` is an intentional build
+error.
 
 Keep the APK signing key outside this repository, encrypted, access-controlled, and backed up. The
 personal F-Droid repository index key is separate from the APK signing key; restrict and test both.

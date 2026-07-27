@@ -173,8 +173,9 @@ one manual, share-target, browser-folder, or Nextcloud import operation per user
 
 ### Android app
 
-The normal Android app verifies a user-selected runway server and launches the complete PWA in an
-origin-visible browser Custom Tab rather than WebView. There is no origin-bound build variant. Native code owns the
+The normal Android app verifies a user-selected runway server and launches the complete PWA in a
+browser-hosted Custom Tab rather than WebView. Its controls can collapse while scrolling but remain
+available to the runner. There is no origin-bound build variant. Native code owns the
 persisted Storage Access Framework read grant, bounded shares, folder settings, inexact WorkManager
 reconciliation, and optional Health Connect ingestion. Health Connect availability comes from its SDK
 status rather than Play/ROM heuristics. It reads only running and treadmill-running exercise sessions,
