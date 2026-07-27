@@ -3,7 +3,7 @@ import migrationIntegrity from '../../../../drizzle/migration-integrity.json';
 import { ledgerIsFinal } from './readiness';
 
 describe('migration readiness integrity', () => {
-	it('accepts the canonical and forward-compatible v0.1.1 ledgers', () => {
+	it('accepts every exact released final ledger', () => {
 		const compatibilityMigrationIndex = migrationIntegrity.canonical.findIndex(
 			(entry) => entry.tag === '0022_forward_compatible_upgrade'
 		);
@@ -11,9 +11,21 @@ describe('migration readiness integrity', () => {
 			throw new Error('Expected a compatibility migration fixture.');
 		}
 		const forwardMigrations = migrationIntegrity.canonical.slice(compatibilityMigrationIndex);
+		const releasedV001ForwardMigrationIndex = migrationIntegrity.canonical.findIndex(
+			(entry) => entry.tag === migrationIntegrity.releasedV001.forwardFrom
+		);
+		if (releasedV001ForwardMigrationIndex !== migrationIntegrity.releasedV001.entries.length) {
+			throw new Error('Expected a released v0.0.1 forward migration fixture.');
+		}
 		const latestMigration = forwardMigrations.at(-1);
 		if (!latestMigration) throw new Error('Expected a forward migration fixture.');
 		expect(ledgerIsFinal(migrationIntegrity.canonical)).toBe(true);
+		expect(
+			ledgerIsFinal([
+				...migrationIntegrity.releasedV001.entries,
+				...migrationIntegrity.canonical.slice(releasedV001ForwardMigrationIndex)
+			])
+		).toBe(true);
 		expect(ledgerIsFinal([...migrationIntegrity.rebasedV011, ...forwardMigrations])).toBe(true);
 		expect(ledgerIsFinal([...migrationIntegrity.rebasedV011, latestMigration])).toBe(false);
 	});
@@ -38,6 +50,14 @@ describe('migration readiness integrity', () => {
 					index === 0 ? { ...entry, hash: 'changed' } : entry
 				)
 			)
+		).toBe(false);
+		expect(
+			ledgerIsFinal([
+				...migrationIntegrity.releasedV001.entries.map((entry, index) =>
+					index === 3 ? { ...entry, hash: migrationIntegrity.canonical[index]?.hash ?? '' } : entry
+				),
+				...migrationIntegrity.canonical.slice(migrationIntegrity.releasedV001.entries.length)
+			])
 		).toBe(false);
 	});
 });

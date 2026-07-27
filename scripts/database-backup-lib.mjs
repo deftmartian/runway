@@ -14,6 +14,35 @@ import { pipeline } from 'node:stream/promises';
  */
 
 /**
+ * @typedef {object} MigrationEntry
+ * @property {string} tag
+ * @property {string} createdAt
+ * @property {string} hash
+ */
+
+/**
+ * @typedef {object} MigrationIntegrity
+ * @property {MigrationEntry[]} canonical
+ * @property {{
+ *   tag: string,
+ *   commit: string,
+ *   forwardFrom: string,
+ *   entries: MigrationEntry[]
+ * }} releasedV001
+ * @property {MigrationEntry[]} rebasedV011
+ * @property {string[]} requiredTables
+ * @property {string[]} requiredColumns
+ * @property {string[]} requiredConstraints
+ * @property {string[]} requiredIndexes
+ */
+
+/**
+ * @typedef {object} LedgerRow
+ * @property {string} hash
+ * @property {string} createdAt
+ */
+
+/**
  * @typedef {object} PostgresToolOptions
  * @property {string} [inputPath]
  * @property {import('node:stream').Writable} [outputStream]
@@ -28,6 +57,29 @@ const supportedSslModes = new Set([
 	'verify-ca',
 	'verify-full'
 ]);
+const requiredSupportedPredecessorTables = [
+	'account',
+	'activity',
+	'activity_deletion_tombstone',
+	'activity_import',
+	'athlete_profile',
+	'audit_event',
+	'goal',
+	'import_source',
+	'import_source_item',
+	'passkey',
+	'password_reset_rate_limit',
+	'password_reset_token',
+	'plan_adjustment',
+	'session',
+	'training_plan',
+	'training_week',
+	'two_factor',
+	'user',
+	'verification',
+	'workout',
+	'workout_feedback'
+];
 
 /**
  * @param {string} input
@@ -188,55 +240,187 @@ export async function inspectBackupArchive(connection, inputPath) {
 	}
 }
 
-/** @param {PostgresConnection} connection */
-export async function verifyRestoredDatabase(connection) {
-	/** @type {{
-	 * canonical: Array<{ tag: string, createdAt: string, hash: string }>,
-	 * rebasedV011: Array<{ tag: string, createdAt: string, hash: string }>,
-	 * requiredTables: string[],
-	 * requiredColumns: string[],
-	 * requiredConstraints: string[],
-	 * requiredIndexes: string[]
-	 * }} */
+/**
+ * @param {PostgresConnection} connection
+ * @param {{ allowSupportedPredecessor?: boolean }} [options]
+ * @returns {Promise<'current' | 'supported-predecessor'>}
+ */
+export async function verifyRestoredDatabase(
+	connection,
+	{ allowSupportedPredecessor = false } = {}
+) {
+	/** @type {MigrationIntegrity} */
 	const integrity = JSON.parse(
 		await readFile(new URL('../drizzle/migration-integrity.json', import.meta.url), 'utf8')
 	);
+	const ledgerOutput = await runPostgresTool(
+		connection,
+		[
+			'psql',
+			'--no-psqlrc',
+			'--tuples-only',
+			'--no-align',
+			'--set',
+			'ON_ERROR_STOP=1',
+			'--command',
+			`select coalesce(
+				json_agg(
+					json_build_object('hash', hash, 'createdAt', created_at::text)
+					order by created_at, id
+				),
+				'[]'::json
+			)::text from drizzle.__drizzle_migrations;`
+		],
+		{ captureOutput: true }
+	);
+	let ledger;
+	try {
+		ledger = JSON.parse(ledgerOutput.trim());
+	} catch {
+		throw new Error('The restored database migration ledger could not be read safely.');
+	}
+	const state = restoredLedgerState(ledger, integrity);
+	if (state === 'unsupported') {
+		throw new Error('The restored database does not have a supported runway migration ledger.');
+	}
+	if (state === 'supported-predecessor') {
+		if (!allowSupportedPredecessor) {
+			throw new Error(
+				'The restored database is an exact supported predecessor and must be migrated before this runway version can use it.'
+			);
+		}
+		if (!(await schemaContains(connection, { tables: requiredSupportedPredecessorTables }))) {
+			throw new Error('The restored predecessor ledger is valid but required tables are missing.');
+		}
+		return state;
+	}
+	if (
+		!(await schemaContains(connection, {
+			tables: integrity.requiredTables,
+			columns: integrity.requiredColumns,
+			constraints: integrity.requiredConstraints,
+			indexes: integrity.requiredIndexes
+		}))
+	) {
+		throw new Error(
+			'The restored database ledger is current but required schema objects are missing.'
+		);
+	}
+	return state;
+}
+
+/**
+ * @param {LedgerRow[]} rows
+ * @param {MigrationIntegrity} integrity
+ * @returns {'current' | 'supported-predecessor' | 'unsupported'}
+ */
+export function restoredLedgerState(rows, integrity) {
+	const { finalLedgers, supportedPredecessorLedgers } = restoreLineages(integrity);
+	if (finalLedgers.some((expected) => sequenceMatches(rows, expected))) return 'current';
+	if (supportedPredecessorLedgers.some((expected) => sequenceMatches(rows, expected))) {
+		return 'supported-predecessor';
+	}
+	return 'unsupported';
+}
+
+/**
+ * @param {MigrationIntegrity} integrity
+ * @returns {{ finalLedgers: MigrationEntry[][], supportedPredecessorLedgers: MigrationEntry[][] }}
+ */
+function restoreLineages(integrity) {
 	const compatibilityMigrationIndex = integrity.canonical.findIndex(
 		(entry) => entry.tag === '0022_forward_compatible_upgrade'
 	);
 	if (compatibilityMigrationIndex < 0) {
 		throw new Error('The migration integrity manifest is missing the compatibility migration.');
 	}
+	const releasedV001ForwardMigrationIndex = integrity.canonical.findIndex(
+		(entry) => entry.tag === integrity.releasedV001.forwardFrom
+	);
+	if (releasedV001ForwardMigrationIndex !== integrity.releasedV001.entries.length) {
+		throw new Error('The migration integrity manifest has an invalid v0.0.1 forward cutover.');
+	}
 	const rebasedFinal = [
 		...integrity.rebasedV011,
 		...integrity.canonical.slice(compatibilityMigrationIndex)
 	];
-	const supportedLedgers = [integrity.canonical, rebasedFinal];
-	const ledgerChecks = supportedLedgers.map((entries) => {
-		const expected = JSON.stringify(entries.map((entry) => [entry.createdAt, entry.hash]));
-		return `coalesce((select jsonb_agg(jsonb_build_array(created_at::text, hash) order by created_at, id) from drizzle.__drizzle_migrations), '[]'::jsonb) = '${expected}'::jsonb`;
+	const releasedV001Final = [
+		...integrity.releasedV001.entries,
+		...integrity.canonical.slice(releasedV001ForwardMigrationIndex)
+	];
+	const canonicalPredecessors = [
+		'0021_private_activity_traces',
+		'0022_forward_compatible_upgrade'
+	].map((tag) => {
+		const index = integrity.canonical.findIndex((entry) => entry.tag === tag);
+		if (index < 0) throw new Error(`The migration integrity manifest is missing ${tag}.`);
+		return integrity.canonical.slice(0, index + 1);
 	});
-	const tableChecks = integrity.requiredTables.map(
-		(name) => `to_regclass('public."${name}"') is not null`
+	return {
+		finalLedgers: [integrity.canonical, releasedV001Final, rebasedFinal],
+		supportedPredecessorLedgers: [
+			...canonicalPredecessors,
+			...prefixesFrom(integrity.releasedV001.entries, releasedV001Final),
+			...prefixesFrom(integrity.rebasedV011, rebasedFinal)
+		]
+	};
+}
+
+/**
+ * @param {MigrationEntry[]} releasedEntries
+ * @param {MigrationEntry[]} finalEntries
+ * @returns {MigrationEntry[][]}
+ */
+function prefixesFrom(releasedEntries, finalEntries) {
+	/** @type {MigrationEntry[][]} */
+	const prefixes = [];
+	for (let length = releasedEntries.length; length < finalEntries.length; length += 1) {
+		prefixes.push(finalEntries.slice(0, length));
+	}
+	return prefixes;
+}
+
+/**
+ * @param {LedgerRow[]} rows
+ * @param {MigrationEntry[]} expected
+ */
+function sequenceMatches(rows, expected) {
+	return (
+		rows.length === expected.length &&
+		rows.every(
+			(row, index) =>
+				row?.hash === expected[index]?.hash && row?.createdAt === expected[index]?.createdAt
+		)
 	);
-	const columnChecks = integrity.requiredColumns.map((qualifiedName) => {
+}
+
+/**
+ * @param {PostgresConnection} connection
+ * @param {{
+ *   tables?: string[],
+ *   columns?: string[],
+ *   constraints?: string[],
+ *   indexes?: string[]
+ * }} requirements
+ */
+async function schemaContains(
+	connection,
+	{ tables = [], columns = [], constraints = [], indexes = [] } = {}
+) {
+	const tableChecks = tables.map((name) => `to_regclass('public."${name}"') is not null`);
+	const columnChecks = columns.map((qualifiedName) => {
 		const [tableName, columnName] = qualifiedName.split('.');
 		return `exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = '${tableName}' and column_name = '${columnName}')`;
 	});
-	const constraintChecks = integrity.requiredConstraints.map(
+	const constraintChecks = constraints.map(
 		(name) =>
 			`exists (select 1 from information_schema.table_constraints where constraint_schema = 'public' and constraint_name = '${name}')`
 	);
-	const indexChecks = integrity.requiredIndexes.map(
-		(name) => `to_regclass('public."${name}"') is not null`
-	);
+	const indexChecks = indexes.map((name) => `to_regclass('public."${name}"') is not null`);
+	const checks = [...tableChecks, ...columnChecks, ...constraintChecks, ...indexChecks];
 	const query = [
 		'select case when',
-		`(${ledgerChecks.join(' or ')})`,
-		...tableChecks.map((check) => `and ${check}`),
-		...columnChecks.map((check) => `and ${check}`),
-		...constraintChecks.map((check) => `and ${check}`),
-		...indexChecks.map((check) => `and ${check}`),
+		checks.length > 0 ? checks.join(' and ') : 'true',
 		"then 'ready' else 'not-ready' end;"
 	].join(' ');
 	const output = await runPostgresTool(
@@ -253,9 +437,7 @@ export async function verifyRestoredDatabase(connection) {
 		],
 		{ captureOutput: true }
 	);
-	if (output.trim() !== 'ready') {
-		throw new Error('The restored database does not match this runway migration journal.');
-	}
+	return output.trim() === 'ready';
 }
 
 /** @param {PostgresConnection} connection */

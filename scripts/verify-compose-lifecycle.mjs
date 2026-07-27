@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from 'postgres';
+import {
+	assertFinalMigrationState,
+	migrationIntegrity,
+	releasedV001Final
+} from './migration-state.mjs';
 
 const sourceImage = process.env['RUNWAY_COMPOSE_TEST_IMAGE'] ?? 'runway:latest';
 const suffix = `${process.pid}-${randomBytes(4).toString('hex')}`;
@@ -8,6 +16,8 @@ const project = `runway-lifecycle-${suffix}`;
 const beforeImage = `runway-compose-lifecycle:${suffix}-before`;
 const afterImage = `runway-compose-lifecycle:${suffix}-after`;
 const port = await availablePort();
+let databasePort = await availablePort();
+while (databasePort === port) databasePort = await availablePort();
 const databasePassword = randomBytes(24).toString('hex');
 const runtimeDatabasePassword = randomBytes(24).toString('hex');
 const authSecret = `runway-secret-v1_${randomBytes(32).toString('base64url')}`;
@@ -18,7 +28,9 @@ const composeArguments = [
 	'-f',
 	'compose.yaml',
 	'-f',
-	'deploy/compose.production.yaml'
+	'deploy/compose.production.yaml',
+	'-f',
+	'deploy/compose.lifecycle-test.yaml'
 ];
 const baseEnvironment = {
 	...process.env,
@@ -28,7 +40,8 @@ const baseEnvironment = {
 	BETTER_AUTH_SECRET: authSecret,
 	ORIGIN: 'https://runway-compose-lifecycle.example.test',
 	PUBLIC_APP_ORIGIN: 'https://runway-compose-lifecycle.example.test',
-	RUNWAY_PORT: String(port)
+	RUNWAY_PORT: String(port),
+	RUNWAY_TEST_DATABASE_PORT: String(databasePort)
 };
 let activeEnvironment = { ...baseEnvironment, RUNWAY_IMAGE: beforeImage };
 
@@ -57,7 +70,26 @@ try {
 	await assertReady(port);
 	assertStable(updated, rerun);
 
-	console.log('Whole-project Compose deployment, image update, and idempotent redeploy verified.');
+	console.log('Verifying a whole-project upgrade from the exact released v0.0.1 database.');
+	runCompose(['down', '--volumes', '--remove-orphans'], activeEnvironment);
+	runCompose(['up', '-d', '--wait', 'db'], activeEnvironment);
+	await seedReleasedV001Database(activeEnvironment);
+	provisionRuntimeDatabaseRole(activeEnvironment, runtimeDatabasePassword);
+	runCompose(['up', '-d', '--wait'], activeEnvironment);
+	const releasedUpgrade = inspectProject(activeEnvironment, afterImage);
+	await assertReady(port);
+	await assertReleasedV001Upgrade(activeEnvironment);
+
+	console.log('Verifying an idempotent v0.0.1 upgrade redeploy.');
+	runCompose(['up', '-d', '--wait'], activeEnvironment);
+	const releasedRerun = inspectProject(activeEnvironment, afterImage);
+	await assertReady(port);
+	await assertReleasedV001Upgrade(activeEnvironment);
+	assertStable(releasedUpgrade, releasedRerun);
+
+	console.log(
+		'Fresh deployment, image update, released v0.0.1 upgrade, and idempotent Compose redeploy verified.'
+	);
 } catch (error) {
 	console.error(`Compose lifecycle verification failed: ${error.message}`);
 	diagnose();
@@ -175,6 +207,76 @@ ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA drizzle
 		true,
 		sql
 	);
+}
+
+async function seedReleasedV001Database(environment) {
+	const databaseUrl = projectDatabaseUrl(environment);
+	const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+	try {
+		await migrate(drizzle(sql), {
+			migrationsFolder: 'tests/fixtures/migrations/v0.0.1/drizzle'
+		});
+		await assertLedger(sql, migrationIntegrity.releasedV001.entries, 'released v0.0.1 seed');
+		await sql`
+			insert into "user" ("id", "name", "email", "email_verified", "created_at", "updated_at")
+			values (
+				'compose-v001-upgrade-probe',
+				'Compose upgrade probe',
+				'compose-v001-probe@example.invalid',
+				false,
+				now(),
+				now()
+			)
+		`;
+	} finally {
+		await sql.end();
+	}
+}
+
+async function assertReleasedV001Upgrade(environment) {
+	const databaseUrl = projectDatabaseUrl(environment);
+	const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+	try {
+		await assertLedger(sql, releasedV001Final, 'released v0.0.1 upgrade');
+		await assertFinalMigrationState(sql);
+		const [probe] = await sql`
+			select "id", "email"
+			from "user"
+			where "id" = 'compose-v001-upgrade-probe'
+		`;
+		if (
+			probe?.id !== 'compose-v001-upgrade-probe' ||
+			probe.email !== 'compose-v001-probe@example.invalid'
+		) {
+			throw new Error('The released v0.0.1 Compose upgrade did not preserve existing data.');
+		}
+	} finally {
+		await sql.end();
+	}
+}
+
+async function assertLedger(sql, expectedEntries, label) {
+	const rows = await sql`
+		select "hash", "created_at"::text as "createdAt"
+		from drizzle.__drizzle_migrations
+		order by "created_at", "id"
+	`;
+	if (
+		rows.length !== expectedEntries.length ||
+		rows.some(
+			(row, index) =>
+				row.hash !== expectedEntries[index]?.hash ||
+				row.createdAt !== expectedEntries[index]?.createdAt
+		)
+	) {
+		throw new Error(`${label} does not have its exact ordered migration ledger.`);
+	}
+}
+
+function projectDatabaseUrl(environment) {
+	const configuredPort = environment['RUNWAY_TEST_DATABASE_PORT'];
+	if (!configuredPort) throw new Error('Lifecycle database test port is not configured.');
+	return `postgres://runway:${encodeURIComponent(databasePassword)}@127.0.0.1:${configuredPort}/runway`;
 }
 
 function runCompose(arguments_, environment, capture = false, input) {

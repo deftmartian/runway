@@ -1,0 +1,3 @@
+Restores upgrades for databases created by early runway releases. Existing training and activity
+data is preserved while the latest import support is added, and startup verifies the complete
+upgrade before reporting ready.

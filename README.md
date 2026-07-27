@@ -162,8 +162,9 @@ corepack pnpm verify:full
 
 It runs independent web, browser, data/deployment, Android, and container-image groups in parallel.
 The host-network-mutating Compose lifecycle check follows the browser group so Chromium cannot lose
-in-flight module requests, then it checks the completed production build. Focused commands remain
-available for iteration:
+in-flight module requests. That lifecycle includes a fresh deployment, an image change, the exact
+v0.0.1 database upgrade, and idempotent redeploys before the completed production build is checked.
+Focused commands remain available for iteration:
 
 ```sh
 corepack pnpm check

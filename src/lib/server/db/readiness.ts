@@ -11,9 +11,19 @@ const compatibilityMigrationIndex = migrationIntegrity.canonical.findIndex(
 if (compatibilityMigrationIndex < 0) {
 	throw new Error('Migration integrity manifest is missing the v0.1.1 compatibility migration.');
 }
+const releasedV001ForwardMigrationIndex = migrationIntegrity.canonical.findIndex(
+	(entry) => entry.tag === migrationIntegrity.releasedV001.forwardFrom
+);
+if (releasedV001ForwardMigrationIndex !== migrationIntegrity.releasedV001.entries.length) {
+	throw new Error('Migration integrity manifest has an invalid v0.0.1 forward cutover.');
+}
 
 const supportedFinalLedgers = [
 	migrationIntegrity.canonical,
+	[
+		...migrationIntegrity.releasedV001.entries,
+		...migrationIntegrity.canonical.slice(releasedV001ForwardMigrationIndex)
+	],
 	[
 		...migrationIntegrity.rebasedV011,
 		...migrationIntegrity.canonical.slice(compatibilityMigrationIndex)

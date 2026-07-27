@@ -1,0 +1,7 @@
+# Test-only loopback access lets the host seed and inspect historical database
+# fixtures without relying on Linux bridge addresses. Production deployments do
+# not include this overlay.
+services:
+  db:
+    ports:
+      - 127.0.0.1:${RUNWAY_TEST_DATABASE_PORT:?Set RUNWAY_TEST_DATABASE_PORT}:5432

@@ -557,14 +557,22 @@ changing the running stack:
 docker pull "${RUNWAY_IMAGE}"
 ```
 
-The migration journal is forward-only. v0.1.3 restored the original 22-entry lineage shipped before
-v0.1.1 and added `0022_forward_compatible_upgrade`; it upgrades either that lineage or the temporary
-three-entry v0.1.1 rebased baseline without replaying existing schema objects. Later migrations,
-including the two-factor lockout state in `0023_two_factor_attempt_lockout`, continue from both
-supported histories. Do not delete tables or edit `drizzle.__drizzle_migrations` to work around an
-upgrade failure. Take a database backup, deploy the newer image, and let the bundled migration
-service apply every pending forward migration. `verify:migrations` exercises a fresh database, both
-released canonical predecessors, and the rebased v0.1.1 history with existing data probes:
+The migration journal is forward-only, and released ledgers remain immutable even when the SQL
+difference is only a trailing newline. The migration runner recognizes three exact histories:
+
+- the original 21-entry v0.0.1 ledger followed by current migrations from
+  `0021_private_activity_traces`;
+- the restored canonical ledger; and
+- the temporary three-entry v0.1.1 rebased ledger followed by
+  `0022_forward_compatible_upgrade`.
+
+Each history is matched by its complete ordered timestamp and SHA-256 sequence. Mixed hashes,
+missing entries, reordered entries, and skipped forward migrations are rejected. Do not delete
+tables or edit `drizzle.__drizzle_migrations` to work around an upgrade failure. Take a database
+backup, deploy the newer image, and let the bundled migration service apply every pending forward
+migration. `verify:migrations` builds a database from the actual v0.0.1 migration files, preserves
+representative existing data, verifies all final schema invariants, runs the migration entry point
+twice, and also exercises fresh, restored-canonical, and rebased-v0.1.1 histories:
 
 ```sh
 corepack pnpm verify:migrations
@@ -606,15 +614,19 @@ A partial update has a recognizable failure mode: Calendar can still load while 
 returns an error because those routes read newer import tables. Treat that as a deployment-boundary
 failure, not a healthy application with an isolated page bug. Check `/health/ready`; a `503` means
 the stack is not ready. Inspect the `migrate` log and use Project → Redeploy so the selected image
-runs its own migrations before web and worker start. If migration completed but the log reports
+runs its own migrations before web and worker start. Version 0.5.2 rejects the exact original v0.0.1
+ledger before applying its forward migrations; upgrade that installation with 0.5.3 or later rather
+than modifying the ledger. If migration completed but the log reports
 `permission denied` for a new table, reconnect as the schema owner and repeat the table, sequence,
 and default-privilege grants in [Database Roles](#database-roles), then redeploy. Do not grant schema
 ownership to the runtime login or edit the migration ledger. Settings may keep its other controls
 available when only the optional Health Connect status cannot be read, but that fallback does not
 turn a failing readiness check into a successful deployment.
 
-Repository verification exercises a fresh project, a changed-image project redeploy, and a
-same-image idempotent rerun with separate schema-owner and runtime database roles:
+Repository verification exercises a fresh project, a changed-image project redeploy, an upgrade
+from the exact released v0.0.1 database, and same-image idempotent reruns with separate schema-owner
+and runtime database roles. It requires the one-shot migration to exit successfully, app and worker
+health checks to pass, preserved data to remain, and `/health/ready` to return 200:
 
 ```sh
 RUNWAY_COMPOSE_TEST_IMAGE=runway:local corepack pnpm verify:compose:lifecycle
@@ -691,15 +703,19 @@ Periodically perform a real restore drill, not just an archive listing:
 corepack pnpm db:backup:verify -- /restricted-backups/runway-before-update.dump
 ```
 
-Verification creates a randomly named temporary database, restores the complete archive, checks the
-required runway tables and exact migration journal, and drops the temporary database. The standard
-Compose database owner can do this. A restricted backup role instead needs a separate same-cluster
+Verification creates a randomly named temporary database, restores the complete archive, and checks
+its required runway tables and exact migration journal before dropping it. It accepts the current
+ledger or an exact supported predecessor such as the original v0.0.1 history; it does not migrate
+the restored drill copy. This keeps a pre-upgrade backup usable with its matching older image while
+the release migration fixtures separately prove the forward path. The standard Compose database
+owner can perform the drill. A restricted backup role instead needs a separate same-cluster
 `RUNWAY_BACKUP_ADMIN_DATABASE_URL` with permission to create and drop the temporary database. Budget
 free disk for another full copy and run the drill away from peak load.
 
 Recovery always targets a separately created, empty database. The restore command refuses the active
-source database, refuses a non-empty target, refuses symlink or group/world-readable archives, restores
-with ownership and grants removed, and verifies the migration journal before succeeding:
+source database, refuses a non-empty target, refuses symlink or group/world-readable archives,
+restores with ownership and grants removed, and verifies either the current journal or an exact
+supported predecessor before succeeding:
 
 ```sh
 export RUNWAY_RESTORE_DATABASE_URL='postgres://restore-user:<password>@db:5432/runway_restore'
@@ -708,11 +724,13 @@ unset RUNWAY_RESTORE_DATABASE_URL
 ```
 
 If restore fails, discard the partially populated target instead of attempting to repair it in place.
-After a successful restore, inject the matching key manifest, start the matching image with imports
-disabled, confirm `/health/ready`, and run the read-only authentication checks from the restore
-verification checklist above. The scripts never back up `BETTER_AUTH_SECRET`, `BETTER_AUTH_SECRETS`,
-`IMPORT_SECRET_KEY`, `AUTH_RATE_LIMIT_SECRET`, or `ANDROID_CREDENTIAL_SECRET`; preserve that key
-material separately as described in the contract.
+The command reports whether the target is current or still an exact predecessor. For rollback, start
+the matching older image against an older predecessor. To use the current image, run its migration
+service first. Then inject the matching key manifest, start with imports disabled, confirm
+`/health/ready`, and run the read-only authentication checks from the restore verification checklist
+above. The scripts never back up `BETTER_AUTH_SECRET`, `BETTER_AUTH_SECRETS`, `IMPORT_SECRET_KEY`,
+`AUTH_RATE_LIMIT_SECRET`, or `ANDROID_CREDENTIAL_SECRET`; preserve that key material separately as
+described in the contract.
 
 For an application-only regression, redeploy the previous image build ID. For a database-changing
 release, restore the pre-release backup into a new database and point the previous image at that

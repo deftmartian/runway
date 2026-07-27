@@ -26,6 +26,34 @@
     { "tag": "0023_two_factor_attempt_lockout", "createdAt": "1784950010151", "hash": "158ed81d7d986f8d7bb235437619bff0f4d2a7f0a26ebb2430bc4a588cf1e9bc" },
     { "tag": "0024_groovy_excalibur", "createdAt": "1785036829490", "hash": "c0849e223490e1b595dcf3b9c68330f9edb3d1e3c882b3974424d17debc420ba" }
   ],
+  "releasedV001": {
+    "tag": "v0.0.1",
+    "commit": "df977e5b61a4113a14ada7f12b34620895994d3e",
+    "forwardFrom": "0021_private_activity_traces",
+    "entries": [
+      { "tag": "0000_green_dormammu", "createdAt": "1778731314114", "hash": "951fca3909b7678d2033737435958f693548c65685e3d063bd09f748e072d5d3" },
+      { "tag": "0001_military_vermin", "createdAt": "1778732812551", "hash": "2dec00df9a96e95735210f695d20b687d18f620a35de65438d6c1b78f4472fe6" },
+      { "tag": "0002_overjoyed_spitfire", "createdAt": "1778764753918", "hash": "ce69f70e243c8b2cec751a33c3d8d5cf82ba2f682f3c6aea3933bba5dff84e2c" },
+      { "tag": "0003_many_xorn", "createdAt": "1778778110014", "hash": "1db5ce2dbd6ad3c8014be59fa5239c49790bbef96c5842f11ea18a56b59384e4" },
+      { "tag": "0004_reflective_maggott", "createdAt": "1778778455020", "hash": "ffb33d692cb149c543132b6e74f11a6f6c59e4317f317c9bf4e8d3e8086feb20" },
+      { "tag": "0005_dark_goliath", "createdAt": "1778780237323", "hash": "c0f7b33631e438a0ccdc5981c26c50e46d38260f034b70bb1d13e9945386aabc" },
+      { "tag": "0006_brave_mentor", "createdAt": "1778781905488", "hash": "76a1105b5701f4fdacf6f66c9da7748dea73505d3039a89ff5e3d872e1261583" },
+      { "tag": "0007_sweet_iceman", "createdAt": "1778782784188", "hash": "0dc5a5e5aa39e8c479c7f8b368a3d2088ecf6c13bd5e68efcb6f753dd9b7a25c" },
+      { "tag": "0008_robust_black_tarantula", "createdAt": "1778783701423", "hash": "5b0543432e7bc7c210593b4547c928d2ca526dfb591c0770d6d94b83c95ccd1c" },
+      { "tag": "0009_tranquil_justin_hammer", "createdAt": "1778785696393", "hash": "ba745abf30500e3df550b07870e071e4ff13c9072a37882986c6db8b54e0f303" },
+      { "tag": "0010_known_red_ghost", "createdAt": "1778799023444", "hash": "014a0fa686950b9dc73b758c1d89ab0816121cb87b2326f4ee4689ca830224ff" },
+      { "tag": "0011_last_whizzer", "createdAt": "1778800082845", "hash": "0017327291bd0a334bb9c923fe6a95747a82ca0d01c915a6a75eb04f0f763d77" },
+      { "tag": "0012_sticky_the_call", "createdAt": "1778803771771", "hash": "9911fec8b4bd58055802def5ec25a024b9ff7af64f92d36ed5630665501b76d5" },
+      { "tag": "0013_old_kylun", "createdAt": "1778817504194", "hash": "bca62c21ab3b7f71d228c58fb07211b0bc59aaba08bcfead3b1560b295d7adc2" },
+      { "tag": "0014_data_integrity", "createdAt": "1784156545627", "hash": "35c44aa623d74bdb3676cb6bee1159487ca09baa1636d53b3c68bce1451f7780" },
+      { "tag": "0015_planning_cutover", "createdAt": "1784174435752", "hash": "f41b86ecd9ff51b9b2dae6da40af9763a71f3b0168c8fe787ae154ce3cc1c6fa" },
+      { "tag": "0016_goal_start_mode", "createdAt": "1784174518449", "hash": "c770a77e701a546cabf6bae9d50c013a58dbe49256e418d728d4287bf4bd70c1" },
+      { "tag": "0017_explicit_plan_decisions", "createdAt": "1784175380110", "hash": "2c35bba8de688b434f75209f621f962d83633c8eadf35557732715593951b02d" },
+      { "tag": "0018_medical_tattoo", "createdAt": "1784176773433", "hash": "1c695c24996d3f086797b1dd92dfed37cebc18c9e93bd95f220ce63a28d5c3c7" },
+      { "tag": "0019_timed_prescription_structure", "createdAt": "1784186140000", "hash": "d9165fa81806946d380a51ec6e82cadee45b3f5374a87721084a3b05fab5132c" },
+      { "tag": "0020_import_generation_barrier", "createdAt": "1784187000000", "hash": "d44a0bcfeeecd719251881034dff019ad0ecc3e8ef8f4e92241d5c6d637bd276" }
+    ]
+  },
   "rebasedV011": [
     { "tag": "0000_initial", "createdAt": "1784301464615", "hash": "06d923af8bc0bccff36051bfb7c6d5aade0d32c6a99ea06de8e630bcd3190c87" },
     { "tag": "0001_android_device_import", "createdAt": "1784387613123", "hash": "f630c405c15aa539ac03c5e1900cdf485cfbac95abef0ff4fffff4dfbaec3719" },

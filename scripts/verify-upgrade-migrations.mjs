@@ -4,13 +4,28 @@ import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
+import { verifyRestoredDatabase } from './database-backup-lib.mjs';
+import { assertFinalMigrationState } from './migration-state.mjs';
 
 const defaultDatabasePassword = process.env['POSTGRES_PASSWORD'] ?? 'runway_dev_password';
 const defaultDatabaseUrl = `postgres://runway:${encodeURIComponent(defaultDatabasePassword)}@127.0.0.1:5432/runway`;
 const baseDatabaseUrl = process.env['DATABASE_URL'] ?? defaultDatabaseUrl;
 const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'));
+const integrity = JSON.parse(await readFile('drizzle/migration-integrity.json', 'utf8'));
 const migrationImage = process.env['RUNWAY_MIGRATION_IMAGE'];
 const latestMigration = journal.entries.at(-1);
+const releasedV001Entries = integrity.releasedV001.entries;
+const releasedV001ForwardMigrationIndex = integrity.canonical.findIndex(
+	(entry) => entry.tag === integrity.releasedV001.forwardFrom
+);
+if (releasedV001ForwardMigrationIndex !== releasedV001Entries.length) {
+	throw new Error('Upgrade verification requires the exact v0.0.1 forward cutover.');
+}
+const releasedV001Final = [
+	...releasedV001Entries,
+	...integrity.canonical.slice(releasedV001ForwardMigrationIndex)
+];
+const releasedV001FixtureFolder = 'tests/fixtures/migrations/v0.0.1/drizzle';
 const supportedCanonicalPredecessors = [
 	{ tag: '0021_private_activity_traces', repairDuplicateDecisions: true },
 	{ tag: '0022_forward_compatible_upgrade', repairDuplicateDecisions: false }
@@ -29,15 +44,22 @@ assertLocalDatabase(base);
 const adminUrl = new URL(base);
 adminUrl.pathname = '/postgres';
 
+await verifyUpgrade({
+	label: 'released v0.0.1',
+	initialEntries: releasedV001Entries,
+	finalEntries: releasedV001Final,
+	fixtureFolder: releasedV001FixtureFolder,
+	repairDuplicateDecisions: true
+});
 for (const predecessor of supportedCanonicalPredecessors) {
-	await verifyCanonicalUpgrade(predecessor);
+	await verifyUpgrade(canonicalScenario(predecessor));
 }
 
 console.log(
-	`Migration upgrades verified from ${supportedCanonicalPredecessors.map(({ tag }) => tag).join(' and ')} through ${latestMigration.tag}, with existing data preserved and reruns idempotent.`
+	`Migration upgrades verified from released v0.0.1, ${supportedCanonicalPredecessors.map(({ tag }) => tag).join(' and ')}, through ${latestMigration.tag}, with existing data preserved and reruns idempotent.`
 );
 
-async function verifyCanonicalUpgrade({ tag, repairDuplicateDecisions }) {
+function canonicalScenario({ tag, repairDuplicateDecisions }) {
 	const predecessorIndex = journal.entries.findIndex((entry) => entry.tag === tag);
 	if (predecessorIndex < 0) throw new Error(`Missing supported migration predecessor ${tag}.`);
 	const predecessorEntries = journal.entries.slice(0, predecessorIndex + 1);
@@ -45,66 +67,100 @@ async function verifyCanonicalUpgrade({ tag, repairDuplicateDecisions }) {
 	if (pendingEntries.length === 0) {
 		throw new Error(`Migration predecessor ${tag} does not have a forward upgrade.`);
 	}
+	return {
+		label: tag,
+		initialEntries: integrity.canonical.slice(0, predecessorIndex + 1),
+		finalEntries: integrity.canonical,
+		predecessorEntries,
+		pendingEntries,
+		repairDuplicateDecisions
+	};
+}
 
-	const databaseName = `runway_upgrade_${predecessorIndex}_${process.pid}_${Date.now()}`.slice(
-		0,
-		63
-	);
+async function verifyUpgrade({
+	label,
+	initialEntries,
+	finalEntries,
+	fixtureFolder,
+	predecessorEntries,
+	pendingEntries,
+	repairDuplicateDecisions
+}) {
+	const databaseName =
+		`runway_upgrade_${label.replaceAll(/[^a-z0-9]/gi, '_')}_${process.pid}_${Date.now()}`.slice(
+			0,
+			63
+		);
 	const databaseUrl = new URL(base);
 	databaseUrl.pathname = `/${databaseName}`;
-	const temporaryRoot = await mkdtemp('.runway-upgrade-');
-	const predecessorFolder = join(temporaryRoot, 'drizzle');
+	let temporaryRoot;
+	let predecessorFolder = fixtureFolder;
 
-	await cp('drizzle', predecessorFolder, { recursive: true });
-	for (const pending of pendingEntries) {
-		await rm(join(predecessorFolder, `${pending.tag}.sql`));
+	if (!predecessorFolder) {
+		temporaryRoot = await mkdtemp('.runway-upgrade-');
+		predecessorFolder = join(temporaryRoot, 'drizzle');
+		await cp('drizzle', predecessorFolder, { recursive: true });
+		for (const pending of pendingEntries) {
+			await rm(join(predecessorFolder, `${pending.tag}.sql`));
+		}
+		await writeFile(
+			join(predecessorFolder, 'meta', '_journal.json'),
+			`${JSON.stringify({ ...journal, entries: predecessorEntries }, null, 2)}\n`
+		);
 	}
-	await writeFile(
-		join(predecessorFolder, 'meta', '_journal.json'),
-		`${JSON.stringify({ ...journal, entries: predecessorEntries }, null, 2)}\n`
-	);
 	await withSql(adminUrl, (sql) => sql`create database ${sql(databaseName)}`);
 
 	try {
 		await migrateDatabase(databaseUrl, predecessorFolder);
 		await withSql(databaseUrl, async (sql) => {
-			const [state] = await sql`
-				select count(*)::int as count, max(created_at)::text as "latestMigration"
-				from drizzle.__drizzle_migrations
-			`;
-			if (
-				state?.count !== predecessorEntries.length ||
-				state.latestMigration !== String(predecessorEntries.at(-1).when)
-			) {
-				throw new Error(`${tag} database did not reach its exact released migration state.`);
-			}
-
-			await sql`
-				insert into "user" ("id", "name", "email", "email_verified", "created_at", "updated_at")
-				values ('migration-upgrade-probe', 'Migration probe', 'migration-probe@example.invalid', false, now(), now())
-			`;
-			await sql`
-				insert into "two_factor" ("id", "secret", "backup_codes", "user_id", "verified")
-				values ('migration-two-factor-probe', 'preserved-secret', '[]', 'migration-upgrade-probe', true)
-			`;
-			if (repairDuplicateDecisions) await seedDuplicateActiveDecisions(sql);
+			await assertExactLedger(sql, initialEntries, `${label} initial database`);
+			await seedPreservedData(sql, repairDuplicateDecisions);
 		});
+		if (fixtureFolder && baseDatabaseUrl === defaultDatabaseUrl) {
+			const restoreConnection = {
+				host: 'db',
+				port: '5432',
+				user: decodeURIComponent(base.username),
+				password: decodeURIComponent(base.password),
+				database: databaseName,
+				sslMode: 'disable'
+			};
+			const restoreState = await verifyRestoredDatabase(restoreConnection, {
+				allowSupportedPredecessor: true
+			});
+			if (restoreState !== 'supported-predecessor') {
+				throw new Error(`${label} was not recognized as a supported restore predecessor.`);
+			}
+			await assertCurrentRestorePolicyRejectsPredecessor(restoreConnection, label);
+		}
 
 		await runMigrationRunner(databaseUrl);
+		const firstRunState = await withSql(databaseUrl, async (sql) => {
+			await assertExactLedger(sql, finalEntries, `${label} first upgrade`);
+			await assertFinalMigrationState(sql);
+			return captureUpgradeState(sql);
+		});
+		if (fixtureFolder && baseDatabaseUrl === defaultDatabaseUrl) {
+			const restoreState = await verifyRestoredDatabase({
+				host: 'db',
+				port: '5432',
+				user: decodeURIComponent(base.username),
+				password: decodeURIComponent(base.password),
+				database: databaseName,
+				sslMode: 'disable'
+			});
+			if (restoreState !== 'current') {
+				throw new Error(`${label} upgraded database was not recognized as current.`);
+			}
+		}
 		await runMigrationRunner(databaseUrl);
 
 		await withSql(databaseUrl, async (sql) => {
-			const [state] = await sql`
-				select count(*)::int as count, max(created_at)::text as "latestMigration"
-				from drizzle.__drizzle_migrations
-			`;
-			if (
-				state?.count !== journal.entries.length ||
-				state.latestMigration !== String(latestMigration.when)
-			) {
-				throw new Error(
-					`${tag} upgrade did not reach the complete migration journal exactly once.`
-				);
+			await assertExactLedger(sql, finalEntries, `${label} second upgrade`);
+			await assertFinalMigrationState(sql);
+			const secondRunState = await captureUpgradeState(sql);
+			if (JSON.stringify(secondRunState) !== JSON.stringify(firstRunState)) {
+				throw new Error(`${label} migration rerun changed its ledger or preserved probe data.`);
 			}
 
 			const [preserved] = await sql`
@@ -112,59 +168,28 @@ async function verifyCanonicalUpgrade({ tag, repairDuplicateDecisions }) {
 					u."id",
 					t."secret",
 					t."failed_verification_count" as "failedVerificationCount",
-					t."locked_until" as "lockedUntil"
+					t."locked_until" as "lockedUntil",
+					p."current_weekly_distance_meters" as "weeklyDistance",
+					a."distance_meters" as "activityDistance",
+					a."duration_seconds" as "activityDuration",
+					a."source"::text as "activitySource"
 				from "user" u
 				join "two_factor" t on t."user_id" = u."id"
+				join "athlete_profile" p on p."user_id" = u."id"
+				join "activity" a on a."user_id" = u."id"
 				where u."id" = 'migration-upgrade-probe'
 			`;
 			if (
 				preserved?.id !== 'migration-upgrade-probe' ||
 				preserved.secret !== 'preserved-secret' ||
 				preserved.failedVerificationCount !== 0 ||
-				preserved.lockedUntil !== null
+				preserved.lockedUntil !== null ||
+				preserved.weeklyDistance !== 5000 ||
+				preserved.activityDistance !== 3200 ||
+				preserved.activityDuration !== 1800 ||
+				preserved.activitySource !== 'gpx'
 			) {
-				throw new Error(`${tag} upgrade did not preserve and initialize two-factor state.`);
-			}
-
-			const tables = await sql`
-				select table_name as "tableName"
-				from information_schema.tables
-				where table_schema = 'public'
-				  and table_name in ('android_device', 'android_import_request', 'android_pairing_request', 'import_operation_lease')
-			`;
-			if (tables.length !== 4)
-				throw new Error(`${tag} upgrade is missing one or more post-v0.1.0 tables.`);
-
-			const columns = await sql`
-				select table_name as "tableName", column_name as "columnName"
-				from information_schema.columns
-				where table_schema = 'public'
-				  and (
-				    (table_name = 'activity' and column_name = 'consequence_plan_id')
-				    or (table_name = 'athlete_profile' and column_name = 'browser_folder_generation')
-				    or (table_name = 'two_factor' and column_name = 'failed_verification_count')
-				    or (table_name = 'two_factor' and column_name = 'locked_until')
-				  )
-			`;
-			if (columns.length !== 4)
-				throw new Error(`${tag} upgrade is missing one or more required columns.`);
-
-			const [foreignKey] = await sql`
-				select count(*)::int as count
-				from information_schema.table_constraints
-				where constraint_schema = 'public'
-				  and constraint_name = 'activity_consequence_plan_user_fk'
-			`;
-			if (foreignKey?.count !== 1)
-				throw new Error(`${tag} upgrade is missing the activity consequence foreign key.`);
-
-			const [decisionIndex] = await sql`
-				select indexdef as "indexDefinition"
-				from pg_indexes
-				where schemaname = 'public' and indexname = 'plan_adjustment_active_decision_unique'
-			`;
-			if (!decisionIndex?.indexDefinition?.includes('UNIQUE')) {
-				throw new Error(`${tag} upgrade is missing the active-decision uniqueness guard.`);
+				throw new Error(`${label} upgrade did not preserve representative existing data.`);
 			}
 
 			if (repairDuplicateDecisions) await verifyRepairedDuplicateDecisions(sql);
@@ -174,8 +199,105 @@ async function verifyCanonicalUpgrade({ tag, repairDuplicateDecisions }) {
 			adminUrl,
 			(sql) => sql`drop database if exists ${sql(databaseName)} with (force)`
 		);
-		await rm(temporaryRoot, { recursive: true, force: true });
+		if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
 	}
+}
+
+async function assertCurrentRestorePolicyRejectsPredecessor(connection, label) {
+	try {
+		await verifyRestoredDatabase(connection);
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.includes('exact supported predecessor') &&
+			error.message.includes('must be migrated')
+		) {
+			return;
+		}
+		throw error;
+	}
+	throw new Error(`${label} restore was treated as current before its forward migrations.`);
+}
+
+async function assertExactLedger(sql, expectedEntries, label) {
+	const rows = await sql`
+		select "hash", "created_at"::text as "createdAt"
+		from drizzle.__drizzle_migrations
+		order by "created_at", "id"
+	`;
+	if (
+		rows.length !== expectedEntries.length ||
+		rows.some(
+			(row, index) =>
+				row.hash !== expectedEntries[index]?.hash ||
+				row.createdAt !== expectedEntries[index]?.createdAt
+		)
+	) {
+		throw new Error(`${label} does not have its exact ordered migration ledger.`);
+	}
+}
+
+async function seedPreservedData(sql, repairDuplicateDecisions) {
+	await sql`
+		insert into "user" ("id", "name", "email", "email_verified", "created_at", "updated_at")
+		values ('migration-upgrade-probe', 'Migration probe', 'migration-probe@example.invalid', false, now(), now())
+	`;
+	await sql`
+		insert into "two_factor" ("id", "secret", "backup_codes", "user_id", "verified")
+		values ('migration-two-factor-probe', 'preserved-secret', '[]', 'migration-upgrade-probe', true)
+	`;
+	await sql`
+		insert into "athlete_profile" (
+			"id", "user_id", "current_weekly_distance_meters", "current_runs_per_week",
+			"longest_recent_run_meters"
+		) values (
+			'10000000-0000-4000-8000-000000000008', 'migration-upgrade-probe', 5000, 2, 3200
+		)
+	`;
+	await sql`
+		insert into "activity" (
+			"id", "user_id", "source", "occurred_at", "activity_date", "distance_meters",
+			"duration_seconds", "route_summary", "review_state", "deviation"
+		) values (
+			'10000000-0000-4000-8000-000000000009', 'migration-upgrade-probe', 'gpx',
+			now(), current_date, 3200, 1800,
+			'{"pointCount":42,"startEndRedacted":true,"hasElevation":true}'::jsonb,
+			'accepted', 'unplanned'
+		)
+	`;
+	if (repairDuplicateDecisions) await seedDuplicateActiveDecisions(sql);
+}
+
+async function captureUpgradeState(sql) {
+	const [ledger, user, profile, activity, decisions] = await Promise.all([
+		sql`
+			select "hash", "created_at"::text as "createdAt"
+			from drizzle.__drizzle_migrations
+			order by "created_at", "id"
+		`,
+		sql`
+			select "id", "name", "email", "two_factor_enabled" as "twoFactorEnabled"
+			from "user"
+			where "id" = 'migration-upgrade-probe'
+		`,
+		sql`
+			select "id", "current_weekly_distance_meters" as "weeklyDistance"
+			from "athlete_profile"
+			where "user_id" = 'migration-upgrade-probe'
+		`,
+		sql`
+			select "id", "distance_meters" as "distance", "duration_seconds" as "duration"
+			from "activity"
+			where "user_id" = 'migration-upgrade-probe'
+		`,
+		sql`
+			select "id", "reversed_at"::text as "reversedAt", "reversal_reason" as "reversalReason"
+			from "plan_adjustment"
+			where "user_id" = 'migration-upgrade-probe'
+			order by "id"
+		`
+	]);
+	return { ledger, user, profile, activity, decisions };
 }
 
 async function verifyRepairedDuplicateDecisions(sql) {

@@ -58,7 +58,7 @@ try {
 		],
 		{ inputPath }
 	);
-	await verifyRestoredDatabase(restored);
+	await verifyRestoredDatabase(restored, { allowSupportedPredecessor: true });
 } finally {
 	if (created) {
 		await runPostgresTool(
@@ -76,4 +76,6 @@ try {
 	}
 }
 
-console.log('Backup restored, checked against the current migration journal, and removed.');
+console.log(
+	'Backup restored, checked against an exact current or supported predecessor migration lineage, and removed.'
+);

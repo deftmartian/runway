@@ -13,6 +13,17 @@ if (compatibilityMigrationIndex < 0) {
 
 const rebasedForwardMigrations = migrationIntegrity.canonical.slice(compatibilityMigrationIndex);
 export const rebasedFinal = [...migrationIntegrity.rebasedV011, ...rebasedForwardMigrations];
+const releasedV001Entries = migrationIntegrity.releasedV001.entries;
+const releasedV001ForwardMigrationIndex = migrationIntegrity.canonical.findIndex(
+	(entry) => entry.tag === migrationIntegrity.releasedV001.forwardFrom
+);
+if (releasedV001ForwardMigrationIndex !== releasedV001Entries.length) {
+	throw new Error('Migration integrity manifest has an invalid v0.0.1 forward cutover.');
+}
+const releasedV001ForwardMigrations = migrationIntegrity.canonical.slice(
+	releasedV001ForwardMigrationIndex
+);
+export const releasedV001Final = [...releasedV001Entries, ...releasedV001ForwardMigrations];
 
 export async function readMigrationLedger(sql) {
 	const [record] = await sql`
@@ -29,10 +40,14 @@ export async function readMigrationLedger(sql) {
 export function migrationLedgerIsSupported(rows, { final = false } = {}) {
 	if (final) {
 		return (
-			sequenceMatches(rows, migrationIntegrity.canonical) || sequenceMatches(rows, rebasedFinal)
+			sequenceMatches(rows, migrationIntegrity.canonical) ||
+			sequenceMatches(rows, rebasedFinal) ||
+			sequenceMatches(rows, releasedV001Final)
 		);
 	}
-	return canonicalPrefixMatches(rows) || rebasedPrefixMatches(rows);
+	return (
+		canonicalPrefixMatches(rows) || rebasedPrefixMatches(rows) || releasedV001PrefixMatches(rows)
+	);
 }
 
 export async function assertSupportedMigrationLedger(sql, options) {
@@ -85,16 +100,34 @@ function canonicalPrefixMatches(rows) {
 }
 
 function rebasedPrefixMatches(rows) {
-	if (rows.length < migrationIntegrity.rebasedV011.length || rows.length > rebasedFinal.length) {
+	return forkedPrefixMatches(
+		rows,
+		migrationIntegrity.rebasedV011,
+		rebasedForwardMigrations,
+		rebasedFinal
+	);
+}
+
+function releasedV001PrefixMatches(rows) {
+	return forkedPrefixMatches(
+		rows,
+		releasedV001Entries,
+		releasedV001ForwardMigrations,
+		releasedV001Final
+	);
+}
+
+function forkedPrefixMatches(rows, releasedEntries, forwardMigrations, finalEntries) {
+	if (rows.length < releasedEntries.length || rows.length > finalEntries.length) {
 		return false;
 	}
 	return (
 		rows
-			.slice(0, migrationIntegrity.rebasedV011.length)
-			.every((row, index) => entryMatches(row, migrationIntegrity.rebasedV011[index])) &&
+			.slice(0, releasedEntries.length)
+			.every((row, index) => entryMatches(row, releasedEntries[index])) &&
 		rows
-			.slice(migrationIntegrity.rebasedV011.length)
-			.every((row, index) => entryMatches(row, rebasedForwardMigrations[index]))
+			.slice(releasedEntries.length)
+			.every((row, index) => entryMatches(row, forwardMigrations[index]))
 	);
 }
 

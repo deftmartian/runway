@@ -36,6 +36,12 @@ await runPostgresTool(
 	['pg_restore', '--dbname', target.database, '--exit-on-error', '--no-owner', '--no-privileges'],
 	{ inputPath }
 );
-await verifyRestoredDatabase(target);
+const restoredState = await verifyRestoredDatabase(target, {
+	allowSupportedPredecessor: true
+});
 
-console.log('Backup restored into the explicitly configured empty target database and verified.');
+console.log(
+	restoredState === 'current'
+		? 'Backup restored into the explicitly configured empty target database and verified as current.'
+		: 'Backup restored into the explicitly configured empty target database and verified as an exact supported predecessor. Use its matching older image for rollback, or run the current migration service before starting the current app.'
+);

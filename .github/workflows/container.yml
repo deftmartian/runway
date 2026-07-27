@@ -146,7 +146,7 @@ jobs:
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
       - name: Verify production runtime and PWA revision
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
-      - name: Verify exact-image upgrades from both released migration histories
+      - name: Verify exact-image upgrades from all supported migration histories
         env:
           RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}
         run: |
@@ -264,7 +264,7 @@ jobs:
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
       - name: Verify production runtime and PWA revision
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
-      - name: Verify exact-image upgrades from both released migration histories
+      - name: Verify exact-image upgrades from all supported migration histories
         env:
           RUNWAY_MIGRATION_IMAGE: ${{ env.RUNWAY_IMAGE }}
         run: |
