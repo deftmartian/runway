@@ -36,6 +36,16 @@ const documentationScreenshotSpecs = [
 	{
 		source: 'static/pwa/screenshots/calendar-mobile.png',
 		output: 'docs/images/runway-calendar-mobile.png'
+	},
+	{
+		source: 'tests/visual/runway.visual.ts-snapshots/stats-desktop-linux.png',
+		viewport: { width: 1280, height: 1100 },
+		output: 'docs/images/runway-stats-desktop.png'
+	},
+	{
+		source: 'tests/visual/runway.visual.ts-snapshots/import-records-mobile-linux.png',
+		viewport: { width: 390, height: 844 },
+		output: 'docs/images/runway-review-mobile.png'
 	}
 ];
 
@@ -67,7 +77,16 @@ try {
 		);
 	}
 	for (const screenshot of documentationScreenshotSpecs) {
-		await copyFile(resolve(root, screenshot.source), resolve(root, screenshot.output));
+		if (screenshot.viewport) {
+			await cropScreenshot(
+				page,
+				resolve(root, screenshot.source),
+				screenshot.viewport,
+				resolve(root, screenshot.output)
+			);
+		} else {
+			await copyFile(resolve(root, screenshot.source), resolve(root, screenshot.output));
+		}
 	}
 	await writeScreenshotProvenance();
 } finally {
@@ -117,8 +136,9 @@ async function writeScreenshotProvenance() {
 		}))
 	);
 	const documentationScreenshots = await Promise.all(
-		documentationScreenshotSpecs.map(async ({ source, output }) => ({
+		documentationScreenshotSpecs.map(async ({ source, viewport, output }) => ({
 			source,
+			...(viewport ? { viewport } : {}),
 			sourceSha256: await fileSha256(resolve(root, source)),
 			output,
 			outputSha256: await fileSha256(resolve(root, output))
@@ -128,7 +148,7 @@ async function writeScreenshotProvenance() {
 		provenancePath,
 		`${JSON.stringify(
 			{
-				version: 3,
+				version: 4,
 				iconSource: iconSourcePath,
 				iconSourceSha256: await fileSha256(resolve(root, iconSourcePath)),
 				icons,
@@ -152,7 +172,7 @@ async function checkScreenshotProvenance() {
 		);
 	}
 	if (
-		provenance?.version !== 3 ||
+		provenance?.version !== 4 ||
 		provenance.iconSource !== iconSourcePath ||
 		!Array.isArray(provenance.icons) ||
 		provenance.icons.length !== iconOutputs.length ||
@@ -201,7 +221,11 @@ async function checkScreenshotProvenance() {
 	for (let index = 0; index < documentationScreenshotSpecs.length; index += 1) {
 		const expected = documentationScreenshotSpecs[index];
 		const recorded = provenance.documentationScreenshots[index];
-		if (recorded?.source !== expected.source || recorded?.output !== expected.output) {
+		if (
+			recorded?.source !== expected.source ||
+			recorded?.output !== expected.output ||
+			JSON.stringify(recorded?.viewport ?? null) !== JSON.stringify(expected.viewport ?? null)
+		) {
 			throw new Error(
 				'Documentation screenshot provenance does not match the configured assets. Run `corepack pnpm assets:pwa`.'
 			);

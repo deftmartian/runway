@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "iconSource": "src/lib/assets/favicon.svg",
   "iconSourceSha256": "8080f29f0962c64d91904f61fb8bc38f746b46e2ac4c08e81841c5648e15975a",
   "icons": [
@@ -50,6 +50,26 @@
       "sourceSha256": "e63361583c605486711af6c0bf7b856cd06574092a44096f7966cc10b344c421",
       "output": "docs/images/runway-calendar-mobile.png",
       "outputSha256": "e63361583c605486711af6c0bf7b856cd06574092a44096f7966cc10b344c421"
+    },
+    {
+      "source": "tests/visual/runway.visual.ts-snapshots/stats-desktop-linux.png",
+      "viewport": {
+        "width": 1280,
+        "height": 1100
+      },
+      "sourceSha256": "9f4630ab741fe409c97d4862089e45541abaf171e450971c7d82647bde014993",
+      "output": "docs/images/runway-stats-desktop.png",
+      "outputSha256": "640932abca66f4603b86c6719fe9786e82e04cf48717b330429a748f021182b2"
+    },
+    {
+      "source": "tests/visual/runway.visual.ts-snapshots/import-records-mobile-linux.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sourceSha256": "9a3721b1b1dc557230b916358f0559f5006df4ba5393bf43fbdef986e6b75589",
+      "output": "docs/images/runway-review-mobile.png",
+      "outputSha256": "63ed6ee8c2a01278e2346460b0992570f1064855db4aaef83b8826dd797e672a"
     }
   ]
 }

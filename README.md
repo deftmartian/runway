@@ -1,169 +1,140 @@
 # runway
 
 [![CI](https://github.com/deftmartian/runway/actions/workflows/container.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/container.yml)
+[![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![GHCR](https://img.shields.io/badge/container-ghcr.io-1f758f.svg)](https://github.com/deftmartian/runway/pkgs/container/runway)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
-**runway is a self-hosted running planner and activity ledger. It keeps the recommendation, the
-runner's edits, and the work that actually happened separate—and makes the next decision explicit.**
+**A self-hosted running planner that keeps the recommendation, your edits, and the work you
+actually did separate.**
 
-It is for runners who want a plan they can inspect and change, without handing route, schedule,
-heart-rate, pain, or training-history data to a social fitness platform. When a run is missed, moved,
-short, long, hard, or unplanned, runway records the facts first and offers a choice before changing
-future workouts.
+runway is built for the messy part of following a plan. Move a workout. Shorten it. Run farther than
+expected. Miss a day. Import an unplanned run. runway records what happened, shows the consequence,
+and lets you choose what changes next.
 
-## The product at a glance
+![runway's desktop calendar showing the current week, next run, completed work, and an open review](docs/images/runway-calendar-desktop.png)
 
-| Desktop web                                                                          | Installed mobile PWA                                                             |
-| :----------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| ![The runway desktop training calendar](docs/images/runway-calendar-desktop.png)     | ![The runway mobile training calendar](docs/images/runway-calendar-mobile.png)   |
-| Today, next run, open review work, and generated/current/actual load in one surface. | The same current decision and week trace, reflowed into a one-handed day ledger. |
+## Plan, run, reconcile
 
-The calendar is the main operating surface. It keeps the recommendation, current plan, actual work,
-rest, missed work, recovery spacing, and current review item visible together.
+Most training plans describe the ideal week. runway also keeps track of the week you are actually
+having:
 
-### Android: the complete app plus native folder access
+1. **Build a conservative plan** from an established baseline, a foundation phase, or a short
+   timed calibration.
+2. **Make it yours** by moving, changing, adding, removing, resetting, or undoing individual
+   workouts.
+3. **Record the facts** manually or import GPX and supported Health Connect activity data.
+4. **Resolve the difference** when a run is missed, moved, short, long, hard, or unplanned. Future
+   workouts change only after you confirm the choice.
 
-| Connect a self-hosted server                                                          | Configure Android imports                                                        |
-| :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- |
-| ![The runway Android server connection screen](docs/images/runway-android-server.png) | ![The runway Android import setup screen](docs/images/runway-android-folder.png) |
-| The universal APK verifies the server before opening sign-in.                         | Keep Gadgetbridge folder access and choose optional Health Connect run imports.  |
+![runway's stats view comparing generated, current, and actual training load](docs/images/runway-stats-desktop.png)
 
-The Android package is a complete way to use runway, not a companion. It opens the full web product
-in an origin-visible Custom Tab and adds the capabilities the PWA cannot reliably own: durable folder
-access, background reconciliation, Android GPX shares, and an optional Health Connect import for
-running and treadmill-running sessions. It reads only the explicitly approved exercise and workout
-metrics, never writes to Health Connect, and asks separately for optional background reads and each
-route while the native screen is open. Routes remain subject to the server's route-privacy setting.
-See [Android architecture](docs/ANDROID.md) and [build instructions](android/README.md).
+**Understand the load.** See the current assessment, plan ramp, exact values, and
+generated/current/actual traces together.
 
-Versioned GitHub releases are wired to include a verified, signed APK alongside the container image.
-The release is blocked if the protected Android signing identity is unavailable or differs from its
-pinned certificate fingerprint; debug or unsigned APKs are never presented as installable releases.
+<p align="center">
+  <img src="docs/images/runway-review-mobile.png" width="390" alt="runway's mobile activity inbox with linked and review-needed runs">
+</p>
 
-<details>
-<summary>Plan traces and exact values</summary>
+<p align="center">
+  <strong>Keep imports honest.</strong> Link a run, count it as extra training, or delete it before
+  the plan reacts.
+</p>
 
-![The runway stats view showing risk context and generated, current, and actual traces](tests/visual/runway.visual.ts-snapshots/stats-desktop-linux.png)
+## What runway helps you decide
 
-Stats explain whether the current plan needs attention and pair the visual trace with exact values.
+- **What should I do next?** Today, the next run, recovery spacing, and unresolved review work share
+  one calendar.
+- **Can I change this workout?** Edits show their effect before anything is saved.
+- **What happens when the plan and reality differ?** Keep, reduce, rest, repeat, or rebalance
+  choices remain explicit and reversible.
+- **Is the plan still reasonable?** Stats pair the training trace with exact values and plainly
+  worded risk context.
+- **Where did this recommendation come from?** Plan phases, user edits, feedback-driven changes,
+  and archived plans stay distinguishable in history.
 
-</details>
+## Start from where you are
 
-<details>
-<summary>Mobile activity inbox</summary>
+| Planning path         | Intended starting point                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Established baseline  | A repeatable recent week with at least 3 km, two runs, and a completed longest run.                        |
+| Foundation, then goal | The nine-week NHS Couch to 5K schedule, followed by a distance plan once a baseline has been established.  |
+| Foundation only       | The same foundation phase toward 30 minutes of continuous easy running, without inventing a distance goal. |
+| Timed calibration     | Two identical easy run/walk sessions per week for two weeks when distance inputs would be guesswork.       |
 
-![The runway mobile activity inbox with linked and review-needed activities](tests/visual/runway.visual.ts-snapshots/import-records-mobile-linux.png)
+The defaults are recommendations, not rules. You can change available days, workout timing,
+distance, duration, and the individual runs in the resulting plan.
 
-</details>
+## Web, PWA, and Android
 
-The web screenshots come from deterministic visual-regression states. The Android screenshots come
-from the built debug APK running on the documented API 35 emulator.
+| Surface       | What you get                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser       | The complete product in any modern desktop or mobile browser, with manual, file, Nextcloud, and foreground-approved-folder imports.                                                   |
+| Installed PWA | The same product with a home-screen launch, offline shell, OS sharing, and focus-time folder checks. Browser folder permission remains browser-managed.                               |
+| Android app   | The full web product opened in an origin-visible Custom Tab, plus native server selection, durable folder access, background imports, GPX sharing, and optional Health Connect reads. |
 
-## Ways to run runway
+The Android package is deliberately **not an embedded WebView or a second, native Compose
+frontend**. The web app remains the product UI; the native layer handles capabilities the PWA
+cannot own reliably. It can read approved running and treadmill sessions, route samples, heart
+rate, pace, cadence, elevation, and related workout metrics from Health Connect. It never writes to
+Health Connect, and route access is requested separately.
 
-| Surface       | Best for                                          | Capability boundary                                                                                                                                     |
-| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser       | Any modern desktop or mobile browser              | Complete product; manual, share-target, Nextcloud, and foreground-approved-folder imports.                                                              |
-| Installed PWA | Home-screen use with offline shell and OS sharing | Same complete product; browser folder permission remains browser-managed and is checked while open.                                                     |
-| Android app   | Self-hosters who want durable imports             | User-selected HTTPS server, visible browser origin, native folder grant, background checks, GPX shares, and optional running-only Health Connect reads. |
+<table>
+  <tr>
+    <td>
+      <img src="docs/images/runway-android-server.png" alt="The Runway Android server connection screen">
+    </td>
+    <td>
+      <img src="docs/images/runway-android-folder.png" alt="The Runway Android folder and Health Connect import settings">
+    </td>
+  </tr>
+  <tr>
+    <td>Choose and verify your self-hosted server before sign-in.</td>
+    <td>Grant a Gadgetbridge folder and choose whether to import from Health Connect.</td>
+  </tr>
+</table>
 
-## What It Does
+Each published versioned [GitHub release](https://github.com/deftmartian/runway/releases) includes a
+signed universal APK. Release builds fail closed when the protected signing identity is missing or
+differs from the pinned certificate. See the [Android architecture](docs/ANDROID.md) and
+[Android build guide](android/README.md).
 
-| Area              | Behavior                                                                                                                    |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Planning          | Builds an editable running plan from an established baseline, a foundation phase, or a short timed calibration.             |
-| Calendar          | Shows generated recommendations, the current plan, recorded work, rest, recovery spacing, and week load.                    |
-| Workout editing   | Moves, changes, adds, removes, resets, and undoes future non-race workouts with a consequence preview.                      |
-| Activity review   | Accepts manual, GPX, or Health Connect facts first, suggests possible matches, and leaves ambiguous records for the runner. |
-| Activity detail   | Shows a locally rendered route map coloured by relative speed and a heart-rate trace with exact retained samples.           |
-| Decisions         | Offers keep, reduce, rest, repeat, or rebalance choices after material deviations; nothing applies until confirmed.         |
-| History and stats | Preserves plan phases, edits, feedback-driven changes, archived plans, exact values, and plan-versus-actual traces.         |
-| Ownership         | Runs as a private PWA with local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure.                |
+## Private by design
 
-### Planning paths
+runway is intended for one private deployment, not a social network or hosted SaaS.
 
-- **Established baseline:** distance planning from a repeatable week of at least 3 km, two runs,
-  and a positive longest run.
-- **Foundation then goal:** the exact nine-week NHS Couch to 5K schedule before a confirmed
-  distance baseline and retained race goal.
-- **Foundation only:** the same foundation phase toward 30 minutes of continuous easy running.
-- **Calibration:** two identical easy run/walk sessions per week for two weeks, using time instead
-  of invented distance.
+- Local accounts, OIDC, 2FA, passkeys, exports, and configurable source disclosure are supported.
+- Route traces, heart-rate data, schedule patterns, and workout feedback stay on your server.
+- Original import files are discarded after parsing. Route retention can be disabled or cleared.
+- Maps are rendered locally and do not contact an external tile service.
+- Watches and phone apps record activities; runway plans, reconciles, and explains consequences.
+- Training guidance is source-backed decision support, not medical advice or diagnosis.
 
-## Run the Published Container Behind HTTPS
+Read the [security and privacy model](docs/SECURITY.md) before exposing an installation publicly.
 
-Requirements: Docker Engine with Compose v2 and OpenSSL for generating local secrets.
+## Deploy behind HTTPS
 
-Start from the documented environment template:
+The production shape is PostgreSQL plus migration, web, and import-worker processes behind an HTTPS
+reverse proxy. Published AMD64 and ARM64 images are available at:
+
+```text
+ghcr.io/deftmartian/runway:latest
+```
+
+Production is intentionally fail-closed for invalid secrets, plain-HTTP public origins, incomplete
+database migrations, and missing runtime-role isolation. Start with the environment template:
 
 ```sh
 cp .env.example .env
-openssl rand -hex 24
-openssl rand -hex 24
 corepack pnpm secret:generate
 corepack pnpm secret:generate
 ```
 
-Put the first OpenSSL value in `POSTGRES_PASSWORD` and `MIGRATION_DATABASE_URL`; use the second for
-the restricted `runway_runtime` account in `APP_DATABASE_URL`. Put the first generated
-`runway-secret-v1_…` value in `BETTER_AUTH_SECRET` and the second in
-`ANDROID_CREDENTIAL_SECRET`; keeping the Android key stable prevents auth-key rotation from changing
-opaque Health Connect identities. The published image is a production
-artifact and deliberately refuses plain-HTTP public origins. The minimum relevant `.env` values are:
+Then follow the [deployment guide](docs/DEPLOYMENT.md) for database roles, secrets, immutable image
+pins, Caddy or another reverse proxy, backups, first signup, updates, and rollback. All runway
+services use the same published image; Compose does not build application containers.
 
-```dotenv
-RUNWAY_IMAGE="ghcr.io/deftmartian/runway:sha-10c7822d3d191ddef9f32eb0e0e4c6ba4fd596ef"
-POSTGRES_PASSWORD="<first generated value>"
-MIGRATION_DATABASE_URL="postgres://runway:<first generated value>@db:5432/runway"
-APP_DATABASE_URL="postgres://runway_runtime:<second generated value>@db:5432/runway"
-BETTER_AUTH_SECRET="<generated runway-secret-v1 value>"
-ANDROID_CREDENTIAL_SECRET="<separate generated runway-secret-v1 value>"
-ORIGIN="https://runway.example.com"
-PUBLIC_APP_ORIGIN="https://runway.example.com"
-ALLOW_LOCAL_SIGNUPS="true"
-```
-
-Pull the same tested image used for migrations, web, and worker:
-
-```sh
-docker compose -f compose.yaml -f deploy/compose.production.yaml pull
-```
-
-Bootstrap the restricted runtime role once using the exact procedure in
-[Database roles](docs/DEPLOYMENT.md#database-roles), then start the app and worker:
-
-```sh
-docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
-docker compose -f compose.yaml -f deploy/compose.production.yaml ps
-```
-
-Configure the existing HTTPS reverse proxy with the private runway upstream and header contract in
-[`deploy/Caddyfile.example`](deploy/Caddyfile.example), then open the public HTTPS origin. Create the
-intended account, set `ALLOW_LOCAL_SIGNUPS="false"`, and apply the change:
-
-```sh
-docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
-```
-
-The app port is loopback-only by default.
-
-The production overlay pins that listener to loopback even if `RUNWAY_BIND_ADDRESS` is set. When the
-reverse proxy runs on another host, use the documented ipvlan overlay plus a firewall rule that
-allows only the proxy source; do not expose port `4100` directly to clients.
-
-For a local plain-HTTP evaluation, use the source-based development quick start below at
-`http://localhost:4100`; do not weaken the production image's HTTPS checks.
-
-For an update or rollback, change `RUNWAY_IMAGE` to a tested version, full `sha-*` tag, or digest;
-run `pull`; then run `up` again. Before changing the database or image, create and prove a private
-backup with `corepack pnpm db:backup -- <new-file>` and
-`corepack pnpm db:backup:verify -- <file>`. Production deployments should use HTTPS, keep registration
-closed, and pin an immutable image reference. The
-[deployment guide](docs/DEPLOYMENT.md) covers the full environment contract, reverse proxy, OIDC,
-SMTP, imports, backups, health checks, and the required whole-project update flow for Arcane.
-
-## Development Quick Start
+## Develop locally
 
 Requirements: Node.js 24, pnpm through Corepack, and Docker with Compose.
 
@@ -178,118 +149,46 @@ corepack pnpm dev
 Open [http://localhost:4100](http://localhost:4100). The development server binds to
 `0.0.0.0:4100`.
 
-To test from another device, set `ORIGIN` and `PUBLIC_APP_ORIGIN` to the address that device uses to
-reach the development machine. Set `SITE_URL` to that same address when running `verify:preview`.
+Real GPX, FIT, and TCX files contain personal training data. Keep private samples outside commits
+and never print their coordinates or metadata in logs.
 
-Real GPX files contain personal training data. Keep local samples in `samples/` and never commit
-them.
+## Verify a change
 
-## Verification
-
-For the complete local release gate:
+Run the complete local release gate:
 
 ```sh
 corepack pnpm verify:full
 ```
 
-The release gate runs independent web, browser, data/deployment, Android, and container groups in
-parallel, then checks the completed production build. It uses at most three groups at once by
-default; set `RUNWAY_VERIFY_CONCURRENCY=1` or run `corepack pnpm verify:full:serial` when debugging
-resource contention.
-
-Focused commands are available for faster iteration:
+It runs independent web, browser, data/deployment, Android, and container groups in parallel before
+checking the completed production build. Focused commands remain available for iteration:
 
 ```sh
-corepack pnpm format:check
-corepack pnpm verify:docs
-corepack pnpm lint
 corepack pnpm check
+corepack pnpm lint
 corepack pnpm test:unit
 corepack pnpm test:e2e
 corepack pnpm test:visual
-corepack pnpm verify:actions
-corepack pnpm verify:migrations
-corepack pnpm verify:compose
-corepack pnpm verify:compose:production
+corepack pnpm verify:preview
+corepack pnpm verify:android:build
 corepack pnpm verify:dependencies
-corepack pnpm verify:image -- runway:local
 ```
 
-Browser suites and the local production-preview gate allocate ephemeral PostgreSQL databases, so
-verification never migrates or reuses the configured development database. Functional and visual
-checks also receive isolated preview ports and do not share account, rate-limit, or training state.
-Hosted CI divides the functional suite between two independent jobs and runs visual coverage beside
-them; each job has its own PostgreSQL service and remains serial internally. Visual snapshot changes
-still require browser and diff inspection.
+Browser suites use isolated PostgreSQL databases and ports. Visual snapshot changes still require
+browser and diff inspection.
 
-To verify the built application, start the production preview in one terminal:
+## Read more
 
-```sh
-corepack pnpm build
-corepack pnpm preview
-```
+- [Product direction](docs/PRODUCT.md)
+- [Design system](docs/DESIGN_SYSTEM.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security and privacy](docs/SECURITY.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Training sources](docs/TRAINING_SOURCES.md)
+- [Contributing](CONTRIBUTING.md)
 
-Then run the live checks from another terminal:
-
-```sh
-SITE_URL=http://localhost:4100 corepack pnpm verify:preview
-```
-
-## Deployment
-
-The tested image is published for AMD64 and ARM64 at:
-
-```text
-ghcr.io/deftmartian/runway:latest
-```
-
-Every published image also receives `sha-<full-commit-sha>`; release tags receive matching semantic
-version tags. Pin a full SHA tag or image digest in production so rollback does not depend on a
-moving tag.
-
-The production shape is PostgreSQL plus separate web, migration, and import-worker processes behind
-an HTTPS reverse proxy. Authentik OIDC, local username/password, 2FA, passkeys, SMTP password reset,
-Nextcloud GPX import, Caddy, and Cloudflare are documented but independently configurable.
-Standard Compose deployment uses a loopback-published app port; an optional overlay supports a
-dedicated `ipvlan` without making that private network layout a requirement for other installations.
-All three runway services use the same image; Compose never builds application containers.
-
-Modified network deployments must set `PUBLIC_SOURCE_URL` to the corresponding source tree. See the
-[deployment guide](docs/DEPLOYMENT.md) for the environment contract, Compose layout, key rotation,
-health checks, and PWA verification.
-
-## Documentation
-
-- [Product](docs/PRODUCT.md): product boundary, audience, value, planning paths, and non-goals.
-- [Design system](docs/DESIGN_SYSTEM.md): visual language, controls, interaction, copy, responsive
-  behavior, and visual testing.
-- [Architecture](docs/ARCHITECTURE.md): stack, routes, runtime shape, data ownership, training logic,
-  and imports.
-- [Security](docs/SECURITY.md): auth, privacy defaults, threat model, GPX handling, Nextcloud sync,
-  and audit expectations.
-- [Deployment](docs/DEPLOYMENT.md): production environment, Authentik, SMTP, Nextcloud, Caddy,
-  Cloudflare, and PWA checks.
-- [Training sources](docs/TRAINING_SOURCES.md): source-backed training claims and product limits.
-- [Contributing](CONTRIBUTING.md): setup, change discipline, privacy rules, and review expectations.
-
-## Current Boundaries
-
-- Watches and phone apps record the activity; runway plans, reviews, and explains consequences.
-- HTTP is suitable for local product review. Passkeys, OIDC redirects, secure cookies,
-  installability, and offline behavior need the real HTTPS origin.
-- Installed Chromium-family PWAs can receive GPX files from the operating-system share sheet or read
-  an explicitly approved Gadgetbridge Auto GPX export directory. A visible PWA checks again after
-  focus, with backoff after quiet or unavailable folders; **Scan now** performs a full check. Browser
-  permission remains browser-managed, while the Android app provides durable background folder
-  reconciliation. New records enter review without changing the plan automatically.
-- Password reset needs `MAIL_ENABLED=true` and SMTP configuration.
-- Nextcloud sync expects a password-protected public folder share and an exact-origin production
-  allowlist.
-- GPX imports keep a bounded route trace and heart-rate series for authenticated activity detail.
-  Route retention can be disabled or cleared in Settings, original files are discarded after
-  parsing, and maps do not contact an external tile service.
-- Training guidance supports planning decisions; it is not medical advice or individualized
-  coaching.
+The web screenshots above are generated from deterministic visual-regression states. The Android
+screenshots come from the built debug APK on the documented emulator profile.
 
 ## License
 
