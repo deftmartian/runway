@@ -112,6 +112,11 @@ The reviewed Gradle 8.13 wrapper is checked in and pins the distribution SHA-256
 paths in the ignored `local.properties` file or normal `ANDROID_HOME`/`ANDROID_SDK_ROOT` variables;
 do not commit machine-specific paths.
 
+The current compatibility lane is AGP 8.13.2, Gradle 8.13, compile/target SDK 36, and AndroidX Core
+1.18.x. AGP 9, Gradle 9, and AndroidX Core 1.19+ are intentionally deferred until they can move
+together in a reviewed SDK 37 migration, including AGP's built-in Kotlin transition. Dependabot
+continues to propose patch updates inside the current lane.
+
 The committed dependency lock pins every resolved configuration, and Gradle verifies downloaded
 plugin and library artifacts against `gradle/verification-metadata.xml`. CI also validates the
 wrapper JAR and scans the locked release runtime for moderate-or-higher advisories. When deliberately
