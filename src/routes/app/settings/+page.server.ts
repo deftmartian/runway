@@ -6,7 +6,7 @@ import { auth } from '$lib/server/auth';
 import { isFreshAuthSession } from '$lib/server/runway/auth-config';
 import { readAuditRetentionPolicy } from '$lib/server/runway/audit-retention';
 import { buildIdentity } from '$lib/server/runway/build-identity';
-import { getHealthConnectConnectionStatus } from '$lib/server/runway/health-connect';
+import { getSettingsHealthConnectConnectionStatus } from '$lib/server/runway/health-connect';
 import {
 	accountSecurityRateLimitBuckets,
 	consumeSecurityRateLimit
@@ -53,7 +53,7 @@ export const load: PageServerLoad = async (event) => {
 	const [passkeys, accounts, healthConnect] = await Promise.all([
 		auth.api.listPasskeys({ headers: event.request.headers }),
 		auth.api.listUserAccounts({ headers: event.request.headers }),
-		getHealthConnectConnectionStatus(event.locals.user.id)
+		getSettingsHealthConnectConnectionStatus(event.locals.user.id)
 	]);
 	const hasCredentialAccount = accounts.some((account) => account.providerId === 'credential');
 	return {

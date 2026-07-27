@@ -14,6 +14,7 @@ import {
 import { toIsoDateInTimeZone } from '$lib/training/date';
 import { summarizeHeartRateSeriesEffort } from '$lib/training/heart-rate';
 import type { HeartRateSettings } from '$lib/training/types';
+import type { HealthConnectConnection } from '$lib/health-connect/presentation';
 import type { AuthenticatedAndroidDevice } from './android-devices';
 import { deleteActivityRecordInTransaction } from './repositories/activity-mutations';
 import { lockActivityOwner } from './repositories/mutation-locks';
@@ -69,7 +70,9 @@ type HealthConnectProfile = {
 };
 
 /** Deliberately contains no provider record identifiers or permission details. */
-export async function getHealthConnectConnectionStatus(userId: string) {
+export async function getHealthConnectConnectionStatus(
+	userId: string
+): Promise<HealthConnectConnection> {
 	const [connection] = await db
 		.select({
 			deviceLabel: androidDevice.label,
@@ -106,6 +109,25 @@ export async function getHealthConnectConnectionStatus(userId: string) {
 		lastSyncedAt: connection.lastSyncedAt,
 		message: connection.lastSyncedAt ? null : 'Waiting for the paired Android app to send records.'
 	};
+}
+
+export async function getSettingsHealthConnectConnectionStatus(
+	userId: string,
+	readStatus: (
+		userId: string
+	) => Promise<HealthConnectConnection> = getHealthConnectConnectionStatus
+): Promise<HealthConnectConnection> {
+	try {
+		return await readStatus(userId);
+	} catch {
+		console.error('Health Connect status could not be loaded for Settings.');
+		return {
+			state: 'unavailable',
+			deviceLabel: null,
+			lastSyncedAt: null,
+			message: 'Health Connect status is temporarily unavailable. Check the data service.'
+		};
+	}
 }
 
 export function blindHealthConnectId(

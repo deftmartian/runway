@@ -160,8 +160,10 @@ Run the complete local release gate:
 corepack pnpm verify:full
 ```
 
-It runs independent web, browser, data/deployment, Android, and container groups in parallel before
-checking the completed production build. Focused commands remain available for iteration:
+It runs independent web, browser, data/deployment, Android, and container-image groups in parallel.
+The host-network-mutating Compose lifecycle check follows the browser group so Chromium cannot lose
+in-flight module requests, then it checks the completed production build. Focused commands remain
+available for iteration:
 
 ```sh
 corepack pnpm check

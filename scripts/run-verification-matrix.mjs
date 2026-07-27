@@ -36,19 +36,23 @@ const groups = [
 	},
 	{
 		id: 'container',
-		name: 'container',
-		steps: [
-			['verify:docker'],
-			['verify:compose:lifecycle'],
-			['verify:image', '--', 'runway:latest']
-		]
+		name: 'container image',
+		steps: [['verify:docker'], ['verify:image', '--', 'runway:latest']]
 	}
 ];
+const composeLifecycleGroup = {
+	id: 'lifecycle',
+	name: 'Compose lifecycle',
+	steps: [['verify:compose:lifecycle']]
+};
 
 if (process.argv.includes('--list')) {
 	for (const group of groups) {
 		console.log(`${group.name}: ${group.steps.map(formatStep).join(', ')}`);
 	}
+	console.log(
+		`${composeLifecycleGroup.name} (after browser): ${composeLifecycleGroup.steps.map(formatStep).join(', ')}`
+	);
 	console.log(`production preview: ${formatStep(['verify:preview:local'])}`);
 	process.exit(0);
 }
@@ -74,11 +78,21 @@ console.log(
 const startedAt = Date.now();
 const results = await runPool(groups, concurrency, runGroup);
 
+const containerPassed = results.find((result) => result.name === 'container image')?.ok;
+if (!interruptedSignal && containerPassed) {
+	// Creating or removing a Docker bridge makes Chromium report ERR_NETWORK_CHANGED.
+	// Keep this one network-mutating verifier out of the otherwise parallel browser phase.
+	console.log(
+		'\nParallel groups finished. Verifying the whole-project Compose lifecycle after browser.'
+	);
+	results.push(await runGroup(composeLifecycleGroup));
+} else if (!interruptedSignal) {
+	console.log('\nSkipping Compose lifecycle because the candidate image did not complete.');
+}
+
 const webPassed = results.find((result) => result.name === 'web quality')?.ok;
 if (!interruptedSignal && webPassed) {
-	console.log(
-		'\nParallel groups finished. Verifying the production preview from the completed build.'
-	);
+	console.log('\nVerifying the production preview from the completed build.');
 	results.push(
 		await runGroup({
 			id: 'preview',

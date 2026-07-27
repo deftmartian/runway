@@ -57,4 +57,18 @@ describe('Health Connect presentation', () => {
 			detail: 'Connect from the runway Android app to import run records.'
 		});
 	});
+
+	test('presents a temporarily unavailable server status without claiming disconnection', () => {
+		expect(
+			healthConnectConnectionPresentation({
+				state: 'unavailable',
+				deviceLabel: null,
+				lastSyncedAt: null,
+				message: 'Health Connect status is temporarily unavailable. Check the data service.'
+			})
+		).toEqual({
+			status: 'Unavailable',
+			detail: 'Health Connect status is temporarily unavailable. Check the data service.'
+		});
+	});
 });

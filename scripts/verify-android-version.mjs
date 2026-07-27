@@ -25,6 +25,11 @@ if (!Number.isSafeInteger(versionCode) || versionCode <= 0 || fdroidVersionCode 
 		`Android and the committed F-Droid template versionCode must be the same positive integer (found ${versionCode} and ${fdroidVersionCode})`
 	);
 }
+const changelogPath = `android/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`;
+const changelog = await readFile(changelogPath, 'utf8').catch(() =>
+	fail(`release changelog ${changelogPath} is missing`)
+);
+if (!changelog.trim()) fail(`release changelog ${changelogPath} must not be empty`);
 
 const githubRef = process.env['GITHUB_REF'];
 const githubTag =
@@ -37,7 +42,7 @@ if (tag && tag !== `v${versionName}`) {
 }
 
 console.log(
-	`Android release version ${versionName} (${versionCode}) matches web metadata and the committed F-Droid template.`
+	`Android release version ${versionName} (${versionCode}) matches web metadata, the committed F-Droid template, and its release changelog.`
 );
 
 function singleMatch(source, pattern, label) {

@@ -602,8 +602,19 @@ importing the base development file alone is not a production deployment. A succ
 healthy. Arcane may still describe that healthy shape as partially running until
 [its one-shot service issue](https://github.com/getarcaneapp/arcane/issues/3305) is resolved.
 
+A partial update has a recognizable failure mode: Calendar can still load while Settings or Import
+returns an error because those routes read newer import tables. Treat that as a deployment-boundary
+failure, not a healthy application with an isolated page bug. Check `/health/ready`; a `503` means
+the stack is not ready. Inspect the `migrate` log and use Project → Redeploy so the selected image
+runs its own migrations before web and worker start. If migration completed but the log reports
+`permission denied` for a new table, reconnect as the schema owner and repeat the table, sequence,
+and default-privilege grants in [Database Roles](#database-roles), then redeploy. Do not grant schema
+ownership to the runtime login or edit the migration ledger. Settings may keep its other controls
+available when only the optional Health Connect status cannot be read, but that fallback does not
+turn a failing readiness check into a successful deployment.
+
 Repository verification exercises a fresh project, a changed-image project redeploy, and a
-same-image idempotent rerun:
+same-image idempotent rerun with separate schema-owner and runtime database roles:
 
 ```sh
 RUNWAY_COMPOSE_TEST_IMAGE=runway:local corepack pnpm verify:compose:lifecycle

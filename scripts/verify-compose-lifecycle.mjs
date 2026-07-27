@@ -9,6 +9,7 @@ const beforeImage = `runway-compose-lifecycle:${suffix}-before`;
 const afterImage = `runway-compose-lifecycle:${suffix}-after`;
 const port = await availablePort();
 const databasePassword = randomBytes(24).toString('hex');
+const runtimeDatabasePassword = randomBytes(24).toString('hex');
 const authSecret = `runway-secret-v1_${randomBytes(32).toString('base64url')}`;
 const composeArguments = [
 	'compose',
@@ -22,7 +23,7 @@ const composeArguments = [
 const baseEnvironment = {
 	...process.env,
 	POSTGRES_PASSWORD: databasePassword,
-	APP_DATABASE_URL: `postgres://runway:${databasePassword}@db:5432/runway`,
+	APP_DATABASE_URL: `postgres://runway_runtime:${runtimeDatabasePassword}@db:5432/runway`,
 	MIGRATION_DATABASE_URL: `postgres://runway:${databasePassword}@db:5432/runway`,
 	BETTER_AUTH_SECRET: authSecret,
 	ORIGIN: 'https://runway-compose-lifecycle.example.test',
@@ -37,6 +38,8 @@ try {
 	runDocker(['tag', sourceImage, afterImage]);
 
 	console.log('Verifying a fresh whole-project Compose deployment.');
+	runCompose(['up', '-d', '--wait', 'db'], activeEnvironment);
+	provisionRuntimeDatabaseRole(activeEnvironment, runtimeDatabasePassword);
 	runCompose(['up', '-d', '--wait'], activeEnvironment);
 	const fresh = inspectProject(activeEnvironment, beforeImage);
 	await assertReady(port);
@@ -137,16 +140,54 @@ async function assertReady(hostPort) {
 	}
 }
 
-function runCompose(arguments_, environment, capture = false) {
-	return runDocker([...composeArguments, ...arguments_], environment, capture);
+function provisionRuntimeDatabaseRole(environment, password) {
+	const sql = `
+CREATE ROLE runway_runtime LOGIN PASSWORD '${password}';
+REVOKE CONNECT, TEMP ON DATABASE runway FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS drizzle AUTHORIZATION runway;
+GRANT CONNECT ON DATABASE runway TO runway_runtime;
+GRANT USAGE ON SCHEMA public, drizzle TO runway_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO runway_runtime;
+GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO runway_runtime;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO runway_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO runway_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO runway_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE runway IN SCHEMA drizzle
+  GRANT SELECT ON TABLES TO runway_runtime;
+`;
+	runCompose(
+		[
+			'exec',
+			'-T',
+			'db',
+			'psql',
+			'--set',
+			'ON_ERROR_STOP=1',
+			'--username',
+			'runway',
+			'--dbname',
+			'runway'
+		],
+		environment,
+		true,
+		sql
+	);
 }
 
-function runDocker(arguments_, environment = process.env, capture = false) {
+function runCompose(arguments_, environment, capture = false, input) {
+	return runDocker([...composeArguments, ...arguments_], environment, capture, input);
+}
+
+function runDocker(arguments_, environment = process.env, capture = false, input) {
 	return execFileSync('docker', arguments_, {
 		cwd: process.cwd(),
 		env: environment,
 		encoding: 'utf8',
-		stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+		input,
+		stdio: capture ? [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] : 'inherit',
 		timeout: 180_000,
 		maxBuffer: 8 * 1024 * 1024
 	});

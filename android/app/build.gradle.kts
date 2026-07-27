@@ -92,8 +92,8 @@ android {
         // Health Connect's Jetpack client supports Android 8.0.
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.5.1"
+        versionCode = 9
+        versionName = "0.5.2"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"

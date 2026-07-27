@@ -4,6 +4,8 @@ import { healthConnectChangesSchema } from './validation';
 import {
 	applyHealthConnectRoutePrivacy,
 	buildHealthConnectActivityValues,
+	getHealthConnectConnectionStatus,
+	getSettingsHealthConnectConnectionStatus,
 	isHealthConnectUpsertDuplicate,
 	requireActiveHealthConnectDevice,
 	requireHealthConnectGeneration,
@@ -93,6 +95,46 @@ describe('Health Connect server lifecycle', () => {
 		mocks.deleteActivity.mockReset();
 		mocks.lockOwner.mockReset();
 		mocks.transaction.mockReset();
+	});
+
+	test('keeps the Settings connection status available when its optional query fails', async () => {
+		const readStatus = vi.fn().mockRejectedValue(new Error('private database detail'));
+		const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+		try {
+			await expect(getSettingsHealthConnectConnectionStatus('user-1', readStatus)).resolves.toEqual(
+				{
+					state: 'unavailable',
+					deviceLabel: null,
+					lastSyncedAt: null,
+					message: 'Health Connect status is temporarily unavailable. Check the data service.'
+				}
+			);
+			expect(readStatus).toHaveBeenCalledExactlyOnceWith('user-1');
+			expect(errorLog).toHaveBeenCalledExactlyOnceWith(
+				'Health Connect status could not be loaded for Settings.'
+			);
+			expect(errorLog).not.toHaveBeenCalledWith(expect.stringContaining('private database detail'));
+		} finally {
+			errorLog.mockRestore();
+		}
+	});
+
+	test('passes a healthy Settings connection status through unchanged', async () => {
+		const status = {
+			state: 'connected' as const,
+			deviceLabel: 'Pixel',
+			lastSyncedAt: new Date('2026-07-27T02:00:00.000Z'),
+			message: null
+		};
+
+		await expect(
+			getSettingsHealthConnectConnectionStatus('user-1', vi.fn().mockResolvedValue(status))
+		).resolves.toBe(status);
+	});
+
+	test('does not hide a direct Health Connect database query failure', async () => {
+		await expect(getHealthConnectConnectionStatus('user-1')).rejects.toThrow();
 	});
 
 	test('distinguishes an idempotent replay from a conflicting request body', () => {
