@@ -77,7 +77,7 @@ describe('authentication configuration', () => {
 			currentVersion: 7
 		};
 		const ciphertexts = await Promise.all(sentinels.map((data) => symmetricEncrypt({ key, data })));
-		expect(ciphertexts.every((ciphertext) => /^\$ba\$7\$/.test(ciphertext))).toBe(true);
+		expect(ciphertexts.every((ciphertext) => ciphertext.startsWith('$ba$7$'))).toBe(true);
 		expect(
 			ciphertexts.every((ciphertext, index) => !ciphertext.includes(sentinels[index] ?? ''))
 		).toBe(true);

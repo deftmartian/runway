@@ -20,12 +20,7 @@ export type CalendarPresentationState =
 	| 'needs_review';
 
 export type CalendarStateFlag =
-	| 'imported'
-	| 'linked'
-	| 'counted_extra'
-	| 'edited'
-	| 'hard_effort'
-	| 'pain';
+	'imported' | 'linked' | 'counted_extra' | 'edited' | 'hard_effort' | 'pain';
 
 export type CalendarEventPresentation = {
 	state: CalendarPresentationState | null;

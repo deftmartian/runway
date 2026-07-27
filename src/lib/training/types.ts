@@ -10,18 +10,9 @@ export type WorkoutType = 'easy' | 'long' | 'recovery' | 'rest' | 'race';
 export type WorkoutStatus = 'planned' | 'done' | 'skipped' | 'shortened';
 export type ConsequenceChoice = 'skip_continue' | 'reduce_next';
 export type DeviationClassification =
-	| 'near_plan'
-	| 'short'
-	| 'over'
-	| 'skipped'
-	| 'unplanned'
-	| 'not_applicable';
+	'near_plan' | 'short' | 'over' | 'skipped' | 'unplanned' | 'not_applicable';
 export type PlanDecision =
-	| 'keep_plan'
-	| 'reduce_next'
-	| 'next_rest'
-	| 'repeat_prescription'
-	| 'rebalance_week';
+	'keep_plan' | 'reduce_next' | 'next_rest' | 'repeat_prescription' | 'rebalance_week';
 export type ConsequenceKind =
 	| 'completed_as_planned'
 	| 'pain_reported'
@@ -221,10 +212,7 @@ export type CalibrationIntake = CommonTrainingIntake & {
 /** Established distance-planner intake retained as a named type for existing callers. */
 export type TrainingIntake = EstablishedTrainingIntake;
 export type PlanIntake =
-	| EstablishedTrainingIntake
-	| FoundationToGoalIntake
-	| FoundationOnlyIntake
-	| CalibrationIntake;
+	EstablishedTrainingIntake | FoundationToGoalIntake | FoundationOnlyIntake | CalibrationIntake;
 
 export type GeneratedWorkout = {
 	scheduledDate: string;
@@ -282,9 +270,7 @@ export type GeneratedCalibrationPlan = GeneratedPlanBase & {
 };
 
 export type GeneratedPlan =
-	| GeneratedDistancePlan
-	| GeneratedFoundationPlan
-	| GeneratedCalibrationPlan;
+	GeneratedDistancePlan | GeneratedFoundationPlan | GeneratedCalibrationPlan;
 
 export type WorkoutFeedbackInput = {
 	status: Extract<WorkoutStatus, 'done' | 'skipped' | 'shortened'>;

@@ -23,9 +23,7 @@ const tokenHashDomain = 'runway-password-reset-v1';
 const minimumResetResponseMs = 350;
 
 export type PasswordResetRequestResult =
-	| 'sent_or_unknown'
-	| 'email_not_configured'
-	| 'rate_limited';
+	'sent_or_unknown' | 'email_not_configured' | 'rate_limited';
 export type PasswordResetResult = 'reset' | 'invalid_or_expired';
 
 export async function requestPasswordReset(

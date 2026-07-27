@@ -8,8 +8,7 @@ export const auditPurgeBatchSize = 500;
 const maxAuditRetentionDays = 3_650;
 
 export type AuditRetentionPolicy =
-	| { enabled: true; retentionDays: number }
-	| { enabled: false; retentionDays: null };
+	{ enabled: true; retentionDays: number } | { enabled: false; retentionDays: null };
 
 export function readAuditRetentionPolicy(
 	configuredValue = process.env['AUDIT_EVENT_RETENTION_DAYS'] ?? env['AUDIT_EVENT_RETENTION_DAYS']

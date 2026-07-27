@@ -12,12 +12,7 @@
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 	type NavItem = {
 		href:
-			| '/app'
-			| '/app/import'
-			| '/app/stats'
-			| '/app/history'
-			| '/app/settings'
-			| '/app/onboarding';
+			'/app' | '/app/import' | '/app/stats' | '/app/history' | '/app/settings' | '/app/onboarding';
 		label: string;
 		path: string;
 		icon: 'calendar' | 'inbox' | 'stats' | 'history' | 'settings';

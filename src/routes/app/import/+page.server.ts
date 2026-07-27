@@ -384,10 +384,7 @@ async function importManualGpx(event: RequestEvent, userId: string) {
 	const matchMode = formString(formData, 'matchMode');
 	const selectedWorkoutId = formString(formData, 'workoutId').trim();
 	const matching:
-		| { mode: 'unlinked' }
-		| { mode: 'auto' }
-		| { mode: 'workout'; workoutId: string }
-		| null =
+		{ mode: 'unlinked' } | { mode: 'auto' } | { mode: 'workout'; workoutId: string } | null =
 		matchMode === 'unlinked'
 			? { mode: 'unlinked' }
 			: matchMode === 'auto'

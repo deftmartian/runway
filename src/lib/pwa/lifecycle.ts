@@ -7,11 +7,7 @@ export type UpdateReloadState = {
 };
 
 export type ServiceWorkerSetupState =
-	| 'checking'
-	| 'ready'
-	| 'failed'
-	| 'unsupported'
-	| 'development';
+	'checking' | 'ready' | 'failed' | 'unsupported' | 'development';
 
 export const enhancedFormSavedEvent = 'runway:enhanced-form-saved';
 export const serviceWorkerSetupState = writable<ServiceWorkerSetupState>('checking');

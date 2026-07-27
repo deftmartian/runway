@@ -51,10 +51,7 @@ const maxDownloadBytes = 10 * 1024 * 1024;
 export const maxNextcloudVisibleGpxFiles = 2_000;
 
 type NextcloudRequestErrorCode =
-	| 'authentication_rejected'
-	| 'folder_not_found'
-	| 'invalid_webdav_response'
-	| 'read_failed';
+	'authentication_rejected' | 'folder_not_found' | 'invalid_webdav_response' | 'read_failed';
 
 class NextcloudRequestError extends Error {
 	readonly code: NextcloudRequestErrorCode;

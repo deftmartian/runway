@@ -75,11 +75,7 @@ type DeviceFolderControlMessage =
 	| { type: 'clear-all' };
 
 export type DeviceFolderConnectionState =
-	| 'https-required'
-	| 'unsupported'
-	| 'unlinked'
-	| 'linked'
-	| 'permission-required';
+	'https-required' | 'unsupported' | 'unlinked' | 'linked' | 'permission-required';
 
 export type DeviceFolderSupportState = 'supported' | 'https-required' | 'unsupported';
 

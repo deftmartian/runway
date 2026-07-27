@@ -33,12 +33,7 @@ import type {
 export type PlanLifecycleReason = 'completed' | 'changed_goal' | 'abandoned';
 
 export type PlanCreationInputField =
-	| 'timeZone'
-	| 'targetDate'
-	| 'availability'
-	| 'baseline'
-	| 'health'
-	| 'calibrationDuration';
+	'timeZone' | 'targetDate' | 'availability' | 'baseline' | 'health' | 'calibrationDuration';
 
 export type PlanCreationInputCode =
 	| 'invalid_time_zone'

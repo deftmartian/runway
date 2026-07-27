@@ -21,10 +21,7 @@ export type HealthConnectProvenance = {
 };
 
 export type HealthConnectConnectionState =
-	| 'connected'
-	| 'needs_attention'
-	| 'not_connected'
-	| 'unavailable';
+	'connected' | 'needs_attention' | 'not_connected' | 'unavailable';
 
 export type HealthConnectConnection = {
 	state: HealthConnectConnectionState;

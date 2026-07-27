@@ -7,13 +7,7 @@ export type WorkerRuntimeStatus = {
 };
 
 export type WorkerHealthState =
-	| 'not-started'
-	| 'starting'
-	| 'running'
-	| 'ready'
-	| 'failed'
-	| 'stale'
-	| 'stalled';
+	'not-started' | 'starting' | 'running' | 'ready' | 'failed' | 'stale' | 'stalled';
 
 export type WorkerHealthAssessment = {
 	ready: boolean;
