@@ -273,13 +273,19 @@ for (const job of [imageVerifyYaml, imagePublishYaml]) {
 assertRun(
 	imagePublishYaml,
 	'Verify exact ARM64 candidate runtime and migration contract',
-	'node scripts/verify-arm64-image.mjs "$RUNWAY_VERIFIED_CANDIDATE"'
+	[
+		'db_container="$(docker compose -f compose.yaml -f deploy/compose.production.yaml ps -q db)"',
+		'test -n "$db_container"',
+		`db_address="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$db_container")"`,
+		`[[ "$db_address" =~ ^[0-9]+(\\.[0-9]+){3}$ ]]`,
+		'DATABASE_URL="postgres://runway:${POSTGRES_PASSWORD}@${db_address}:5432/runway" \\',
+		'  node scripts/verify-arm64-image.mjs "$RUNWAY_VERIFIED_CANDIDATE"'
+	].join('\n')
 );
 assertExact(
 	'ARM64 verification environment',
 	stepByName(imagePublishYaml, 'Verify exact ARM64 candidate runtime and migration contract')?.env,
 	{
-		DATABASE_URL: 'postgres://runway:${{ env.POSTGRES_PASSWORD }}@127.0.0.1:5432/runway',
 		RUNWAY_EXPECTED_BUILD_ID: '${{ github.sha }}',
 		RUNWAY_ARM64_SITE_URL: 'http://127.0.0.1:4110'
 	}
@@ -696,6 +702,13 @@ if (
 if (
 	!imagePublish.includes('RUNWAY_EXPECTED_BUILD_ID: ${{ github.sha }}') ||
 	!imagePublish.includes('RUNWAY_ARM64_SITE_URL: http://127.0.0.1:4110') ||
+	!imagePublish.includes(
+		`db_address="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$db_container")"`
+	) ||
+	!imagePublish.includes(
+		'DATABASE_URL="postgres://runway:${POSTGRES_PASSWORD}@${db_address}:5432/runway"'
+	) ||
+	imagePublish.includes('@127.0.0.1:5432/runway') ||
 	!armImageVerifier.includes(
 		'Published ARM64 verification requires an immutable manifest digest'
 	) ||
