@@ -81,10 +81,10 @@ Health Connect, and route access is requested separately.
 
 <table>
   <tr>
-    <td>
+    <td width="50%">
       <img src="docs/images/runway-android-server.png" alt="The Runway Android server connection screen">
     </td>
-    <td>
+    <td width="50%">
       <img src="docs/images/runway-android-folder.png" alt="The Runway Android folder and Health Connect import settings">
     </td>
   </tr>
