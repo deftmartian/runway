@@ -47,6 +47,7 @@ const dockerEnvironment = {
 };
 let appStarted = false;
 let runtimeImage = image;
+let verificationPhase = 'resolve and pull the published ARM64 manifest';
 
 try {
 	if (process.env['RUNWAY_ARM64_SKIP_PULL'] !== 'true') {
@@ -54,6 +55,7 @@ try {
 		await run('docker', ['pull', '--platform', 'linux/arm64', runtimeImage]);
 	}
 
+	verificationPhase = 'inspect ARM64 image architecture and revision';
 	const [architecture, revision] = (
 		await capture('docker', [
 			'image',
@@ -76,6 +78,7 @@ try {
 		);
 	}
 
+	verificationPhase = 'run ARM64 database migrations';
 	await run(
 		'docker',
 		[
@@ -94,6 +97,7 @@ try {
 		dockerEnvironment
 	);
 
+	verificationPhase = 'start the ARM64 application container';
 	await capture(
 		'docker',
 		[
@@ -123,12 +127,15 @@ try {
 	);
 	appStarted = true;
 
+	verificationPhase = 'wait for ARM64 application readiness';
 	await waitForReady();
+	verificationPhase = 'verify the ARM64 production preview';
 	await run(process.execPath, ['scripts/verify-preview.mjs'], {
 		...process.env,
 		SITE_URL: siteUrl.href
 	});
 
+	verificationPhase = 'verify ARM64 live build identity';
 	const live = await fetch(new URL('/health/live', siteUrl));
 	if (!live.ok) throw new Error(`ARM64 /health/live returned ${live.status}.`);
 	const identity = await live.json();
@@ -147,6 +154,7 @@ try {
 			() => undefined
 		);
 	}
+	reportFailure(verificationPhase, error);
 	throw error;
 } finally {
 	if (appStarted) {
@@ -154,6 +162,32 @@ try {
 			console.error(`Could not remove ARM64 smoke container: ${error.message}`);
 		});
 	}
+}
+
+function reportFailure(phase, error) {
+	const message = `ARM64 image verification failed during "${phase}": ${errorChain(error)}`;
+	console.error(message);
+	if (process.env['GITHUB_ACTIONS'] === 'true') {
+		console.error(
+			`::error title=ARM64 candidate verification failed::${escapeWorkflowCommand(message)}`
+		);
+	}
+}
+
+function errorChain(error) {
+	const messages = [];
+	const seen = new Set();
+	let current = error;
+	while (current instanceof Error && !seen.has(current)) {
+		seen.add(current);
+		messages.push(current.message);
+		current = current.cause;
+	}
+	return messages.join(' <- ') || 'unknown error';
+}
+
+function escapeWorkflowCommand(value) {
+	return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 }
 
 async function publishedArm64Reference(reference) {
