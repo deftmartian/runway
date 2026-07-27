@@ -3,17 +3,16 @@
 This is release guidance, not evidence that the Android app is production-ready. Complete the gates
 in [docs/ANDROID.md](../../docs/ANDROID.md) before distributing it outside a test group.
 
-## Freeze the distribution identity
+## Distribution identity
 
-Before the first signed release, choose and record:
+The canonical source namespace and application id are `dev.deftmartian.runway`. Record:
 
-- the final application id;
 - app name, icons, source URL, minimum Android version, and update-support period;
 - the APK signing owner, protected key location, backup, and tested recovery procedure.
 
-The source default is `com.deftmartian.runway`. An independently distributed build may set
-`-PrunwayApplicationId=com.example.runway`, but that id must remain stable. Android update identity
-is the application id plus signing key. Losing the key or changing the id breaks in-place upgrades.
+An independently owned distribution may set `-PrunwayApplicationId=com.example.runway`, but that id
+must remain stable. Android update identity is the application id plus signing key. Losing the key or
+changing the id breaks in-place upgrades.
 
 Every release uses in-app server selection. The runner chooses a compatible HTTPS runway server on
 first launch, and the app opens it in a Custom Tab with browser origin controls visible. There is no
@@ -39,14 +38,14 @@ flags, the server-selection contract, and the unsigned F-Droid path. They do not
 testing.
 
 Copy `android/signing.properties.example` to the ignored `android/signing.properties` and point it
-at the operator-owned keystore. Keep passwords and aliases in that ignored file or materialize it from
-protected CI secrets; do not put them in committed Gradle properties or shell history.
+at the operator-owned PKCS12 keystore. Keep passwords and aliases in that ignored file or materialize
+it from protected CI secrets; do not put them in committed Gradle properties or shell history.
 
 Build a signed candidate:
 
 ```sh
 cd android
-APP_ID=com.example.runway
+APP_ID=dev.deftmartian.runway
 
 ./gradlew --no-daemon --dependency-verification strict \
   -PrunwayApplicationId="$APP_ID" \
@@ -74,7 +73,7 @@ fingerprint to the GitHub release. Release publication waits for both the image 
 Create a protected GitHub environment named `android-release`, restrict its deployment branches to
 version tags, and add these environment secrets:
 
-- `RUNWAY_ANDROID_KEYSTORE_BASE64`: the complete release keystore encoded as one base64 value;
+- `RUNWAY_ANDROID_KEYSTORE_BASE64`: the complete PKCS12 release keystore encoded as one base64 value;
 - `RUNWAY_ANDROID_KEYSTORE_PASSWORD`;
 - `RUNWAY_ANDROID_KEY_ALIAS`;
 - `RUNWAY_ANDROID_KEY_PASSWORD`.
@@ -91,10 +90,10 @@ repository before publishing it.
 
 The supported personal-repository flow builds the pinned source commit. It does not copy an APK built
 elsewhere into `repo/`. Copy
-`android/fdroid/metadata/REPLACE_APPLICATION_ID.yml.example` to the personal repository's
-`metadata/` directory using the final application id as its filename. Fill every placeholder and
-keep `runwayFdroidSourceBuild=true`; this mode refuses `android/signing.properties` and emits an
-unsigned release for fdroidserver to sign.
+`android/fdroid/metadata/dev.deftmartian.runway.yml.example` to the personal repository's
+`metadata/dev.deftmartian.runway.yml`. Fill every remaining placeholder and keep
+`runwayFdroidSourceBuild=true`; this mode refuses `android/signing.properties` and emits an unsigned
+release for fdroidserver to sign.
 
 Run fdroidserver in a dedicated operator or CI environment. Keep index and APK signing keys outside
 the web root, build the exact metadata commit, then sign and publish it:
@@ -102,9 +101,9 @@ the web root, build the exact metadata commit, then sign and publish it:
 ```sh
 mkdir runway-fdroid && cd runway-fdroid
 fdroid init
-fdroid lint REPLACE_APPLICATION_ID
-fdroid build --latest REPLACE_APPLICATION_ID
-fdroid publish REPLACE_APPLICATION_ID
+fdroid lint dev.deftmartian.runway
+fdroid build --latest dev.deftmartian.runway
+fdroid publish dev.deftmartian.runway
 fdroid update
 fdroid deploy
 ```

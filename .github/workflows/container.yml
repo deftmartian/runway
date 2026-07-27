@@ -374,7 +374,7 @@ jobs:
           RUNWAY_ANDROID_KEY_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          keystore="${RUNNER_TEMP}/runway-release.jks"
+          keystore="${RUNNER_TEMP}/runway-release.p12"
           trap 'rm -f "$keystore"' EXIT
           for name in \
             RUNWAY_ANDROID_KEYSTORE_BASE64 \
@@ -392,6 +392,7 @@ jobs:
           mkdir -p release-assets
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
             --ks "$keystore" \
+            --ks-type PKCS12 \
             --ks-key-alias "$RUNWAY_ANDROID_KEY_ALIAS" \
             --ks-pass env:RUNWAY_ANDROID_KEYSTORE_PASSWORD \
             --key-pass env:RUNWAY_ANDROID_KEY_PASSWORD \

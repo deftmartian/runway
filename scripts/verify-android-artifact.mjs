@@ -4,11 +4,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const variant = process.argv[2];
+const canonicalApplicationId = 'dev.deftmartian.runway';
 if (variant !== 'debug' && variant !== 'release') {
-	fail('usage: node scripts/verify-android-artifact.mjs <debug|release>');
+	fail('usage: node scripts/verify-android-artifact.mjs <debug|release> [expected-application-id]');
 }
-if (process.argv.length > 3) {
-	fail('instance-bound Android artifact modes are not supported');
+if (process.argv.length > 4) {
+	fail('Android artifact verification received too many arguments');
+}
+const expectedApplicationId =
+	process.argv[3] ??
+	(variant === 'debug' ? `${canonicalApplicationId}.debug` : canonicalApplicationId);
+if (!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/.test(expectedApplicationId)) {
+	fail('expected Android application id is invalid');
 }
 
 const manifestPath = resolve(
@@ -18,6 +25,11 @@ const manifestPath = resolve(
 const manifest = readFileSync(manifestPath, 'utf8');
 const applicationId = manifest.match(/<manifest[^>]*\bpackage="([^"]+)"/)?.[1];
 if (!applicationId) fail(`could not read the ${variant} application id from the merged manifest`);
+if (applicationId !== expectedApplicationId) {
+	fail(
+		`${variant} application id is ${applicationId}; expected the reviewed identity ${expectedApplicationId}`
+	);
+}
 
 const permissions = new Set(
 	[...manifest.matchAll(/<uses-permission\s+android:name="([^"]+)"/g)].map((match) => match[1])
@@ -52,7 +64,7 @@ if (!privateDeclaration.test(manifest)) {
 }
 
 if (
-	!manifest.includes('android:name="com.deftmartian.runway.ServerConnectionActivity"') ||
+	!manifest.includes('android:name="dev.deftmartian.runway.ServerConnectionActivity"') ||
 	!manifest.includes('android.intent.action.MAIN') ||
 	!manifest.includes('android.intent.category.LAUNCHER')
 ) {
@@ -69,13 +81,13 @@ const exportedComponents = [
 	permission: attribute(match[2], 'android:permission')
 }));
 const expectedExported = new Map([
-	['activity:com.deftmartian.runway.ShareReceiverActivity', null],
-	['activity:com.deftmartian.runway.NativeFolderSettingsActivity', null],
+	['activity:dev.deftmartian.runway.ShareReceiverActivity', null],
+	['activity:dev.deftmartian.runway.NativeFolderSettingsActivity', null],
 	[
-		'activity:com.deftmartian.runway.HealthConnectPermissionsRationaleActivity',
+		'activity:dev.deftmartian.runway.HealthConnectPermissionsRationaleActivity',
 		'android.permission.START_VIEW_PERMISSION_USAGE'
 	],
-	['activity:com.deftmartian.runway.ServerConnectionActivity', null],
+	['activity:dev.deftmartian.runway.ServerConnectionActivity', null],
 	['service:androidx.health.platform.client.impl.sdkservice.HealthDataSdkService', null],
 	[
 		'service:androidx.work.impl.background.systemjob.SystemJobService',
@@ -115,7 +127,7 @@ if (variant === 'release') {
 
 const buildConfigPath = resolve(
 	root,
-	`android/app/build/generated/source/buildConfig/${variant}/com/deftmartian/runway/BuildConfig.java`
+	`android/app/build/generated/source/buildConfig/${variant}/dev/deftmartian/runway/BuildConfig.java`
 );
 const buildConfig = readFileSync(buildConfigPath, 'utf8');
 if (buildConfig.includes('RUNWAY_INSTANCE_BOUND') || buildConfig.includes('RUNWAY_BOUND_ORIGIN')) {

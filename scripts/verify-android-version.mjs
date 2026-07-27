@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 const packageMetadata = JSON.parse(await readFile('package.json', 'utf8'));
 const build = await readFile('android/app/build.gradle.kts', 'utf8');
-const fdroid = await readFile('android/fdroid/metadata/REPLACE_APPLICATION_ID.yml.example', 'utf8');
+const fdroid = await readFile('android/fdroid/metadata/dev.deftmartian.runway.yml.example', 'utf8');
 
 const versionName = singleMatch(build, /\bversionName\s*=\s*"([^"]+)"/, 'Android versionName');
 const versionCode = Number(singleMatch(build, /\bversionCode\s*=\s*(\d+)/, 'Android versionCode'));

@@ -1,0 +1,25 @@
+Categories:
+  - Sports & Health
+License: AGPL-3.0-only
+AuthorName: REPLACE_AUTHOR_NAME
+SourceCode: https://REPLACE_SOURCE_URL
+IssueTracker: https://REPLACE_ISSUE_URL
+# After the first controlled publish, pin the fdroidserver-managed APK key:
+# AllowedAPKSigningKeys: REPLACE_WITH_LOWERCASE_CERT_SHA256_WITHOUT_COLONS
+
+RepoType: git
+Repo: https://REPLACE_GIT_URL
+
+Builds:
+  - versionName: 0.5.0
+    versionCode: 7
+    commit: REPLACE_SOURCE_COMMIT
+    subdir: android
+    gradle:
+      - yes
+    gradleprops:
+      - runwayApplicationId=dev.deftmartian.runway
+      - runwayFdroidSourceBuild=true
+
+AutoUpdateMode: None
+UpdateCheckMode: None

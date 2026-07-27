@@ -1,4 +1,4 @@
-# runway for Android (pre-release)
+# runway for Android
 
 This project packages the complete self-hosted runway PWA as an Android app. The normal build asks
 for the runner's server on first launch, verifies that it is a compatible runway instance, and opens
@@ -21,7 +21,6 @@ Every APK uses the same selectable-server model:
 
 ```sh
 ./gradlew \
-  -PrunwayApplicationId=com.example.runway \
   :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
@@ -32,10 +31,9 @@ tries to revoke the old device, then clears its local pairing, folder grant, que
 markers without touching GPX files or stored activity data. If the old host is offline, the app
 requires a second confirmation and says exactly what remains active there.
 
-The source namespace and default pre-release application id are `com.deftmartian.runway`. Choose the
-final application id before the first signed distribution. An independent operator should use a stable,
-operator-owned id when independently signing a personal F-Droid build; changing the id or signing key
-later prevents in-place updates.
+The canonical source namespace and application id are `dev.deftmartian.runway`. This is the permanent
+identity for the deftmartian-signed distribution. An independent operator who changes it must use a
+stable, operator-owned id; changing the id or signing key later prevents in-place updates.
 
 ## Android capability surface
 
@@ -45,7 +43,7 @@ also exposes **Server**. The native page can be opened with
 an explicit package-bound Android intent:
 
 ```text
-intent://folder#Intent;scheme=runway-native;package=REPLACE_APPLICATION_ID;end
+intent://folder#Intent;scheme=runway-native;package=dev.deftmartian.runway;end
 ```
 
 The native page:
@@ -133,14 +131,13 @@ Build with the wrapper:
 cd android
 ./gradlew --version
 ./gradlew \
-  -PrunwayApplicationId=com.example.runway \
   :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
 When deliberately upgrading Gradle, regenerate the scripts and JAR together, review the wrapper
 change, and replace `distributionSha256Sum` with the checksum published for that exact distribution.
 Do not commit `local.properties`, `signing.properties`, signing keys, or signing passwords. Direct
-release builds load the four required values shown in `signing.properties.example` and fail before
+release builds load the required PKCS12 values shown in `signing.properties.example` and fail before
 packaging if the external keystore or any value is missing. The explicit F-Droid source-build mode
 produces an unsigned release for `fdroid publish` to sign; it refuses a local signing configuration.
 The GitHub `android-release` environment also pins `RUNWAY_ANDROID_CERT_SHA256` as a non-secret

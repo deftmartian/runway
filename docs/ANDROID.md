@@ -40,13 +40,13 @@ it invalidates the legacy global credential slot and clears any retained folder 
 markers that cannot be attributed safely to the selected origin. The runner must pair the phone and
 approve the Gadgetbridge folder again.
 
-The build also accepts `-PrunwayApplicationId=…`. The default `com.deftmartian.runway` value remains
-pre-release. A distributor should choose a stable owner-controlled id to avoid colliding with another
-signer or installation. App update identity is the application id and signing certificate. Passing
-the removed `-PrunwayOrigin` property is a build error: there is no origin-bound release shape. The
-web launcher is not externally exported, selected servers stay in origin-visible browser UI, and
-incoming URLs cannot silently replace the configured origin. These are security properties and must
-not be replaced by WebView.
+The canonical source namespace and application id are `dev.deftmartian.runway`. This is the permanent
+identity for the deftmartian-signed distribution. The build accepts
+`-PrunwayApplicationId=…` only for an independently owned distribution, whose operator must keep its
+id and signing certificate stable. Passing the removed `-PrunwayOrigin` property is a build error:
+there is no origin-bound release shape. The web launcher is not externally exported, selected
+servers stay in origin-visible browser UI, and incoming URLs cannot silently replace the configured
+origin. These are security properties and must not be replaced by WebView.
 
 ## One product, two capability surfaces
 
@@ -60,8 +60,8 @@ account connection to folder selection to **Check now**.
 After the first launch, Android publishes **Folder** and **Server** shortcuts. The folder sheet is also
 registered for `runway-native://folder`. The PWA opens it with a package-bound `intent://` link so
 another app cannot claim the custom scheme. `ANDROID_APPLICATION_ID` may override the canonical
-`com.deftmartian.runway` package for an independently renamed build. The sheet always provides **Back
-to runway**, which returns to the complete web app.
+`dev.deftmartian.runway` package only for an independently renamed build. The sheet always provides
+**Back to runway**, which returns to the complete web app.
 Android's app-storage management entry points to the same sheet.
 
 There is intentionally no JavaScript bridge. The browser page and native worker do not share browser
@@ -184,8 +184,7 @@ bearer URL, or non-expiring general API key.
 
 The Android app is not ready for external release until there is evidence for:
 
-- final package/signing ownership, key backup/recovery,
-  Android developer registration, and a supported update window;
+- signing-key recovery, Android developer registration, and a supported update window;
 - first-run, invalid-server, incompatible-version, TLS-failure, server-switch, and cross-origin
   credential/import isolation tests;
 - a reviewed decision on whether short-code proof is sufficient or hardware-backed device proof is

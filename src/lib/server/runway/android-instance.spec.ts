@@ -20,7 +20,7 @@ describe('Android instance discovery', () => {
 	});
 
 	test('uses the canonical package by default and validates configured package ids', () => {
-		expect(resolveAndroidApplicationId(undefined)).toBe('com.deftmartian.runway');
+		expect(resolveAndroidApplicationId(undefined)).toBe('dev.deftmartian.runway');
 		expect(resolveAndroidApplicationId(' com.example.runway ')).toBe('com.example.runway');
 		expect(resolveAndroidApplicationId('runway')).toBeNull();
 		expect(resolveAndroidApplicationId('com.example/runway')).toBeNull();

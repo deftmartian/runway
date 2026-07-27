@@ -3,6 +3,7 @@ import java.util.Properties
 
 data class RunwaySigningIdentity(
     val storeFile: String,
+    val storeType: String,
     val storePassword: String,
     val keyAlias: String,
     val keyPassword: String,
@@ -19,7 +20,7 @@ if (providers.gradleProperty("runwayOrigin").isPresent) {
     )
 }
 val runwayApplicationId = providers.gradleProperty("runwayApplicationId")
-    .orElse("com.deftmartian.runway")
+    .orElse("dev.deftmartian.runway")
     .get()
     .trim()
 if (!runwayApplicationId.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
@@ -53,30 +54,35 @@ if (environmentSigningValues.values.any { it != null } && environmentSigningValu
 val releaseSigningIdentity = when {
     environmentSigningValues.values.all { it != null } -> RunwaySigningIdentity(
         storeFile = requireNotNull(environmentSigningValues["storeFile"]),
+        storeType = "PKCS12",
         storePassword = requireNotNull(environmentSigningValues["storePassword"]),
         keyAlias = requireNotNull(environmentSigningValues["keyAlias"]),
         keyPassword = requireNotNull(environmentSigningValues["keyPassword"]),
     )
     releaseSigningProperties != null -> RunwaySigningIdentity(
         storeFile = releaseSigningProperties.getProperty("storeFile")?.trim().orEmpty(),
+        storeType = releaseSigningProperties.getProperty("storeType")?.trim().orEmpty(),
         storePassword = releaseSigningProperties.getProperty("storePassword")?.trim().orEmpty(),
         keyAlias = releaseSigningProperties.getProperty("keyAlias")?.trim().orEmpty(),
         keyPassword = releaseSigningProperties.getProperty("keyPassword")?.trim().orEmpty(),
     ).also { identity ->
         if (
             identity.storeFile.isEmpty() ||
+            identity.storeType != "PKCS12" ||
             identity.storePassword.isEmpty() ||
             identity.keyAlias.isEmpty() ||
             identity.keyPassword.isEmpty()
         ) {
-            throw GradleException("android/signing.properties is incomplete")
+            throw GradleException(
+                "android/signing.properties must be complete and use storeType=PKCS12",
+            )
         }
     }
     else -> null
 }
 
 android {
-    namespace = "com.deftmartian.runway"
+    namespace = "dev.deftmartian.runway"
     compileSdk = 36
     useLibrary("android.test.runner")
     useLibrary("android.test.base")
@@ -86,8 +92,8 @@ android {
         // Health Connect's Jetpack client supports Android 8.0.
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.5.0"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -97,6 +103,7 @@ android {
         if (releaseSigningIdentity != null) {
             create("runwayRelease") {
                 storeFile = rootProject.file(releaseSigningIdentity.storeFile)
+                storeType = releaseSigningIdentity.storeType
                 storePassword = releaseSigningIdentity.storePassword
                 keyAlias = releaseSigningIdentity.keyAlias
                 keyPassword = releaseSigningIdentity.keyPassword

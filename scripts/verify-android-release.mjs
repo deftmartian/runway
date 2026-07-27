@@ -5,25 +5,29 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const gradle = process.platform === 'win32' ? 'android\\gradlew.bat' : 'android/gradlew';
-const fixtureApplicationId = 'com.deftmartian.runway.releasecheck';
+const fixtureApplicationId = 'dev.deftmartian.runway.releasecheck';
 const common = [
 	'-p',
 	'android',
 	'--no-daemon',
 	'--dependency-verification',
 	'strict',
-	'-PrunwaySigningPropertiesFile=build/release-contract/no-signing.properties',
-	`-PrunwayApplicationId=${fixtureApplicationId}`
+	'-PrunwaySigningPropertiesFile=build/release-contract/no-signing.properties'
 ];
+const independentlyOwnedBuild = [...common, `-PrunwayApplicationId=${fixtureApplicationId}`];
 
-const selectableServer = run([...common, ':app:verifyServerSelectionRelease']);
+const selectableServer = run([...independentlyOwnedBuild, ':app:verifyServerSelectionRelease']);
 if (selectableServer.status !== 0) {
 	process.stderr.write(selectableServer.stdout);
 	process.stderr.write(selectableServer.stderr);
 	fail('selectable-server release configuration failed verification');
 }
 
-const rejected = run([...common, '-PrunwayOrigin=https://runway.example', ':app:tasks']);
+const rejected = run([
+	...independentlyOwnedBuild,
+	'-PrunwayOrigin=https://runway.example',
+	':app:tasks'
+]);
 if (rejected.status === 0) {
 	fail('obsolete instance-bound origin unexpectedly passed configuration');
 }
@@ -35,7 +39,7 @@ if (
 	fail('instance-bound build failed for a reason other than the selectable-server guard');
 }
 
-const unsignedRelease = run([...common, ':app:verifyReleaseSigning']);
+const unsignedRelease = run([...independentlyOwnedBuild, ':app:verifyReleaseSigning']);
 if (unsignedRelease.status === 0) {
 	fail('release signing verification unexpectedly passed without signing.properties');
 }
@@ -46,10 +50,26 @@ if (
 ) {
 	fail('unsigned release check failed for a reason other than the signing guard');
 }
-const sourceBuild = run([...common, '-PrunwayFdroidSourceBuild=true', ':app:assembleRelease']);
-if (sourceBuild.status !== 0) {
-	process.stderr.write(sourceBuild.stdout);
-	process.stderr.write(sourceBuild.stderr);
+const independentSourceBuild = run([
+	...independentlyOwnedBuild,
+	'-PrunwayFdroidSourceBuild=true',
+	':app:assembleRelease'
+]);
+if (independentSourceBuild.status !== 0) {
+	process.stderr.write(independentSourceBuild.stdout);
+	process.stderr.write(independentSourceBuild.stderr);
+	fail('independently owned F-Droid source build failed');
+}
+verifyArtifact('release', fixtureApplicationId);
+
+const canonicalSourceBuild = run([
+	...common,
+	'-PrunwayFdroidSourceBuild=true',
+	':app:assembleRelease'
+]);
+if (canonicalSourceBuild.status !== 0) {
+	process.stderr.write(canonicalSourceBuild.stdout);
+	process.stderr.write(canonicalSourceBuild.stderr);
 	fail('explicit unsigned F-Droid source build failed');
 }
 const unsignedArtifact = resolve(
@@ -71,8 +91,12 @@ function run(args) {
 	});
 }
 
-function verifyArtifact(variant) {
-	const args = [resolve(root, 'scripts/verify-android-artifact.mjs'), variant];
+function verifyArtifact(variant, expectedApplicationId) {
+	const args = [
+		resolve(root, 'scripts/verify-android-artifact.mjs'),
+		variant,
+		...(expectedApplicationId ? [expectedApplicationId] : [])
+	];
 	const verification = spawnSync(process.execPath, args, {
 		cwd: root,
 		encoding: 'utf8',

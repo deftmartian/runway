@@ -25,8 +25,8 @@ Set these before running the production app:
   import-receipt HMACs, and opaque Health Connect identifiers remain independent of auth-key
   rotation; if omitted, a strong `BETTER_AUTH_SECRET` is used and Android imports inherit its
   rotation consequences
-- optional `ANDROID_APPLICATION_ID` only when distributing a renamed Android package; the canonical
-  package defaults to `com.deftmartian.runway`
+- optional `ANDROID_APPLICATION_ID` only when serving an independently renamed Android distribution;
+  the canonical package is `dev.deftmartian.runway`
 - `NEXTCLOUD_ALLOWED_ORIGINS=https://<nextcloud-host>[:port]` before enabling share sync
 - `BODY_SIZE_LIMIT=12M` so SvelteKit allows runway to validate GPX files against its 10 MB app limit
 - `RUNWAY_IMAGE=ghcr.io/deftmartian/runway:sha-<full-commit-sha>` or an immutable image digest

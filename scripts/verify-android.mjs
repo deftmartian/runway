@@ -21,19 +21,19 @@ const requiredFiles = [
 	'android/app/src/main/res/values-night-v31/colors.xml',
 	'android/signing.properties.example',
 	'scripts/verify-android-artifact.mjs',
-	'android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt',
-	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionActivity.kt',
-	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionStore.kt',
-	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionReset.kt',
-	'android/app/src/main/java/com/deftmartian/runway/AndroidStateCoordinator.kt',
-	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt',
-	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt',
-	'android/app/src/main/java/com/deftmartian/runway/TreeAccessStore.kt',
-	'android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt',
-	'android/app/src/main/java/com/deftmartian/runway/ReconciliationWorker.kt',
-	'android/app/src/main/java/com/deftmartian/runway/HealthConnectSync.kt',
-	'android/app/src/main/java/com/deftmartian/runway/HealthConnectWorker.kt',
-	'android/app/src/androidTest/java/com/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/RunwayLauncherActivity.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionActivity.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionStore.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionReset.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/AndroidStateCoordinator.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeFolderSettingsActivity.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/AndroidCredentialStore.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/TreeAccessStore.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/RunwayApiClient.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/ReconciliationWorker.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/HealthConnectSync.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/HealthConnectWorker.kt',
+	'android/app/src/androidTest/java/dev/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
 	'android/gradle/wrapper/gradle-wrapper.properties',
 	'android/gradle/verification-metadata.xml',
@@ -118,6 +118,9 @@ const build = read('android/app/build.gradle.kts');
 for (const required of [
 	'compileSdk = 36',
 	'targetSdk = 36',
+	'.orElse("dev.deftmartian.runway")',
+	'namespace = "dev.deftmartian.runway"',
+	'storeType = "PKCS12"',
 	'androidx.browser:browser:1.10.0',
 	'androidx.health.connect:connect-client:1.1.0',
 	'verifyServerSelectionRelease',
@@ -139,9 +142,15 @@ for (const required of ["GITHUB_REF_TYPE'] === 'tag'", "startsWith('refs/tags/')
 }
 
 const androidIgnore = read('android/.gitignore');
-for (const required of ['signing.properties', '*.jks', '*.keystore']) {
+for (const required of ['signing.properties', '*.jks', '*.keystore', '*.p12', '*.pfx']) {
 	if (!androidIgnore.split(/\r?\n/).includes(required)) {
 		errors.push(`Android ignore contract is missing ${required}`);
+	}
+}
+const signingPropertiesExample = read('android/signing.properties.example');
+for (const required of ['storeFile=/secure/path/runway-release.p12', 'storeType=PKCS12']) {
+	if (!signingPropertiesExample.split(/\r?\n/).includes(required)) {
+		errors.push(`Android signing example is missing ${required}`);
 	}
 }
 
@@ -173,6 +182,7 @@ for (const required of [
 	'name: unsigned-android-release',
 	'assembleRelease',
 	'apksigner',
+	'--ks-type PKCS12',
 	'Number of signers: 1',
 	'RUNWAY_ANDROID_CERT_SHA256',
 	'The APK signer does not match the pinned Android release certificate.',
@@ -235,6 +245,8 @@ for (const required of [
 	'DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 	'protectionLevel="signature"',
 	'instance-bound build contract',
+	'expectedApplicationId',
+	'expected the reviewed identity',
 	'expectedExported',
 	'android:usesCleartextTraffic',
 	'android:allowBackup'
@@ -286,7 +298,7 @@ for (const required of [
 		errors.push(`Android dependency lock is missing ${required}`);
 }
 
-const launcher = read('android/app/src/main/java/com/deftmartian/runway/RunwayLauncherActivity.kt');
+const launcher = read('android/app/src/main/java/dev/deftmartian/runway/RunwayLauncherActivity.kt');
 for (const required of [
 	': ComponentActivity()',
 	'CustomTabsIntent.Builder()',
@@ -300,7 +312,7 @@ for (const required of [
 }
 
 const serverConnection = read(
-	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionActivity.kt'
+	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionActivity.kt'
 );
 for (const required of [
 	'RunwayApiClient(origin).probe()',
@@ -316,7 +328,7 @@ for (const required of [
 }
 
 const credentialStore = read(
-	'android/app/src/main/java/com/deftmartian/runway/AndroidCredentialStore.kt'
+	'android/app/src/main/java/dev/deftmartian/runway/AndroidCredentialStore.kt'
 );
 for (const required of [
 	'expectedOrigin',
@@ -333,7 +345,7 @@ for (const required of [
 }
 
 const stateCoordinator = read(
-	'android/app/src/main/java/com/deftmartian/runway/AndroidStateCoordinator.kt'
+	'android/app/src/main/java/dev/deftmartian/runway/AndroidStateCoordinator.kt'
 );
 for (const required of ['ReentrantReadWriteLock(true)', 'fun <T> read', 'fun <T> write']) {
 	if (!stateCoordinator.includes(required)) {
@@ -342,7 +354,7 @@ for (const required of ['ReentrantReadWriteLock(true)', 'fun <T> read', 'fun <T>
 }
 
 const lifecycleInstrumentation = read(
-	'android/app/src/androidTest/java/com/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt'
+	'android/app/src/androidTest/java/dev/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt'
 );
 for (const required of [
 	'testInterruptedServerTransitionRecoversBeforeNewWorkCanReadState',
@@ -356,7 +368,7 @@ for (const required of [
 }
 
 const connectionStore = read(
-	'android/app/src/main/java/com/deftmartian/runway/ServerConnectionStore.kt'
+	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionStore.kt'
 );
 for (const required of [
 	'PENDING_CLEANUP_ORIGIN_KEY',
@@ -369,7 +381,7 @@ for (const required of [
 	}
 }
 
-const treeStore = read('android/app/src/main/java/com/deftmartian/runway/TreeAccessStore.kt');
+const treeStore = read('android/app/src/main/java/dev/deftmartian/runway/TreeAccessStore.kt');
 for (const required of [
 	'TREE_OWNER_ORIGIN_KEY',
 	'TREE_OWNER_SERVER_GENERATION_KEY',
@@ -393,7 +405,7 @@ for (const required of [
 }
 
 const folderSettings = read(
-	'android/app/src/main/java/com/deftmartian/runway/NativeFolderSettingsActivity.kt'
+	'android/app/src/main/java/dev/deftmartian/runway/NativeFolderSettingsActivity.kt'
 );
 for (const required of [
 	'setContentView(R.layout.activity_native_folder_settings)',
@@ -414,7 +426,7 @@ for (const required of [
 	}
 }
 
-const healthConnect = read('android/app/src/main/java/com/deftmartian/runway/HealthConnectSync.kt');
+const healthConnect = read('android/app/src/main/java/dev/deftmartian/runway/HealthConnectSync.kt');
 for (const required of [
 	'ExerciseSessionRecord.EXERCISE_TYPE_RUNNING',
 	'ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL',
@@ -435,7 +447,7 @@ for (const forbidden of ['insertRecords(', 'updateRecords(', 'deleteRecords(']) 
 	}
 }
 const healthWorker = read(
-	'android/app/src/main/java/com/deftmartian/runway/HealthConnectWorker.kt'
+	'android/app/src/main/java/dev/deftmartian/runway/HealthConnectWorker.kt'
 );
 for (const required of [
 	'AndroidHealthConnectGateway(applicationContext)',
@@ -448,7 +460,7 @@ for (const required of [
 		errors.push(`Android Health Connect background worker is missing ${required}`);
 	}
 }
-const apiClient = read('android/app/src/main/java/com/deftmartian/runway/RunwayApiClient.kt');
+const apiClient = read('android/app/src/main/java/dev/deftmartian/runway/RunwayApiClient.kt');
 for (const required of [
 	'HealthConnectPayloadSerializer',
 	'MAX_HEALTH_CONNECT_PAYLOAD_BYTES = 240 * 1024',
@@ -515,7 +527,7 @@ if (/ScanProgressStore|nextOffset|startOffset/.test(kotlin)) {
 	errors.push('Android source still relies on unstable provider cursor offsets');
 }
 
-const scanner = read('android/app/src/main/java/com/deftmartian/runway/SafTreeScanner.kt');
+const scanner = read('android/app/src/main/java/dev/deftmartian/runway/SafTreeScanner.kt');
 if (!scanner.includes('MAX_ENTRIES_PER_SCAN = 10_000')) {
 	errors.push('Android restart scan must keep the explicit 10,000-entry bound');
 }

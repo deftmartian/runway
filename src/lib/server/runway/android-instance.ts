@@ -1,7 +1,7 @@
 import { buildIdentity } from './build-identity';
 
 const androidApplicationIdPattern = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
-const defaultAndroidApplicationId = 'com.deftmartian.runway';
+const defaultAndroidApplicationId = 'dev.deftmartian.runway';
 
 export const androidApiCompatibility = Object.freeze({
 	minimum: 1,
