@@ -58,7 +58,9 @@ updates:
       - dependency-name: com.android.application
         update-types: [version-update:semver-major]
       - dependency-name: gradle-wrapper
-        update-types: [version-update:semver-major]
+        # Keep 8.13.x patches flowing, but move later Gradle lines with the
+        # reviewed AGP, built-in Kotlin, and SDK 37 migration.
+        update-types: [version-update:semver-minor, version-update:semver-major]
       - dependency-name: androidx.core:core-ktx
         # Core 1.19+ requires compileSdk 37. Keep 1.18.x patches flowing until the
         # AGP 9, Gradle 9, and SDK 37 migration is handled as one reviewed change.
