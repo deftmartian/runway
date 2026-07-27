@@ -3,6 +3,12 @@ import migrationIntegrity from '../../../../drizzle/migration-integrity.json';
 import { db } from './index';
 
 type LedgerRow = { hash: string; createdAt: string };
+type MigrationEntry = LedgerRow & { tag: string };
+type ReleasedLineage = {
+	tag: string;
+	forwardFrom: string;
+	entries: MigrationEntry[];
+};
 type NamedRow = { name: string };
 
 const compatibilityMigrationIndex = migrationIntegrity.canonical.findIndex(
@@ -11,24 +17,34 @@ const compatibilityMigrationIndex = migrationIntegrity.canonical.findIndex(
 if (compatibilityMigrationIndex < 0) {
 	throw new Error('Migration integrity manifest is missing the v0.1.1 compatibility migration.');
 }
-const releasedV001ForwardMigrationIndex = migrationIntegrity.canonical.findIndex(
-	(entry) => entry.tag === migrationIntegrity.releasedV001.forwardFrom
-);
-if (releasedV001ForwardMigrationIndex !== migrationIntegrity.releasedV001.entries.length) {
-	throw new Error('Migration integrity manifest has an invalid v0.0.1 forward cutover.');
-}
-
+const releasedV001ViaV012 = {
+	tag: 'v0.0.1 upgraded by v0.1.2',
+	forwardFrom: migrationIntegrity.releasedV012.forwardFrom,
+	entries: [
+		...migrationIntegrity.releasedV001.entries,
+		...migrationIntegrity.releasedV012.entries.slice(migrationIntegrity.releasedV001.entries.length)
+	]
+};
 const supportedFinalLedgers = [
 	migrationIntegrity.canonical,
-	[
-		...migrationIntegrity.releasedV001.entries,
-		...migrationIntegrity.canonical.slice(releasedV001ForwardMigrationIndex)
-	],
+	releasedFinalLedger(migrationIntegrity.releasedV001),
+	releasedFinalLedger(migrationIntegrity.releasedV012),
+	releasedFinalLedger(releasedV001ViaV012),
 	[
 		...migrationIntegrity.rebasedV011,
 		...migrationIntegrity.canonical.slice(compatibilityMigrationIndex)
 	]
 ];
+
+function releasedFinalLedger(release: ReleasedLineage): MigrationEntry[] {
+	const forwardMigrationIndex = migrationIntegrity.canonical.findIndex(
+		(entry) => entry.tag === release.forwardFrom
+	);
+	if (forwardMigrationIndex !== release.entries.length) {
+		throw new Error(`Migration integrity manifest has an invalid ${release.tag} forward cutover.`);
+	}
+	return [...release.entries, ...migrationIntegrity.canonical.slice(forwardMigrationIndex)];
+}
 
 export async function databaseIsReady(): Promise<boolean> {
 	try {

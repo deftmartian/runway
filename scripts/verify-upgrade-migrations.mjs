@@ -26,6 +26,26 @@ const releasedV001Final = [
 	...integrity.canonical.slice(releasedV001ForwardMigrationIndex)
 ];
 const releasedV001FixtureFolder = 'tests/fixtures/migrations/v0.0.1/drizzle';
+const releasedV012Entries = integrity.releasedV012.entries;
+const releasedV012ForwardMigrationIndex = integrity.canonical.findIndex(
+	(entry) => entry.tag === integrity.releasedV012.forwardFrom
+);
+if (releasedV012ForwardMigrationIndex !== releasedV012Entries.length) {
+	throw new Error('Upgrade verification requires the exact v0.1.2 forward cutover.');
+}
+const releasedV012Final = [
+	...releasedV012Entries,
+	...integrity.canonical.slice(releasedV012ForwardMigrationIndex)
+];
+const releasedV001ViaV012Entries = [
+	...releasedV001Entries,
+	...releasedV012Entries.slice(releasedV001Entries.length)
+];
+const releasedV001ViaV012Final = [
+	...releasedV001ViaV012Entries,
+	...integrity.canonical.slice(releasedV012ForwardMigrationIndex)
+];
+const releasedV012FixtureFolder = 'tests/fixtures/migrations/v0.1.2/drizzle';
 const supportedCanonicalPredecessors = [
 	{ tag: '0021_private_activity_traces', repairDuplicateDecisions: true },
 	{ tag: '0022_forward_compatible_upgrade', repairDuplicateDecisions: false }
@@ -48,15 +68,29 @@ await verifyUpgrade({
 	label: 'released v0.0.1',
 	initialEntries: releasedV001Entries,
 	finalEntries: releasedV001Final,
-	fixtureFolder: releasedV001FixtureFolder,
+	fixtureFolders: [releasedV001FixtureFolder],
 	repairDuplicateDecisions: true
+});
+await verifyUpgrade({
+	label: 'fresh released v0.1.2',
+	initialEntries: releasedV012Entries,
+	finalEntries: releasedV012Final,
+	fixtureFolders: [releasedV012FixtureFolder],
+	repairDuplicateDecisions: false
+});
+await verifyUpgrade({
+	label: 'released v0.0.1 upgraded by v0.1.2',
+	initialEntries: releasedV001ViaV012Entries,
+	finalEntries: releasedV001ViaV012Final,
+	fixtureFolders: [releasedV001FixtureFolder, releasedV012FixtureFolder],
+	repairDuplicateDecisions: false
 });
 for (const predecessor of supportedCanonicalPredecessors) {
 	await verifyUpgrade(canonicalScenario(predecessor));
 }
 
 console.log(
-	`Migration upgrades verified from released v0.0.1, ${supportedCanonicalPredecessors.map(({ tag }) => tag).join(' and ')}, through ${latestMigration.tag}, with existing data preserved and reruns idempotent.`
+	`Migration upgrades verified from released v0.0.1, both released v0.1.2 histories, ${supportedCanonicalPredecessors.map(({ tag }) => tag).join(' and ')}, through ${latestMigration.tag}, with existing data preserved and reruns idempotent.`
 );
 
 function canonicalScenario({ tag, repairDuplicateDecisions }) {
@@ -81,7 +115,7 @@ async function verifyUpgrade({
 	label,
 	initialEntries,
 	finalEntries,
-	fixtureFolder,
+	fixtureFolders,
 	predecessorEntries,
 	pendingEntries,
 	repairDuplicateDecisions
@@ -94,11 +128,12 @@ async function verifyUpgrade({
 	const databaseUrl = new URL(base);
 	databaseUrl.pathname = `/${databaseName}`;
 	let temporaryRoot;
-	let predecessorFolder = fixtureFolder;
+	let migrationFolders = fixtureFolders ? [...fixtureFolders] : null;
 
-	if (!predecessorFolder) {
+	if (!migrationFolders) {
 		temporaryRoot = await mkdtemp('.runway-upgrade-');
-		predecessorFolder = join(temporaryRoot, 'drizzle');
+		const predecessorFolder = join(temporaryRoot, 'drizzle');
+		migrationFolders = [predecessorFolder];
 		await cp('drizzle', predecessorFolder, { recursive: true });
 		for (const pending of pendingEntries) {
 			await rm(join(predecessorFolder, `${pending.tag}.sql`));
@@ -111,12 +146,14 @@ async function verifyUpgrade({
 	await withSql(adminUrl, (sql) => sql`create database ${sql(databaseName)}`);
 
 	try {
-		await migrateDatabase(databaseUrl, predecessorFolder);
+		for (const migrationFolder of migrationFolders) {
+			await migrateDatabase(databaseUrl, migrationFolder);
+		}
 		await withSql(databaseUrl, async (sql) => {
 			await assertExactLedger(sql, initialEntries, `${label} initial database`);
 			await seedPreservedData(sql, repairDuplicateDecisions);
 		});
-		if (fixtureFolder && baseDatabaseUrl === defaultDatabaseUrl) {
+		if (fixtureFolders && baseDatabaseUrl === defaultDatabaseUrl) {
 			const restoreConnection = {
 				host: 'db',
 				port: '5432',
@@ -140,7 +177,7 @@ async function verifyUpgrade({
 			await assertFinalMigrationState(sql);
 			return captureUpgradeState(sql);
 		});
-		if (fixtureFolder && baseDatabaseUrl === defaultDatabaseUrl) {
+		if (fixtureFolders && baseDatabaseUrl === defaultDatabaseUrl) {
 			const restoreState = await verifyRestoredDatabase({
 				host: 'db',
 				port: '5432',

@@ -558,11 +558,16 @@ docker pull "${RUNWAY_IMAGE}"
 ```
 
 The migration journal is forward-only, and released ledgers remain immutable even when the SQL
-difference is only a trailing newline. The migration runner recognizes three exact histories:
+difference is only a trailing newline. The migration runner recognizes five exact histories:
 
+- the current canonical ledger;
 - the original 21-entry v0.0.1 ledger followed by current migrations from
   `0021_private_activity_traces`;
-- the restored canonical ledger; and
+- a database created fresh by v0.1.2, including that release's original
+  `0022_forward_compatible_upgrade`, followed by current migrations from
+  `0023_two_factor_attempt_lockout`;
+- the original v0.0.1 ledger upgraded by v0.1.2 through its original `0021` and `0022`, followed by
+  current migrations from `0023_two_factor_attempt_lockout`; and
 - the temporary three-entry v0.1.1 rebased ledger followed by
   `0022_forward_compatible_upgrade`.
 
@@ -572,7 +577,8 @@ tables or edit `drizzle.__drizzle_migrations` to work around an upgrade failure.
 backup, deploy the newer image, and let the bundled migration service apply every pending forward
 migration. `verify:migrations` builds a database from the actual v0.0.1 migration files, preserves
 representative existing data, verifies all final schema invariants, runs the migration entry point
-twice, and also exercises fresh, restored-canonical, and rebased-v0.1.1 histories:
+twice, and also exercises the authentic v0.1.2 files both as a fresh database and after v0.0.1,
+alongside fresh, restored-canonical, and rebased-v0.1.1 histories:
 
 ```sh
 corepack pnpm verify:migrations
@@ -616,17 +622,20 @@ failure, not a healthy application with an isolated page bug. Check `/health/rea
 the stack is not ready. Inspect the `migrate` log and use Project → Redeploy so the selected image
 runs its own migrations before web and worker start. Version 0.5.2 rejects the exact original v0.0.1
 ledger before applying its forward migrations; upgrade that installation with 0.5.3 or later rather
-than modifying the ledger. If migration completed but the log reports
+than modifying the ledger. Version 0.5.3 rejects the legitimate original v0.1.2 `0022` hash; upgrade
+that installation with a later image containing the v0.1.2 lineage fix. If migration completed but
+the log reports
 `permission denied` for a new table, reconnect as the schema owner and repeat the table, sequence,
 and default-privilege grants in [Database Roles](#database-roles), then redeploy. Do not grant schema
 ownership to the runtime login or edit the migration ledger. Settings may keep its other controls
 available when only the optional Health Connect status cannot be read, but that fallback does not
 turn a failing readiness check into a successful deployment.
 
-Repository verification exercises a fresh project, a changed-image project redeploy, an upgrade
-from the exact released v0.0.1 database, and same-image idempotent reruns with separate schema-owner
-and runtime database roles. It requires the one-shot migration to exit successfully, app and worker
-health checks to pass, preserved data to remain, and `/health/ready` to return 200:
+Repository verification exercises a fresh project, a changed-image project redeploy, upgrades from
+the exact released v0.0.1 database and the v0.0.1-to-v0.1.2 lineage, and same-image idempotent reruns
+with separate schema-owner and runtime database roles. It requires the one-shot migration to exit
+successfully, app and worker health checks to pass, preserved data to remain, and `/health/ready` to
+return 200:
 
 ```sh
 RUNWAY_COMPOSE_TEST_IMAGE=runway:local corepack pnpm verify:compose:lifecycle

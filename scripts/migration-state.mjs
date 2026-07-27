@@ -13,17 +13,20 @@ if (compatibilityMigrationIndex < 0) {
 
 const rebasedForwardMigrations = migrationIntegrity.canonical.slice(compatibilityMigrationIndex);
 export const rebasedFinal = [...migrationIntegrity.rebasedV011, ...rebasedForwardMigrations];
-const releasedV001Entries = migrationIntegrity.releasedV001.entries;
-const releasedV001ForwardMigrationIndex = migrationIntegrity.canonical.findIndex(
-	(entry) => entry.tag === migrationIntegrity.releasedV001.forwardFrom
-);
-if (releasedV001ForwardMigrationIndex !== releasedV001Entries.length) {
-	throw new Error('Migration integrity manifest has an invalid v0.0.1 forward cutover.');
-}
-const releasedV001ForwardMigrations = migrationIntegrity.canonical.slice(
-	releasedV001ForwardMigrationIndex
-);
-export const releasedV001Final = [...releasedV001Entries, ...releasedV001ForwardMigrations];
+const releasedV001Lineage = buildReleasedLineage(migrationIntegrity.releasedV001);
+const releasedV012Lineage = buildReleasedLineage(migrationIntegrity.releasedV012);
+const releasedV001ViaV012Lineage = buildReleasedLineage({
+	tag: 'v0.0.1 upgraded by v0.1.2',
+	forwardFrom: migrationIntegrity.releasedV012.forwardFrom,
+	entries: [
+		...migrationIntegrity.releasedV001.entries,
+		...migrationIntegrity.releasedV012.entries.slice(migrationIntegrity.releasedV001.entries.length)
+	]
+});
+const releasedLineages = [releasedV001Lineage, releasedV012Lineage, releasedV001ViaV012Lineage];
+export const releasedV001Final = releasedV001Lineage.final;
+export const releasedV012Final = releasedV012Lineage.final;
+export const releasedV001ViaV012Final = releasedV001ViaV012Lineage.final;
 
 export async function readMigrationLedger(sql) {
 	const [record] = await sql`
@@ -42,12 +45,10 @@ export function migrationLedgerIsSupported(rows, { final = false } = {}) {
 		return (
 			sequenceMatches(rows, migrationIntegrity.canonical) ||
 			sequenceMatches(rows, rebasedFinal) ||
-			sequenceMatches(rows, releasedV001Final)
+			releasedLineages.some(({ final: expected }) => sequenceMatches(rows, expected))
 		);
 	}
-	return (
-		canonicalPrefixMatches(rows) || rebasedPrefixMatches(rows) || releasedV001PrefixMatches(rows)
-	);
+	return canonicalPrefixMatches(rows) || rebasedPrefixMatches(rows) || releasedPrefixMatches(rows);
 }
 
 export async function assertSupportedMigrationLedger(sql, options) {
@@ -108,13 +109,25 @@ function rebasedPrefixMatches(rows) {
 	);
 }
 
-function releasedV001PrefixMatches(rows) {
-	return forkedPrefixMatches(
-		rows,
-		releasedV001Entries,
-		releasedV001ForwardMigrations,
-		releasedV001Final
+function releasedPrefixMatches(rows) {
+	return releasedLineages.some(({ entries, forwardMigrations, final }) =>
+		forkedPrefixMatches(rows, entries, forwardMigrations, final)
 	);
+}
+
+function buildReleasedLineage(release) {
+	const forwardMigrationIndex = migrationIntegrity.canonical.findIndex(
+		(entry) => entry.tag === release.forwardFrom
+	);
+	if (forwardMigrationIndex !== release.entries.length) {
+		throw new Error(`Migration integrity manifest has an invalid ${release.tag} forward cutover.`);
+	}
+	const forwardMigrations = migrationIntegrity.canonical.slice(forwardMigrationIndex);
+	return {
+		entries: release.entries,
+		forwardMigrations,
+		final: [...release.entries, ...forwardMigrations]
+	};
 }
 
 function forkedPrefixMatches(rows, releasedEntries, forwardMigrations, finalEntries) {

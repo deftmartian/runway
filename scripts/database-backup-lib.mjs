@@ -21,14 +21,18 @@ import { pipeline } from 'node:stream/promises';
  */
 
 /**
+ * @typedef {object} ReleasedMigrationLineage
+ * @property {string} tag
+ * @property {string} commit
+ * @property {string} forwardFrom
+ * @property {MigrationEntry[]} entries
+ */
+
+/**
  * @typedef {object} MigrationIntegrity
  * @property {MigrationEntry[]} canonical
- * @property {{
- *   tag: string,
- *   commit: string,
- *   forwardFrom: string,
- *   entries: MigrationEntry[]
- * }} releasedV001
+ * @property {ReleasedMigrationLineage} releasedV001
+ * @property {ReleasedMigrationLineage} releasedV012
  * @property {MigrationEntry[]} rebasedV011
  * @property {string[]} requiredTables
  * @property {string[]} requiredColumns
@@ -334,20 +338,36 @@ function restoreLineages(integrity) {
 	if (compatibilityMigrationIndex < 0) {
 		throw new Error('The migration integrity manifest is missing the compatibility migration.');
 	}
-	const releasedV001ForwardMigrationIndex = integrity.canonical.findIndex(
-		(entry) => entry.tag === integrity.releasedV001.forwardFrom
-	);
-	if (releasedV001ForwardMigrationIndex !== integrity.releasedV001.entries.length) {
-		throw new Error('The migration integrity manifest has an invalid v0.0.1 forward cutover.');
-	}
 	const rebasedFinal = [
 		...integrity.rebasedV011,
 		...integrity.canonical.slice(compatibilityMigrationIndex)
 	];
-	const releasedV001Final = [
-		...integrity.releasedV001.entries,
-		...integrity.canonical.slice(releasedV001ForwardMigrationIndex)
-	];
+	const releasedV001ViaV012 = {
+		tag: 'v0.0.1 upgraded by v0.1.2',
+		forwardFrom: integrity.releasedV012.forwardFrom,
+		entries: [
+			...integrity.releasedV001.entries,
+			...integrity.releasedV012.entries.slice(integrity.releasedV001.entries.length)
+		]
+	};
+	const releasedLineages = [
+		integrity.releasedV001,
+		integrity.releasedV012,
+		releasedV001ViaV012
+	].map((release) => {
+		const forwardMigrationIndex = integrity.canonical.findIndex(
+			(entry) => entry.tag === release.forwardFrom
+		);
+		if (forwardMigrationIndex !== release.entries.length) {
+			throw new Error(
+				`The migration integrity manifest has an invalid ${release.tag} forward cutover.`
+			);
+		}
+		return {
+			entries: release.entries,
+			final: [...release.entries, ...integrity.canonical.slice(forwardMigrationIndex)]
+		};
+	});
 	const canonicalPredecessors = [
 		'0021_private_activity_traces',
 		'0022_forward_compatible_upgrade'
@@ -357,10 +377,14 @@ function restoreLineages(integrity) {
 		return integrity.canonical.slice(0, index + 1);
 	});
 	return {
-		finalLedgers: [integrity.canonical, releasedV001Final, rebasedFinal],
+		finalLedgers: [
+			integrity.canonical,
+			...releasedLineages.map(({ final }) => final),
+			rebasedFinal
+		],
 		supportedPredecessorLedgers: [
 			...canonicalPredecessors,
-			...prefixesFrom(integrity.releasedV001.entries, releasedV001Final),
+			...releasedLineages.flatMap(({ entries, final }) => prefixesFrom(entries, final)),
 			...prefixesFrom(integrity.rebasedV011, rebasedFinal)
 		]
 	};

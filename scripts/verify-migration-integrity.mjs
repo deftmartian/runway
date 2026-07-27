@@ -5,6 +5,7 @@ import { readFile, readdir } from 'node:fs/promises';
 const manifest = JSON.parse(await readFile('drizzle/migration-integrity.json', 'utf8'));
 const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'));
 const releasedV001FixtureRoot = 'tests/fixtures/migrations/v0.0.1/drizzle';
+const releasedV012FixtureRoot = 'tests/fixtures/migrations/v0.1.2/drizzle';
 const rebasedV011FixtureRoot = 'tests/fixtures/migrations/v0.1.1/drizzle';
 
 if (journal.entries.length !== manifest.canonical.length) {
@@ -28,19 +29,21 @@ await verifyReleasedFixture(
 	releasedV001FixtureRoot,
 	manifest.releasedV001.entries
 );
-if (
-	manifest.canonical[manifest.releasedV001.entries.length]?.tag !==
-	manifest.releasedV001.forwardFrom
-) {
-	fail('The released v0.0.1 forward cutover differs from the canonical migration journal.');
-}
+verifyForwardCutover('released v0.0.1', manifest.releasedV001);
+await verifyReleasedFixture(
+	'released v0.1.2',
+	releasedV012FixtureRoot,
+	manifest.releasedV012.entries
+);
+verifyForwardCutover('released v0.1.2', manifest.releasedV012);
 await verifyReleasedFixture('rebased v0.1.1', rebasedV011FixtureRoot, manifest.rebasedV011);
 if (process.env['RUNWAY_VERIFY_RELEASE_PROVENANCE'] === 'true') {
-	await verifyReleasedV001Provenance();
+	await verifyReleasedProvenance('released v0.0.1', releasedV001FixtureRoot, manifest.releasedV001);
+	await verifyReleasedProvenance('released v0.1.2', releasedV012FixtureRoot, manifest.releasedV012);
 }
 
 console.log(
-	'Canonical, released v0.0.1, and rebased v0.1.1 migration files match the pinned integrity manifest.'
+	'Canonical, released v0.0.1, released v0.1.2, and rebased v0.1.1 migration files match the pinned integrity manifest.'
 );
 
 async function verifyReleasedFixture(label, root, expectedEntries) {
@@ -69,8 +72,14 @@ async function verifyReleasedFixture(label, root, expectedEntries) {
 	}
 }
 
-async function verifyReleasedV001Provenance() {
-	const { tag, commit, entries } = manifest.releasedV001;
+function verifyForwardCutover(label, release) {
+	if (manifest.canonical[release.entries.length]?.tag !== release.forwardFrom) {
+		fail(`The ${label} forward cutover differs from the canonical migration journal.`);
+	}
+}
+
+async function verifyReleasedProvenance(label, fixtureRoot, release) {
+	const { tag, commit, entries } = release;
 	const resolvedTag = git(['rev-parse', `${tag}^{commit}`])
 		.toString('utf8')
 		.trim();
@@ -80,15 +89,15 @@ async function verifyReleasedV001Provenance() {
 	for (const entry of entries) {
 		const path = `drizzle/${entry.tag}.sql`;
 		const released = git(['show', `${commit}:${path}`]);
-		const fixture = await readFile(`${releasedV001FixtureRoot}/${entry.tag}.sql`);
+		const fixture = await readFile(`${fixtureRoot}/${entry.tag}.sql`);
 		if (!released.equals(fixture)) {
-			fail(`${releasedV001FixtureRoot}/${entry.tag}.sql differs from ${commit}:${path}.`);
+			fail(`${fixtureRoot}/${entry.tag}.sql differs from ${commit}:${path}.`);
 		}
 	}
 	const releasedJournal = git(['show', `${commit}:drizzle/meta/_journal.json`]);
-	const fixtureJournal = await readFile(`${releasedV001FixtureRoot}/meta/_journal.json`);
+	const fixtureJournal = await readFile(`${fixtureRoot}/meta/_journal.json`);
 	if (!releasedJournal.equals(fixtureJournal)) {
-		fail(`The released v0.0.1 fixture journal differs from commit ${commit}.`);
+		fail(`The ${label} fixture journal differs from commit ${commit}.`);
 	}
 }
 
