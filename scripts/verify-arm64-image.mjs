@@ -79,7 +79,7 @@ try {
 	}
 
 	verificationPhase = 'run ARM64 database migrations';
-	await run(
+	await runWithCapturedOutput(
 		'docker',
 		[
 			'run',
@@ -250,6 +250,47 @@ function run(command, args, env = process.env) {
 			else reject(new Error(`${command} exited with ${signal ?? code ?? 'unknown status'}.`));
 		});
 	});
+}
+
+function runWithCapturedOutput(command, args, env = process.env) {
+	return new Promise((resolve, reject) => {
+		const child = spawn(command, args, { env, stdio: ['inherit', 'pipe', 'pipe'] });
+		let output = '';
+		for (const [stream, destination] of [
+			[child.stdout, process.stdout],
+			[child.stderr, process.stderr]
+		]) {
+			stream.on('data', (chunk) => {
+				destination.write(chunk);
+				output = `${output}${chunk}`.slice(-64 * 1024);
+			});
+		}
+		child.once('error', reject);
+		child.once('exit', (code, signal) => {
+			if (code === 0) {
+				resolve();
+				return;
+			}
+			const diagnostic = sanitizedCommandDiagnostic(output);
+			reject(
+				new Error(
+					`${command} exited with ${signal ?? code ?? 'unknown status'}${diagnostic ? `: ${diagnostic}` : ''}.`
+				)
+			);
+		});
+	});
+}
+
+function sanitizedCommandDiagnostic(output) {
+	const sanitized = output
+		.replace(/postgres(?:ql)?:\/\/[^\s"'`]+/giu, '[database URL redacted]')
+		.replace(/runway-secret-v1_[A-Za-z0-9_-]+/gu, '[secret redacted]');
+	const lines = sanitized
+		.split(/\r?\n/u)
+		.map((line) => line.trim())
+		.filter(Boolean);
+	const errors = lines.filter((line) => /(?:error|failed|refused|permission|timeout)/iu.test(line));
+	return (errors.length > 0 ? errors : lines).slice(-6).join(' | ').slice(0, 1500);
 }
 
 function capture(command, args, env = process.env) {
