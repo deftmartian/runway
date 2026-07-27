@@ -54,3 +54,10 @@ updates:
     groups:
       android-dependencies:
         patterns: ['*']
+    ignore:
+      - dependency-name: com.android.application
+        update-types: [version-update:semver-major]
+      - dependency-name: gradle-wrapper
+        update-types: [version-update:semver-major]
+      - dependency-name: androidx.core:core-ktx
+        versions: [1.19.0]

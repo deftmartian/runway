@@ -154,8 +154,8 @@ dependencies {
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("androidx.browser:browser:1.10.0")
     implementation("androidx.health.connect:connect-client:1.1.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("com.google.guava:guava:33.4.8-android")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("com.google.guava:guava:33.6.0-android")
 
     testImplementation("junit:junit:4.13.2")
 }
