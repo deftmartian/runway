@@ -185,7 +185,9 @@ test('TOTP setup reveals recovery codes only after verification and backup sign-
 	await localSignInForm(page).getByLabel('Email').fill(email);
 	await localSignInForm(page).getByLabel('Password').fill('correct horse battery staple 2026');
 	await localSignInForm(page).getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL(/\/login\/two-factor$/);
+	await expect(page).toHaveURL(
+		(url) => url.pathname === '/login/two-factor' && url.searchParams.get('returnTo') === '/app'
+	);
 	const backupInput = page.getByLabel('Backup code');
 	await expect(backupInput).toHaveAttribute('inputmode', 'text');
 	await backupInput.fill(backupCode);

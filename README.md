@@ -80,6 +80,17 @@ related workout metrics from Health Connect. It never writes to Health Connect, 
 requested separately. Import setup stays inside the signed-in Android app; there is no pairing code
 to copy from the web client.
 
+<p align="center">
+  <img src="docs/images/runway-android-today.png" width="250" alt="runway's native Android Today screen showing a planned rest day">
+  <img src="docs/images/runway-android-calendar-dark.png" width="250" alt="runway's native Android calendar in the system dark theme">
+  <img src="docs/images/runway-android-progress.png" width="250" alt="runway's native Android progress screen showing the planned training ramp">
+</p>
+
+<p align="center">
+  <strong>One training log, two complete clients.</strong> Android follows the phone’s light or dark
+  theme and keeps the normal product experience inside native Jetpack Compose screens.
+</p>
+
 Each published versioned [GitHub release](https://github.com/deftmartian/runway/releases) includes a
 signed universal APK. Release builds fail closed when the protected signing identity is missing or
 differs from the pinned certificate. See the [Android architecture](docs/ANDROID.md) and
@@ -176,9 +187,10 @@ browser and diff inspection.
 - [Training sources](docs/TRAINING_SOURCES.md)
 - [Contributing](CONTRIBUTING.md)
 
-The web screenshots above are generated from deterministic visual-regression states. Native Android
-screenshots will be added after an emulator or device pass; see the Android build guide for the
-current verification boundary.
+The web screenshots above come from deterministic visual-regression states. The Android captures
+come from the real Compose app on an API 35 emulator using a disposable account and synthetic plan;
+they contain no private activity or route data. Emulator evidence does not replace the physical
+device, Health Connect, large-text, and TalkBack checks listed in the Android build guide.
 
 ## License
 

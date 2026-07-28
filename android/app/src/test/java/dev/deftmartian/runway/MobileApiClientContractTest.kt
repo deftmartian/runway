@@ -18,6 +18,37 @@ import java.util.concurrent.TimeUnit
 
 class MobileApiClientContractTest {
     @Test
+    fun `mobile view response is decoded before it reaches presentation state`() {
+        LocalHttpServer(
+            responses = listOf(
+                Response.json(
+                    200,
+                    """{
+                      "schemaVersion":1,
+                      "view":"bootstrap",
+                      "setupComplete":true,
+                      "user":{"id":"user-1","name":"Runner","email":"runner@example.invalid"},
+                      "serverOrigin":"__ORIGIN__"
+                    }""",
+                ),
+            ),
+        ).use { server ->
+            val session = MobileSession(
+                origin = server.origin,
+                token = "s".repeat(32),
+                expiresAtEpochMs = System.currentTimeMillis() + 60_000,
+            )
+
+            val result = testClient(server.origin).getView(session, "bootstrap")
+
+            val bootstrap = (result as MobileViewResult.Loaded).payload as NativeBootstrapPayload
+            assertTrue(bootstrap.setupComplete == true)
+            assertEquals("Runner", bootstrap.user?.name)
+            assertEquals(server.origin, bootstrap.serverOrigin)
+        }
+    }
+
+    @Test
     fun `device authorization preserves the server-owned poll contract`() {
         LocalHttpServer(
             responses = listOf(
@@ -38,7 +69,7 @@ class MobileApiClientContractTest {
                 ),
             ),
         ).use { server ->
-            val client = MobileApiClient(server.origin)
+            val client = testClient(server.origin)
 
             val started = client.beginAuthorization() as? MobileAuthorizationStartResult.Started
             assertNotNull(started)
@@ -79,10 +110,15 @@ class MobileApiClientContractTest {
                 expiresAtEpochMs = System.currentTimeMillis() + 60_000,
             )
 
-            val result = MobileApiClient(server.origin).runAction(
+            val result = testClient(server.origin).runAction(
                 session = session,
-                action = "record_feedback",
-                payload = JSONObject().put("workoutId", "workout-123").put("actualDistanceKm", 5),
+                command = RecordFeedbackCommand(
+                    workoutId = "workout-123",
+                    status = "done",
+                    feltHard = false,
+                    pain = false,
+                    completedDistanceKm = 5.0,
+                ),
                 requestId = requestId,
             )
 
@@ -117,10 +153,14 @@ class MobileApiClientContractTest {
                 expiresAtEpochMs = System.currentTimeMillis() + 60_000,
             )
 
-            val result = MobileApiClient(server.origin).runAction(
+            val result = testClient(server.origin).runAction(
                 session = session,
-                action = "record_feedback",
-                payload = JSONObject().put("workoutId", "workout-123"),
+                command = RecordFeedbackCommand(
+                    workoutId = "workout-123",
+                    status = "skipped",
+                    feltHard = false,
+                    pain = false,
+                ),
                 requestId = UUID.fromString("c03580bb-32a5-4e8b-ac2c-4296c53e651c"),
             )
 
@@ -149,7 +189,7 @@ class MobileApiClientContractTest {
                 expiresAtEpochMs = System.currentTimeMillis() + 60_000,
             )
 
-            val result = MobileApiClient(server.origin).createImportPairing(
+            val result = testClient(server.origin).createImportPairing(
                 session,
                 "  Andrew's phone  ",
             )
@@ -179,7 +219,7 @@ class MobileApiClientContractTest {
                 expiresAtEpochMs = System.currentTimeMillis() + 60_000,
             )
 
-            val result = MobileApiClient(newServer.origin).getView(previousSession, "bootstrap")
+            val result = testClient(newServer.origin).getView(previousSession, "bootstrap")
 
             assertTrue(result is MobileViewResult.Unauthorized)
             assertFalse(newServer.receivedRequest())
@@ -191,6 +231,11 @@ class MobileApiClientContractTest {
             fun json(status: Int, body: String): Response = Response(status, body)
         }
     }
+
+    private fun testClient(origin: String) = MobileApiClient(
+        origin = origin,
+        allowPrivateCleartextForTests = true,
+    )
 
     private data class CapturedRequest(
         val method: String,

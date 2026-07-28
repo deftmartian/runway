@@ -1,0 +1,176 @@
+package dev.deftmartian.runway
+
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+internal data class PendingPlanDecision(
+    val source: String,
+    val sourceId: String,
+    val decision: String,
+    val consequence: NativeConsequence,
+)
+
+internal data class CalendarActivityPlacement(
+    val byWorkoutId: Map<String, List<NativeActivity>>,
+    val unplaced: List<NativeActivity>,
+)
+
+internal fun placeCalendarActivities(
+    workouts: List<NativeWorkout>,
+    activities: List<NativeActivity>,
+): CalendarActivityPlacement {
+    val workoutsById = workouts
+        .mapNotNull { workout ->
+            workout.id?.takeIf(String::isNotBlank)?.let { id -> id to workout }
+        }
+        .toMap()
+    val workoutsByDate = workouts
+        .filter { !it.id.isNullOrBlank() && !it.scheduledDate.isNullOrBlank() }
+        .groupBy { it.scheduledDate.orEmpty() }
+    val placed = linkedMapOf<String, MutableList<NativeActivity>>()
+    val unplaced = mutableListOf<NativeActivity>()
+
+    activities.forEach { activity ->
+        val linkedId = activity.workoutId?.takeIf(workoutsById::containsKey)
+        val activityDate = activity.occurredDate.orEmpty()
+            .ifBlank { activity.activityDate.orEmpty() }
+        val dateMatch = workoutsByDate[activityDate]
+            ?.let { candidates ->
+                candidates.firstOrNull { it.type == "rest" } ?: candidates.firstOrNull()
+            }
+            ?.id
+        val workoutId = linkedId ?: dateMatch
+        if (workoutId.isNullOrBlank()) {
+            unplaced += activity
+        } else {
+            placed.getOrPut(workoutId) { mutableListOf() } += activity
+        }
+    }
+
+    return CalendarActivityPlacement(
+        byWorkoutId = placed.mapValues { (_, values) -> values.toList() },
+        unplaced = unplaced,
+    )
+}
+
+internal fun resizeIntervalStructure(
+    structure: TimedIntervalStructureDto?,
+    targetSeconds: Int,
+): TimedIntervalStructureDto {
+    if (structure == null) return singleRunStructure(targetSeconds)
+
+    val sourceTotal =
+        (structure.warmupSeconds ?: 0) +
+            (structure.cooldownSeconds ?: 0) +
+            structure.blocks.sumOf { block ->
+                (block.repetitions ?: 1) *
+                    block.segments.sumOf { segment -> segment.durationSeconds ?: 0 }
+            }
+    if (sourceTotal <= 0) return singleRunStructure(targetSeconds)
+
+    val factor = targetSeconds.toDouble() / sourceTotal
+    val resizedBlocks = structure.blocks.map { block ->
+        TimedBlockDto(
+            repetitions = block.repetitions ?: 1,
+            segments = block.segments.map { segment ->
+                TimedSegmentDto(
+                    kind = segment.kind,
+                    durationSeconds =
+                        ((segment.durationSeconds ?: 0) * factor).toInt().coerceAtLeast(1),
+                )
+            },
+        )
+    }
+    val resizedWarmup = ((structure.warmupSeconds ?: 0) * factor).toInt()
+    val initialCooldown = ((structure.cooldownSeconds ?: 0) * factor).toInt()
+    val resizedTotal =
+        resizedWarmup +
+            initialCooldown +
+            resizedBlocks.sumOf { block ->
+                (block.repetitions ?: 1) *
+                    block.segments.sumOf { segment -> segment.durationSeconds ?: 0 }
+            }
+    return TimedIntervalStructureDto(
+        warmupSeconds = resizedWarmup,
+        cooldownSeconds = (initialCooldown + targetSeconds - resizedTotal).coerceAtLeast(0),
+        blocks = resizedBlocks,
+    )
+}
+
+private fun singleRunStructure(targetSeconds: Int) = TimedIntervalStructureDto(
+    warmupSeconds = 0,
+    cooldownSeconds = 0,
+    blocks = listOf(
+        TimedBlockDto(
+            repetitions = 1,
+            segments = listOf(
+                TimedSegmentDto(kind = "run", durationSeconds = targetSeconds),
+            ),
+        ),
+    ),
+)
+
+internal val dayLabels = listOf(
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+)
+
+internal fun pendingPlanDecision(
+    source: String,
+    record: NativeWorkoutFeedback,
+    decision: String,
+): PendingPlanDecision? = record.consequence?.let { consequence ->
+    PendingPlanDecision(
+        source = source,
+        sourceId = record.id.orEmpty(),
+        decision = decision,
+        consequence = consequence,
+    )
+}
+
+internal fun planDecisionCommand(pending: PendingPlanDecision) = ApplyPlanDecisionCommand(
+    source = pending.source,
+    sourceId = pending.sourceId,
+    decision = pending.decision,
+)
+
+internal fun planDecisionLabel(decision: String): String = when (decision) {
+    "keep_plan" -> "Keep the plan"
+    "reduce_next" -> "Reduce the next run"
+    "next_rest" -> "Make the next run a rest day"
+    "repeat_prescription" -> "Repeat this prescription"
+    "rebalance_week" -> "Rebalance this week"
+    else -> decision.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
+
+internal fun planDecisionExplanation(decision: String): String = when (decision) {
+    "keep_plan" -> "Leave future workouts as they are."
+    "reduce_next" -> "Reduce the amount in the next compatible planned run."
+    "next_rest" -> "Replace the next compatible planned run with rest."
+    "repeat_prescription" -> "Use this prescription again for the next compatible planned run."
+    "rebalance_week" -> "Spread the remaining work across compatible runs in this week."
+    else -> "Apply this change to future planned work."
+}
+
+internal fun String?.orDash(): String = this?.takeIf(String::isNotBlank) ?: "—"
+
+internal fun formatDistance(meters: Double): String =
+    String.format(Locale.US, "%.1f km", meters / 1_000).replace(".0 km", " km")
+
+internal fun formatDuration(seconds: Double): String {
+    val minutes = (seconds / 60).toInt()
+    return if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"
+}
+
+internal fun formatDecimal(value: Double): String =
+    String.format(Locale.US, "%.1f", value).removeSuffix(".0")
+
+internal fun monthLabel(month: String): String = runCatching {
+    YearMonth.parse(month).format(DateTimeFormatter.ofPattern("LLLL yyyy", Locale.getDefault()))
+}.getOrDefault("Calendar")

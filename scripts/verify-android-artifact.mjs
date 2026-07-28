@@ -64,19 +64,19 @@ if (!privateDeclaration.test(manifest)) {
 }
 
 if (
-	!manifest.includes('android:name="dev.deftmartian.runway.ServerConnectionActivity"') ||
+	!manifest.includes('android:name="dev.deftmartian.runway.MainActivity"') ||
 	!manifest.includes('android.intent.action.MAIN') ||
 	!manifest.includes('android.intent.category.LAUNCHER')
 ) {
-	fail('server connection activity is not the installed app entry point');
+	fail('native Compose activity is not the installed app entry point');
 }
 
 const exportedComponents = [
 	...manifest.matchAll(
-		/<(activity|service|receiver|provider)\b([^>]*\bandroid:exported="true"[^>]*)>/g
+		/<(activity-alias|activity|service|receiver|provider)\b([^>]*\bandroid:exported="true"[^>]*)>/g
 	)
 ].map((match) => ({
-	type: match[1],
+	type: match[1] === 'activity-alias' ? 'activity' : match[1],
 	name: attribute(match[2], 'android:name'),
 	permission: attribute(match[2], 'android:permission')
 }));
@@ -87,7 +87,7 @@ const expectedExported = new Map([
 		'activity:dev.deftmartian.runway.HealthConnectPermissionsRationaleActivity',
 		'android.permission.START_VIEW_PERMISSION_USAGE'
 	],
-	['activity:dev.deftmartian.runway.ServerConnectionActivity', null],
+	['activity:dev.deftmartian.runway.MainActivity', null],
 	['service:androidx.health.platform.client.impl.sdkservice.HealthDataSdkService', null],
 	[
 		'service:androidx.work.impl.background.systemjob.SystemJobService',
@@ -96,6 +96,10 @@ const expectedExported = new Map([
 	['receiver:androidx.work.impl.diagnostics.DiagnosticsReceiver', 'android.permission.DUMP'],
 	['receiver:androidx.profileinstaller.ProfileInstallReceiver', 'android.permission.DUMP']
 ]);
+if (variant === 'debug') {
+	expectedExported.set('activity:androidx.compose.ui.tooling.PreviewActivity', null);
+	expectedExported.set('activity:androidx.activity.ComponentActivity', null);
+}
 for (const component of exportedComponents) {
 	const key = `${component.type}:${component.name}`;
 	if (!expectedExported.has(key)) fail(`unexpected exported component: ${key}`);

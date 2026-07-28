@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.util.UUID
 
 internal enum class NativeDestination(
@@ -29,9 +28,8 @@ internal enum class NativeDestination(
 
 internal data class NativeNotice(val message: String, val isError: Boolean = false)
 internal data class NativeActionPreview(
-    val applyAction: String,
-    val payload: JSONObject,
-    val preview: JSONObject,
+    val command: PreviewableMobileCommand,
+    val preview: NativeActionPreviewDto,
 )
 
 internal sealed interface RunwayUiState {
@@ -44,9 +42,9 @@ internal sealed interface RunwayUiState {
     ) : RunwayUiState
 
     data class Ready(
-        val bootstrap: JSONObject,
+        val bootstrap: NativeBootstrapPayload,
         val destination: NativeDestination,
-        val payload: JSONObject?,
+        val payload: NativeViewPayload?,
         val loading: Boolean,
         val actionPending: Boolean = false,
         val notice: NativeNotice? = null,
@@ -133,10 +131,11 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         loadView(ready.destination, currentQuery)
     }
 
-    fun submitAction(action: String, payload: JSONObject) {
+    fun submitAction(command: MobileCommand) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         if (ready.actionPending) return
         val currentSession = session ?: return expireSession()
+        val action = command.action
         val requestId = UUID.randomUUID()
         viewLoadGate.invalidate()
         mutableState.value = ready.copy(
@@ -151,36 +150,28 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         )
         viewModelScope.launch {
             var result = withContext(Dispatchers.IO) {
-                api.runAction(currentSession, action, payload, requestId)
+                api.runAction(currentSession, command, requestId)
             }
             if (result == MobileActionResult.Retryable) {
                 delay(750)
                 result = withContext(Dispatchers.IO) {
-                    api.runAction(currentSession, action, payload, requestId)
+                    api.runAction(currentSession, command, requestId)
                 }
             }
             when (result) {
                 is MobileActionResult.Completed -> {
                     val notice = NativeNotice(
-                        result.payload.optString("message").ifBlank { "Change saved." },
+                        result.response.message.orEmpty().ifBlank { "Change saved." },
                     )
-                    val preview = result.payload.optJSONObject("preview")
-                    if (action.startsWith("preview_") && preview != null) {
+                    val preview = result.response.preview
+                    if (command is PreviewableMobileCommand && preview != null) {
                         val latest = mutableState.value as? RunwayUiState.Ready ?: return@launch
                         mutableState.value = latest.copy(
                             actionPending = false,
                             notice = notice,
                             completedAction = action,
                             actionPreview = NativeActionPreview(
-                                applyAction = when (action) {
-                                    "preview_workout_edit" -> "apply_workout_edit"
-                                    "preview_workout_add" -> "apply_workout_add"
-                                    "preview_workout_removal" -> "remove_workout"
-                                    else -> return@launch showActionFailure(
-                                        "This preview cannot be applied by this app.",
-                                    )
-                                },
-                                payload = JSONObject(payload.toString()),
+                                command = command,
                                 preview = preview,
                             ),
                         )
@@ -237,8 +228,7 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
     fun confirmActionPreview() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         val preview = ready.actionPreview ?: return
-        val payload = JSONObject(preview.payload.toString()).put("confirmRisk", true)
-        submitAction(preview.applyAction, payload)
+        submitAction(preview.command.confirmed())
     }
 
     fun dismissActionPreview() {
@@ -357,14 +347,20 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
                 }
             ) {
                 is MobileViewResult.Loaded -> {
-                    val setupComplete = result.payload.optBoolean("setupComplete", false)
+                    val bootstrap = result.payload as? NativeBootstrapPayload ?: run {
+                        mutableState.value = RunwayUiState.Failed(
+                            "The server returned an invalid native bootstrap response.",
+                        )
+                        return@launch
+                    }
+                    val setupComplete = bootstrap.setupComplete == true
                     val destination = if (setupComplete) {
                         NativeDestination.Today
                     } else {
                         NativeDestination.Setup
                     }
                     mutableState.value = RunwayUiState.Ready(
-                        bootstrap = result.payload,
+                        bootstrap = bootstrap,
                         destination = destination,
                         payload = null,
                         loading = true,

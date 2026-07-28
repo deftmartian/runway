@@ -574,13 +574,15 @@ test('change-goal setup uses a focused shell and confirms a dirty calendar exit'
 	await page.getByLabel('Race distance').selectOption('10k');
 
 	const dismissed = page.waitForEvent('dialog');
-	await page.getByRole('link', { name: 'Back to calendar' }).click();
+	const dismissedClick = page.getByRole('link', { name: 'Back to calendar' }).click();
 	await (await dismissed).dismiss();
+	await dismissedClick;
 	await expect(page).toHaveURL(/\/app\/onboarding$/);
 
 	const accepted = page.waitForEvent('dialog');
-	await page.getByRole('link', { name: 'Back to calendar' }).click();
+	const acceptedClick = page.getByRole('link', { name: 'Back to calendar' }).click();
 	await (await accepted).accept();
+	await acceptedClick;
 	await expect(page).toHaveURL(/\/app$/);
 });
 

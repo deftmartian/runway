@@ -15,6 +15,11 @@ stored on either server.
 | :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- |
 | Choose a server, then approve the device authorization request in the system browser. | Grant a Gadgetbridge folder or Health Connect permissions from Android settings. |
 
+<p align="center">
+  <img src="../docs/images/runway-android-calendar-dark.png" width="300" alt="Native Android calendar following the system dark theme">
+  <img src="../docs/images/runway-android-progress.png" width="300" alt="Native Android progress screen showing the training ramp">
+</p>
+
 The system browser is deliberately limited to security boundaries. It is used to approve device
 authorization and for fresh account-security operations such as passkeys or two-factor changes. It
 does not host the runway product UI and Android never copies browser cookies or passwords.
@@ -25,6 +30,11 @@ The Compose client covers normal planning use: onboarding, today, calendar, work
 review, progress/history, settings, and server/account state. It talks to the versioned mobile API
 with a Better Auth device-authorization session. User-initiated mutations carry stable idempotency
 keys so a retry does not record a run or apply an edit twice.
+
+The presentation layer is typed: one codec translates bounded JSON responses into immutable Kotlin
+payloads and sealed commands into mutation bodies. Compose screens and the ViewModel do not consume
+`JSONObject` values. Product surfaces and their dialogs live in focused files instead of a single
+application-wide screen file.
 
 Android also owns capabilities a responsive web page cannot retain reliably:
 

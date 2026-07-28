@@ -24,8 +24,20 @@ const requiredFiles = [
 	'scripts/verify-android-artifact.mjs',
 	'android/app/src/main/java/dev/deftmartian/runway/MainActivity.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/MobileApiClient.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/MobileCommands.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/MobileSessionStore.kt',
-	'android/app/src/main/java/dev/deftmartian/runway/NativeScreens.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeApp.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativePayloadCodec.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativePayloadModels.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewDialogs.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewProgressScreens.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeRunDialogs.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsDialogs.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeSetupScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeTodayCalendarScreens.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeUiComponents.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeUiModelHelpers.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/RunwayTheme.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/RunwayViewModel.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionActivity.kt',
@@ -354,8 +366,35 @@ for (const required of [
 		errors.push(`Android native API client is missing ${required}`);
 	}
 }
+const productionMobileClientFiles = globSync('android/app/src/main/**/*.kt', {
+	cwd: root
+}).filter((file) => !file.endsWith('/MobileApiClient.kt'));
+for (const file of productionMobileClientFiles) {
+	const source = read(file);
+	const passesSecondConstructorArgument = [
+		...source.matchAll(/MobileApiClient\s*\(([^)]*)\)/gs)
+	].some((match) => match[1].includes(','));
+	if (source.includes('allowPrivateCleartextForTests') || passesSecondConstructorArgument) {
+		errors.push(`${file} enables the loopback-only mobile client test escape hatch`);
+	}
+}
 
-const nativeScreens = read('android/app/src/main/java/dev/deftmartian/runway/NativeScreens.kt');
+const nativeUiFiles = [
+	'android/app/src/main/java/dev/deftmartian/runway/NativeApp.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewDialogs.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewProgressScreens.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeRunDialogs.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsDialogs.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeSetupScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeTodayCalendarScreens.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeUiComponents.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeUiModelHelpers.kt'
+];
+const nativeUi = nativeUiFiles.map(read).join('\n');
+const nativeProduct = `${nativeUi}\n${read(
+	'android/app/src/main/java/dev/deftmartian/runway/MobileCommands.kt'
+)}`;
 for (const required of [
 	'NativeDestination.Today',
 	'NativeDestination.Calendar',
@@ -367,9 +406,35 @@ for (const required of [
 	'update_health_context',
 	'connect_nextcloud'
 ]) {
-	if (!nativeScreens.includes(required)) {
+	if (!nativeProduct.includes(required)) {
 		errors.push(`Android native product surface is missing ${required}`);
 	}
+}
+for (const file of nativeUiFiles) {
+	const source = read(file);
+	if (
+		source.includes('org.json') ||
+		source.includes('JSONObject') ||
+		source.includes('JSONArray')
+	) {
+		errors.push(`Android Compose/UI source bypasses the typed payload boundary: ${file}`);
+	}
+	if (source.split(/\r?\n/).length > 650) {
+		errors.push(`Android Compose/UI source exceeds the reviewed 650-line boundary: ${file}`);
+	}
+}
+const viewModel = read('android/app/src/main/java/dev/deftmartian/runway/RunwayViewModel.kt');
+if (
+	viewModel.includes('org.json') ||
+	viewModel.includes('JSONObject') ||
+	viewModel.includes('JSONArray')
+) {
+	errors.push('Android view model bypasses the typed payload boundary');
+}
+if (
+	existsSync(resolve(root, 'android/app/src/main/java/dev/deftmartian/runway/NativeScreens.kt'))
+) {
+	errors.push('The monolithic NativeScreens.kt product surface has returned');
 }
 
 const serverConnection = read(
@@ -435,7 +500,8 @@ for (const required of [
 	'device authorization preserves the server-owned poll contract',
 	'mobile mutation sends bearer identity and a stable idempotency key',
 	'server change cannot send a prior instance session to the new origin',
-	'LocalHttpServer'
+	'LocalHttpServer',
+	'allowPrivateCleartextForTests = true'
 ]) {
 	if (!mobileApiContractTest.includes(required)) {
 		errors.push(`Android native API behavioral test is missing ${required}`);
@@ -611,7 +677,15 @@ for (const required of [
 	if (!kotlin.includes(required))
 		errors.push(`Android release blocker contract is missing ${required}`);
 }
-if (/ScanProgressStore|nextOffset|startOffset/.test(kotlin)) {
+const providerScanSources = [
+	'android/app/src/main/java/dev/deftmartian/runway/SafTreeScanner.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/ReconciliationWorker.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/CandidateObservation.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/HandledImportStore.kt'
+]
+	.map(read)
+	.join('\n');
+if (/ScanProgressStore|nextOffset|startOffset/.test(providerScanSources)) {
 	errors.push('Android source still relies on unstable provider cursor offsets');
 }
 
@@ -659,6 +733,10 @@ const behavioralTests = spawnSync(
 		'dev.deftmartian.runway.MobileApiClientContractTest',
 		'--tests',
 		'dev.deftmartian.runway.MobileSessionNamespaceTest',
+		'--tests',
+		'dev.deftmartian.runway.NativePayloadCodecTest',
+		'--tests',
+		'dev.deftmartian.runway.NativeUiModelHelpersTest',
 		'--tests',
 		'dev.deftmartian.runway.ViewLoadRequestGateTest'
 	],

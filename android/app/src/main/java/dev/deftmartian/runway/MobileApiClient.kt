@@ -22,15 +22,15 @@ sealed interface MobileAuthorizationPollResult {
     data object Retryable : MobileAuthorizationPollResult
 }
 
-sealed interface MobileViewResult {
-    data class Loaded(val payload: JSONObject) : MobileViewResult
+internal sealed interface MobileViewResult {
+    data class Loaded(val payload: NativeViewPayload) : MobileViewResult
     data object Unauthorized : MobileViewResult
     data object Incompatible : MobileViewResult
     data object Retryable : MobileViewResult
 }
 
-sealed interface MobileActionResult {
-    data class Completed(val payload: JSONObject) : MobileActionResult
+internal sealed interface MobileActionResult {
+    data class Completed(val response: NativeActionResponse) : MobileActionResult
     data object Unauthorized : MobileActionResult
     data object Incompatible : MobileActionResult
     data class Rejected(val message: String) : MobileActionResult
@@ -49,9 +49,15 @@ sealed interface MobileImportPairingResult {
     data object Retryable : MobileImportPairingResult
 }
 
-class MobileApiClient(origin: String) {
+internal class MobileApiClient(
+    origin: String,
+    allowPrivateCleartextForTests: Boolean = false,
+) {
     private val serverOrigin = requireNotNull(
-        InstanceOriginPolicy.normalizeOrigin(origin, BuildConfig.DEBUG),
+        InstanceOriginPolicy.normalizeOrigin(
+            origin,
+            BuildConfig.DEBUG || allowPrivateCleartextForTests,
+        ),
     ) { "MobileApiClient requires a valid runway origin" }
 
     fun beginAuthorization(): MobileAuthorizationStartResult {
@@ -190,16 +196,18 @@ class MobileApiClient(origin: String) {
             if (payload.getString("view") != view) {
                 return@runCatching MobileViewResult.Incompatible
             }
-            MobileViewResult.Loaded(payload)
+            val decoded = NativePayloadCodec.decodeView(view, payload)
+                ?: return@runCatching MobileViewResult.Retryable
+            MobileViewResult.Loaded(decoded)
         }.getOrDefault(MobileViewResult.Retryable)
     }
 
     fun runAction(
         session: MobileSession,
-        action: String,
-        payload: JSONObject,
+        command: MobileCommand,
         requestId: UUID,
     ): MobileActionResult {
+        val action = command.action
         if (
             session.origin != serverOrigin ||
             session.isExpired() ||
@@ -207,7 +215,7 @@ class MobileApiClient(origin: String) {
         ) {
             return MobileActionResult.Unauthorized
         }
-        val body = payload.toString().toByteArray(StandardCharsets.UTF_8)
+        val body = NativePayloadCodec.encodeCommand(command).toByteArray(StandardCharsets.UTF_8)
         if (body.size > MAX_ACTION_BYTES) return MobileActionResult.Rejected("That change is too large.")
         val response = request(
             path = "/api/mobile/v1/action/$action",
@@ -229,15 +237,16 @@ class MobileApiClient(origin: String) {
             return MobileActionResult.Retryable
         }
         return runCatching {
-            val result = JSONObject(response.body)
-            val message = result.optString("message").ifBlank {
+            val result = NativePayloadCodec.decodeAction(response.body)
+                ?: return@runCatching MobileActionResult.Retryable
+            val message = result.message.orEmpty().ifBlank {
                 if (response.status in 200..299) "Change saved." else "The change was not accepted."
             }
             when {
-                response.status in 200..299 && result.optBoolean("ok") ->
+                response.status in 200..299 && result.ok == true ->
                     MobileActionResult.Completed(result)
                 response.status == HttpURLConnection.HTTP_CONFLICT &&
-                    result.optString("error") in setOf(
+                    result.error in setOf(
                         "request_in_progress",
                         "request_outcome_unknown",
                     ) ->

@@ -172,6 +172,12 @@ It uses Better Auth device authorization for the normal account session and the 
 fresh-account-security boundary; it does not render the product and no browser session is copied into
 Android. There is no origin-bound build variant.
 
+Server JSON crosses one explicit native codec boundary into immutable Kotlin payload models.
+Compose screens and the ViewModel operate on those models and sealed mobile commands; they neither
+read `JSONObject` fields nor construct stringly typed mutations. UI modules follow the product
+surfaces—setup, today/calendar, review/progress, settings, and focused dialogs—with shared components
+kept separate.
+
 Native code owns the persisted Storage Access Framework read grant, bounded shares, folder settings,
 inexact WorkManager reconciliation, and optional Health Connect ingestion. The separate `rwy1_`
 import credential is limited to Android import endpoints; the signed-in native client establishes it

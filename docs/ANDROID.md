@@ -45,6 +45,12 @@ stable `Idempotency-Key`; the server stores a user-scoped receipt and returns th
 a retried request. Reusing a key with different content fails. The client makes one bounded retry and
 asks the runner to refresh rather than blindly repeating an uncertain mutation.
 
+JSON is confined to the native network codec. `NativePayloadCodec` validates and converts server
+responses into immutable Kotlin payload models, and converts sealed `MobileCommand` values back into
+the server's mutation shapes. The ViewModel and Compose screens do not inspect `JSONObject` values or
+assemble action names and payloads ad hoc. Screen code is separated by product surface and shared
+components rather than collected in one application-wide file.
+
 The ordinary native surface includes onboarding, today, calendar, workout adjustments, review,
 progress/history, privacy/settings, sign-out, and selected server state. Risky workout changes use
 the same server-side preview and explicit confirmation boundary as the web client. The app must not
@@ -126,3 +132,9 @@ Before an external release, record actual evidence for install and upgrade, sele
 modes, device authorization, session expiry/revocation, server switch, GPX share/folder retry,
 Health Connect permission/revocation/route consent, WorkManager deferral, large text, TalkBack, and
 at least one physical device. A green build alone does not establish those behaviours.
+
+The README's Android images were captured from the real Compose client on a Pixel 6-shaped API 35
+AVD with a disposable account and synthetic plan. That pass exercised server selection, Better Auth
+device authorization, native navigation, and the non-mutating workout edit, result, add-run, and
+settings surfaces in both system themes. It does not claim physical-device, Health Connect provider,
+background scheduling, large-text, or TalkBack coverage.
