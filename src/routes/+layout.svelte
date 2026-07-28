@@ -2,7 +2,6 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import favicon from '$lib/assets/favicon.svg';
-	import ServiceWorkerRetirement from '$lib/components/ServiceWorkerRetirement.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -36,4 +35,3 @@
 </svelte:head>
 
 {@render children()}
-<ServiceWorkerRetirement />

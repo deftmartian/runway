@@ -1,4 +1,5 @@
 import { buildIdentity } from './build-identity';
+import { canonicalAppOrigin } from './auth-config';
 import { env } from '$env/dynamic/private';
 
 const androidApplicationIdPattern = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
@@ -14,6 +15,7 @@ export function buildAndroidInstanceDescriptor() {
 	return {
 		result: 'runway-instance' as const,
 		product: 'runway' as const,
+		serverOrigin: canonicalAppOrigin(env['ORIGIN'] || 'http://localhost:4100', 'ORIGIN'),
 		minimumAndroidApi: androidApiCompatibility.minimum,
 		maximumAndroidApi: androidApiCompatibility.maximum,
 		nativeUi: true,
@@ -21,9 +23,7 @@ export function buildAndroidInstanceDescriptor() {
 		auth: {
 			local: env['LOCAL_AUTH_ENABLED'] !== 'false',
 			localSignups: env['ALLOW_LOCAL_SIGNUPS'] === 'true',
-			oidc: Boolean(
-				env['OIDC_ISSUER'] && env['OIDC_CLIENT_ID'] && env['OIDC_CLIENT_SECRET']
-			),
+			oidc: Boolean(env['OIDC_ISSUER'] && env['OIDC_CLIENT_ID'] && env['OIDC_CLIENT_SECRET']),
 			passkeys: true
 		},
 		release: buildIdentity.release

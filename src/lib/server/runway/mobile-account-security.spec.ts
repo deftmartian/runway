@@ -5,12 +5,18 @@ const authApi = vi.hoisted(() => ({
 	listSessions: vi.fn()
 }));
 
+const database = vi.hoisted(() => ({
+	transaction: vi.fn()
+}));
+
 vi.mock('$lib/server/auth', () => ({
 	auth: { api: authApi }
 }));
-vi.mock('$lib/server/db', () => ({ db: {} }));
+vi.mock('$lib/server/db', () => ({ db: database }));
 
 import {
+	deleteMobilePasskeyWithoutLockout,
+	sanitizeMobilePasskeys,
 	sanitizeMobileAccountSessions,
 	validateMobileReplacementToken
 } from './mobile-account-security';
@@ -86,6 +92,74 @@ describe('native account session summary', () => {
 		expect(sanitizeMobileAccountSessions(sessions, 'session-0')).toHaveLength(50);
 	});
 
+	test('whitelists and bounds mobile passkey summaries', () => {
+		const createdAt = new Date('2026-07-28T12:00:00.000Z');
+		const passkeys = Array.from({ length: 25 }, (_, index) => ({
+			id: `passkey-${index}`,
+			name: `Key ${index}`,
+			deviceType: 'singleDevice',
+			backedUp: false,
+			createdAt,
+			publicKey: 'must-not-cross-the-mobile-json-boundary',
+			credentialID: 'credential-id',
+			transports: 'usb',
+			aaguid: 'aaguid',
+			counter: 4,
+			userId: 'runner-1'
+		}));
+
+		const result = sanitizeMobilePasskeys(passkeys);
+
+		expect(result).toHaveLength(20);
+		expect(result[0]).toEqual({
+			id: 'passkey-0',
+			name: 'Key 0',
+			deviceType: 'singleDevice',
+			backedUp: false,
+			createdAt
+		});
+		expect(JSON.stringify(result)).not.toContain('must-not-cross');
+		expect(JSON.stringify(result)).not.toContain('credential-id');
+	});
+
+	test('serializes concurrent passkey removals through the deletion callback', async () => {
+		let passkeyCount = 2;
+		let releaseFirstDeletion: (() => void) | undefined;
+		let firstDeletionStarted: (() => void) | undefined;
+		const firstDeletionStartedPromise = new Promise<void>((resolve) => {
+			firstDeletionStarted = resolve;
+		});
+		let transactionTail = Promise.resolve();
+		database.transaction.mockImplementation((callback: (tx: unknown) => Promise<unknown>) => {
+			const transaction = transactionTail.then(async () =>
+				callback(passkeyRemovalTransaction(passkeyCount))
+			);
+			transactionTail = transaction.then(
+				() => undefined,
+				() => undefined
+			);
+			return transaction;
+		});
+
+		const first = deleteMobilePasskeyWithoutLockout('runner-1', async () => {
+			firstDeletionStarted?.();
+			await new Promise<void>((resolve) => {
+				releaseFirstDeletion = resolve;
+			});
+			passkeyCount -= 1;
+		});
+		await firstDeletionStartedPromise;
+		const secondDelete = vi.fn();
+		const second = deleteMobilePasskeyWithoutLockout('runner-1', secondDelete);
+
+		expect(secondDelete).not.toHaveBeenCalled();
+		releaseFirstDeletion?.();
+
+		await expect(first).resolves.toMatchObject({ removed: true });
+		await expect(second).resolves.toEqual({ removed: false });
+		expect(secondDelete).not.toHaveBeenCalled();
+	});
+
 	test('accepts only the authoritative header token after marked same-user rotation', async () => {
 		authApi.getSession.mockResolvedValueOnce({
 			user: { id: 'runner-1' },
@@ -146,3 +220,27 @@ describe('native account session summary', () => {
 		expect(authApi.getSession).not.toHaveBeenCalled();
 	});
 });
+
+function passkeyRemovalTransaction(passkeyCount: number) {
+	let selectCall = 0;
+	return {
+		select: () => {
+			selectCall += 1;
+			if (selectCall === 1) {
+				const ownerQuery = {
+					from: () => ownerQuery,
+					where: () => ownerQuery,
+					limit: () => ownerQuery,
+					for: () => Promise.resolve([{ id: 'runner-1' }])
+				};
+				return ownerQuery;
+			}
+			const count = selectCall === 2 ? 0 : passkeyCount;
+			const countQuery = {
+				from: () => countQuery,
+				where: () => Promise.resolve([{ count }])
+			};
+			return countQuery;
+		}
+	};
+}

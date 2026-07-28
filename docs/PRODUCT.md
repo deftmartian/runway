@@ -115,12 +115,23 @@ Timed-plan comparisons require recorded duration. A distance-only activity still
 
 ## Product Surfaces
 
-1. `/app` — primary calendar, today/next/review readouts, weekly load, and persistent desktop day inspector or focused mobile sheet.
-2. `/app/import` — compact activity ledger first; import source setup second; opened GPX records include route and heart-rate visuals.
-3. `/app/stats` — accessible generated/current/actual traces with exact values and descriptive effort/heart-rate context, with or without an active plan.
-4. `/app/history` — active and archived plan phases, user edits, feedback-driven changes, reversals, and results.
-5. `/app/settings` — flat profile, account security, appearance, import, export, and privacy controls with progressive disclosure.
-6. `/app/onboarding` — four focused steps: Goal, Starting point, Schedule, Review.
+Android is the primary interaction surface. The responsive web client is a complete alternative for
+desktop, recovery, and workflows such as manual upload or Nextcloud configuration. Both clients use
+the same plan, activity ledger, decisions, privacy rules, and server-owned domain behavior.
+
+1. Today and calendar — today/next/review readouts, monthly schedule, recovery days, and focused run
+   detail.
+2. Imports and Review — compact activity ledger first; source setup second; opened records include
+   route and heart-rate visuals where retained.
+3. Progress and history — accessible generated/current/actual traces, exact values, plan phases,
+   edits, feedback-driven changes, reversals, and results.
+4. Settings and account — training profile, server/build status, account security, imports, export,
+   and privacy controls with progressive disclosure.
+5. Onboarding — four focused steps: Goal, Starting point, Schedule, Review.
+
+The web routes mirror those product areas at `/app`, `/app/import`, `/app/stats`, `/app/history`,
+`/app/settings`, and `/app/onboarding`; route names do not define the native information
+architecture.
 
 Public and authentication routes use the same control geometry and runway trace identity without turning into marketing or decorative container pages.
 
@@ -152,8 +163,7 @@ Route data, schedule patterns, pain/load-assessment notes, pace and heart-rate h
   account, with Android-owned capabilities such as durable folder access, shares, background
   reconciliation, and Health Connect reads.
 - An installable, offline, share-target, or browser-folder PWA. The web client remains responsive
-  and online; a temporary service-worker retirement endpoint exists only to remove old installations
-  cleanly.
+  and online; the retired manifest and service-worker paths return `404`.
 - Live GPS recording or watch replacement.
 - Social feeds, leaderboards, streak pressure, or public routes.
 - Guided audio, coaching personality, or motivation programs.

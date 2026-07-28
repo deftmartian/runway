@@ -428,6 +428,47 @@ class MobileApiClientContractTest {
     }
 
     @Test
+    fun `passkey management uses fresh-session account operations without retrying ambiguous changes`() {
+        LocalHttpServer(
+            responses = listOf(
+                Response.json(200, """{"ok":true,"message":"Passkey renamed."}"""),
+                Response.json(
+                    403,
+                    """{"ok":false,"error":"fresh_session_required","message":"Sign out and sign in again."}""",
+                ),
+            ),
+        ).use { server ->
+            val session = MobileSession(
+                origin = server.origin,
+                token = "s".repeat(32),
+                expiresAtEpochMs = System.currentTimeMillis() + 60_000,
+            )
+            val client = testClient(server.origin)
+
+            assertTrue(
+                client.renamePasskey(session, "passkey-id", "  Work laptop  ") is
+                    MobileAccountOperationResult.Completed,
+            )
+            assertTrue(
+                client.deletePasskey(session, "passkey-id") is
+                    MobileAccountOperationResult.ReauthenticationRequired,
+            )
+            assertTrue(
+                client.renamePasskey(session, "passkey-id", " ") is
+                    MobileAccountOperationResult.Rejected,
+            )
+
+            val requests = server.awaitRequests(2)
+            assertEquals("/api/mobile/v1/account/rename-passkey", requests[0].target)
+            assertEquals("passkey-id", JSONObject(requests[0].body).getString("id"))
+            assertEquals("Work laptop", JSONObject(requests[0].body).getString("name"))
+            assertFalse(requests[0].headers.containsKey("idempotency-key"))
+            assertEquals("/api/mobile/v1/account/delete-passkey", requests[1].target)
+            assertEquals("passkey-id", JSONObject(requests[1].body).getString("id"))
+        }
+    }
+
+    @Test
     fun `password change revalidates and returns a marked replacement session`() {
         val replacementToken = "r".repeat(32)
         LocalHttpServer(

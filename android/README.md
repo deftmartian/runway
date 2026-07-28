@@ -1,8 +1,8 @@
 # runway for Android
 
-runway for Android is a first-class native Jetpack Compose client for a self-hosted runway server.
-It is not a Custom Tab, WebView, or companion shell. The app owns its navigation and product UI,
-while the responsive web client remains a separate, complete way to use runway.
+runway for Android is the primary, full native Jetpack Compose client for a self-hosted runway
+server. It is not a Custom Tab, WebView, or companion shell. The app owns its navigation and product
+UI, while the responsive web client remains a separate, complete way to use runway.
 
 Every APK uses the same selectable-server model. On first launch, the runner enters the HTTPS origin
 of their server. Android verifies `GET /api/android/instance` before saving it, follows no redirect,
@@ -11,24 +11,28 @@ also accept private-network HTTP for local development. A server change revokes 
 origin's native state before the new one becomes active; it never changes GPX files or data already
 stored on either server.
 
-| Native sign-in                                                                        | Native imports                                                                   |
-| :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- |
-| Choose a server, then approve the device authorization request in the system browser. | Grant a Gadgetbridge folder or Health Connect permissions from Android settings. |
+| Native sign-in                                                                                                             | Native imports                                                                   |
+| :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
+| Choose a server, then sign in or create a local account without leaving Android. OIDC and passkeys use the system browser. | Grant a Gadgetbridge folder or Health Connect permissions from Android settings. |
 
 <p align="center">
   <img src="../docs/images/runway-android-calendar-dark.png" width="300" alt="Native Android calendar following the system dark theme">
   <img src="../docs/images/runway-android-progress.png" width="300" alt="Native Android progress screen showing the training ramp">
 </p>
 
-The system browser is deliberately limited to security boundaries. It is used to approve device
-authorization and for fresh account-security operations such as passkeys or two-factor changes. It
-does not host the runway product UI and Android never copies browser cookies or passwords.
+The system browser is deliberately limited to identity-provider and website-owned boundaries: OIDC
+or passkey sign-in, password reset, and new passkey registration. Local signup, password and
+two-factor sign-in, two-factor setup, recovery codes, sessions, passkey rename/removal, export, and
+account deletion use native screens. The browser does not host the runway product UI, and Android
+never copies browser cookies or puts a session token in a URL.
 
 ## Android capability surface
 
-The Compose client covers normal planning use: onboarding, today, calendar, workout adjustments,
-review, progress/history, settings, and server/account state. It talks to the versioned mobile API
-with a Better Auth device-authorization session. User-initiated mutations carry stable idempotency
+The Compose client covers normal planning use: onboarding, today and the next run, a month calendar
+with day detail, workout adjustments and results, review, progress/history, imports, settings, and
+server/account state. It talks to the versioned mobile API with a server-stamped Better Auth native
+session. Local credentials create that session directly; OIDC and passkeys use Better Auth device
+authorization without transferring a browser session. Training mutations carry stable idempotency
 keys so a retry does not record a run or apply an edit twice.
 
 The presentation layer is typed: one codec translates bounded JSON responses into immutable Kotlin
@@ -98,10 +102,10 @@ its own stable id and signing key; changing either later prevents in-place updat
 ## Release model
 
 Versioned GitHub releases publish a signed universal APK only when the protected signing environment
-supplies the expected certificate identity. The F-Droid path builds from source and leaves signing to
-F-Droid. Before external distribution, record actual install, upgrade, server-switch, device-auth,
-folder/Health Connect permission, retry/idempotency, accessibility, and background-behaviour evidence
-on the supported devices.
+supplies the expected certificate identity. The F-Droid path builds from source and leaves signing
+to F-Droid. Before external distribution, record actual install, upgrade, server-switch, local and
+external authentication, folder/Health Connect permission, retry/idempotency, accessibility, and
+background-behaviour evidence on the supported devices.
 
 For the protocol and security boundary, see [the Android architecture](../docs/ANDROID.md). For
 deployment and server compatibility, see [the deployment guide](../docs/DEPLOYMENT.md).

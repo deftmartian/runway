@@ -1,5 +1,6 @@
 package dev.deftmartian.runway
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,8 @@ internal fun RunwayNativeApp(
     onSaveRecoveryCodes: () -> Unit,
     onClearRecoveryCodes: () -> Unit,
     onRevokeAccountSession: (String) -> Unit,
+    onRenamePasskey: (String, String) -> Unit,
+    onDeletePasskey: (String) -> Unit,
     onExportTrainingData: () -> Unit,
     onDeleteAccount: (String) -> Unit,
     onConfirmActionPreview: () -> Unit,
@@ -110,6 +113,8 @@ internal fun RunwayNativeApp(
             onSaveRecoveryCodes = onSaveRecoveryCodes,
             onClearRecoveryCodes = onClearRecoveryCodes,
             onRevokeAccountSession = onRevokeAccountSession,
+            onRenamePasskey = onRenamePasskey,
+            onDeletePasskey = onDeletePasskey,
             onExportTrainingData = onExportTrainingData,
             onDeleteAccount = onDeleteAccount,
             onConfirmActionPreview = onConfirmActionPreview,
@@ -166,6 +171,8 @@ private fun NativeProductShell(
     onSaveRecoveryCodes: () -> Unit,
     onClearRecoveryCodes: () -> Unit,
     onRevokeAccountSession: (String) -> Unit,
+    onRenamePasskey: (String, String) -> Unit,
+    onDeletePasskey: (String) -> Unit,
     onExportTrainingData: () -> Unit,
     onDeleteAccount: (String) -> Unit,
     onConfirmActionPreview: () -> Unit,
@@ -174,10 +181,27 @@ private fun NativeProductShell(
     onOpenServer: () -> Unit,
     onOpenFolder: () -> Unit,
 ) {
+    val navigationParent = state.destination.navigationParent
+    BackHandler(enabled = navigationParent != null && !state.actionPending) {
+        navigationParent?.let(onDestinationSelected)
+    }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    navigationParent?.let { parent ->
+                        IconButton(
+                            onClick = { onDestinationSelected(parent) },
+                            enabled = !state.actionPending,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = "Back to ${parent.label}",
+                            )
+                        }
+                    }
+                },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -268,6 +292,7 @@ private fun NativeProductShell(
                     activityEvidenceFailures = state.activityEvidenceFailures,
                     onLoadActivityTrace = onLoadActivityTrace,
                     onDestinationSelected = onDestinationSelected,
+                    onCalendarMonthSelected = onCalendarMonthSelected,
                     onAction = onAction,
                 )
                 NativeDestination.Calendar -> CalendarScreen(
@@ -313,6 +338,7 @@ private fun NativeProductShell(
                     onOpenServer = onOpenServer,
                     onOpenFolder = onOpenFolder,
                     onOpenAccountSecurity = { onDestinationSelected(NativeDestination.AccountSecurity) },
+                    onOpenHistory = { onDestinationSelected(NativeDestination.History) },
                     onSignOut = onSignOut,
                 )
                 NativeDestination.AccountSecurity -> AccountSecurityScreen(
@@ -333,20 +359,21 @@ private fun NativeProductShell(
                     onSaveRecoveryCodes = onSaveRecoveryCodes,
                     onClearRecoveryCodes = onClearRecoveryCodes,
                     onRevokeSession = onRevokeAccountSession,
+                    onRenamePasskey = onRenamePasskey,
+                    onDeletePasskey = onDeletePasskey,
                     onExportTrainingData = onExportTrainingData,
                     onDeleteAccount = onDeleteAccount,
+                    onReauthenticate = onSignOut,
                 )
                 NativeDestination.History -> HistoryScreen(
                     payload = state.payload as? NativeHistoryPayload,
                     loading = state.loading,
-                    onBack = { onDestinationSelected(NativeDestination.Progress) },
                     onLoadMore = onLoadMoreHistory,
                     onOpenPlan = onOpenHistoryDetail,
                 )
                 NativeDestination.HistoryDetail -> HistoryDetailScreen(
                     payload = state.payload as? NativeHistoryDetailPayload,
                     loading = state.loading,
-                    onBack = { onDestinationSelected(NativeDestination.History) },
                 )
             }
         }

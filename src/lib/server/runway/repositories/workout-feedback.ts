@@ -305,74 +305,15 @@ export async function applyConsequenceDecision(
 		if (!lockedPlan) throw new Error('This plan-change proposal is no longer current.');
 
 		if (input.decision !== 'keep_plan') {
-			const candidates = await tx
-				.select({
-					id: workout.id,
-					planId: workout.planId,
-					weekId: workout.weekId,
-					scheduledDate: workout.scheduledDate,
-					status: workout.status,
-					targetDistanceMeters: workout.targetDistanceMeters,
-					targetDurationSeconds: workout.targetDurationSeconds,
-					prescriptionKind: workout.prescriptionKind,
-					intervalStructure: workout.intervalStructure,
-					type: workout.type,
-					intensity: workout.intensity,
-					purpose: workout.purpose,
-					reason: workout.reason,
-					sourceRefs: workout.sourceRefs,
-					isRemoved: workout.isRemoved
-				})
-				.from(workout)
-				.where(
-					and(
-						eq(workout.userId, userId),
-						eq(workout.planId, source.planId),
-						eq(workout.status, 'planned'),
-						eq(workout.isRemoved, false),
-						ne(workout.type, 'race'),
-						ne(workout.type, 'rest'),
-						gt(workout.scheduledDate, source.originDate),
-						gte(workout.scheduledDate, today)
-					)
-				)
-				.orderBy(asc(workout.scheduledDate), asc(workout.id))
-				.limit(52);
-			const firstCandidate = candidates[0];
-			if (!firstCandidate) throw new Error('No future workout is available to change.');
-
-			const affected =
-				input.decision === 'rebalance_week'
-					? candidates.filter(
-							(candidate) =>
-								candidate.scheduledDate <= addDays(isoWeekStart(source.originDate), 6) &&
-								isConsequenceDecisionTargetCompatible(consequence, candidate)
-						)
-					: [firstCandidate];
-			if (input.decision === 'rebalance_week' && affected.length === 0) {
-				throw new Error('No compatible workouts remain in this week. Choose another option.');
-			}
-			const workoutsToChange = affected.length > 0 ? affected : [firstCandidate];
-			if (input.decision === 'reduce_next') {
-				const appliedEffect = calculateConsequenceDecisionEffect({
-					consequence,
-					decision: input.decision,
-					target: {
-						targetDistanceMeters: firstCandidate.targetDistanceMeters,
-						targetDurationSeconds: firstCandidate.targetDurationSeconds
-					}
-				});
-				if (!appliedEffect) throw new Error('The next workout has no amount that can be reduced.');
-				consequence = {
-					...consequence,
-					nextRunAdjustment: {
-						metric: appliedEffect.metric,
-						value: appliedEffect.adjustment
-					},
-					nextRunAdjustmentMeters:
-						appliedEffect.metric === 'distance' ? appliedEffect.adjustment : 0
-				};
-			}
+			const candidates = await readFutureConsequenceCandidates(tx, userId, source, today);
+			const projection = projectConsequenceDecisionChanges({
+				decision: input.decision,
+				consequence,
+				originDate: source.originDate,
+				originWorkout: source.originWorkout,
+				candidates
+			});
+			consequence = projection.consequence;
 
 			if (input.decision === 'repeat_prescription') {
 				const [allWorkouts, weeks] = await Promise.all([
@@ -390,18 +331,16 @@ export async function applyConsequenceDecision(
 						.where(and(eq(trainingWeek.userId, userId), eq(trainingWeek.planId, source.planId)))
 						.orderBy(asc(trainingWeek.weekNumber))
 				]);
-				const repeatedState = decisionWorkoutState({
-					candidate: firstCandidate,
-					originWorkout: source.originWorkout,
-					decision: input.decision,
-					consequence,
-					shareCount: 1,
-					index: 0
-				});
+				const repeatedChange = projection.changes[0];
+				if (!repeatedChange) throw new Error('No future workout is available to change.');
+				const repeatedCurrent = editableConsequenceCandidate(repeatedChange.candidate);
 				const preview = buildWorkoutEditPreview({
-					current: firstCandidate,
+					current: repeatedCurrent,
 					recommended: null,
-					proposed: proposalFromWorkout({ ...firstCandidate, ...repeatedState }),
+					proposed: proposalFromWorkout({
+						...repeatedCurrent,
+						...repeatedChange.newState
+					}),
 					workouts: allWorkouts.map(editableWorkout),
 					weeks,
 					today,
@@ -414,15 +353,7 @@ export async function applyConsequenceDecision(
 				}
 			}
 
-			for (const [index, candidate] of workoutsToChange.entries()) {
-				const newState = decisionWorkoutState({
-					candidate,
-					originWorkout: source.originWorkout,
-					decision: input.decision,
-					consequence,
-					shareCount: workoutsToChange.length,
-					index
-				});
+			for (const { candidate, newState } of projection.changes) {
 				await tx
 					.update(workout)
 					.set({ ...newState, updatedAt: new Date() })
@@ -465,6 +396,174 @@ export async function applyConsequenceDecision(
 		});
 		return consequence;
 	});
+}
+
+/**
+ * Produces the same bounded future-workout changes that applyConsequenceDecision will persist,
+ * without mutating the plan. Native clients use this before asking for confirmation.
+ */
+export async function previewConsequenceDecision(
+	userId: string,
+	input: { source: 'feedback' | 'activity'; sourceId: string; decision: PlanDecision }
+) {
+	return db.transaction(async (tx) => {
+		const timeZone = await requireAthleteTimeZoneInTransaction(tx, userId);
+		const today = todayIsoInTimeZone(timeZone);
+		const source = await consequenceDecisionSource(tx, userId, input);
+		if (!source) throw new Error('Plan-change proposal not found.');
+		if (source.consequence.planChangeAvailable === false || source.consequence.appliedDecision) {
+			throw new Error('This plan-change proposal is no longer available.');
+		}
+		if (input.decision === 'keep_plan') return { decision: input.decision, changes: [] };
+		const decision = input.decision as Exclude<PlanDecision, 'keep_plan'>;
+		const candidates = await readFutureConsequenceCandidates(tx, userId, source, today);
+		const projection = projectConsequenceDecisionChanges({
+			decision,
+			consequence: source.consequence,
+			originDate: source.originDate,
+			originWorkout: source.originWorkout,
+			candidates
+		});
+		return {
+			decision,
+			changes: projection.changes.map(({ candidate, newState }) => {
+				return {
+					workoutId: candidate.id,
+					scheduledDate: candidate.scheduledDate,
+					purpose: candidate.purpose,
+					before: decisionPreviewPrescription(candidate),
+					after: decisionPreviewPrescription(newState)
+				};
+			})
+		};
+	});
+}
+
+type ConsequenceDecisionSource = {
+	consequence: ConsequenceResult;
+	planId: string;
+	originDate: string;
+	originWorkout: WorkoutStateRecord | null;
+};
+type ConsequenceCandidate = WorkoutStateRecord & { id: string };
+
+function editableConsequenceCandidate(candidate: ConsequenceCandidate) {
+	return {
+		id: candidate.id,
+		...workoutAdjustmentState(candidate)
+	};
+}
+
+async function readFutureConsequenceCandidates(
+	tx: RunwayTransaction,
+	userId: string,
+	source: ConsequenceDecisionSource,
+	today: string
+) {
+	return tx
+		.select({
+			id: workout.id,
+			planId: workout.planId,
+			weekId: workout.weekId,
+			scheduledDate: workout.scheduledDate,
+			status: workout.status,
+			targetDistanceMeters: workout.targetDistanceMeters,
+			targetDurationSeconds: workout.targetDurationSeconds,
+			prescriptionKind: workout.prescriptionKind,
+			intervalStructure: workout.intervalStructure,
+			type: workout.type,
+			intensity: workout.intensity,
+			purpose: workout.purpose,
+			reason: workout.reason,
+			sourceRefs: workout.sourceRefs,
+			isRemoved: workout.isRemoved
+		})
+		.from(workout)
+		.where(
+			and(
+				eq(workout.userId, userId),
+				eq(workout.planId, source.planId),
+				eq(workout.status, 'planned'),
+				eq(workout.isRemoved, false),
+				ne(workout.type, 'race'),
+				ne(workout.type, 'rest'),
+				gt(workout.scheduledDate, source.originDate),
+				gte(workout.scheduledDate, today)
+			)
+		)
+		.orderBy(asc(workout.scheduledDate), asc(workout.id))
+		.limit(52);
+}
+
+export function projectConsequenceDecisionChanges(input: {
+	decision: Exclude<PlanDecision, 'keep_plan'>;
+	consequence: ConsequenceResult;
+	originDate: string;
+	originWorkout: WorkoutStateRecord | null;
+	candidates: ConsequenceCandidate[];
+}) {
+	const firstCandidate = input.candidates[0];
+	if (!firstCandidate) throw new Error('No future workout is available to change.');
+	const affected =
+		input.decision === 'rebalance_week'
+			? input.candidates.filter(
+					(candidate) =>
+						candidate.scheduledDate <= addDays(isoWeekStart(input.originDate), 6) &&
+						isConsequenceDecisionTargetCompatible(input.consequence, candidate)
+				)
+			: [firstCandidate];
+	if (input.decision === 'rebalance_week' && affected.length === 0) {
+		throw new Error('No compatible workouts remain in this week. Choose another option.');
+	}
+	let consequence = withAppliedDecision(input.consequence, input.decision);
+	if (input.decision === 'reduce_next') {
+		const effect = calculateConsequenceDecisionEffect({
+			consequence,
+			decision: input.decision,
+			target: {
+				targetDistanceMeters: firstCandidate.targetDistanceMeters,
+				targetDurationSeconds: firstCandidate.targetDurationSeconds
+			}
+		});
+		if (!effect) throw new Error('The next workout has no amount that can be reduced.');
+		consequence = {
+			...consequence,
+			nextRunAdjustment: { metric: effect.metric, value: effect.adjustment },
+			nextRunAdjustmentMeters: effect.metric === 'distance' ? effect.adjustment : 0
+		};
+	}
+	return {
+		consequence,
+		changes: affected.map((candidate, index) => ({
+			candidate,
+			newState: decisionWorkoutState({
+				candidate,
+				originWorkout: input.originWorkout,
+				decision: input.decision,
+				consequence,
+				shareCount: affected.length,
+				index
+			})
+		}))
+	};
+}
+
+function decisionPreviewPrescription(state: {
+	scheduledDate: string;
+	type: string;
+	prescriptionKind?: string | null;
+	targetDistanceMeters: number;
+	targetDurationSeconds: number | null;
+	purpose: string;
+}) {
+	return {
+		scheduledDate: state.scheduledDate,
+		type: state.type,
+		prescriptionKind: state.prescriptionKind,
+		targetDistanceMeters: state.targetDistanceMeters,
+		targetDurationSeconds: state.targetDurationSeconds,
+		purpose: state.purpose
+	};
 }
 
 async function lockConsequenceDecisionSource(

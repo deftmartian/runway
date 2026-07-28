@@ -37,6 +37,7 @@ internal data class NativeOnboardingPayload(
 internal data class NativeCalendarPayload(
     override val onboardingRequired: Boolean?,
     val calendar: NativeCalendar?,
+    val nextWorkout: NativeWorkout?,
     val activityCandidates: List<NativeWorkout>,
 ) : NativeViewPayload
 
@@ -139,6 +140,7 @@ internal data class NativeSettingsPayload(
 
 internal data class NativeAccountSecurityPayload(
     val authentication: NativeAuthenticationSecurity?,
+    val passkeys: List<NativePasskeySecurity>,
     val sessions: NativeSessionSecurity?,
     val importDevices: List<NativeAccountImportDevice>,
 ) : NativeViewPayload {
@@ -150,6 +152,13 @@ internal data class NativeAuthenticationSecurity(
     val oidc: Boolean?,
     val twoFactor: Boolean?,
     val passkeyCount: Int?,
+)
+internal data class NativePasskeySecurity(
+    val id: String?,
+    val name: String?,
+    val deviceType: String?,
+    val backedUp: Boolean?,
+    val createdAt: String?,
 )
 internal data class NativeSessionSecurity(
     val activeCount: Int?,
@@ -338,6 +347,7 @@ internal data class NativeConsequence(
     val risk: String?,
     val planChangeAvailable: Boolean?,
     val options: List<String>,
+    val comparisonStatus: String?,
 )
 internal data class NativeActivityOverflow(val limit: Int?, val truncated: Boolean?)
 internal data class NativeOffsetPage(val total: Int?, val nextOffset: Int?, val offset: Int?)
@@ -348,8 +358,10 @@ internal data class NativeWeek(
     val weekNumber: Int?,
     val startDate: String?,
     val targetDistanceMeters: Double?,
+    val targetDurationSeconds: Double?,
     val completedDistanceMeters: Double?,
     val risk: String?,
+    val hasMixedLoad: Boolean?,
 )
 internal data class NativePlanTraceWeek(
     val id: String?,
@@ -541,9 +553,40 @@ internal data class NativeAccountOperationResponse(
             "recoveryCodes=<redacted>, accountDeleted=$accountDeleted)"
 }
 internal data class NativeActionPreviewDto(
+    val operation: String?,
     val risk: String?,
     val weeklyLoadChangePercent: Double?,
     val spacingConflicts: List<NativeSpacingConflict>,
+    val recommended: NativeWorkoutPreviewPrescription?,
+    val current: NativeWorkoutPreviewPrescription?,
+    val proposed: NativeWorkoutPreviewPrescription?,
+    val workoutChanges: List<NativeWorkoutPreviewChange>,
+    val weekChanges: List<NativeWorkoutPreviewWeek>,
+    val projectedRampPercent: Double?,
+    val projectedRampRisk: String?,
+    val guardrails: List<NativeWorkoutPreviewGuardrail>,
+    val consequenceDecision: NativeConsequenceDecisionPreview?,
+)
+internal data class NativeWorkoutPreviewPrescription(
+    val scheduledDate: String?, val type: String?, val prescriptionKind: String?,
+    val targetDistanceMeters: Double?, val targetDurationSeconds: Double?, val purpose: String?,
+)
+internal data class NativeWorkoutPreviewChange(
+    val workoutId: String?, val isSelected: Boolean?, val before: NativeWorkoutPreviewPrescription?,
+    val after: NativeWorkoutPreviewPrescription?, val relativeChangePercent: Double?,
+    val changeShareOfWeekPercent: Double?, val risk: String?,
+)
+internal data class NativeWorkoutPreviewWeek(
+    val weekId: String?, val weekNumber: Int?, val distanceBeforeMeters: Double?,
+    val distanceAfterMeters: Double?, val durationBeforeSeconds: Double?, val durationAfterSeconds: Double?,
+)
+internal data class NativeWorkoutPreviewGuardrail(val kind: String?, val label: String?, val description: String?)
+internal data class NativeConsequenceDecisionPreview(
+    val decision: String?, val changes: List<NativeConsequenceDecisionChange>,
+)
+internal data class NativeConsequenceDecisionChange(
+    val workoutId: String?, val scheduledDate: String?, val purpose: String?,
+    val before: NativeWorkoutPreviewPrescription?, val after: NativeWorkoutPreviewPrescription?,
 )
 internal data class NativeSpacingConflict(
     val workoutId: String?,

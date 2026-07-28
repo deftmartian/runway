@@ -65,20 +65,24 @@ generated/current/actual traces together.
 The defaults are recommendations, not rules. You can change available days, workout timing,
 distance, duration, and the individual runs in the resulting plan.
 
-## Web and Android
+## Android first, web when you need it
 
-| Surface     | What you get                                                                                                                                                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Web         | The complete responsive product in a modern desktop or mobile browser: planning, review, history, settings, manual uploads, and Nextcloud import. It is an online client, not an installable or offline PWA. |
-| Android app | A first-class Jetpack Compose client for the same account and plan. It adds durable folder access, background imports, GPX shares, and optional Health Connect reads.                                        |
+| Surface     | What you get                                                                                                                                                                            |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android app | The primary, full-featured client: planning, calendar and run detail, review, progress/history, account controls, durable folder access, GPX shares, and optional Health Connect reads. |
+| Web         | The complete responsive alternative for the same account and plan, including manual uploads and Nextcloud import. It is an online client, not an installable or offline PWA.            |
 
-Android is not a browser wrapper or a WebView. It uses the versioned runway mobile API and device
-authorization for normal product use. The system browser appears only for deliberate security
-boundaries: approving device authorization and fresh account-security actions. Android can read
-approved running and treadmill sessions, route samples, heart rate, pace, cadence, elevation, and
-related workout metrics from Health Connect. It never writes to Health Connect, and route access is
-requested separately. Import setup stays inside the signed-in Android app; there is no pairing code
-to copy from the web client.
+Android is not a browser wrapper or a WebView. Local signup, password sign-in, two-factor
+verification, normal navigation, workout changes, and account management use native Compose
+screens. OIDC and passkey sign-in open the selected server in the system browser because those
+protocols belong to the identity provider or website; approval returns to Android without copying
+browser cookies or putting a session token in a URL. Password-reset links and new passkey
+registration use the same deliberate browser boundary.
+
+Android can read approved running and treadmill sessions, route samples, heart rate, pace, cadence,
+elevation, and related workout metrics from Health Connect. It never writes to Health Connect, and
+route access is requested separately. Import setup stays inside the signed-in Android app; there is
+no pairing code to copy from the web client.
 
 <p align="center">
   <img src="docs/images/runway-android-today.png" width="250" alt="runway's native Android Today screen showing a planned rest day">
@@ -87,8 +91,8 @@ to copy from the web client.
 </p>
 
 <p align="center">
-  <strong>One training log, two complete clients.</strong> Android follows the phone’s light or dark
-  theme and keeps the normal product experience inside native Jetpack Compose screens.
+  <strong>Your training log, native on Android.</strong> The app follows the phone’s light or dark
+  theme; the responsive web client remains available for desktop and browser use.
 </p>
 
 Each published versioned [GitHub release](https://github.com/deftmartian/runway/releases) includes a
@@ -154,13 +158,13 @@ and never print their coordinates or metadata in logs.
 Run the complete local release gate:
 
 ```sh
-corepack pnpm verify:full
+corepack pnpm verify:full:serial
 ```
 
-It runs independent web, browser, data/deployment, Android, and container-image groups in parallel.
-The host-network-mutating Compose lifecycle check follows the browser group so Chromium cannot lose
-in-flight module requests. That lifecycle includes a fresh deployment, an image change, and
-idempotent redeploys before the completed production build is checked.
+The serial form is the safe default on a memory-constrained development host. CI uses the same
+independent web, browser, data/deployment, Android, and container-image groups as a parallel matrix.
+The Compose lifecycle includes a fresh deployment, an image change, and idempotent redeploys before
+the completed production build is checked.
 Focused commands remain available for iteration:
 
 ```sh

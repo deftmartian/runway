@@ -36,7 +36,7 @@ describe('native mobile session boundary', () => {
 		expect(authApi.getSession).toHaveBeenCalledWith({ headers: request.headers });
 	});
 
-	test('rejects a valid Better Auth bearer that did not come from Android device authorization', async () => {
+	test('rejects a valid Better Auth bearer without the server-owned Android marker', async () => {
 		authApi.getSession.mockResolvedValue({
 			user: { id: 'runner-1' },
 			session: { id: 'browser-session-1', mobileClientId: null }
@@ -100,12 +100,21 @@ describe('native activity trace query boundary', () => {
 				points: Array.from({ length: 1_001 }, (_, index) => ({ elapsedSeconds: index, bpm: 140 }))
 			},
 			averageCadence: 168,
-			routeSummary: { pointCount: 601, startEndRedacted: true, hasElevation: false, traceRetained: true }
+			routeSummary: {
+				pointCount: 601,
+				startEndRedacted: true,
+				hasElevation: false,
+				traceRetained: true
+			}
 		} as never);
 
 		expect(detail).toMatchObject({
 			averageCadence: 168,
-			disclosure: { routeTraceRetained: true, heartRateSeriesRetained: true, startEndRedacted: true }
+			disclosure: {
+				routeTraceRetained: true,
+				heartRateSeriesRetained: true,
+				startEndRedacted: true
+			}
 		});
 		expect(detail?.routeTrace?.points).toHaveLength(600);
 		expect(detail?.heartRateSeries?.points).toHaveLength(1_000);

@@ -1,8 +1,7 @@
 /**
  * A mobile bearer must be distinguishable from an ordinary Better Auth
- * session. The device-authorization plugin creates a normal session, so the
- * session creation hook stamps this server-controlled value at the exact
- * Better Auth device-token endpoint.
+ * session. The session-creation hook stamps this server-controlled value only
+ * for exact native credential paths or the Better Auth device-token endpoint.
  */
 export const androidDeviceAuthorizationClientId = 'runway-android';
 export const androidMobileSessionClientId = androidDeviceAuthorizationClientId;

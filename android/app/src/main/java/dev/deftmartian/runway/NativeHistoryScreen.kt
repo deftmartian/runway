@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 internal fun HistoryScreen(
     payload: NativeHistoryPayload?,
     loading: Boolean,
-    onBack: () -> Unit,
     onLoadMore: () -> Unit,
     onOpenPlan: (String) -> Unit,
 ) {
@@ -29,11 +28,6 @@ internal fun HistoryScreen(
                 "History",
                 "Plan phases, recorded work, and the decisions that closed each phase.",
             )
-        }
-        item {
-            TextButton(onClick = onBack) {
-                Text("← Progress")
-            }
         }
         when {
             payload == null -> item { EmptyCard("Loading history…") }

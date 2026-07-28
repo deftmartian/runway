@@ -81,6 +81,7 @@ export function accountSecurityRateLimitBuckets(
 		| 'disable-two-factor'
 		| 'regenerate-recovery-codes'
 		| 'change-password'
+		| 'rename-passkey'
 		| 'delete-passkey'
 		| 'request-password-reset'
 		| 'revoke-session'

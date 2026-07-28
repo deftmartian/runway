@@ -62,10 +62,16 @@ State-changing browser requests require the exact public Origin. The responsive 
 missing-Origin share-target exception. Manual upload requires an authenticated browser session and
 uses the same bounded parser and review-only import path as every other GPX source.
 
-Android has separate no-Origin native mutation shapes. Better Auth device authorization exchanges a
-high-entropy, short-lived device code only after the runner approves it in the system browser. The
-created session carries a server-controlled `runway-android` marker; ordinary browser sessions and
-unstamped bearer sessions cannot call `/api/mobile/v1`.
+Android has separate no-Origin native mutation shapes. Local signup, password sign-in, TOTP, and
+recovery-code verification require the exact native client header, reject a browser Origin, and
+receive database-backed rate limits. The Better Auth session-creation hook stamps only those exact
+native authentication paths with the server-controlled `runway-android` marker; ordinary browser
+sessions and unstamped bearer sessions cannot call `/api/mobile/v1`.
+
+OIDC and passkey sign-in use Better Auth device authorization. A high-entropy, short-lived device
+code is approved in the selected server's system-browser flow. The fixed return app link carries
+only an approved/denied result and resumes Android's independent poll; no device code, identity,
+cookie, or bearer crosses the link.
 `POST /api/mobile/v1/android/pairing` uses that marked session to create the short-lived internal code,
 and `POST /api/android/pair` immediately exchanges it for the import-only credential. The code is
 never shown or copied by the runner. The exchange requires JSON plus the versioned Android client

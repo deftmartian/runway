@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -141,19 +143,61 @@ internal fun WorkoutPreviewDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val risk = preview.risk.orEmpty().replaceFirstChar { it.uppercase() }
-        .ifBlank { "Conservative" }
+    val assessment = nativeLoadAssessment(preview.risk)
     val weeklyChange = preview.weeklyLoadChangePercent
     val spacingConflicts = preview.spacingConflicts.size
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Review the plan effect") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 errorMessage?.let { Notice(it, isError = true) }
-                SettingRow("Load assessment", risk)
+                SettingRow("Load assessment", assessment.label)
+                preview.recommended?.let { PreviewPrescriptionRow("Generated", it) }
+                preview.current?.let { PreviewPrescriptionRow("Current", it) }
+                preview.proposed?.let { PreviewPrescriptionRow("Proposed", it) }
                 weeklyChange?.let {
                     SettingRow("Largest weekly load change", "${String.format(Locale.US, "%.1f", it)}%")
+                }
+                preview.projectedRampPercent?.let {
+                    val ramp = nativeRampAssessment(preview.projectedRampRisk)
+                    SettingRow("Projected ramp", "${String.format(Locale.US, "%.1f", it)}% · ${ramp.label}")
+                }
+                preview.weekChanges.forEach { week ->
+                    val distance = if (week.distanceBeforeMeters != null && week.distanceAfterMeters != null) {
+                        "${formatDistance(week.distanceBeforeMeters)} → ${formatDistance(week.distanceAfterMeters)}"
+                    } else null
+                    val duration = if (week.durationBeforeSeconds != null && week.durationAfterSeconds != null) {
+                        "${formatDuration(week.durationBeforeSeconds)} → ${formatDuration(week.durationAfterSeconds)}"
+                    } else null
+                    SettingRow(
+                        "Week ${week.weekNumber ?: ""}".trim(),
+                        listOfNotNull(distance, duration).joinToString(" · ").ifBlank { "No comparable load" },
+                    )
+                }
+                preview.workoutChanges.forEach { change ->
+                    val before = change.before?.let(::previewPrescriptionMeasurement).orEmpty()
+                    val after = change.after?.let(::previewPrescriptionMeasurement).orEmpty()
+                    SettingRow("Affected workout", "$before → $after")
+                }
+                preview.guardrails.forEach { guardrail ->
+                    Notice(guardrail.description ?: guardrail.label ?: "Review this prescription-basis change.")
+                }
+                preview.consequenceDecision?.let { consequence ->
+                    consequence.changes.forEach { change ->
+                        val before = change.before?.let(::previewPrescriptionMeasurement).orEmpty()
+                        val after = change.after?.let(::previewPrescriptionMeasurement).orEmpty()
+                        SettingRow(
+                            change.purpose?.takeIf { it.isNotBlank() } ?: "Future workout",
+                            "$before → $after",
+                        )
+                    }
+                    if (consequence.changes.isEmpty()) {
+                        SettingRow("Future plan", "No future workout changes")
+                    }
                 }
                 if (spacingConflicts > 0) {
                     Notice(
@@ -173,6 +217,21 @@ internal fun WorkoutPreviewDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Go back") } },
     )
 }
+
+@Composable
+private fun PreviewPrescriptionRow(label: String, prescription: NativeWorkoutPreviewPrescription) {
+    SettingRow(label, previewPrescriptionMeasurement(prescription))
+}
+
+private fun previewPrescriptionMeasurement(prescription: NativeWorkoutPreviewPrescription): String =
+    formatPrescriptionMeasurement(
+        prescription.targetDistanceMeters,
+        prescription.targetDurationSeconds,
+        prescription.prescriptionKind == "rest" || prescription.type == "rest",
+    ).let { amount ->
+        listOfNotNull(prescription.scheduledDate, prescription.purpose?.takeIf { it.isNotBlank() }, amount)
+            .joinToString(" · ")
+    }
 
 @Composable
 internal fun FeedbackOutcomeCard(
@@ -219,13 +278,15 @@ internal fun ConsequenceChoices(
     val options = consequence.options
     val recommended = consequence.recommendedDecision?.takeIf(String::isNotBlank)
     val deviation = consequence.deviation?.takeIf(String::isNotBlank)
-    val risk = consequence.risk?.takeIf(String::isNotBlank)
+    val assessment = nativeConsequenceAssessment(
+        consequence.kind,
+        consequence.risk,
+        consequence.comparisonStatus,
+    )
     if (deviation != null) {
         SettingRow("Plan difference", deviation.replace('_', ' ').replaceFirstChar { it.uppercase() })
     }
-    if (risk != null) {
-        SettingRow("Assessment", risk.replace('_', ' ').replaceFirstChar { it.uppercase() })
-    }
+    SettingRow("Assessment", assessment.label)
     if (consequence.kind == "pain_reported") {
         Notice(
             "A plan adjustment is not clearance to continue. Seek qualified guidance if pain is sharp, persists, worsens, or changes your gait.",
@@ -277,7 +338,11 @@ internal fun PlanDecisionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val risk = pending.consequence.risk?.takeIf(String::isNotBlank)
+    val assessment = nativeConsequenceAssessment(
+        pending.consequence.kind,
+        pending.consequence.risk,
+        pending.consequence.comparisonStatus,
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(planDecisionLabel(pending.decision)) },
@@ -285,12 +350,7 @@ internal fun PlanDecisionDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 errorMessage?.let { Notice(it, isError = true) }
                 Text(planDecisionExplanation(pending.decision))
-                risk?.let {
-                    SettingRow(
-                        "Current assessment",
-                        it.replace('_', ' ').replaceFirstChar { character -> character.uppercase() },
-                    )
-                }
+                SettingRow("Current assessment", assessment.label)
                 Text(
                     "Only future planned work changes. This recorded result remains unchanged.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

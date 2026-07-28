@@ -1,14 +1,14 @@
 # Android App Architecture
 
-runway's Android build is a full native Jetpack Compose client, not a PWA wrapper, Custom Tab, or
-WebView. It is one product with the responsive web client: both operate on the same plans, activity
-review records, history, privacy settings, and account. Android owns normal product navigation and
-uses a small versioned API rather than rendering web pages inside the app.
+runway's Android build is the primary, full native Jetpack Compose client, not a PWA wrapper, Custom
+Tab, or WebView. It is one product with the responsive web client: both operate on the same plans,
+activity review records, history, privacy settings, and account. Android owns normal product
+navigation and uses a small versioned API rather than rendering web pages inside the app.
 
 The system browser remains part of the security design, but not the product surface. Android opens
-it only to approve Better Auth device authorization and for account-security operations that need a
-fresh browser session. Browser cookies, passwords, and web content are not shared with the native
-app.
+it for identity-provider or website-owned protocols: OIDC and passkey sign-in, password reset, and
+new passkey registration. Browser cookies, passwords, and web content are not shared with the native
+app, and the return app link contains no identity or credential.
 
 ## Server, package, and trust boundary
 
@@ -34,16 +34,26 @@ origin-bound build variant.
 
 ## Native account session
 
-After the server handshake, Android starts Better Auth device authorization for the registered
-`runway-android` client. The runner approves a short user code in the system browser while signed in
-to their selected server. Android polls only the device-authorization endpoint, receives an
-origin-bound bearer session after approval, and stores it with encrypted Android app state.
+After the server handshake, Android reads enabled sign-in methods from `GET /api/android/instance`.
+Local signup, password sign-in, TOTP, and recovery-code verification use native forms. Passwords and
+challenge codes are sent only to the selected server over its verified connection and are not
+persisted by the app. The native client header plus the absence of a browser Origin lets the server
+stamp the created Better Auth bearer session as `runway-android`; an unstamped bearer cannot call
+the mobile API.
 
-The native client calls `/api/mobile/v1` with that bearer session. It never uses a password, copies a
-browser cookie, or places a bearer in a URL. Mobile mutations require a bounded JSON body and a
-stable `Idempotency-Key`; the server stores a user-scoped receipt and returns the original result for
-a retried request. Reusing a key with different content fails. The client makes one bounded retry and
-asks the runner to refresh rather than blindly repeating an uncertain mutation.
+OIDC and passkey sign-in start Better Auth device authorization for the registered
+`runway-android` client. The system browser owns provider or WebAuthn interaction. Android polls the
+device-authorization endpoint and receives an origin-bound bearer session after approval. The fixed
+app link only resumes that poll: cookies, device codes, identities, and bearer tokens never cross
+it.
+
+Android encrypts the accepted account session in private app state and calls `/api/mobile/v1` with
+the bearer. Training and import-review mutations require a bounded JSON body and a stable
+`Idempotency-Key`; the server stores a user-scoped receipt and returns the original result for a
+retried request. Reusing a key with different content fails. The client makes one bounded retry and
+asks the runner to refresh rather than blindly repeating an uncertain mutation. Account-security
+operations instead use recent-authentication checks, tight request bounds, and persistent rate
+limits; Android does not blindly replay an uncertain security change.
 
 JSON is confined to the native network codec. `NativePayloadCodec` validates and converts server
 responses into immutable Kotlin payload models, and converts sealed `MobileCommand` values back into
@@ -51,8 +61,11 @@ the server's mutation shapes. The ViewModel and Compose screens do not inspect `
 assemble action names and payloads ad hoc. Screen code is separated by product surface and shared
 components rather than collected in one application-wide file.
 
-The ordinary native surface includes onboarding, today, calendar, workout adjustments, review,
-progress/history, privacy/settings, sign-out, and selected server state. Risky workout changes use
+The ordinary native surface includes onboarding, today and next run, a month calendar and day
+detail, workout adjustments, result recording, review, progress/history, imports, privacy/settings,
+account security, sign-out, and selected server/build state. Local password and two-factor setup,
+recovery-code replacement, session revocation, passkey rename/removal, export, and account deletion
+are native. Password reset and passkey registration remain website-owned. Risky workout changes use
 the same server-side preview and explicit confirmation boundary as the web client. The app must not
 silently change a plan after an import, a short run, an overrun, or reported pain.
 
@@ -102,7 +115,8 @@ heuristics.
 ## Security and privacy controls
 
 - Android accepts only selected, verified origins and follows no redirects during the instance check.
-- Device authorization, account session, folder state, and import state are separately scoped.
+- Native authentication, device authorization, account session, folder state, and import state are
+  separately scoped.
 - The import credential is not an account token and cannot call the mobile planning API.
 - Android requests no location, broad storage, contacts, advertising, or Play Services permission.
 - Screens, workers, shares, and state transitions carry the server generation so stale work cannot
@@ -129,12 +143,14 @@ dependency verification metadata. CI does not replace emulator, device, accessib
 background-work evidence.
 
 Before an external release, record actual evidence for install and upgrade, selected-server failure
-modes, device authorization, session expiry/revocation, server switch, GPX share/folder retry,
-Health Connect permission/revocation/route consent, WorkManager deferral, large text, TalkBack, and
-at least one physical device. A green build alone does not establish those behaviours.
+modes, native password/signup/TOTP, external OIDC/passkey authorization, session expiry/revocation,
+server switch, GPX share/folder retry, Health Connect permission/revocation/route consent,
+WorkManager deferral, large text, TalkBack, and at least one physical device. A green build alone
+does not establish those behaviours.
 
 The README's Android images were captured from the real Compose client on a Pixel 6-shaped API 35
-AVD with a disposable account and synthetic plan. That pass exercised server selection, Better Auth
-device authorization, native navigation, and the non-mutating workout edit, result, add-run, and
-settings surfaces in both system themes. It does not claim physical-device, Health Connect provider,
-background scheduling, large-text, or TalkBack coverage.
+AVD with a disposable account and synthetic plan. That pass exercised server selection and canonical
+origin rejection, native account creation, password sign-in, all onboarding steps, Today, Calendar
+and selected-day actions, Progress, account security, app relaunch, large text, and both system
+themes. It does not claim physical-device, Health Connect provider, background scheduling, TalkBack,
+OIDC, passkey, or TOTP coverage.

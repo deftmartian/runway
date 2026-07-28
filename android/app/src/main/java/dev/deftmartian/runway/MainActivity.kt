@@ -92,6 +92,8 @@ class MainActivity : ComponentActivity() {
                     onSaveRecoveryCodes = ::chooseRecoveryCodesDocument,
                     onClearRecoveryCodes = runwayViewModel::clearRecoveryCodes,
                     onRevokeAccountSession = runwayViewModel::revokeAccountSession,
+                    onRenamePasskey = runwayViewModel::renamePasskey,
+                    onDeletePasskey = runwayViewModel::deletePasskey,
                     onExportTrainingData = {
                         exportDocumentLauncher.launch("runway-training-data.json")
                     },

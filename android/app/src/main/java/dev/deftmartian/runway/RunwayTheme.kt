@@ -8,6 +8,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -73,6 +76,18 @@ private val runwayDarkColors = darkColorScheme(
     errorContainer = Color(0xFF71313A),
     onErrorContainer = Color(0xFFFFD9DD),
 )
+
+@Immutable
+internal data class RunwaySemanticColors(val review: Color)
+
+private val LocalRunwaySemanticColors = staticCompositionLocalOf {
+    RunwaySemanticColors(review = Color(0xFFA45F35))
+}
+
+internal object RunwayThemeTokens {
+    val review: Color
+        @Composable get() = LocalRunwaySemanticColors.current.review
+}
 
 private val runwayShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
@@ -150,10 +165,16 @@ fun RunwayTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) runwayDarkColors else runwayLightColors,
-        shapes = runwayShapes,
-        typography = runwayTypography,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalRunwaySemanticColors provides RunwaySemanticColors(
+            review = if (darkTheme) Color(0xFFE1A076) else Color(0xFFA45F35),
+        ),
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) runwayDarkColors else runwayLightColors,
+            shapes = runwayShapes,
+            typography = runwayTypography,
+            content = content,
+        )
+    }
 }

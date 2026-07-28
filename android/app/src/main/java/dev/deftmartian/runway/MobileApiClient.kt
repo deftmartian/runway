@@ -655,6 +655,40 @@ internal class MobileApiClient(
         )
     }
 
+    fun renamePasskey(
+        session: MobileSession,
+        passkeyId: String,
+        name: String,
+    ): MobileAccountOperationResult {
+        val normalizedName = name.trim()
+        if (
+            !validAccountIdentifier(passkeyId) ||
+            normalizedName.length !in 1..80 ||
+            normalizedName.any(Char::isISOControl)
+        ) {
+            return MobileAccountOperationResult.Rejected("Give this passkey a short, visible name.")
+        }
+        return runAccountOperation(
+            session,
+            "rename-passkey",
+            JSONObject().put("id", passkeyId).put("name", normalizedName),
+        )
+    }
+
+    fun deletePasskey(
+        session: MobileSession,
+        passkeyId: String,
+    ): MobileAccountOperationResult {
+        if (!validAccountIdentifier(passkeyId)) {
+            return MobileAccountOperationResult.Rejected("Choose a valid passkey.")
+        }
+        return runAccountOperation(
+            session,
+            "delete-passkey",
+            JSONObject().put("id", passkeyId),
+        )
+    }
+
     fun deleteAccount(
         session: MobileSession,
         confirmation: String,
@@ -962,6 +996,9 @@ internal class MobileApiClient(
             codes.distinct().size == codes.size &&
             codes.all { it.matches(RECOVERY_CODE_PATTERN) }
 
+    private fun validAccountIdentifier(value: String): Boolean =
+        value.length in 1..128 && value.none(Char::isISOControl)
+
     fun signOut(session: MobileSession): Boolean {
         if (session.origin != serverOrigin || session.isExpired()) return true
         val body = "{}".toByteArray(StandardCharsets.UTF_8)
@@ -1163,6 +1200,8 @@ internal class MobileApiClient(
             "disable-two-factor",
             "regenerate-recovery-codes",
             "revoke-session",
+            "rename-passkey",
+            "delete-passkey",
             "delete-account",
         )
         val SUPPORTED_VIEWS = setOf(
@@ -1189,6 +1228,7 @@ internal class MobileApiClient(
 			"resolve_health_connect_record",
 			"resolve_health_connect_duplicate",
             "apply_plan_decision",
+			"preview_plan_decision",
             "preview_workout_edit",
             "apply_workout_edit",
             "preview_workout_add",

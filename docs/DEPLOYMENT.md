@@ -385,11 +385,12 @@ Use a dedicated export directory and validate revocation, folder switching, malf
 file handling, retry/idempotency, and a background/foreground return on a real device before relying
 on the workflow.
 
-The normal APK verifies `/api/android/instance`, signs in through native device authorization, and
-uses its native UI for the product. It has no instance-bound build mode. Its system-browser handoff is
-only for device-authorization approval and fresh account-security actions. Folder access,
-origin-scoped device pairing, bounded background upload, review-only import, and optional
-running-only Health Connect reads are described in [ANDROID.md](ANDROID.md).
+The normal APK verifies `/api/android/instance` and uses native UI for local signup, password/TOTP
+sign-in, planning, review, and account controls. It has no instance-bound build mode. OIDC and
+passkey sign-in use device authorization in the selected server's system-browser surface; password
+reset and new passkey registration also remain website-owned. Folder access, origin-scoped device
+pairing, bounded background upload, review-only import, and optional running-only Health Connect
+reads are described in [ANDROID.md](ANDROID.md).
 
 ## Reverse Proxy And Network Edge
 
@@ -446,9 +447,9 @@ public origin.
 Use a bypass-cache rule as the default for the runway hostname. If an explicit cache rule is desired,
 limit it to immutable `/_app/immutable/*` assets and do not override the response cache headers.
 Never shared-cache `/`, `/app*`, `/login*`, `/logout*`, `/api/auth*`, `/api/android*`, `/api/mobile*`,
-health routes, or the temporary service-worker retirement endpoint. Cloudflare must not cache a response merely because a cookie was
-absent. Treat the current published Cloudflare address ranges as operational data: update the Caddy
-trust list and origin firewall together, then verify the derived client address at the app.
+or health routes. Cloudflare must not cache a response merely because a cookie was absent. Treat the
+current published Cloudflare address ranges as operational data: update the Caddy trust list and
+origin firewall together, then verify the derived client address at the app.
 
 The reference Caddy log filter replaces the password-reset `token` query value with `REDACTED`.
 Configure the equivalent query filter in OPNsense and every CDN, WAF, tracing, and error-log layer.
@@ -478,8 +479,8 @@ Expected edge behavior:
 - `Permissions-Policy` disabling camera, microphone, and geolocation;
 - `Referrer-Policy: strict-origin-when-cross-origin`, with reset links protected by `no-referrer`;
 - long-lived immutable cache for hashed SvelteKit assets under `/_app/immutable/`;
-- no shared caching for public HTML, `/app`, `/login`, `/logout`, health, service-worker,
-  `/api/auth`, or `/api/android` responses.
+- no shared caching for public HTML, `/app`, `/login`, `/logout`, health, `/api/auth`, or
+  `/api/android` responses.
 
 Run after deployment:
 
@@ -487,9 +488,9 @@ Run after deployment:
 SITE_URL=https://<runway-host> corepack pnpm verify:preview
 ```
 
-On an HTTPS URL this command also requires HSTS, unique response nonces, live/ready health, a
-deployment-specific service-worker revision, same-origin login redirects, and cross-site POST
-rejection. A direct HTTP origin check intentionally cannot prove the TLS/HSTS boundary.
+On an HTTPS URL this command also requires HSTS, unique response nonces, live/ready health, retired
+PWA paths returning `404`, same-origin login redirects, and cross-site POST rejection. A direct HTTP
+origin check intentionally cannot prove the TLS/HSTS boundary.
 
 ## Published Image And Migrations
 
@@ -712,13 +713,12 @@ no-store authenticated responses, manual and Nextcloud imports, privacy/deletion
 responsive browser layouts. The web client does not advertise installation, offline navigation, a
 share target, or browser folder access.
 
-For the first release after this cutover, verify one existing old installation: it should load the
-retirement worker once, delete only old `runway-*` caches, unregister, and reload to the current web
-page. A new browser visit must not register a worker. Remove the endpoint after the retirement
-window; do not treat that worker as a PWA feature.
+The v0.6.0 retirement window has ended. Both `/manifest.webmanifest` and `/service-worker.js` must
+return `404`, and a new browser visit must not register a worker.
 
 Verify Android separately on an emulator and at least one real device: selected-server validation,
-device authorization approval in the system browser, native navigation, session expiry and sign-out,
-folder/GPX share handling, repeated import idempotency, Health Connect permissions, server switching,
-background deferral, large text, and TalkBack. The container publisher bakes the source commit SHA
-into each image; local source builds must pass `RUNWAY_BUILD_ID` explicitly.
+native local signup/password/TOTP, device authorization for OIDC/passkeys, native navigation,
+session expiry and sign-out, folder/GPX share handling, repeated import idempotency, Health Connect
+permissions, server switching, background deferral, large text, and TalkBack. The container
+publisher bakes the source commit SHA into each image; local source builds must pass
+`RUNWAY_BUILD_ID` explicitly.

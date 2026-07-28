@@ -28,6 +28,7 @@ internal fun SettingsScreen(
     onOpenServer: () -> Unit,
     onOpenFolder: () -> Unit,
     onOpenAccountSecurity: () -> Unit,
+    onOpenHistory: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     var editingTimeZone by rememberSaveable { mutableStateOf(false) }
@@ -60,6 +61,7 @@ internal fun SettingsScreen(
                     OutlinedButton(
                         onClick = { editingTimeZone = true },
                         enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text("Change time zone")
                     }
@@ -75,6 +77,7 @@ internal fun SettingsScreen(
                             else onAction(UpdateRouteDataModeCommand(next))
                         },
                         enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
                             if (profile?.routeDataMode == "discard") {
@@ -87,12 +90,14 @@ internal fun SettingsScreen(
                     OutlinedButton(
                         onClick = { editingHeartRate = true },
                         enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text("Heart-rate profile")
                     }
                     OutlinedButton(
                         onClick = { editingHealthContext = true },
                         enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text("Health context")
                     }
@@ -142,6 +147,7 @@ internal fun SettingsScreen(
                     OutlinedButton(
                         onClick = { connectingNextcloud = true },
                         enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text("Connect Nextcloud folder")
                     }
@@ -155,21 +161,41 @@ internal fun SettingsScreen(
                             else -> "Not connected"
                         },
                     )
-                    OutlinedButton(onClick = onOpenFolder) { Text("Imports and Health Connect") }
+                    OutlinedButton(
+                        onClick = onOpenFolder,
+                        shape = MaterialTheme.shapes.small,
+                    ) { Text("Imports and Health Connect") }
                 }
             }
             item {
                 SettingCard("Server") {
-                    SettingRow("Connected to", about?.serverOrigin.orDash())
-                    OutlinedButton(onClick = onOpenServer) { Text("Change server") }
+                    SettingRow("Connected to", about?.serverOrigin.orDash(), monospace = true)
+                    OutlinedButton(
+                        onClick = onOpenServer,
+                        shape = MaterialTheme.shapes.small,
+                    ) { Text("Change server") }
+                }
+            }
+            item {
+                SettingCard("Records") {
+                    Text(
+                        "Review completed and archived plans, changes, and recorded results.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = onOpenHistory,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text("Training history")
+                    }
                 }
             }
             item {
                 SettingCard("About") {
-                    SettingRow("Android app", BuildConfig.VERSION_NAME)
-                    SettingRow("Android source", BuildConfig.SOURCE_COMMIT)
-                    SettingRow("Server release", about?.release.orDash())
-                    SettingRow("Server build", about?.commit.orDash())
+                    SettingRow("Android app", BuildConfig.VERSION_NAME, monospace = true)
+                    SettingRow("Android source", BuildConfig.SOURCE_COMMIT, monospace = true)
+                    SettingRow("Server release", about?.release.orDash(), monospace = true)
+                    SettingRow("Server build", about?.commit.orDash(), monospace = true)
                     SettingRow("Native API", "v2 · connected")
                 }
             }
@@ -182,13 +208,18 @@ internal fun SettingsScreen(
                     OutlinedButton(
                         onClick = onOpenAccountSecurity,
                         enabled = payload.accountSecurityAvailable == true && !actionPending,
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text("Account security")
                     }
                 }
             }
             item {
-                OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onSignOut,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
+                ) {
                     Text("Sign out from this phone")
                 }
             }

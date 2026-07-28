@@ -371,19 +371,23 @@ export async function getPlanWeeks(userId: string, planId: string) {
 	});
 	const hasInjuryRisk = profile ? hasInjuryRiskFlags(profile.injuryFlags) : false;
 	return effectiveWeeks.map((week, index) => {
-		const usesDuration = week.targetDurationSeconds > 0 && week.targetDistanceMeters === 0;
-		const currentLoad = usesDuration ? week.targetDurationSeconds : week.targetDistanceMeters;
 		const previousWeek = effectiveWeeks[index - 1];
-		const previousLoad = previousWeek
-			? usesDuration
-				? previousWeek.targetDurationSeconds
-				: previousWeek.targetDistanceMeters
-			: !usesDuration && planRecord?.summary.kind === 'distance'
-				? planRecord.summary.baselineMeters
-				: 0;
-		if (previousLoad <= 0) return week;
-		const rampPercent = ((currentLoad - previousLoad) / previousLoad) * 100;
-		return { ...week, risk: classifyRamp(rampPercent, hasInjuryRisk) };
+		return {
+			...week,
+			risk: effectiveWeekRisk({
+				planKind: planRecord?.summary.kind,
+				storedRisk: week.risk,
+				currentDistanceMeters: week.targetDistanceMeters,
+				currentDurationSeconds: week.targetDurationSeconds,
+				currentHasMixedLoad: week.hasMixedLoad,
+				previousDistanceMeters:
+					previousWeek?.targetDistanceMeters ??
+					(planRecord?.summary.kind === 'distance' ? planRecord.summary.baselineMeters : 0),
+				previousDurationSeconds: previousWeek?.targetDurationSeconds ?? 0,
+				previousHasMixedLoad: previousWeek?.hasMixedLoad ?? false,
+				hasInjuryRisk
+			})
+		};
 	});
 }
 
@@ -399,6 +403,34 @@ export function effectivePlanRisk(weeks: { risk: RiskRating }[], fallback: RiskR
 		(highest, week) => (riskRank[week.risk] > riskRank[highest] ? week.risk : highest),
 		fallback
 	);
+}
+
+export function effectiveWeekRisk(input: {
+	planKind: PlanSummary['kind'] | undefined;
+	storedRisk: RiskRating;
+	currentDistanceMeters: number;
+	currentDurationSeconds: number;
+	currentHasMixedLoad: boolean;
+	previousDistanceMeters: number;
+	previousDurationSeconds: number;
+	previousHasMixedLoad: boolean;
+	hasInjuryRisk: boolean;
+}): RiskRating {
+	if (
+		input.planKind !== 'distance' ||
+		input.currentHasMixedLoad ||
+		input.previousHasMixedLoad ||
+		input.currentDurationSeconds > 0 ||
+		input.previousDurationSeconds > 0 ||
+		input.currentDistanceMeters <= 0 ||
+		input.previousDistanceMeters <= 0
+	) {
+		return input.storedRisk;
+	}
+	const rampPercent =
+		((input.currentDistanceMeters - input.previousDistanceMeters) / input.previousDistanceMeters) *
+		100;
+	return classifyRamp(rampPercent, input.hasInjuryRisk);
 }
 
 function effectiveRiskForPlanRows(
@@ -431,7 +463,7 @@ function effectiveRiskForPlanRows(
 			(sum, record) => sum + (record.targetDurationSeconds ?? 0),
 			0
 		);
-		const usesDuration = targetDurationSeconds > 0 && targetDistanceMeters === 0;
+		const hasMixedLoad = targetDistanceMeters > 0 && targetDurationSeconds > 0;
 		const previousWeek = weeks[index - 1];
 		const previous = previousWeek
 			? workouts.filter(
@@ -443,20 +475,27 @@ function effectiveRiskForPlanRows(
 						record.scheduledDate <= addDays(previousWeek.startDate, 6)
 				)
 			: [];
-		const previousLoad = previousWeek
-			? previous.reduce(
-					(sum, record) =>
-						sum +
-						(usesDuration ? (record.targetDurationSeconds ?? 0) : record.targetDistanceMeters),
-					0
-				)
-			: !usesDuration && plan.summary.kind === 'distance'
+		const previousDistanceMeters = previousWeek
+			? previous.reduce((sum, record) => sum + record.targetDistanceMeters, 0)
+			: plan.summary.kind === 'distance'
 				? plan.summary.baselineMeters
 				: 0;
-		if (previousLoad <= 0) return { risk: week.risk };
-		const currentLoad = usesDuration ? targetDurationSeconds : targetDistanceMeters;
+		const previousDurationSeconds = previous.reduce(
+			(sum, record) => sum + (record.targetDurationSeconds ?? 0),
+			0
+		);
 		return {
-			risk: classifyRamp(((currentLoad - previousLoad) / previousLoad) * 100, hasInjuryRisk)
+			risk: effectiveWeekRisk({
+				planKind: plan.summary.kind,
+				storedRisk: week.risk,
+				currentDistanceMeters: targetDistanceMeters,
+				currentDurationSeconds: targetDurationSeconds,
+				currentHasMixedLoad: hasMixedLoad,
+				previousDistanceMeters,
+				previousDurationSeconds,
+				previousHasMixedLoad: previousDistanceMeters > 0 && previousDurationSeconds > 0,
+				hasInjuryRisk
+			})
 		};
 	});
 	return effectivePlanRisk(effectiveWeeks, plan.risk);

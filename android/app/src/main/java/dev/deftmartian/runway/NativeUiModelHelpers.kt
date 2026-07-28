@@ -1,6 +1,7 @@
 package dev.deftmartian.runway
 
 import java.time.YearMonth
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -134,7 +135,7 @@ internal fun pendingPlanDecision(
     )
 }
 
-internal fun planDecisionCommand(pending: PendingPlanDecision) = ApplyPlanDecisionCommand(
+internal fun planDecisionCommand(pending: PendingPlanDecision) = PreviewPlanDecisionCommand(
     source = pending.source,
     sourceId = pending.sourceId,
     decision = pending.decision,
@@ -163,6 +164,18 @@ internal fun String?.orDash(): String = this?.takeIf(String::isNotBlank) ?: "—
 internal fun formatDistance(meters: Double): String =
     String.format(Locale.US, "%.1f km", meters / 1_000).replace(".0 km", " km")
 
+internal fun formatPrescriptionMeasurement(
+    distanceMeters: Double?,
+    durationSeconds: Double?,
+    rest: Boolean = false,
+): String {
+    if (rest) return "Recovery day"
+    return listOfNotNull(
+        distanceMeters?.takeIf { it > 0 }?.let(::formatDistance),
+        durationSeconds?.takeIf { it > 0 }?.let(::formatDuration),
+    ).joinToString(" · ").ifBlank { "Plan details" }
+}
+
 internal fun formatDuration(seconds: Double): String {
     val minutes = (seconds / 60).toInt()
     return if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"
@@ -174,3 +187,7 @@ internal fun formatDecimal(value: Double): String =
 internal fun monthLabel(month: String): String = runCatching {
     YearMonth.parse(month).format(DateTimeFormatter.ofPattern("LLLL yyyy", Locale.getDefault()))
 }.getOrDefault("Calendar")
+
+internal fun friendlyDate(date: String): String = runCatching {
+    LocalDate.parse(date).format(DateTimeFormatter.ofPattern("EEEE, LLLL d", Locale.getDefault()))
+}.getOrDefault(date)

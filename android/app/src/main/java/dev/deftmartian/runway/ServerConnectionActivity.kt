@@ -1,27 +1,52 @@
 package dev.deftmartian.runway
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ShortcutManager
 import android.os.Bundle
-import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.view.ViewCompat
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import java.util.concurrent.Executors
 
 class ServerConnectionActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var store: ServerConnectionStore
-    private lateinit var serverInput: EditText
-    private lateinit var status: TextView
-    private lateinit var connectButton: Button
-    private lateinit var cancelButton: Button
     private var initialConnection: ServerConnection? = null
+    private var originInput by mutableStateOf("")
+    private var statusMessage by mutableStateOf("")
+    private var pending by mutableStateOf(false)
+    private var dialog by mutableStateOf<ServerConnectionDialog?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,9 +65,42 @@ class ServerConnectionActivity : ComponentActivity() {
             )
         }
         enableEdgeToEdge()
-        setContentView(R.layout.activity_server_connection)
-        EdgeToEdgeLayout.applySystemBarPadding(findViewById(R.id.server_connection_scroll))
-        bindViews()
+        originInput = initialConnection?.origin.orEmpty()
+        statusMessage = if (initialConnection == null) {
+            getString(R.string.server_intro)
+        } else {
+            getString(R.string.server_current, initialConnection?.origin)
+        }
+        setContent {
+            RunwayTheme {
+                ServerConnectionScreen(
+                    origin = originInput,
+                    status = statusMessage,
+                    pending = pending,
+                    canCancel = initialConnection != null,
+                    onOriginChange = { originInput = it },
+                    onConnect = ::verifyServer,
+                    onCancel = ::finish,
+                )
+                when (val activeDialog = dialog) {
+                    is ServerConnectionDialog.ConfirmChange -> ConfirmServerChangeDialog(
+                        onDismiss = { dialog = null },
+                        onConfirm = {
+                            dialog = null
+                            beginSwitch(activeDialog.origin)
+                        },
+                    )
+                    is ServerConnectionDialog.ConfirmOfflineSwitch -> OfflineSwitchDialog(
+                        onDismiss = { dialog = null },
+                        onConfirm = {
+                            dialog = null
+                            beginSwitch(activeDialog.origin, allowUnrevoked = true)
+                        },
+                    )
+                    null -> Unit
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -52,47 +110,20 @@ class ServerConnectionActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun bindViews() {
-        ViewCompat.setAccessibilityHeading(findViewById(R.id.server_heading), true)
-        val savedOrigin = initialConnection?.origin
-        serverInput = findViewById<EditText>(R.id.server_origin).apply {
-            setText(savedOrigin.orEmpty())
-            setSelection(text.length)
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId != EditorInfo.IME_ACTION_GO) return@setOnEditorActionListener false
-                verifyServer()
-                true
-            }
-        }
-        status = findViewById(R.id.server_status)
-        connectButton = findViewById<Button>(R.id.connect_server).apply {
-            setOnClickListener { verifyServer() }
-        }
-        cancelButton = findViewById<Button>(R.id.cancel_server_change).apply {
-            visibility = if (savedOrigin == null) View.GONE else View.VISIBLE
-            setOnClickListener { finish() }
-        }
-        if (savedOrigin == null) {
-            status.setText(R.string.server_intro)
-        } else {
-            status.text = getString(R.string.server_current, savedOrigin)
-        }
-    }
-
     private fun verifyServer() {
         if (!isInitialConnectionCurrent()) {
             showConnectionChanged()
             return
         }
-        val origin = InstanceOriginPolicy.normalizeOrigin(serverInput.text.toString(), BuildConfig.DEBUG)
+        val origin = InstanceOriginPolicy.normalizeOrigin(originInput, BuildConfig.DEBUG)
         if (origin == null) {
-            status.setText(
+            statusMessage = getString(
                 if (BuildConfig.DEBUG) R.string.server_invalid_debug else R.string.server_invalid,
             )
             return
         }
-        setPending(true)
-        status.setText(R.string.server_checking)
+        updatePending(true)
+        statusMessage = getString(R.string.server_checking)
         executor.execute {
             val result = RunwayApiClient(origin).probe()
             runOnUiThread {
@@ -101,12 +132,18 @@ class ServerConnectionActivity : ComponentActivity() {
                     showConnectionChanged()
                     return@runOnUiThread
                 }
-                setPending(false)
+                updatePending(false)
                 when (result) {
                     InstanceProbeResult.Compatible -> acceptCompatibleOrigin(origin)
-                    InstanceProbeResult.UpgradeRequired -> status.setText(R.string.server_upgrade_required)
-                    InstanceProbeResult.NotRunway -> status.setText(R.string.server_not_runway)
-                    InstanceProbeResult.Unreachable -> status.setText(R.string.server_unreachable)
+                    is InstanceProbeResult.OriginMismatch -> {
+                        statusMessage = getString(
+                            R.string.server_origin_mismatch,
+                            result.canonicalOrigin,
+                        )
+                    }
+                    InstanceProbeResult.UpgradeRequired -> statusMessage = getString(R.string.server_upgrade_required)
+                    InstanceProbeResult.NotRunway -> statusMessage = getString(R.string.server_not_runway)
+                    InstanceProbeResult.Unreachable -> statusMessage = getString(R.string.server_unreachable)
                 }
             }
         }
@@ -123,12 +160,7 @@ class ServerConnectionActivity : ComponentActivity() {
             return
         }
         if (previous != null && previous != origin) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.server_change_title)
-                .setMessage(R.string.server_change_consequence)
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.change_server) { _, _ -> beginSwitch(origin) }
-                .show()
+            dialog = ServerConnectionDialog.ConfirmChange(origin)
             return
         }
         beginSwitch(origin)
@@ -139,13 +171,10 @@ class ServerConnectionActivity : ComponentActivity() {
             showConnectionChanged()
             return
         }
-        setPending(true)
-        status.setText(
-            if (initialConnection != null && !allowUnrevoked) {
-                R.string.server_disconnecting_old
-            } else {
-                R.string.server_switching
-            },
+        updatePending(true)
+        statusMessage = getString(
+            if (initialConnection != null && !allowUnrevoked) R.string.server_disconnecting_old
+            else R.string.server_switching,
         )
         executor.execute {
             if (!isInitialConnectionCurrent()) {
@@ -195,20 +224,13 @@ class ServerConnectionActivity : ComponentActivity() {
                 is SwitchResult.Changed -> openRunway()
                 SwitchResult.Conflict -> showConnectionChanged()
                 SwitchResult.Invalid -> {
-                    setPending(false)
-                    status.setText(R.string.server_invalid)
+                    updatePending(false)
+                    statusMessage = getString(R.string.server_invalid)
                 }
                 SwitchResult.RevocationUnavailable -> {
-                    setPending(false)
-                    status.setText(R.string.server_disconnect_unavailable)
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.server_disconnect_unavailable_title)
-                        .setMessage(R.string.server_disconnect_unavailable_consequence)
-                        .setNegativeButton(R.string.cancel, null)
-                        .setPositiveButton(R.string.switch_anyway) { _, _ ->
-                            beginSwitch(origin, allowUnrevoked = true)
-                        }
-                        .show()
+                    updatePending(false)
+                    statusMessage = getString(R.string.server_disconnect_unavailable)
+                    dialog = ServerConnectionDialog.ConfirmOfflineSwitch(origin)
                 }
             }
         }
@@ -218,8 +240,8 @@ class ServerConnectionActivity : ComponentActivity() {
         store.currentConnection() == initialConnection
 
     private fun showConnectionChanged() {
-        setPending(false)
-        status.setText(R.string.server_connection_changed)
+        updatePending(false)
+        statusMessage = getString(R.string.server_connection_changed)
     }
 
     private fun openRunway() {
@@ -231,10 +253,8 @@ class ServerConnectionActivity : ComponentActivity() {
         finish()
     }
 
-    private fun setPending(pending: Boolean) {
-        serverInput.isEnabled = !pending
-        connectButton.isEnabled = !pending
-        cancelButton.isEnabled = !pending
+    private fun updatePending(pending: Boolean) {
+        this.pending = pending
     }
 
     companion object {
@@ -247,4 +267,105 @@ class ServerConnectionActivity : ComponentActivity() {
         data object Invalid : SwitchResult
         data object RevocationUnavailable : SwitchResult
     }
+
+    private sealed interface ServerConnectionDialog {
+        data class ConfirmChange(val origin: String) : ServerConnectionDialog
+        data class ConfirmOfflineSwitch(val origin: String) : ServerConnectionDialog
+    }
+}
+
+@Composable
+private fun ServerConnectionScreen(
+    origin: String,
+    status: String,
+    pending: Boolean,
+    canCancel: Boolean,
+    onOriginChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(
+            modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ScreenIntro(
+                    title = "Connect to runway",
+                    body = "Choose the runway server you use. The app checks it before sign-in.",
+                )
+                SettingCard("Server address") {
+                    OutlinedTextField(
+                        value = origin,
+                        onValueChange = onOriginChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Server address") },
+                        placeholder = { Text("https://runway.example.com") },
+                        enabled = !pending,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Go,
+                        ),
+                        keyboardActions = KeyboardActions(onGo = { onConnect() }),
+                    )
+                    Text(
+                        text = status,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Button(onClick = onConnect, modifier = Modifier.fillMaxWidth(), enabled = !pending) {
+                    Text(if (pending) "Checking server…" else "Connect")
+                }
+                if (canCancel) {
+                    TextButton(onClick = onCancel, modifier = Modifier.align(Alignment.CenterHorizontally), enabled = !pending) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmServerChangeDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change runway server?") },
+        text = {
+            Text(
+                "This disconnects this phone from the current server, then removes its saved account connection, " +
+                    "Gadgetbridge folder access, queued checks, and local import markers. It does not delete GPX " +
+                    "files or data already stored on either server.",
+            )
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text("Change server") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun OfflineSwitchDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Current server unavailable") },
+        text = {
+            Text(
+                "Switching anyway removes local access, but the old server may keep this phone’s account session " +
+                    "or import device active until it expires or you disconnect it there. An upload already in progress " +
+                    "may finish. Cancel if you can bring the old server back online first.",
+            )
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text("Switch anyway") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

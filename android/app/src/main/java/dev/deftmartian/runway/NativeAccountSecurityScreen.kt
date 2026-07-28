@@ -33,8 +33,11 @@ internal fun AccountSecurityScreen(
     onSaveRecoveryCodes: () -> Unit,
     onClearRecoveryCodes: () -> Unit,
     onRevokeSession: (String) -> Unit,
+    onRenamePasskey: (String, String) -> Unit,
+    onDeletePasskey: (String) -> Unit,
     onExportTrainingData: () -> Unit,
     onDeleteAccount: (String) -> Unit,
+    onReauthenticate: () -> Unit,
 ) {
     var changingPassword by remember { mutableStateOf(false) }
     var enablingTwoFactor by remember { mutableStateOf(false) }
@@ -42,6 +45,8 @@ internal fun AccountSecurityScreen(
     var replacingRecoveryCodes by remember { mutableStateOf(false) }
     var revokingDevice by remember { mutableStateOf<NativeAccountImportDevice?>(null) }
     var revokingSession by remember { mutableStateOf<NativeAccountSession?>(null) }
+    var renamingPasskey by remember { mutableStateOf<NativePasskeySecurity?>(null) }
+    var deletingPasskey by remember { mutableStateOf<NativePasskeySecurity?>(null) }
     var deletingImportedData by remember { mutableStateOf(false) }
     var deletionConfirmation by rememberSaveable { mutableStateOf("") }
     var deletingAccount by remember { mutableStateOf(false) }
@@ -52,9 +57,26 @@ internal fun AccountSecurityScreen(
             item { EmptyCard("Loading account security…") }
         } else {
             val freshAccountSession = payload.sessions?.requiresFreshSession == false
+            val authentication = payload.authentication
+            if (!freshAccountSession) {
+                item {
+                    SettingCard("Confirm sensitive changes") {
+                        Text(
+                            "Password, passkey, session, export, and account changes need a recent sign-in.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = onReauthenticate,
+                            enabled = !actionPending,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text("Sign in again")
+                        }
+                    }
+                }
+            }
             item {
                 SettingCard("Sign-in methods") {
-                    val authentication = payload.authentication
                     SettingRow("Local password", if (authentication?.localPassword == true) "Available" else "Not set")
                     SettingRow("Single sign-on", if (authentication?.oidc == true) "Connected" else "Not connected")
                     SettingRow("Two-factor authentication", if (authentication?.twoFactor == true) "Enabled" else "Not enabled")
@@ -63,13 +85,14 @@ internal fun AccountSecurityScreen(
                         authentication?.localPassword == true -> {
                             if (!freshAccountSession) {
                                 Text(
-                                    "Sign out and sign in again before changing your password or authenticator settings.",
+                                    "Sign in again above before changing your password or authenticator settings.",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Button(
                                 onClick = { changingPassword = true },
                                 enabled = !actionPending && freshAccountSession,
+                                shape = MaterialTheme.shapes.small,
                             ) { Text("Change password") }
                             TextButton(
                                 onClick = onRequestPasswordReset,
@@ -79,15 +102,18 @@ internal fun AccountSecurityScreen(
                                 OutlinedButton(
                                     onClick = { replacingRecoveryCodes = true },
                                     enabled = !actionPending && freshAccountSession,
+                                    shape = MaterialTheme.shapes.small,
                                 ) { Text("Replace recovery codes") }
                                 OutlinedButton(
                                     onClick = { disablingTwoFactor = true },
                                     enabled = !actionPending && freshAccountSession,
+                                    shape = MaterialTheme.shapes.small,
                                 ) { Text("Disable authenticator") }
                             } else if (!ephemeral.setupPending) {
                                 OutlinedButton(
                                     onClick = { enablingTwoFactor = true },
                                     enabled = !actionPending && freshAccountSession,
+                                    shape = MaterialTheme.shapes.small,
                                 ) { Text("Set up authenticator") }
                             }
                         }
@@ -104,8 +130,51 @@ internal fun AccountSecurityScreen(
                             )
                         }
                     }
+                }
+            }
+            item {
+                SettingCard("Passkeys") {
+                    when {
+                        !freshAccountSession -> Text(
+                            "Sign in again above to see and manage passkeys.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        payload.passkeys.isEmpty() -> Text(
+                            "No passkeys registered.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        else -> payload.passkeys.forEach { passkey ->
+                            val removingWouldLockAccount =
+                                authentication?.localPassword != true &&
+                                    authentication?.oidc != true &&
+                                    (authentication?.passkeyCount ?: 0) <= 1
+                            val label = passkey.name.orEmpty().ifBlank { "Passkey" }
+                            val details = buildList {
+                                passkey.deviceType?.takeIf(String::isNotBlank)?.let(::add)
+                                if (passkey.backedUp == true) add("Backed up")
+                                passkey.createdAt?.takeIf(String::isNotBlank)?.let { add("Added $it") }
+                            }.joinToString(" · ").ifBlank { "Registered passkey" }
+                            SettingRow(label, details)
+                            if (!passkey.id.isNullOrBlank()) {
+                                TextButton(
+                                    onClick = { renamingPasskey = passkey },
+                                    enabled = !actionPending,
+                                ) { Text("Rename") }
+                                TextButton(
+                                    onClick = { deletingPasskey = passkey },
+                                    enabled = !actionPending && !removingWouldLockAccount,
+                                ) { Text("Remove") }
+                                if (removingWouldLockAccount) {
+                                    Text(
+                                        "Add another sign-in method before removing this passkey.",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Text(
-                        "Passkey management is not available in the Android app yet.",
+                        "Add a passkey in runway in a browser. Android can manage registered passkeys but cannot create one for this website.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -117,7 +186,7 @@ internal fun AccountSecurityScreen(
                     when {
                         payload.sessions?.requiresFreshSession == true -> {
                             Text(
-                                "Sign out and sign in again to review or end other sessions.",
+                                "Sign in again above to review or end other sessions.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -167,13 +236,18 @@ internal fun AccountSecurityScreen(
                     OutlinedButton(
                         onClick = onExportTrainingData,
                         enabled = !actionPending && freshAccountSession,
+                        shape = MaterialTheme.shapes.small,
                     ) { Text("Choose export document") }
                 }
             }
             item {
                 SettingCard("Imported activity data") {
                     Text("Deletes imported GPX and Health Connect activities, disconnects import folders, and revokes all import devices. Manual runs remain.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(onClick = { deletingImportedData = true }, enabled = !actionPending) { Text("Delete imported activity data") }
+                    OutlinedButton(
+                        onClick = { deletingImportedData = true },
+                        enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
+                    ) { Text("Delete imported activity data") }
                 }
             }
             item {
@@ -185,6 +259,7 @@ internal fun AccountSecurityScreen(
                     OutlinedButton(
                         onClick = { deletingAccount = true },
                         enabled = !actionPending && freshAccountSession,
+                        shape = MaterialTheme.shapes.small,
                     ) { Text("Delete account") }
                 }
             }
@@ -192,6 +267,7 @@ internal fun AccountSecurityScreen(
                 OutlinedButton(
                     onClick = onBack,
                     enabled = !actionPending,
+                    shape = MaterialTheme.shapes.small,
                 ) { Text("Back to settings") }
             }
         }
@@ -217,6 +293,38 @@ internal fun AccountSecurityScreen(
             dismissButton = {
                 TextButton(onClick = { revokingSession = null }) { Text("Cancel") }
             },
+        )
+    }
+    renamingPasskey?.let { passkey ->
+        RenamePasskeyDialog(
+            currentName = passkey.name.orEmpty(),
+            actionPending = actionPending,
+            onDismiss = { renamingPasskey = null },
+            onConfirm = { name ->
+                renamingPasskey = null
+                passkey.id?.let { onRenamePasskey(it, name) }
+            },
+        )
+    }
+    deletingPasskey?.let { passkey ->
+        AlertDialog(
+            onDismissRequest = { deletingPasskey = null },
+            title = { Text("Remove this passkey?") },
+            text = {
+                Text(
+                    "${passkey.name.orEmpty().ifBlank { "This passkey" }} will no longer be able to sign in to runway. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        deletingPasskey = null
+                        passkey.id?.let(onDeletePasskey)
+                    },
+                    enabled = !actionPending && !passkey.id.isNullOrBlank(),
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { deletingPasskey = null }) { Text("Cancel") } },
         )
     }
     if (changingPassword) {

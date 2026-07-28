@@ -83,4 +83,48 @@ class InstanceOriginPolicyTest {
             assertFalse(InstanceOriginPolicy.belongsTo(it, "https://runway.example"))
         }
     }
+
+    @Test
+    fun `instance discovery requires the server canonical origin to match`() {
+        val matching = """{
+          "result":"runway-instance",
+          "product":"runway",
+          "serverOrigin":"https://runway.example",
+          "minimumAndroidApi":1,
+          "maximumAndroidApi":2
+        }"""
+        assertEquals(
+            InstanceProbeResult.Compatible,
+            classifyInstanceDescriptor("https://runway.example", matching, false),
+        )
+
+        val alias = matching.replace("https://runway.example", "https://canonical.example")
+        assertEquals(
+            InstanceProbeResult.OriginMismatch("https://canonical.example"),
+            classifyInstanceDescriptor("https://runway.example", alias, false),
+        )
+    }
+
+    @Test
+    fun `instance discovery rejects malformed or incompatible descriptors`() {
+        val missingOrigin = """{
+          "result":"runway-instance",
+          "product":"runway",
+          "minimumAndroidApi":1,
+          "maximumAndroidApi":2
+        }"""
+        assertEquals(
+            InstanceProbeResult.NotRunway,
+            classifyInstanceDescriptor("https://runway.example", missingOrigin, false),
+        )
+        assertEquals(
+            InstanceProbeResult.UpgradeRequired,
+            classifyInstanceDescriptor(
+                "https://runway.example",
+                missingOrigin.replace("\"maximumAndroidApi\":2", "\"maximumAndroidApi\":1")
+                    .replace("\"minimumAndroidApi\":1", "\"minimumAndroidApi\":1"),
+                false,
+            ),
+        )
+    }
 }

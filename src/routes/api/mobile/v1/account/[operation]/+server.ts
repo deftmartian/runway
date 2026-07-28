@@ -7,7 +7,10 @@ import { db } from '$lib/server/db';
 import { session as authSession } from '$lib/server/db/auth.schema';
 import { isFreshAuthSession } from '$lib/server/runway/auth-config';
 import { readBoundedRequestBody } from '$lib/server/runway/bounded-request-body';
-import { validateMobileReplacementToken } from '$lib/server/runway/mobile-account-security';
+import {
+	deleteMobilePasskeyWithoutLockout,
+	validateMobileReplacementToken
+} from '$lib/server/runway/mobile-account-security';
 import { authenticateMobileRequest } from '$lib/server/runway/mobile-api';
 import { requestPasswordReset } from '$lib/server/runway/password-reset';
 import {
@@ -33,6 +36,12 @@ const changePasswordBody = z.strictObject({
 	newPassword: newPasswordSchema
 });
 const verifyTotpSetupBody = z.strictObject({ code: totpCodeSchema });
+const passkeyIdSchema = z.string().trim().min(1).max(128);
+const renamePasskeyBody = z.strictObject({
+	id: passkeyIdSchema,
+	name: z.string().trim().min(1).max(80)
+});
+const deletePasskeyBody = z.strictObject({ id: passkeyIdSchema });
 const generatedRecoveryCodes = z
 	.array(backupCodeSchema)
 	.min(1)
@@ -47,6 +56,8 @@ type MobileAccountOperation =
 	| 'disable-two-factor'
 	| 'regenerate-recovery-codes'
 	| 'revoke-session'
+	| 'rename-passkey'
+	| 'delete-passkey'
 	| 'delete-account';
 
 const freshSessionOperations = new Set<MobileAccountOperation>([
@@ -56,6 +67,8 @@ const freshSessionOperations = new Set<MobileAccountOperation>([
 	'disable-two-factor',
 	'regenerate-recovery-codes',
 	'revoke-session',
+	'rename-passkey',
+	'delete-passkey',
 	'delete-account'
 ]);
 
@@ -284,6 +297,44 @@ export const POST: RequestHandler = async (event) => {
 			}
 			return mobileJson({ ok: true, message: 'Session ended.' });
 		}
+		case 'rename-passkey': {
+			const parsed = renamePasskeyBody.safeParse(parsedBody.value);
+			if (!parsed.success) return invalidRequest();
+			try {
+				await auth.api.updatePasskey({
+					body: parsed.data,
+					headers: event.request.headers
+				});
+				return mobileJson({ ok: true, message: 'Passkey renamed.' });
+			} catch (error) {
+				return passkeyMutationFailure(error, 'The passkey could not be renamed.');
+			}
+		}
+		case 'delete-passkey': {
+			const parsed = deletePasskeyBody.safeParse(parsedBody.value);
+			if (!parsed.success) return invalidRequest();
+			try {
+				const removal = await deleteMobilePasskeyWithoutLockout(mobileSession.user.id, () =>
+					auth.api.deletePasskey({
+						body: parsed.data,
+						headers: event.request.headers
+					})
+				);
+				if (!removal.removed) {
+					return mobileJson(
+						{
+							ok: false,
+							error: 'last_sign_in_method',
+							message: 'Add another sign-in method before removing this passkey.'
+						},
+						409
+					);
+				}
+				return mobileJson({ ok: true, message: 'Passkey removed.' });
+			} catch (error) {
+				return passkeyMutationFailure(error, 'The passkey could not be removed.');
+			}
+		}
 		case 'delete-account': {
 			const parsed = deleteAccountBody.safeParse(parsedBody.value);
 			if (!parsed.success) {
@@ -315,6 +366,8 @@ function isMobileAccountOperation(input: string): input is MobileAccountOperatio
 		input === 'disable-two-factor' ||
 		input === 'regenerate-recovery-codes' ||
 		input === 'revoke-session' ||
+		input === 'rename-passkey' ||
+		input === 'delete-passkey' ||
 		input === 'delete-account'
 	);
 }
@@ -414,6 +467,13 @@ function betterAuthFailure(error: unknown, message: string) {
 	}
 	return mobileJson(
 		{ ok: false, error: 'account_security_failed', message },
+		error instanceof APIError ? 400 : 500
+	);
+}
+
+function passkeyMutationFailure(error: unknown, message: string) {
+	return mobileJson(
+		{ ok: false, error: 'passkey_operation_failed', message },
 		error instanceof APIError ? 400 : 500
 	);
 }

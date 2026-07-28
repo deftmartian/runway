@@ -101,14 +101,14 @@ internal fun NativeStatsTraces(
         )
     }
 
-    if (distance.any { it.recommendation != null || it.current != null || it.acceptedActual != null }) {
+    if (distance.hasPositiveMeasurement()) {
         NativeWeeklyTraceChart(
             title = "Weekly distance",
             points = distance,
             format = ::formatDistance,
         )
     }
-    if (duration.any { it.recommendation != null || it.current != null || it.acceptedActual != null }) {
+    if (duration.hasPositiveMeasurement()) {
         NativeWeeklyTraceChart(
             title = "Weekly training time",
             points = duration,
@@ -116,6 +116,10 @@ internal fun NativeStatsTraces(
         )
     }
     NativeAcceptedContext(weeklySummaries)
+}
+
+private fun List<NativeWeeklyTrace>.hasPositiveMeasurement(): Boolean = any { point ->
+    listOf(point.recommendation, point.current, point.acceptedActual).any { (it ?: 0.0) > 0.0 }
 }
 
 @Composable
@@ -190,9 +194,21 @@ private fun NativeWeeklyTraceChart(
             )
         }
         points.forEach { point ->
-            SettingRow("${point.label} · generated", point.recommendation?.let(format).orDash())
-            SettingRow("${point.label} · current", point.current?.let(format).orDash())
-            SettingRow("${point.label} · accepted actual", point.acceptedActual?.let(format).orDash())
+            SettingRow(
+                "${point.label} · generated",
+                point.recommendation?.let(format).orDash(),
+                monospace = true,
+            )
+            SettingRow(
+                "${point.label} · current",
+                point.current?.let(format).orDash(),
+                monospace = true,
+            )
+            SettingRow(
+                "${point.label} · accepted actual",
+                point.acceptedActual?.let(format).orDash(),
+                monospace = true,
+            )
         }
     }
 }

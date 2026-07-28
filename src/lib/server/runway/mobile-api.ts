@@ -84,7 +84,9 @@ async function getMobileActivityTrace(userId: string, url: URL) {
  * The only mobile response that carries route coordinates or HR samples. Its caller has already
  * validated a UUID and `getActivityTraceDetail` scopes the row to the authenticated user.
  */
-export function mobileActivityEvidenceDetail(detail: Awaited<ReturnType<typeof getActivityTraceDetail>>) {
+export function mobileActivityEvidenceDetail(
+	detail: Awaited<ReturnType<typeof getActivityTraceDetail>>
+) {
 	if (!detail) return null;
 	const routeTrace = detail.routeTrace
 		? {
@@ -354,8 +356,8 @@ async function getMobileSettings(userId: string, url: URL) {
 			commit: buildIdentity.commit,
 			serverOrigin: url.origin
 		},
-		// Account security has a native summary view. Credential administration remains a
-		// separate fresh-auth browser boundary and is intentionally not linked from Android.
+		// Android owns the ordinary account-security surface. Website-owned WebAuthn registration
+		// and password-reset links remain deliberate browser boundaries.
 		accountSecurityAvailable: true
 	};
 }

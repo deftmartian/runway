@@ -86,10 +86,6 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 		response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 	}
 
-	if (pathname === '/service-worker.js') {
-		response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
-	}
-
 	if (response.status < 400 && pathname.endsWith('.svg')) {
 		response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
 	}
@@ -116,16 +112,9 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/health/')) return resolve(event);
-	const androidNativeRequest = isAndroidNativeApiRequest(
-		event.request,
-		event.url.pathname
-	);
+	const androidNativeRequest = isAndroidNativeApiRequest(event.request, event.url.pathname);
 	if (
-		!isAllowedBetterAuthHttpRequest(
-			event.url.pathname,
-			event.request.method,
-			androidNativeRequest
-		)
+		!isAllowedBetterAuthHttpRequest(event.url.pathname, event.request.method, androidNativeRequest)
 	) {
 		return new Response('Not found', {
 			status: 404,
@@ -180,7 +169,7 @@ async function rateLimitNativeAuthentication(
 			.catch(() => null);
 		const email = authEmailSchema.safeParse(
 			typeof body === 'object' && body !== null && 'email' in body ? body.email : null
-	);
+		);
 		if (!email.success) {
 			return new Response('Email or password is not correct.', {
 				status: 400,

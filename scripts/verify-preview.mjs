@@ -173,24 +173,10 @@ if (manifest.statusCode !== 404) {
 }
 
 const serviceWorker = await request(new URL('/service-worker.js', siteUrl));
-if (header(serviceWorker.headers, 'cache-control') !== 'public, max-age=0, must-revalidate') {
-	failures.push('/service-worker.js has the wrong cache policy.');
-}
-for (const expected of [
-	'event.waitUntil(self.skipWaiting())',
-	"name.startsWith('runway-')",
-	'const unregistered = await self.registration.unregister();',
-	'if (!unregistered) return;',
-	'clients.map((client) => client.navigate(client.url))'
-]) {
-	if (!serviceWorker.body.includes(expected)) {
-		failures.push(`/service-worker.js is missing retirement behavior: ${expected}.`);
-	}
-}
-for (const forbidden of ['self.clients.claim()', "self.addEventListener('fetch'", 'caches.open(']) {
-	if (serviceWorker.body.includes(forbidden)) {
-		failures.push(`/service-worker.js still contains active-worker behavior: ${forbidden}.`);
-	}
+if (serviceWorker.statusCode !== 404) {
+	failures.push(
+		`/service-worker.js returned ${serviceWorker.statusCode}; the retired worker endpoint is still live.`
+	);
 }
 
 const live = await request(new URL('/health/live', siteUrl));

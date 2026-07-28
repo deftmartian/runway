@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, ne, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { activity, trainingWeek, workout, workoutFeedback } from '$lib/server/db/schema';
 import { addDays, parseIsoDate } from '$lib/training/date';
@@ -129,6 +129,43 @@ function readCalendarWorkouts(
 		.orderBy(asc(workout.scheduledDate));
 }
 
+function readNextPlannedRun(userId: string, planId: string, today: string) {
+	return db
+		.select({
+			id: workout.id,
+			weekId: workout.weekId,
+			weekNumber: trainingWeek.weekNumber,
+			scheduledDate: workout.scheduledDate,
+			type: workout.type,
+			status: workout.status,
+			targetDistanceMeters: workout.targetDistanceMeters,
+			targetDurationSeconds: workout.targetDurationSeconds,
+			prescriptionKind: workout.prescriptionKind,
+			intervalStructure: workout.intervalStructure,
+			intensity: workout.intensity,
+			purpose: workout.purpose,
+			reason: workout.reason,
+			sourceRefs: workout.sourceRefs,
+			isRemoved: workout.isRemoved,
+			weekTargetDistanceMeters: trainingWeek.targetDistanceMeters
+		})
+		.from(workout)
+		.innerJoin(trainingWeek, eq(workout.weekId, trainingWeek.id))
+		.where(
+			and(
+				eq(workout.userId, userId),
+				eq(workout.planId, planId),
+				eq(trainingWeek.userId, userId),
+				eq(workout.status, 'planned'),
+				eq(workout.isRemoved, false),
+				ne(workout.type, 'rest'),
+				gte(workout.scheduledDate, today)
+			)
+		)
+		.orderBy(asc(workout.scheduledDate), asc(workout.id))
+		.limit(1);
+}
+
 function readCalendarFeedback(
 	userId: string,
 	planId: string,
@@ -204,6 +241,7 @@ export async function getTrainingCalendar(
 			currentWeek: null,
 			stats: null,
 			currentSignal: null,
+			nextWorkout: null,
 			calendar: buildTrainingCalendarPayload({
 				today,
 				month,
@@ -223,20 +261,22 @@ export async function getTrainingCalendar(
 
 	const planId = activePlan.plan.id;
 	const allEffectiveWeeks = await getPlanWeeks(userId, planId);
-	const [currentWeek, workouts, activityPage, feedback, stats, currentSignal] = await Promise.all([
-		readCurrentCalendarWeek(userId, planId, today),
-		readCalendarWorkouts(userId, planId, rangeStart, rangeEnd),
-		readBoundedCalendarActivities(userId, rangeStart, rangeEnd),
-		readCalendarFeedback(userId, planId, rangeStart, rangeEnd),
-		readCalendarPlanStats(userId, planId),
-		currentTrainingSignal(
-			userId,
-			activePlan.plan,
-			today,
-			effectivePlanRisk(allEffectiveWeeks, activePlan.plan.risk),
-			allEffectiveWeeks.some((week) => week.hasMixedLoad)
-		)
-	]);
+	const [currentWeek, workouts, activityPage, feedback, stats, currentSignal, [nextWorkout]] =
+		await Promise.all([
+			readCurrentCalendarWeek(userId, planId, today),
+			readCalendarWorkouts(userId, planId, rangeStart, rangeEnd),
+			readBoundedCalendarActivities(userId, rangeStart, rangeEnd),
+			readCalendarFeedback(userId, planId, rangeStart, rangeEnd),
+			readCalendarPlanStats(userId, planId),
+			currentTrainingSignal(
+				userId,
+				activePlan.plan,
+				today,
+				effectivePlanRisk(allEffectiveWeeks, activePlan.plan.risk),
+				allEffectiveWeeks.some((week) => week.hasMixedLoad)
+			),
+			readNextPlannedRun(userId, planId, today)
+		]);
 	const weeks = allEffectiveWeeks.filter(
 		(week) => week.startDate >= rangeStart && week.startDate <= rangeEnd
 	);
@@ -298,6 +338,7 @@ export async function getTrainingCalendar(
 			allEffectiveWeeks.find((week) => week.id === currentWeek?.id) ?? currentWeek ?? null,
 		stats: stats ?? null,
 		currentSignal,
+		nextWorkout: nextWorkout ?? null,
 		calendar
 	};
 }

@@ -33,6 +33,13 @@ class NativePayloadCodecTest {
     }
 
     @Test
+    fun `timed prescriptions do not invent a zero distance`() {
+        assertEquals("28 min", formatPrescriptionMeasurement(0.0, 1_680.0))
+        assertEquals("5 km · 28 min", formatPrescriptionMeasurement(5_000.0, 1_680.0))
+        assertEquals("Recovery day", formatPrescriptionMeasurement(0.0, 0.0, rest = true))
+    }
+
+    @Test
     fun `review decoder keeps coordinate-free activity detail summaries`() {
         val decoded = requireNotNull(NativePayloadCodec.decodeView("review", """
             {"activities":[{"id":"activity-1","source":"gpx","reviewState":"accepted",
@@ -72,12 +79,16 @@ class NativePayloadCodecTest {
     @Test
     fun `calendar decoder preserves nullable values and ignores malformed array entries`() {
         val decoded = requireNotNull(NativePayloadCodec.decodeView("calendar", """
-            {"onboardingRequired":false,"calendar":{"month":"2026-07","today":"2026-07-28",
+            {"onboardingRequired":false,
+            "nextWorkout":{"id":"w-next","scheduledDate":"2026-08-03","targetDurationSeconds":1680},
+            "calendar":{"month":"2026-07","today":"2026-07-28",
             "workouts":[{"id":"w-1","isRemoved":false,"targetDistanceMeters":5000},17],
             "feedback":[{"workoutId":"w-1","pain":false,"consequence":{"options":["keep_plan",null]}}]}}
         """)) as NativeCalendarPayload
 
         assertEquals(false, decoded.onboardingRequired)
+        assertEquals("w-next", decoded.nextWorkout?.id)
+        assertEquals(1_680.0, decoded.nextWorkout?.targetDurationSeconds)
         assertEquals("2026-07", decoded.calendar?.month)
         assertEquals(1, decoded.calendar?.workouts?.size)
         assertEquals(false, decoded.calendar?.workouts?.single()?.isRemoved)
@@ -118,11 +129,37 @@ class NativePayloadCodecTest {
     }
 
     @Test
+    fun `action preview retains exact workout and consequence decision effects`() {
+        val decoded = requireNotNull(NativePayloadCodec.decodeAction("""
+            {"ok":true,"preview":{"operation":"edit","risk":"moderate",
+            "recommended":{"scheduledDate":"2026-08-01","targetDistanceMeters":5000,"purpose":"Easy"},
+            "current":{"scheduledDate":"2026-08-02","targetDistanceMeters":6000,"purpose":"Easy"},
+            "proposed":{"scheduledDate":"2026-08-03","targetDurationSeconds":1800,"purpose":"Timed easy"},
+            "workoutChanges":[{"workoutId":"w-1","isSelected":true,
+              "before":{"targetDistanceMeters":6000},"after":{"targetDurationSeconds":1800}}],
+            "weekChanges":[{"weekId":"week-1","weekNumber":2,"distanceBeforeMeters":12000,"distanceAfterMeters":6000}],
+            "projectedRampPercent":10,"projectedRampRisk":"moderate",
+            "guardrails":[{"kind":"prescription_basis_change","label":"Different basis"}],
+            "consequenceDecision":{"decision":"reduce_next","changes":[{"workoutId":"w-2","purpose":"Long run",
+              "before":{"targetDurationSeconds":2400},"after":{"targetDurationSeconds":1800}}]}}}
+        """))
+
+        assertEquals("edit", decoded.preview?.operation)
+        assertEquals(5_000.0, decoded.preview?.recommended?.targetDistanceMeters)
+        assertEquals(1_800.0, decoded.preview?.proposed?.targetDurationSeconds)
+        assertEquals("w-1", decoded.preview?.workoutChanges?.single()?.workoutId)
+        assertEquals(2, decoded.preview?.weekChanges?.single()?.weekNumber)
+        assertEquals("moderate", decoded.preview?.projectedRampRisk)
+        assertEquals("reduce_next", decoded.preview?.consequenceDecision?.decision)
+        assertEquals(1_800.0, decoded.preview?.consequenceDecision?.changes?.single()?.after?.targetDurationSeconds)
+    }
+
+    @Test
     fun `stats decoder keeps recommendation current plan and accepted work separate`() {
         val decoded = requireNotNull(NativePayloadCodec.decodeView("stats", """
-            {"onboardingRequired":false,
+             {"onboardingRequired":false,
              "detail":{"weeks":[{"id":"week-1","weekNumber":1,"startDate":"2026-07-27",
-             "targetDistanceMeters":6000,"risk":"conservative"}]},
+             "targetDistanceMeters":6000,"targetDurationSeconds":1800,"risk":"conservative","hasMixedLoad":true}]},
              "planTrace":[{"id":"week-1","weekNumber":1,"startDate":"2026-07-27",
              "recommendedDistanceMeters":5000,"currentDistanceMeters":6000,
              "recommendedDurationSeconds":1500,"currentDurationSeconds":1800}],
@@ -132,6 +169,8 @@ class NativePayloadCodecTest {
         """)) as NativeStatsPayload
 
         assertEquals(6_000.0, decoded.detail?.weeks?.single()?.targetDistanceMeters)
+        assertEquals(1_800.0, decoded.detail?.weeks?.single()?.targetDurationSeconds)
+        assertTrue(decoded.detail?.weeks?.single()?.hasMixedLoad == true)
         assertNull(decoded.detail?.weeks?.single()?.completedDistanceMeters)
         assertEquals(
             4_500.0,
@@ -263,6 +302,8 @@ class NativePayloadCodecTest {
     fun `account security decoder exposes summaries without credential or session material`() {
         val decoded = requireNotNull(NativePayloadCodec.decodeView("account-security", """
             {"authentication":{"localPassword":true,"oidc":true,"twoFactor":true,"passkeyCount":2},
+             "passkeys":[{"id":"passkey-1","name":"Work laptop","deviceType":"multiDevice",
+               "backedUp":true,"createdAt":"2026-07-28T08:00:00Z"}],
              "sessions":{"activeCount":3,"currentIsNative":true,"requiresFreshSession":false,
                "items":[
                  {"id":"session-current","client":"Android app","current":true,
@@ -274,6 +315,9 @@ class NativePayloadCodecTest {
 
         assertTrue(decoded.authentication?.localPassword == true)
         assertEquals(2, decoded.authentication?.passkeyCount)
+        assertEquals("passkey-1", decoded.passkeys.single().id)
+        assertEquals("Work laptop", decoded.passkeys.single().name)
+        assertTrue(decoded.passkeys.single().backedUp == true)
         assertEquals(3, decoded.sessions?.activeCount)
         assertEquals(false, decoded.sessions?.requiresFreshSession)
         assertEquals("session-current", decoded.sessions?.items?.first()?.id)

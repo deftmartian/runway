@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { APIError } from 'better-auth/api';
 import { auth } from '$lib/server/auth';
 import { db } from '$lib/server/db';
@@ -27,52 +27,71 @@ type AccountSessionSource = {
 	expiresAt: Date;
 };
 
+type MobilePasskey = {
+	id: string;
+	name: string | null;
+	deviceType: string;
+	backedUp: boolean;
+	createdAt: Date | null;
+};
+
+type PasskeySource = MobilePasskey & {
+	publicKey?: unknown;
+	credentialID?: unknown;
+	transports?: unknown;
+	aaguid?: unknown;
+	counter?: unknown;
+	userId?: unknown;
+};
+
 /**
- * Deliberately summary-only account state for an already device-authorized mobile session.
+ * Deliberately summary-only account state for an authenticated native mobile session.
  * It never exposes credential material, session tokens, addresses, user agents, passkey public
  * keys, or provider tokens.
  */
 export async function getMobileAccountSecurity(userId: string, request: Request) {
 	const now = new Date();
-	const [identity, providers, passkeys, activeSessions, devices, sessionList] = await Promise.all([
-		db
-			.select({ twoFactorEnabled: user.twoFactorEnabled })
-			.from(user)
-			.where(eq(user.id, userId))
-			.limit(1),
-		db
-			.select({ providerId: account.providerId })
-			.from(account)
-			.where(eq(account.userId, userId))
-			.limit(20),
-		db
-			.select({ count: sql<number>`count(*)::int` })
-			.from(passkey)
-			.where(eq(passkey.userId, userId)),
-		db
-			.select({ count: sql<number>`count(*)::int` })
-			.from(session)
-			.where(and(eq(session.userId, userId), gt(session.expiresAt, now))),
-		db
-			.select({
-				id: androidDevice.id,
-				label: androidDevice.label,
-				lastSeenAt: androidDevice.lastSeenAt,
-				lastImportedAt: androidDevice.lastImportedAt,
-				expiresAt: androidDevice.expiresAt
-			})
-			.from(androidDevice)
-			.where(
-				and(
-					eq(androidDevice.userId, userId),
-					isNull(androidDevice.revokedAt),
-					gt(androidDevice.expiresAt, now)
+	const [identity, providers, passkeys, activeSessions, devices, sessionList, mobilePasskeys] =
+		await Promise.all([
+			db
+				.select({ twoFactorEnabled: user.twoFactorEnabled })
+				.from(user)
+				.where(eq(user.id, userId))
+				.limit(1),
+			db
+				.select({ providerId: account.providerId })
+				.from(account)
+				.where(eq(account.userId, userId))
+				.limit(20),
+			db
+				.select({ count: sql<number>`count(*)::int` })
+				.from(passkey)
+				.where(eq(passkey.userId, userId)),
+			db
+				.select({ count: sql<number>`count(*)::int` })
+				.from(session)
+				.where(and(eq(session.userId, userId), gt(session.expiresAt, now))),
+			db
+				.select({
+					id: androidDevice.id,
+					label: androidDevice.label,
+					lastSeenAt: androidDevice.lastSeenAt,
+					lastImportedAt: androidDevice.lastImportedAt,
+					expiresAt: androidDevice.expiresAt
+				})
+				.from(androidDevice)
+				.where(
+					and(
+						eq(androidDevice.userId, userId),
+						isNull(androidDevice.revokedAt),
+						gt(androidDevice.expiresAt, now)
+					)
 				)
-			)
-			.orderBy(androidDevice.createdAt)
-			.limit(20),
-		listMobileAccountSessions(request)
-	]);
+				.orderBy(androidDevice.createdAt)
+				.limit(20),
+			listMobileAccountSessions(request),
+			listMobilePasskeys(userId, request)
+		]);
 	const providerIds = new Set(providers.map((provider) => provider.providerId));
 	return {
 		authentication: {
@@ -87,6 +106,7 @@ export async function getMobileAccountSecurity(userId: string, request: Request)
 			requiresFreshSession: sessionList.requiresFreshSession,
 			items: sessionList.items
 		},
+		passkeys: mobilePasskeys,
 		importDevices: devices.map((device) => ({
 			id: device.id,
 			label: device.label,
@@ -95,6 +115,78 @@ export async function getMobileAccountSecurity(userId: string, request: Request)
 			expiresAt: device.expiresAt
 		}))
 	};
+}
+
+async function listMobilePasskeys(userId: string, request: Request): Promise<MobilePasskey[]> {
+	const current = await auth.api.getSession({ headers: request.headers });
+	if (
+		!current?.session ||
+		current.user.id !== userId ||
+		!isAndroidMobileSession(current.session) ||
+		!isFreshAuthSession(current.session.createdAt)
+	) {
+		return [];
+	}
+
+	const records = await db
+		.select({
+			id: passkey.id,
+			name: passkey.name,
+			deviceType: passkey.deviceType,
+			backedUp: passkey.backedUp,
+			createdAt: passkey.createdAt
+		})
+		.from(passkey)
+		.where(eq(passkey.userId, userId))
+		.orderBy(desc(passkey.createdAt), asc(passkey.id))
+		.limit(20);
+
+	return sanitizeMobilePasskeys(records);
+}
+
+export function sanitizeMobilePasskeys(passkeys: PasskeySource[]): MobilePasskey[] {
+	return passkeys.slice(0, 20).map(({ id, name, deviceType, backedUp, createdAt }) => ({
+		id,
+		name,
+		deviceType,
+		backedUp,
+		createdAt
+	}));
+}
+
+/**
+ * Serializes passkey removal for one account. The user-row lock stays held while Better Auth
+ * deletes the credential, so two requests cannot both approve removal based on the same count.
+ */
+export async function deleteMobilePasskeyWithoutLockout<T>(
+	userId: string,
+	deletePasskey: () => Promise<T>
+): Promise<{ removed: false } | { removed: true; result: T }> {
+	return db.transaction(async (tx) => {
+		const [owner] = await tx
+			.select({ id: user.id })
+			.from(user)
+			.where(eq(user.id, userId))
+			.limit(1)
+			.for('update');
+		if (!owner) return { removed: false } as const;
+
+		const [providerCounts, passkeyCounts] = await Promise.all([
+			tx
+				.select({ count: sql<number>`count(*)::int` })
+				.from(account)
+				.where(eq(account.userId, userId)),
+			tx
+				.select({ count: sql<number>`count(*)::int` })
+				.from(passkey)
+				.where(eq(passkey.userId, userId))
+		]);
+		if ((providerCounts[0]?.count ?? 0) === 0 && (passkeyCounts[0]?.count ?? 0) <= 1) {
+			return { removed: false } as const;
+		}
+
+		return { removed: true as const, result: await deletePasskey() };
+	});
 }
 
 async function listMobileAccountSessions(

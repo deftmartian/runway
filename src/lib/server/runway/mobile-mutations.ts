@@ -31,6 +31,7 @@ import {
 import {
 	applyConsequenceDecision,
 	deleteWorkoutFeedback,
+	previewConsequenceDecision,
 	recordWorkoutFeedback
 } from './repositories/workout-feedback';
 import { createPlanFromGoalSetup } from './plan-setup';
@@ -70,6 +71,7 @@ export const mobileActionNames = [
 	'resolve_health_connect_record',
 	'resolve_health_connect_duplicate',
 	'apply_plan_decision',
+	'preview_plan_decision',
 	'preview_workout_edit',
 	'apply_workout_edit',
 	'preview_workout_add',
@@ -303,6 +305,14 @@ export async function runMobileAction(
 				if (!input.ok) return input.response;
 				const consequence = await applyConsequenceDecision(userId, input.data);
 				return success(formatConsequenceSummary(consequence), { consequence });
+			}
+			case 'preview_plan_decision': {
+				const input = parse(consequenceDecisionSchema, body);
+				if (!input.ok) return input.response;
+				const consequenceDecision = await previewConsequenceDecision(userId, input.data);
+				return success('Review the future-plan effect before applying it.', {
+					preview: { consequenceDecision }
+				});
 			}
 			case 'preview_workout_edit':
 			case 'apply_workout_edit': {

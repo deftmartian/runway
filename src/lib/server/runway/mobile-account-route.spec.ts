@@ -15,9 +15,12 @@ const dependencies = vi.hoisted(() => ({
 	listUserAccounts: vi.fn(),
 	generateBackupCodes: vi.fn(),
 	validateReplacementToken: vi.fn(),
+	deleteMobilePasskeyWithoutLockout: vi.fn(),
 	revokeTrustedDevices: vi.fn(),
 	deleteUser: vi.fn(),
 	revokeSession: vi.fn(),
+	updatePasskey: vi.fn(),
+	deletePasskey: vi.fn(),
 	select: vi.fn(),
 	from: vi.fn(),
 	where: vi.fn(),
@@ -38,6 +41,7 @@ vi.mock('$lib/server/runway/password-reset', () => ({
 	requestPasswordReset: dependencies.requestPasswordReset
 }));
 vi.mock('$lib/server/runway/mobile-account-security', () => ({
+	deleteMobilePasskeyWithoutLockout: dependencies.deleteMobilePasskeyWithoutLockout,
 	validateMobileReplacementToken: dependencies.validateReplacementToken
 }));
 vi.mock('$lib/server/runway/trusted-devices', () => ({
@@ -54,7 +58,9 @@ vi.mock('$lib/server/auth', () => ({
 			listUserAccounts: dependencies.listUserAccounts,
 			generateBackupCodes: dependencies.generateBackupCodes,
 			deleteUser: dependencies.deleteUser,
-			revokeSession: dependencies.revokeSession
+			revokeSession: dependencies.revokeSession,
+			updatePasskey: dependencies.updatePasskey,
+			deletePasskey: dependencies.deletePasskey
 		}
 	}
 }));
@@ -106,6 +112,12 @@ describe('native account-security operation route', () => {
 		}));
 		dependencies.requestPasswordReset.mockResolvedValue('sent_or_unknown');
 		dependencies.validateReplacementToken.mockResolvedValue('signed-replacement-token');
+		dependencies.deleteMobilePasskeyWithoutLockout.mockImplementation(
+			async (_userId: string, deletePasskey: () => Promise<unknown>) => ({
+				removed: true as const,
+				result: await deletePasskey()
+			})
+		);
 		dependencies.listUserAccounts.mockResolvedValue([{ providerId: 'credential' }]);
 		dependencies.select.mockReturnValue({ from: dependencies.from });
 		dependencies.from.mockReturnValue({ where: dependencies.where });
@@ -508,6 +520,63 @@ describe('native account-security operation route', () => {
 		await expect(response.json()).resolves.toMatchObject({ error: 'current_session' });
 		expect(dependencies.select).not.toHaveBeenCalled();
 		expect(dependencies.revokeSession).not.toHaveBeenCalled();
+	});
+
+	test('renames an owned passkey once with the original native auth headers', async () => {
+		const event = accountEvent('rename-passkey', '{"id":"passkey-1","name":"  Phone key  "}');
+
+		const response = await POST(event);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({ ok: true, message: 'Passkey renamed.' });
+		expect(dependencies.updatePasskey).toHaveBeenCalledTimes(1);
+		expect(dependencies.updatePasskey).toHaveBeenCalledWith({
+			body: { id: 'passkey-1', name: 'Phone key' },
+			headers: event.request.headers
+		});
+	});
+
+	test('keeps passkey ownership and not-found failures generic', async () => {
+		dependencies.deletePasskey.mockRejectedValue(
+			new APIError('UNAUTHORIZED', { message: 'PASSKEY_NOT_FOUND' })
+		);
+
+		const response = await POST(accountEvent('delete-passkey', '{"id":"someone-elses-key"}'));
+
+		expect(response.status).toBe(400);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: 'passkey_operation_failed',
+			message: 'The passkey could not be removed.'
+		});
+	});
+
+	test('will not remove the final sign-in method from a passkey-only account', async () => {
+		dependencies.deleteMobilePasskeyWithoutLockout.mockResolvedValue({ removed: false });
+
+		const response = await POST(accountEvent('delete-passkey', '{"id":"last-passkey"}'));
+
+		expect(response.status).toBe(409);
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: 'last_sign_in_method',
+			message: 'Add another sign-in method before removing this passkey.'
+		});
+		expect(dependencies.deleteMobilePasskeyWithoutLockout).toHaveBeenCalledWith(
+			'runner-1',
+			expect.any(Function)
+		);
+		expect(dependencies.deletePasskey).not.toHaveBeenCalled();
+	});
+
+	test('rejects invalid passkey operations before calling Better Auth', async () => {
+		const renamed = await POST(accountEvent('rename-passkey', '{"id":"passkey-1","name":"   "}'));
+		const deleted = await POST(accountEvent('delete-passkey', '{"id":""}'));
+
+		expect(renamed.status).toBe(400);
+		expect(deleted.status).toBe(400);
+		expect(dependencies.updatePasskey).not.toHaveBeenCalled();
+		expect(dependencies.deletePasskey).not.toHaveBeenCalled();
 	});
 
 	test('requires a fresh marked session and exact confirmation before account deletion', async () => {

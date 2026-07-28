@@ -46,7 +46,7 @@ internal fun ReviewScreen(
     var submittedDialogAction by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(completedAction) {
         if (completedAction == submittedDialogAction) {
-            if (completedAction == "apply_plan_decision") {
+            if (completedAction == "preview_plan_decision" || completedAction == "apply_plan_decision") {
                 pendingDecision = null
             } else {
                 selectedActivity = null
@@ -119,32 +119,22 @@ internal fun ReviewScreen(
             }
         }
         if (payload != null) {
-            item { SectionLabel("Import sources") }
+            item { SectionLabel("Sources") }
             item {
-                SettingCard("This phone") {
+                SettingCard("Import connections") {
                     SettingRow(
-                        "Import connection",
+                        "This phone",
                         if (payload.androidDevices.isEmpty()) "Not connected" else "Connected",
-                    )
-                    Text(
-                        "Folder access and Health Connect stay on this phone. Open phone imports to choose a folder, review permissions, or run a sync.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedButton(
                         onClick = onOpenPhoneImports,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
                     ) {
-                        Text("Phone imports")
+                        Text("Folder and Health Connect")
                     }
-                }
-            }
-            item {
-                SettingCard("Server folders") {
                     if (payload.sources.isEmpty()) {
-                        Text(
-                            "No Nextcloud GPX folder is connected.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        SettingRow("Server folders", "Not connected")
                     } else {
                         payload.sources.forEach { source ->
                             SettingRow(
@@ -154,20 +144,15 @@ internal fun ReviewScreen(
                             )
                         }
                     }
-                    TextButton(onClick = onOpenImportSettings) {
+                    TextButton(
+                        onClick = onOpenImportSettings,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
                         Text("Manage server folders")
                     }
-                }
-            }
-            item {
-                SettingCard("Route privacy") {
-                    Text(
-                        if (payload.routeDataMode == "discard") {
-                            "New imports keep totals and discard route points."
-                        } else {
-                            "Private route traces are retained for authenticated activity detail."
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    SettingRow(
+                        "Route points",
+                        if (payload.routeDataMode == "discard") "Discarded" else "Kept privately",
                     )
                 }
             }
@@ -205,7 +190,7 @@ internal fun ReviewScreen(
             errorMessage = actionNotice?.takeIf { it.isError }?.message,
             onDismiss = { pendingDecision = null },
             onConfirm = {
-                submittedDialogAction = "apply_plan_decision"
+                submittedDialogAction = "preview_plan_decision"
                 onAction(planDecisionCommand(decision))
             },
         )
@@ -237,7 +222,15 @@ internal fun ProgressScreen(
             payload.onboardingRequired == true -> item {
                 EmptyCard("Finish your training setup to see progress.")
             }
-            active == null -> item { NativeNoActiveProgress(noActiveSummary) }
+            active == null -> {
+                item { NativeNoActiveProgress(noActiveSummary) }
+                item {
+                    PlanSetupEntryCard(
+                        entry = planSetupEntry(active),
+                        onOpenSetup = { onDestinationSelected(NativeDestination.Setup) },
+                    )
+                }
+            }
             weeks.isEmpty() -> item { EmptyCard("This plan does not have weekly progress yet.") }
             else -> {
                 item { ProgressAssessment(payload.history) }
@@ -259,6 +252,12 @@ internal fun ProgressScreen(
             }
         }
         if (active != null) {
+            item {
+                PlanSetupEntryCard(
+                    entry = planSetupEntry(active),
+                    onOpenSetup = { onDestinationSelected(NativeDestination.Setup) },
+                )
+            }
             item {
                 SettingCard("Plan controls") {
                     if (targetReached && (phaseReview == null || phaseReview.goalKind == "foundation")) {
@@ -319,6 +318,40 @@ internal fun ProgressScreen(
     }
 }
 
+internal data class NativePlanSetupEntry(
+    val title: String,
+    val description: String,
+    val actionLabel: String,
+)
+
+internal fun planSetupEntry(activePlan: NativePlanHistoryItem?): NativePlanSetupEntry =
+    if (activePlan == null) {
+        NativePlanSetupEntry(
+            title = "Next plan",
+            description = "Create a new goal and schedule when you are ready.",
+            actionLabel = "Build plan",
+        )
+    } else {
+        NativePlanSetupEntry(
+            title = "Goal",
+            description = "Review a replacement goal. Your current plan is archived only after you confirm it.",
+            actionLabel = "Change goal",
+        )
+    }
+
+@Composable
+private fun PlanSetupEntryCard(
+    entry: NativePlanSetupEntry,
+    onOpenSetup: () -> Unit,
+) {
+    SettingCard(entry.title) {
+        Text(entry.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
+            Text(entry.actionLabel)
+        }
+    }
+}
+
 @Composable
 private fun ProgressAssessment(history: NativeTrainingHistory?) {
     val weeks = history?.weeklySummaries.orEmpty()
@@ -328,10 +361,21 @@ private fun ProgressAssessment(history: NativeTrainingHistory?) {
             Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (signal != null) {
+    if (signal != null && history.hasAcceptedActivities == true) {
+        val assessment = if (signal.source == "plan") {
+            nativeRampAssessment(signal.risk)
+        } else {
+            nativeLoadAssessment(signal.risk)
+        }
         SettingCard("Current assessment") {
-            SettingRow("Assessment", signal.risk.orEmpty().replaceFirstChar(Char::uppercase).ifBlank { "Recorded" })
-            signal.reasons.forEach { Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            SettingRow("Assessment", assessment.label)
+            if (signal.reasons.isEmpty()) {
+                Text(assessment.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                signal.reasons.forEach {
+                    Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
     if (weeks.isNotEmpty()) {

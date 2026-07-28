@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -19,7 +18,6 @@ import androidx.compose.ui.unit.dp
 internal fun HistoryDetailScreen(
     payload: NativeHistoryDetailPayload?,
     loading: Boolean,
-    onBack: () -> Unit,
 ) {
     val detail = payload?.detail
     NativeList(loading) {
@@ -29,7 +27,6 @@ internal fun HistoryDetailScreen(
                 "Plan phase, changes, recorded work, and their consequences.",
             )
         }
-        item { TextButton(onClick = onBack) { Text("← Back to History") } }
         when {
             payload == null -> item { EmptyCard("Loading plan record…") }
             payload.onboardingRequired == true || detail == null -> item {
@@ -66,7 +63,9 @@ private fun PlanRecordSummary(detail: NativeHistoryDetail) {
         )
         SettingRow("State", lifecycleLabel(plan?.status, plan?.lifecycleReason))
         SettingRow("Goal", goalLabel(detail.goal?.distance))
-        plan?.risk?.takeIf(String::isNotBlank)?.let { SettingRow("Ramp assessment", it) }
+        plan?.risk?.takeIf(String::isNotBlank)?.let {
+            SettingRow("Ramp assessment", nativeRampAssessment(it).label)
+        }
         plan?.summary?.takeIf { it.kind == "distance" }?.let { summary ->
             val required = summary.requiredWeeklyIncreasePercent
             val default = summary.defaultWeeklyIncreasePercent

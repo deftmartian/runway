@@ -113,6 +113,11 @@ internal object NativePayloadCodec {
             .put("sourceId", command.sourceId)
             .put("decision", command.decision)
             .put("confirmRisk", command.confirmRisk)
+        is PreviewPlanDecisionCommand -> JSONObject()
+            .put("source", command.source)
+            .put("sourceId", command.sourceId)
+            .put("decision", command.decision)
+            .put("confirmRisk", false)
         is PreviewWorkoutEditCommand -> workoutMutation(command.mutation)
             .put("workoutId", command.workoutId)
         is ApplyWorkoutEditCommand -> workoutMutation(command.mutation)
@@ -177,6 +182,7 @@ internal object NativePayloadCodec {
     private fun JSONObject.calendarView() = NativeCalendarPayload(
         onboardingRequired = optionalBoolean("onboardingRequired"),
         calendar = optionalObject("calendar")?.calendar(),
+        nextWorkout = optionalObject("nextWorkout")?.workout(),
         activityCandidates = optionalArray("activityCandidates").objects { it.workout() },
     )
 
@@ -284,8 +290,15 @@ internal object NativePayloadCodec {
 
     private fun JSONObject.accountSecurity() = NativeAccountSecurityPayload(
         authentication = optionalObject("authentication")?.authenticationSecurity(),
+        passkeys = optionalArray("passkeys").objects { it.passkeySecurity() },
         sessions = optionalObject("sessions")?.sessionSecurity(),
         importDevices = optionalArray("importDevices").objects { it.accountImportDevice() },
+    )
+
+    private fun JSONObject.passkeySecurity() = NativePasskeySecurity(
+        id = optionalString("id"), name = optionalString("name"),
+        deviceType = optionalString("deviceType"), backedUp = optionalBoolean("backedUp"),
+        createdAt = optionalString("createdAt"),
     )
 
     private fun JSONObject.user() = NativeUser(
@@ -458,6 +471,7 @@ internal object NativePayloadCodec {
         optionalString("risk"),
         optionalBoolean("planChangeAvailable"),
         optionalArray("options").strings(),
+        optionalString("comparisonStatus"),
     )
     private fun JSONObject.activityOverflow() = NativeActivityOverflow(
         optionalInt("limit"),
@@ -476,8 +490,10 @@ internal object NativePayloadCodec {
         optionalInt("weekNumber"),
         optionalString("startDate"),
         optionalDouble("targetDistanceMeters"),
+        optionalDouble("targetDurationSeconds"),
         optionalDouble("completedDistanceMeters"),
         optionalString("risk"),
+        optionalBoolean("hasMixedLoad"),
     )
     private fun JSONObject.planTraceWeek() = NativePlanTraceWeek(
         optionalString("id"),
@@ -672,9 +688,42 @@ internal object NativePayloadCodec {
         optionalString("lastImportedAt"), optionalString("expiresAt"),
     )
     private fun JSONObject.actionPreview() = NativeActionPreviewDto(
+        optionalString("operation"),
         optionalString("risk"),
         optionalDouble("weeklyLoadChangePercent"),
         optionalArray("spacingConflicts").objects { it.spacingConflict() },
+        optionalObject("recommended")?.workoutPreviewPrescription(),
+        optionalObject("current")?.workoutPreviewPrescription(),
+        optionalObject("proposed")?.workoutPreviewPrescription(),
+        optionalArray("workoutChanges").objects { it.workoutPreviewChange() },
+        optionalArray("weekChanges").objects { it.workoutPreviewWeek() },
+        optionalDouble("projectedRampPercent"),
+        optionalString("projectedRampRisk"),
+        optionalArray("guardrails").objects { it.workoutPreviewGuardrail() },
+        optionalObject("consequenceDecision")?.consequenceDecisionPreview(),
+    )
+    private fun JSONObject.workoutPreviewPrescription() = NativeWorkoutPreviewPrescription(
+        optionalString("scheduledDate"), optionalString("type"), optionalString("prescriptionKind"),
+        optionalDouble("targetDistanceMeters"), optionalDouble("targetDurationSeconds"), optionalString("purpose"),
+    )
+    private fun JSONObject.workoutPreviewChange() = NativeWorkoutPreviewChange(
+        optionalString("workoutId"), optionalBoolean("isSelected"),
+        optionalObject("before")?.workoutPreviewPrescription(), optionalObject("after")?.workoutPreviewPrescription(),
+        optionalDouble("relativeChangePercent"), optionalDouble("changeShareOfWeekPercent"), optionalString("risk"),
+    )
+    private fun JSONObject.workoutPreviewWeek() = NativeWorkoutPreviewWeek(
+        optionalString("weekId"), optionalInt("weekNumber"), optionalDouble("distanceBeforeMeters"),
+        optionalDouble("distanceAfterMeters"), optionalDouble("durationBeforeSeconds"), optionalDouble("durationAfterSeconds"),
+    )
+    private fun JSONObject.workoutPreviewGuardrail() = NativeWorkoutPreviewGuardrail(
+        optionalString("kind"), optionalString("label"), optionalString("description"),
+    )
+    private fun JSONObject.consequenceDecisionPreview() = NativeConsequenceDecisionPreview(
+        optionalString("decision"), optionalArray("changes").objects { it.consequenceDecisionChange() },
+    )
+    private fun JSONObject.consequenceDecisionChange() = NativeConsequenceDecisionChange(
+        optionalString("workoutId"), optionalString("scheduledDate"), optionalString("purpose"),
+        optionalObject("before")?.workoutPreviewPrescription(), optionalObject("after")?.workoutPreviewPrescription(),
     )
     private fun JSONObject.spacingConflict() = NativeSpacingConflict(
         optionalString("workoutId"),

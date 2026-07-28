@@ -11,8 +11,8 @@ RepoType: git
 Repo: https://REPLACE_GIT_URL
 
 Builds:
-  - versionName: 0.6.0
-    versionCode: 11
+  - versionName: 0.7.0
+    versionCode: 12
     commit: REPLACE_SOURCE_COMMIT
     subdir: android
     gradle:

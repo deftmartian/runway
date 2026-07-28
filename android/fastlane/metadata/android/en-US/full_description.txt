@@ -3,7 +3,8 @@ runway is a private, self-hosted running plan and activity review app.
 On first launch, choose your self-hosted runway server. The app verifies that address, then presents
 the planner, calendar, run detail, import review, history, stats, settings, and sign-in in native
 Jetpack Compose UI. runway is not an embedded WebView or browser wrapper. The system browser appears
-only to approve sign-in or fresh account-security actions.
+only for OIDC or passkey sign-in, password reset, and new passkey registration. Local account
+creation, password and two-factor sign-in, planning, review, and account controls stay native.
 
 Android also retains read access to a user-approved Gadgetbridge GPX export folder and can schedule
 bounded checks without broad storage, location, activity-recognition, Play Services, or advertising

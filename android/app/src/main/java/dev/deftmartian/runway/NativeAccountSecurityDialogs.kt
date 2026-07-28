@@ -31,6 +31,48 @@ private val SensitiveDialogProperties = DialogProperties(
 )
 
 @Composable
+internal fun RenamePasskeyDialog(
+    currentName: String,
+    actionPending: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by remember(currentName) { mutableStateOf(currentName.take(80)) }
+    fun dismiss() {
+        name = ""
+        onDismiss()
+    }
+    AlertDialog(
+        onDismissRequest = ::dismiss,
+        title = { Text("Rename passkey") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(80) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Passkey name") },
+                singleLine = true,
+                enabled = !actionPending,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val replacement = name.trim()
+                    name = ""
+                    onDismiss()
+                    onConfirm(replacement)
+                },
+                enabled = !actionPending && name.trim().isNotEmpty(),
+            ) { Text("Save name") }
+        },
+        dismissButton = {
+            TextButton(onClick = ::dismiss, enabled = !actionPending) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
 internal fun PasswordChangeDialog(
     actionPending: Boolean,
     onDismiss: () -> Unit,

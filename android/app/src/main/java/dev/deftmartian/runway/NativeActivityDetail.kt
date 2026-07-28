@@ -151,13 +151,19 @@ internal fun ImportedActivityDetailSheet(
 @Composable
 private fun ImportedActivitySummary(activity: NativeActivity) {
     SettingCard("Exact summary") {
-        SettingRow("Date", activity.occurredDate.orDash())
+        SettingRow("Date", activity.occurredDate.orDash(), monospace = true)
         SettingRow(
             "Distance",
             activity.distanceMeters?.takeIf { it > 0 }?.let(::formatDistance).orDash(),
         )
-        SettingRow("Duration", activity.durationSeconds?.let(::formatDuration).orDash())
-        activity.averagePaceSecondsPerKm?.let { SettingRow("Average pace", formatPace(it)) }
+        SettingRow(
+            "Duration",
+            activity.durationSeconds?.let(::formatDuration).orDash(),
+            monospace = true,
+        )
+        activity.averagePaceSecondsPerKm?.let {
+            SettingRow("Average pace", formatPace(it), monospace = true)
+        }
     }
 }
 
@@ -243,14 +249,20 @@ private fun ImportedActivityHeartRate(activity: NativeActivity, evidence: Native
         return
     }
     SettingCard("Recorded metrics") {
-        activity.averageHeartRate?.let { SettingRow("Average", "$it bpm") }
-        activity.maxHeartRate?.let { SettingRow("Maximum", "$it bpm") }
+        activity.averageHeartRate?.let { SettingRow("Average", "$it bpm", monospace = true) }
+        activity.maxHeartRate?.let { SettingRow("Maximum", "$it bpm", monospace = true) }
         summary?.let {
-            it.highSeconds?.let { seconds -> SettingRow("High-zone time", formatDuration(seconds.toDouble())) }
-            it.highShare?.let { share -> SettingRow("High-zone share", "${(share * 100).roundToInt()}%") }
+            it.highSeconds?.let { seconds ->
+                SettingRow("High-zone time", formatDuration(seconds.toDouble()), monospace = true)
+            }
+            it.highShare?.let { share ->
+                SettingRow("High-zone share", "${(share * 100).roundToInt()}%", monospace = true)
+            }
             Text("Zone time is descriptive; it does not change the plan automatically.")
         }
-        evidence?.averageCadence?.let { SettingRow("Average cadence", "$it rpm") }
+        evidence?.averageCadence?.let {
+            SettingRow("Average cadence", "$it rpm", monospace = true)
+        }
         evidence?.heartRateSeries?.let { HeartRateTrace(it) }
     }
 }
@@ -287,7 +299,7 @@ private fun ImportedActivityRouteDisclosure(
             }
         }
         (disclosure?.routePointCount ?: route?.pointCount)?.let {
-            SettingRow("Imported route points", it.toString())
+            SettingRow("Imported route points", it.toString(), monospace = true)
         }
         if (disclosure?.hasElevation == true || route?.hasElevation == true) {
             SettingRow("Elevation", "Present in import")
@@ -296,7 +308,11 @@ private fun ImportedActivityRouteDisclosure(
             Text("Start and end details are redacted.")
         }
         disclosure?.heartRateSeriesRetained?.let {
-            SettingRow("Heart-rate samples", if (it) "${disclosure.heartRateSampleCount ?: 0} retained" else "Not retained")
+            SettingRow(
+                "Heart-rate samples",
+                if (it) "${disclosure.heartRateSampleCount ?: 0} retained" else "Not retained",
+                monospace = it,
+            )
         }
     }
 }
@@ -315,7 +331,7 @@ private fun HeartRateTrace(series: NativeHeartRateSeries) {
     } else {
         "$sourceCount retained"
     }
-    SettingRow("Heart-rate samples", "$countLabel · $low–$high bpm")
+    SettingRow("Heart-rate samples", "$countLabel · $low–$high bpm", monospace = true)
     Canvas(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(120.dp)) {
         val maxElapsed = points.maxOf { requireNotNull(it.elapsedSeconds) }.coerceAtLeast(1)
         val range = (high - low).coerceAtLeast(10)

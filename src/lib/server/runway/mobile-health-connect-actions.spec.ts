@@ -12,4 +12,8 @@ describe('mobile Health Connect resolution actions', () => {
 	test('does not accept a browser-style Health Connect action name', () => {
 		expect(isMobileActionName('resolveHealthConnectRecord')).toBe(false);
 	});
+
+	test('keeps read-only consequence previews inside the typed native action allowlist', () => {
+		expect(isMobileActionName('preview_plan_decision')).toBe(true);
+	});
 });

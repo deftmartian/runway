@@ -2,10 +2,7 @@ import { expect, request as playwrightRequest, test } from '@playwright/test';
 import { authorizeAndroidSession } from './support/android';
 import { createAccount } from './support/account';
 
-test('only a session minted by Android device authorization can use the native API', async ({
-	page,
-	request
-}) => {
+test('only a server-marked Android session can use the native API', async ({ page, request }) => {
 	await createAccount(page);
 	const browserSession = (await page.context().cookies()).find(
 		(cookie) => cookie.name === 'better-auth.session_token'

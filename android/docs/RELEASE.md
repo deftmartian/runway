@@ -17,9 +17,10 @@ changing the id breaks in-place upgrades.
 Every release uses in-app server selection. The runner chooses a compatible HTTPS runway server on
 first launch, then signs in and uses runway through the app's native Jetpack Compose interface.
 There is no instance-bound, WebView, Custom Tab, or TWA product shell. Passing `-PrunwayOrigin` is an
-intentional build error. Account-security operations that benefit from the browser's passkey and
-identity-provider integration deliberately hand off to the system browser, then return to the native
-app.
+intentional build error. Local account creation, password/TOTP sign-in, planning, review, and account
+management are native. OIDC or passkey sign-in, password reset, and new passkey registration
+deliberately hand off to the selected server in the system browser, then return to the native app
+without transferring browser cookies or bearer tokens.
 
 Keep the APK signing key outside this repository, encrypted, access-controlled, and backed up. The
 personal F-Droid repository index key is separate from the APK signing key; restrict and test both.
@@ -134,9 +135,9 @@ Useful upstream references:
 Attach to each internal release record:
 
 - signed APK, APK SHA-256, signer fingerprint, application id, source commit, and clean-tree evidence;
-- unit, lint, emulator, physical-device, native navigation, device-authorization, share,
-  server-switch, and folder results;
-- system-browser account-security handoff and return-to-app results;
+- unit, lint, emulator, physical-device, native navigation, local signup/sign-in/TOTP,
+  device-authorization, share, server-switch, and folder results;
+- system-browser OIDC/passkey/password-reset handoff and return-to-app results;
 - first-run, invalid-server, incompatible-version, TLS-failure, and cross-origin isolation results;
 - Health Connect provider-status, running/treadmill filtering, permission revocation, optional
   background-read, per-route foreground-consent, and route-privacy-mode results;

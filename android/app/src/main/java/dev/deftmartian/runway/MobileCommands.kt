@@ -121,6 +121,16 @@ internal data class ApplyPlanDecisionCommand(
     override val action = "apply_plan_decision"
 }
 
+internal data class PreviewPlanDecisionCommand(
+    val source: String,
+    val sourceId: String,
+    val decision: String,
+) : PreviewableMobileCommand {
+    override val action = "preview_plan_decision"
+
+    override fun confirmed(): MobileCommand = ApplyPlanDecisionCommand(source, sourceId, decision)
+}
+
 internal data class WorkoutMutation(
     val scheduledDate: String,
     val type: String,

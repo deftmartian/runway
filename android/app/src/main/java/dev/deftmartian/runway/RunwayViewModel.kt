@@ -676,6 +676,18 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    fun renamePasskey(passkeyId: String, name: String) {
+        runAccountOperation("rename-passkey") { currentSession ->
+            api.renamePasskey(currentSession, passkeyId, name)
+        }
+    }
+
+    fun deletePasskey(passkeyId: String) {
+        runAccountOperation("delete-passkey") { currentSession ->
+            api.deletePasskey(currentSession, passkeyId)
+        }
+    }
+
     fun exportTrainingData(
         resolver: ContentResolver,
         destination: Uri,

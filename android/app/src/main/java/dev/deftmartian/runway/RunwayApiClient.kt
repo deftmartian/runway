@@ -189,10 +189,37 @@ sealed interface DeviceDisconnectApiResult {
 
 sealed interface InstanceProbeResult {
     data object Compatible : InstanceProbeResult
+    data class OriginMismatch(val canonicalOrigin: String) : InstanceProbeResult
     data object NotRunway : InstanceProbeResult
     data object UpgradeRequired : InstanceProbeResult
     data object Unreachable : InstanceProbeResult
 }
+
+internal fun classifyInstanceDescriptor(
+    selectedOrigin: String,
+    responseBody: String,
+    allowPrivateCleartext: Boolean,
+): InstanceProbeResult = runCatching {
+    val payload = JSONObject(responseBody)
+    if (
+        payload.getString("result") != "runway-instance" ||
+        payload.getString("product") != "runway"
+    ) return@runCatching InstanceProbeResult.NotRunway
+    val minimum = payload.getInt("minimumAndroidApi")
+    val maximum = payload.getInt("maximumAndroidApi")
+    if (RUNWAY_ANDROID_API_VERSION !in minimum..maximum) {
+        return@runCatching InstanceProbeResult.UpgradeRequired
+    }
+    val canonicalOrigin = InstanceOriginPolicy.normalizeOrigin(
+        payload.getString("serverOrigin"),
+        allowPrivateCleartext,
+    ) ?: return@runCatching InstanceProbeResult.NotRunway
+    if (canonicalOrigin != selectedOrigin) {
+        InstanceProbeResult.OriginMismatch(canonicalOrigin)
+    } else {
+        InstanceProbeResult.Compatible
+    }
+}.getOrDefault(InstanceProbeResult.NotRunway)
 
 class RunwayApiClient(origin: String) {
     private val serverOrigin = requireNotNull(
@@ -207,20 +234,11 @@ class RunwayApiClient(origin: String) {
         ) ?: return InstanceProbeResult.Unreachable
         if (response.status == 429 || response.status >= 500) return InstanceProbeResult.Unreachable
         if (response.status != HttpURLConnection.HTTP_OK) return InstanceProbeResult.NotRunway
-        return runCatching {
-            val payload = JSONObject(response.body)
-            if (
-                payload.getString("result") != "runway-instance" ||
-                payload.getString("product") != "runway"
-            ) return@runCatching InstanceProbeResult.NotRunway
-            val minimum = payload.getInt("minimumAndroidApi")
-            val maximum = payload.getInt("maximumAndroidApi")
-            if (ANDROID_API_VERSION !in minimum..maximum) {
-                InstanceProbeResult.UpgradeRequired
-            } else {
-                InstanceProbeResult.Compatible
-            }
-        }.getOrDefault(InstanceProbeResult.NotRunway)
+        return classifyInstanceDescriptor(
+            selectedOrigin = serverOrigin,
+            responseBody = response.body,
+            allowPrivateCleartext = BuildConfig.DEBUG,
+        )
     }
 
     fun pair(code: String, label: String): PairingApiResult {
@@ -420,7 +438,6 @@ class RunwayApiClient(origin: String) {
 
     private companion object {
         const val ANDROID_CLIENT = "runway-android/2"
-        const val ANDROID_API_VERSION = 2
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
         const val MAX_RESPONSE_BYTES = 64L * 1024L
@@ -428,6 +445,8 @@ class RunwayApiClient(origin: String) {
         val handledImportResults = setOf("imported", "duplicate", "quarantined")
     }
 }
+
+internal const val RUNWAY_ANDROID_API_VERSION = 2
 
 /** Leaves 16 KiB below the server's exact 256 KiB request-body limit. */
 internal const val MAX_HEALTH_CONNECT_PAYLOAD_BYTES = 240 * 1024

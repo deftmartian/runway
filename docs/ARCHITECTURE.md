@@ -2,7 +2,10 @@
 
 ## Boundary
 
-runway is a self-hosted responsive-web and native-Android planning, activity-review, and decision-ledger product. It does not record GPS live. Server code accepts goals, prescriptions, results, and imported activity data, then presents editable recommendations and explicit decisions.
+runway is a self-hosted planning, activity-review, and decision-ledger product with a primary native
+Android client and a complete responsive web client. It does not record GPS live. Server code
+accepts goals, prescriptions, results, and imported activity data, then presents editable
+recommendations and explicit decisions.
 
 ## Stack
 
@@ -167,10 +170,16 @@ other import paths.
 ### Android app
 
 Android verifies a user-selected runway server and renders the product natively with Jetpack Compose.
-It uses Better Auth device authorization for the normal account session and the versioned
-`/api/mobile/v1` API for product views and mutations. The system browser is only an approval and
-fresh-account-security boundary; it does not render the product and no browser session is copied into
-Android. There is no origin-bound build variant.
+It is the primary product client and uses the versioned `/api/mobile/v1` API for product views and
+mutations. Local signup, password sign-in, and TOTP or recovery-code verification happen in native
+screens. The server accepts those Better Auth routes only with the native client header and without
+a browser Origin, then stamps the resulting bearer session as `runway-android`.
+
+OIDC and passkey sign-in retain Better Auth device authorization: the system browser owns provider
+and WebAuthn interaction, while Android receives only the independently polled, origin-bound bearer
+session. Password reset and passkey registration also remain website-owned operations. The browser
+does not render the product, and cookies, passwords, device codes, and bearer tokens do not cross the
+app-link return. There is no origin-bound build variant.
 
 Server JSON crosses one explicit native codec boundary into immutable Kotlin payload models.
 Compose screens and the ViewModel operate on those models and sealed mobile commands; they neither
@@ -206,15 +215,12 @@ budgets before multipart parsing or remote WebDAV work. Nextcloud connect, test,
 per-user operation lease; the scheduled worker observes the same lease and retries a busy source on a
 later pass.
 
-## Web Delivery And Service-worker Retirement
+## Web Delivery
 
 The web client is responsive and online. It does not promise installation, offline navigation, a
 share target, or browser-managed folder access. Authenticated responses are private and no-store.
-
-For one release after the hard cutover, `/service-worker.js` is a narrowly scoped retirement worker:
-an existing old installation may load it once, delete only old `runway-*` caches, unregister itself,
-and return clients to the current page. New visitors are not registered. Remove this compatibility
-endpoint after the documented retirement window; it is not a continuing PWA capability.
+The one-release service-worker retirement window ended with v0.6.0;
+`/manifest.webmanifest` and `/service-worker.js` now return `404`.
 
 ## Deployment Shape
 
