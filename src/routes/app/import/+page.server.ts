@@ -22,13 +22,8 @@ import {
 	resolveHealthConnectRecord
 } from '$lib/server/runway/health-connect';
 import { maxGpxImportBytes } from '$lib/import-limits';
+import { listAndroidDevices, revokeAndroidDevice } from '$lib/server/runway/android-devices';
 import {
-	createAndroidPairingRequest,
-	listAndroidDevices,
-	revokeAndroidDevice
-} from '$lib/server/runway/android-devices';
-import {
-	androidPairingCreateRateLimitBuckets,
 	consumeSecurityRateLimit,
 	gpxImportRateLimitBuckets,
 	nextcloudImportRateLimitBuckets
@@ -118,26 +113,6 @@ function shareNotice(value: string | null): { message: string; failed: boolean }
 }
 
 export const actions: Actions = {
-	createAndroidPairing: async (event) => {
-		if (!event.locals.user) throw redirect(302, '/login');
-		const rateLimit = await consumeSecurityRateLimit(
-			androidPairingCreateRateLimitBuckets(event.locals.user.id, event.getClientAddress())
-		);
-		if (!rateLimit.allowed) {
-			event.setHeaders({ 'retry-after': String(rateLimit.retryAfterSeconds) });
-			return fail(429, {
-				scope: 'android',
-				message: 'Too many pairing codes were requested. Try again later.'
-			});
-		}
-		const pairing = await createAndroidPairingRequest(event.locals.user.id);
-		return {
-			scope: 'android',
-			message: 'Pairing code created.',
-			pairingCode: pairing.code,
-			pairingExpiresAt: pairing.expiresAt.toISOString()
-		};
-	},
 	revokeAndroidDevice: async (event) => {
 		if (!event.locals.user) throw redirect(302, '/login');
 		const parsed = androidDeviceIdSchema.safeParse(

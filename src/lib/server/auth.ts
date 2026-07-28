@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { genericOAuth, twoFactor } from 'better-auth/plugins';
+import { bearer, deviceAuthorization, genericOAuth, twoFactor } from 'better-auth/plugins';
 import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { passkey } from '@better-auth/passkey';
 import { building } from '$app/environment';
@@ -11,6 +11,7 @@ import { db } from '$lib/server/db';
 import { authLogger } from '$lib/server/runway/auth-log';
 import { validateProductionSecretConfiguration } from '$lib/server/runway/production-secrets';
 import { revokeUserVerificationRecords } from '$lib/server/runway/trusted-devices';
+import { androidDeviceAuthorizationSessionScope } from '$lib/server/runway/mobile-session-scope';
 import {
 	authFreshSessionSeconds,
 	authentikOidcConfig,
@@ -89,10 +90,31 @@ export const auth = betterAuth({
 	logger: authLogger,
 	trustedOrigins: Array.from(new Set([origin, passkeyOrigin, ...developmentTrustedOrigins])),
 	session: {
-		freshAge: authFreshSessionSeconds
+		freshAge: authFreshSessionSeconds,
+		additionalFields: {
+			/**
+			 * Better Auth's device authorization exchange creates a standard
+			 * session. This non-input marker lets the native API reject every
+			 * other bearer session without inventing a second token format.
+			 */
+			mobileClientId: {
+				type: 'string',
+				required: false,
+				input: false,
+				returned: true
+			}
+		}
 	},
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	databaseHooks: {
+		session: {
+			create: {
+				before: (_session, context) => {
+					const scope = androidDeviceAuthorizationSessionScope(context);
+					return Promise.resolve(scope ? { data: scope } : undefined);
+				}
+			}
+		},
 		account: {
 			create: {
 				before: (account) => Promise.resolve({ data: omitStoredOidcIdToken(account) })
@@ -131,6 +153,20 @@ export const auth = betterAuth({
 		}
 	},
 	plugins: [
+		bearer(),
+		deviceAuthorization({
+			verificationUri: '/device',
+			expiresIn: '10m',
+			interval: '5s',
+			validateClient: (clientId) => clientId === 'runway-android',
+			onDeviceAuthRequest: (clientId, scope) => {
+				if (clientId !== 'runway-android' || scope !== 'runway:mobile') {
+					throw new APIError('BAD_REQUEST', {
+						message: 'Unsupported native authorization request.'
+					});
+				}
+			}
+		}),
 		twoFactor({
 			issuer: env['PASSKEY_RP_NAME'] || 'runway',
 			twoFactorCookieMaxAge: 10 * 60,

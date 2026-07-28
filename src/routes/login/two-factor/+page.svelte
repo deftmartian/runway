@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import AuthSurface from '../AuthSurface.svelte';
-	import type { ActionData, SubmitFunction } from './$types';
+	import type { ActionData, PageData, SubmitFunction } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 	const scopedForm = $derived((form ?? {}) as { message?: string; scope?: string });
 	let pendingAction = $state<string | null>(null);
 
@@ -34,6 +34,7 @@
 			use:enhance={enhanceVerification('verifyTotp')}
 			aria-busy={pendingAction === 'verifyTotp'}
 		>
+			<input type="hidden" name="returnTo" value={data.returnTo} />
 			{#if scopedForm.scope === 'verifyTotp' && scopedForm.message}
 				<p class="message" role="status" aria-live="polite">{scopedForm.message}</p>
 			{/if}
@@ -64,6 +65,7 @@
 			use:enhance={enhanceVerification('verifyBackupCode')}
 			aria-busy={pendingAction === 'verifyBackupCode'}
 		>
+			<input type="hidden" name="returnTo" value={data.returnTo} />
 			<h2>Use a backup code</h2>
 			{#if scopedForm.scope === 'verifyBackupCode' && scopedForm.message}
 				<p class="message" role="status" aria-live="polite">{scopedForm.message}</p>

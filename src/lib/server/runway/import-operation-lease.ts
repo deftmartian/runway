@@ -6,12 +6,7 @@ import { importOperationLease } from '$lib/server/db/schema';
 const leaseDurationMs = 2 * 60 * 1_000;
 
 export type ImportOperation =
-	| 'manual-gpx'
-	| 'browser-folder-gpx'
-	| 'share-target-gpx'
-	| 'nextcloud-connect'
-	| 'nextcloud-test'
-	| 'nextcloud-sync';
+	'manual-gpx' | 'nextcloud-connect' | 'nextcloud-test' | 'nextcloud-sync';
 
 export class ImportOperationBusyError extends Error {
 	constructor(readonly retryAfterSeconds: number) {

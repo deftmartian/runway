@@ -111,23 +111,6 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:labelFor="@id/pairing_code"
-                    android:text="@string/pairing_code"
-                    android:textAppearance="@style/TextAppearance.Runway.Label" />
-
-                <EditText
-                    android:id="@+id/pairing_code"
-                    style="@style/Widget.Runway.Input"
-                    android:layout_marginTop="4dp"
-                    android:importantForAutofill="no"
-                    android:imeOptions="actionNext"
-                    android:inputType="textCapCharacters|textNoSuggestions"
-                    android:maxLines="1" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
                     android:labelFor="@id/device_label"
                     android:text="@string/device_label"
                     android:textAppearance="@style/TextAppearance.Runway.Label" />

@@ -7,6 +7,7 @@ import {
 	revokeAndroidDevice,
 	touchAndroidDevice
 } from '$lib/server/runway/android-devices';
+import { isSupportedAndroidClient } from '$lib/server/runway/android-instance';
 import {
 	androidApiDeviceRateLimitBuckets,
 	androidApiPreAuthRateLimitBuckets,
@@ -15,7 +16,7 @@ import {
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
-	if (event.request.headers.get('x-runway-client') !== 'runway-android/1') {
+	if (!isSupportedAndroidClient(event.request.headers.get('x-runway-client'))) {
 		return json({ result: 'unsupported-client' }, { status: 400 });
 	}
 	const preAuthLimit = await consumeSecurityRateLimit(
@@ -50,7 +51,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const DELETE: RequestHandler = async (event) => {
-	if (event.request.headers.get('x-runway-client') !== 'runway-android/1') {
+	if (!isSupportedAndroidClient(event.request.headers.get('x-runway-client'))) {
 		return json({ result: 'unsupported-client' }, { status: 400 });
 	}
 	const preAuthLimit = await consumeSecurityRateLimit(

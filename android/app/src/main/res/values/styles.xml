@@ -10,12 +10,6 @@
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 
-    <style name="Theme.Runway.Launcher" parent="android:style/Theme.Translucent.NoTitleBar">
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowIsTranslucent">true</item>
-        <item name="android:windowBackground">@android:color/transparent</item>
-    </style>
-
     <style name="TextAppearance.Runway.Title" parent="android:style/TextAppearance.Material.Headline">
         <item name="android:textColor">@color/runway_text</item>
         <item name="android:textSize">28sp</item>

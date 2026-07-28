@@ -1,13 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import AndroidSourceSetup from './AndroidSourceSetup.svelte';
-	import BrowserFolderSource from './BrowserFolderSource.svelte';
 	import GpxUploadSource from './GpxUploadSource.svelte';
 	import ImportPrivacy from './ImportPrivacy.svelte';
 	import NextcloudSourceSetup from './NextcloudSourceSetup.svelte';
 	import type {
 		AndroidDeviceSummary,
-		AndroidPairingSummary,
 		ImportSection,
 		ImportSourceSummary,
 		ImportWorkoutCandidate,
@@ -16,28 +14,24 @@
 	} from './import-view-model';
 
 	let {
-		userId,
 		candidates,
 		sources,
 		androidDevices,
 		androidApplicationId,
 		importTimeZoneConfigured,
 		routeDataMode,
-		androidPairing,
 		startOpen = false,
 		activeAction,
 		activeSection,
 		scopedResult,
 		scopedEnhance
 	}: {
-		userId: string;
 		candidates: ImportWorkoutCandidate[];
 		sources: ImportSourceSummary[];
 		androidDevices: AndroidDeviceSummary[];
 		androidApplicationId: string | null;
 		importTimeZoneConfigured: boolean;
 		routeDataMode: 'private' | 'discard';
-		androidPairing: AndroidPairingSummary | null;
 		startOpen?: boolean;
 		activeAction: string | null;
 		activeSection: ImportSection | null;
@@ -45,17 +39,14 @@
 		scopedEnhance: ScopedEnhanceFactory;
 	} = $props();
 
-	type ImportSourceKind = 'android' | 'browser' | 'nextcloud' | 'upload';
+	type ImportSourceKind = 'android' | 'nextcloud' | 'upload';
 
 	// This prop deliberately sets only the first-render state; later toggles belong to the user.
 	// svelte-ignore state_referenced_locally
 	let setupOpen = $state(startOpen);
 	let chosenImportSource = $state<ImportSourceKind | null>(null);
-	let browserFolderConnected = $state(false);
 
-	const selectedImportSource = $derived<ImportSourceKind | null>(
-		chosenImportSource ?? (androidPairing ? 'android' : null)
-	);
+	const selectedImportSource = $derived<ImportSourceKind | null>(chosenImportSource);
 	const sourceResult = $derived(scopedResult?.section === 'sources' ? scopedResult : null);
 	const actionPending = (key: string) => activeAction === key;
 	const dateTime = (value: Date | string | null) =>
@@ -71,10 +62,6 @@
 	function chooseSource(source: ImportSourceKind) {
 		setupOpen = true;
 		chosenImportSource = source;
-	}
-
-	function setBrowserFolderConnection(connected: boolean) {
-		browserFolderConnected = connected;
 	}
 
 	$effect(() => {
@@ -111,19 +98,8 @@
 							chooseSource('android');
 						}}
 					>
-						<strong>Android folder</strong>
-						<span>Import in the background from the installed app.</span>
-					</button>
-					<button
-						type="button"
-						class:selected={selectedImportSource === 'browser'}
-						aria-pressed={selectedImportSource === 'browser'}
-						onclick={() => {
-							chooseSource('browser');
-						}}
-					>
-						<strong>Browser folder</strong>
-						<span>Check a Gadgetbridge folder while runway is open.</span>
+						<strong>Android app</strong>
+						<span>Set up Health Connect, Gadgetbridge, or GPX sharing.</span>
 					</button>
 					<button
 						type="button"
@@ -150,12 +126,7 @@
 				</div>
 
 				{#if selectedImportSource === 'android'}
-					<AndroidSourceSetup
-						{androidPairing}
-						{androidApplicationId}
-						{activeAction}
-						{scopedEnhance}
-					/>
+					<AndroidSourceSetup {androidApplicationId} />
 					<ImportPrivacy {routeDataMode} />
 				{:else if selectedImportSource === 'nextcloud'}
 					<NextcloudSourceSetup {activeAction} {importTimeZoneConfigured} {scopedEnhance} />
@@ -179,14 +150,6 @@
 		</div>
 	{/if}
 
-	<BrowserFolderSource
-		{userId}
-		{importTimeZoneConfigured}
-		{routeDataMode}
-		selected={setupOpen && selectedImportSource === 'browser'}
-		onConnectionChange={setBrowserFolderConnection}
-	/>
-
 	<div class="connected-sources" aria-busy={activeSection === 'sources'}>
 		{#each androidDevices as device (device.id)}
 			<div class="import-source-row">
@@ -194,7 +157,7 @@
 					<strong>{device.label}</strong>
 					<span class:source-error={new Date(device.expiresAt) <= new Date()}>
 						{new Date(device.expiresAt) <= new Date()
-							? 'Android app · pairing expired'
+							? 'Android app · connection expired'
 							: `Android app · seen ${dateTime(device.lastSeenAt)}`}
 					</span>
 					{#if device.lastImportedAt}
@@ -269,7 +232,7 @@
 			</div>
 		{/each}
 
-		{#if sources.length === 0 && androidDevices.length === 0 && !browserFolderConnected}
+		{#if sources.length === 0 && androidDevices.length === 0}
 			<p class="no-sources">No import sources connected.</p>
 		{/if}
 	</div>

@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import favicon from '$lib/assets/favicon.svg';
-	import PwaLifecycle from '$lib/components/PwaLifecycle.svelte';
+	import ServiceWorkerRetirement from '$lib/components/ServiceWorkerRetirement.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -19,6 +19,7 @@
 		if (pathname.startsWith('/login/forgot-password')) return 'Reset password · runway';
 		if (pathname.startsWith('/login/reset-password')) return 'Choose a new password · runway';
 		if (pathname.startsWith('/login')) return 'Sign in · runway';
+		if (pathname.startsWith('/device')) return 'Connect Android · runway';
 		return 'runway · running plans and activity review';
 	}
 </script>
@@ -30,16 +31,9 @@
 		content="A self-hosted running planner and activity ledger for comparing recommendations, edits, and recorded work."
 	/>
 	<link rel="icon" href={favicon} />
-	<link rel="apple-touch-icon" sizes="180x180" href="/pwa/apple-touch-icon.png" />
-	<link rel="manifest" href="/manifest.webmanifest" />
-	<meta name="application-name" content="runway" />
-	<meta name="mobile-web-app-capable" content="yes" />
-	<meta name="apple-mobile-web-app-capable" content="yes" />
-	<meta name="apple-mobile-web-app-title" content="runway" />
-	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 	<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F2EC" />
 	<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151A18" />
 </svelte:head>
 
 {@render children()}
-<PwaLifecycle />
+<ServiceWorkerRetirement />

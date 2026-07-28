@@ -35,6 +35,8 @@ export const session = pgTable(
 			.notNull(),
 		ipAddress: text('ip_address'),
 		userAgent: text('user_agent'),
+		/** Set only by the Better Auth device-token session hook. */
+		mobileClientId: text('mobile_client_id'),
 		userId: text('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' })
@@ -127,11 +129,34 @@ export const passkey = pgTable(
 	]
 );
 
+export const deviceCode = pgTable(
+	'device_code',
+	{
+		id: text('id').primaryKey(),
+		deviceCode: text('device_code').notNull(),
+		userCode: text('user_code').notNull(),
+		userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+		expiresAt: timestamp('expires_at').notNull(),
+		status: text('status').notNull(),
+		lastPolledAt: timestamp('last_polled_at'),
+		pollingInterval: integer('polling_interval'),
+		clientId: text('client_id'),
+		scope: text('scope')
+	},
+	(table) => [
+		uniqueIndex('device_code_device_code_unique').on(table.deviceCode),
+		uniqueIndex('device_code_user_code_unique').on(table.userCode),
+		index('device_code_user_id_idx').on(table.userId),
+		index('device_code_expires_at_idx').on(table.expiresAt)
+	]
+);
+
 export const userRelations = relations(user, ({ many }) => ({
 	sessions: many(session),
 	accounts: many(account),
 	twoFactors: many(twoFactor),
-	passkeys: many(passkey)
+	passkeys: many(passkey),
+	deviceCodes: many(deviceCode)
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -158,6 +183,13 @@ export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
 export const passkeyRelations = relations(passkey, ({ one }) => ({
 	user: one(user, {
 		fields: [passkey.userId],
+		references: [user.id]
+	})
+}));
+
+export const deviceCodeRelations = relations(deviceCode, ({ one }) => ({
+	user: one(user, {
+		fields: [deviceCode.userId],
 		references: [user.id]
 	})
 }));

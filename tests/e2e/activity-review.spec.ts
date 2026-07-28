@@ -68,8 +68,7 @@ test('an empty inbox offers a direct review-only GPX upload', async ({ page }) =
 	await expect(page.getByText('No imported activities.')).toBeVisible();
 	await expect(page.locator('details.source-setup')).toHaveAttribute('open', '');
 	const sourceChoices = page.getByRole('group', { name: 'Choose an import source' });
-	await expect(sourceChoices.getByRole('button', { name: /^Android folder/ })).toBeVisible();
-	await expect(sourceChoices.getByRole('button', { name: /^Browser folder/ })).toBeVisible();
+	await expect(sourceChoices.getByRole('button', { name: /^Android app/ })).toBeVisible();
 	await expect(sourceChoices.getByRole('button', { name: /^Nextcloud/ })).toBeVisible();
 	const uploadButton = page.getByRole('button', { name: 'Upload GPX', exact: true });
 	await expect(uploadButton).toBeEnabled();

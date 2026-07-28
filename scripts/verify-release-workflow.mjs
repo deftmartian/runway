@@ -71,7 +71,7 @@ assertExact('unprivileged image step inventory', imageVerifyYaml.steps.map(stepI
 	'Scan local runtime candidate',
 	'Verify whole-project Compose lifecycle',
 	'Start image-backed production stack',
-	'Verify production runtime and PWA revision',
+	'Verify production runtime and web release identity',
 	'Container diagnostics',
 	'Stop containers'
 ]);
@@ -90,7 +90,7 @@ assertExact('trusted image step inventory', imagePublishYaml.steps.map(stepIdent
 	'Scan local runtime candidate',
 	'Verify whole-project Compose lifecycle',
 	'Start image-backed production stack',
-	'Verify production runtime and PWA revision',
+	'Verify production runtime and web release identity',
 	'Verify exact ARM64 candidate runtime and migration contract',
 	'Container diagnostics',
 	'Stop containers',
@@ -246,7 +246,7 @@ for (const job of [imageVerifyYaml, imagePublishYaml]) {
 			'docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker'
 		],
 		[
-			'Verify production runtime and PWA revision',
+			'Verify production runtime and web release identity',
 			'SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs'
 		],
 		[
@@ -259,7 +259,7 @@ for (const job of [imageVerifyYaml, imagePublishYaml]) {
 	for (const name of [
 		'Scan local runtime candidate',
 		'Start image-backed production stack',
-		'Verify production runtime and PWA revision',
+		'Verify production runtime and web release identity',
 		'Stop containers'
 	]) {
 		assertExact(`${name} environment`, stepByName(job, name)?.env, undefined);
@@ -591,7 +591,7 @@ for (const [name, job, steps] of [
 			'Scan local runtime candidate',
 			'Verify whole-project Compose lifecycle',
 			'Start image-backed production stack',
-			'Verify production runtime and PWA revision',
+			'Verify production runtime and web release identity',
 			'Stop containers'
 		]
 	],
@@ -604,7 +604,7 @@ for (const [name, job, steps] of [
 			'Scan local runtime candidate',
 			'Verify whole-project Compose lifecycle',
 			'Start image-backed production stack',
-			'Verify production runtime and PWA revision',
+			'Verify production runtime and web release identity',
 			'Verify exact ARM64 candidate runtime and migration contract',
 			'Stop containers',
 			'Promote exact verified candidate manifest'

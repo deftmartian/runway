@@ -2,7 +2,6 @@
 	import { applyAction, enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { defaultHeartRateSettings, zoneFloors } from '$lib/training/heart-rate';
-	import { notifyEnhancedFormSaved } from '$lib/pwa/lifecycle';
 	import { sourceRefs, trainingSourceDetails } from '$lib/training/sources';
 	import type { HeartRateSettings, SexForEstimates } from '$lib/training/types';
 	import { onMount, untrack } from 'svelte';
@@ -94,14 +93,13 @@
 		if (!timeZone) timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 	});
 
-	const enhanceTrainingProfile: SubmitFunction = ({ formElement }) => {
+	const enhanceTrainingProfile: SubmitFunction = () => {
 		trainingProfilePending = true;
 		trainingProfileMessage = '';
 		return async ({ result }) => {
 			try {
 				await applyAction(result);
 				if (result.type === 'success') {
-					notifyEnhancedFormSaved(formElement);
 					trainingProfileMessage = formResultMessage(result.data, 'Training profile saved.');
 					await invalidateAll();
 				} else if (result.type === 'failure') {

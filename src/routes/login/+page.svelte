@@ -102,7 +102,11 @@
 				return;
 			}
 			passkeyMessage = '';
-			await goto(resolve('/app'));
+			if (data.returnTo === '/app') {
+				await goto(resolve('/app'));
+			} else {
+				window.location.assign(data.returnTo);
+			}
 		} catch {
 			passkeyMessage = 'Passkey sign-in did not finish. Try again.';
 		} finally {
@@ -149,6 +153,7 @@
 				use:enhance={enhanceAuthAction('signInOidc')}
 				aria-busy={pendingAction === 'signInOidc'}
 			>
+				<input type="hidden" name="returnTo" value={data.returnTo} />
 				{#if scopedForm.scope === 'signInOidc' && scopedForm.message}
 					<p class="message" role="status" aria-live="polite">{scopedForm.message}</p>
 				{/if}
@@ -165,6 +170,7 @@
 							message={scopedForm.scope === 'signInEmail' ? scopedForm.message : undefined}
 							{pendingAction}
 							{passkeyPending}
+							returnTo={data.returnTo}
 							primary={false}
 							enhancer={enhanceAuthAction('signInEmail')}
 						/>
@@ -183,6 +189,7 @@
 					message={scopedForm.scope === 'signInEmail' ? scopedForm.message : undefined}
 					{pendingAction}
 					{passkeyPending}
+					returnTo={data.returnTo}
 					enhancer={enhanceAuthAction('signInEmail')}
 				/>
 			</div>
@@ -212,6 +219,7 @@
 			use:enhance={enhanceAuthAction('signUpEmail')}
 			aria-busy={pendingAction === 'signUpEmail'}
 		>
+			<input type="hidden" name="returnTo" value={data.returnTo} />
 			{#if scopedForm.scope === 'signUpEmail' && scopedForm.message}
 				<p class="message" role="status" aria-live="polite">{scopedForm.message}</p>
 			{/if}

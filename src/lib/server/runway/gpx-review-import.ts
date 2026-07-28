@@ -7,7 +7,6 @@ import {
 	recordImportedActivity,
 	recordImportedActivityInTransaction
 } from './repositories/activity-mutations';
-import { recordBrowserFolderImportedActivity } from './repositories/browser-folder-import';
 
 export type GpxReviewImportResult =
 	| { result: 'imported' }
@@ -18,8 +17,6 @@ export type GpxReviewImportResult =
 	| { result: 'invalid' }
 	| { result: 'too-large' }
 	| { result: 'failed' };
-
-export type BrowserFolderGpxReviewImportResult = GpxReviewImportResult | { result: 'disconnected' };
 
 export type AndroidGpxReviewFinalization =
 	| { state: 'completed'; result: GpxReviewImportResult }
@@ -74,42 +71,6 @@ export async function importGpxIntoReviewInbox(
 			return { result: 'time-zone-required' };
 		}
 		return { result: 'failed' };
-	}
-}
-
-export async function importBrowserFolderGpxIntoReviewInbox(
-	userId: string,
-	buffer: Buffer,
-	expectedActivityGeneration: number,
-	expectedFolderGeneration: number
-): Promise<BrowserFolderGpxReviewImportResult> {
-	if (buffer.length === 0) return { result: 'invalid' };
-	if (buffer.length > maxGpxImportBytes) return { result: 'too-large' };
-
-	let parsed;
-	try {
-		parsed = parseGpx(buffer);
-	} catch {
-		return { result: 'invalid' };
-	}
-
-	try {
-		await recordBrowserFolderImportedActivity(
-			userId,
-			hashActivityFile(buffer, userId),
-			parsed,
-			expectedActivityGeneration,
-			expectedFolderGeneration
-		);
-		return { result: 'imported' };
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			error.message === 'Import was cancelled because the browser folder was disconnected.'
-		) {
-			return { result: 'disconnected' };
-		}
-		return mapReviewImportError(error);
 	}
 }
 

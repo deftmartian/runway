@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
 	androidApiCompatibility,
 	buildAndroidInstanceDescriptor,
+	isSupportedAndroidClient,
 	resolveAndroidApplicationId
 } from './android-instance';
 
@@ -13,7 +14,9 @@ describe('Android instance discovery', () => {
 			result: 'runway-instance',
 			product: 'runway',
 			minimumAndroidApi: 1,
-			maximumAndroidApi: 1,
+			maximumAndroidApi: 2,
+			nativeUi: true,
+			nativeAuthorization: 'device_authorization',
 			release: 'checked-separately'
 		});
 		expect(androidApiCompatibility.minimum).toBeLessThanOrEqual(androidApiCompatibility.maximum);
@@ -24,5 +27,12 @@ describe('Android instance discovery', () => {
 		expect(resolveAndroidApplicationId(' com.example.runway ')).toBe('com.example.runway');
 		expect(resolveAndroidApplicationId('runway')).toBeNull();
 		expect(resolveAndroidApplicationId('com.example/runway')).toBeNull();
+	});
+
+	test('accepts the import-only predecessor and native-client headers', () => {
+		expect(isSupportedAndroidClient('runway-android/1')).toBe(true);
+		expect(isSupportedAndroidClient('runway-android/2')).toBe(true);
+		expect(isSupportedAndroidClient('runway-android/3')).toBe(false);
+		expect(isSupportedAndroidClient(null)).toBe(false);
 	});
 });

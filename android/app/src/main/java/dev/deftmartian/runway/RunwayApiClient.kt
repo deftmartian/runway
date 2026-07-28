@@ -419,8 +419,8 @@ class RunwayApiClient(origin: String) {
     private data class ApiResponse(val status: Int, val body: String)
 
     private companion object {
-        const val ANDROID_CLIENT = "runway-android/1"
-        const val ANDROID_API_VERSION = 1
+        const val ANDROID_CLIENT = "runway-android/2"
+        const val ANDROID_API_VERSION = 2
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 60_000
         const val MAX_RESPONSE_BYTES = 64L * 1024L

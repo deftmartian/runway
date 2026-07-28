@@ -3,8 +3,6 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AccountActions from '$lib/components/AccountActions.svelte';
-	import DeviceFolderScanner from '$lib/components/DeviceFolderScanner.svelte';
-	import InstallAppControl from '$lib/components/InstallAppControl.svelte';
 	import NavIcon from '$lib/components/visual/NavIcon.svelte';
 	import RunwayMark from '$lib/components/visual/RunwayMark.svelte';
 	import type { LayoutData } from './$types';
@@ -96,7 +94,6 @@
 		<span>runway</span>
 	</a>
 	{#if !isOnboarding}
-		<div class="topbar-install"><InstallAppControl compact /></div>
 		<nav class="nav desktop-nav" aria-label="App navigation">
 			{#each navItems as item (item.href)}
 				<a
@@ -131,15 +128,9 @@
 	</nav>
 {/if}
 
-<DeviceFolderScanner userId={data.user.id} />
-
 <style>
 	.mobile-nav {
 		display: none;
-	}
-
-	.topbar-install {
-		margin-left: auto;
 	}
 
 	.shell-actions {
@@ -261,32 +252,11 @@
 		.mobile-nav a[aria-current='page']::before {
 			background: var(--accent);
 		}
-
-		:global(.pwa-notices) {
-			bottom: calc(78px + env(safe-area-inset-bottom));
-		}
 	}
 
 	@media (min-width: 721px) {
 		.desktop-nav {
 			display: flex;
 		}
-	}
-
-	:global(.account-action-error) {
-		position: fixed;
-		z-index: 55;
-		top: max(82px, calc(66px + env(safe-area-inset-top)));
-		right: max(16px, env(safe-area-inset-right));
-		left: max(16px, env(safe-area-inset-left));
-		width: auto;
-		max-width: 520px;
-		margin: 0 0 0 auto;
-		padding: 12px 14px;
-		border: 1px solid color-mix(in oklab, var(--danger), var(--line) 35%);
-		border-radius: var(--radius-small);
-		background: var(--surface-strong);
-		box-shadow: 0 12px 34px color-mix(in oklab, #000, transparent 82%);
-		color: var(--danger);
 	}
 </style>

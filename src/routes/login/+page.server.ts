@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { APIError } from 'better-auth/api';
 import { env } from '$env/dynamic/private';
 import { auth } from '$lib/server/auth';
+import { safeAuthReturnTo } from '$lib/server/runway/auth-return';
 import {
 	consumeSecurityRateLimit,
 	oidcSignInRateLimitBuckets,
@@ -17,8 +18,9 @@ import {
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = (event) => {
+	const returnTo = safeAuthReturnTo(event.url.searchParams.get('returnTo'));
 	if (event.locals.user) {
-		throw redirect(302, '/app');
+		throw redirect(302, returnTo);
 	}
 
 	return {
@@ -27,7 +29,8 @@ export const load: PageServerLoad = (event) => {
 		),
 		localAuthEnabled: env['LOCAL_AUTH_ENABLED'] !== 'false',
 		localSignupsEnabled: env['ALLOW_LOCAL_SIGNUPS'] === 'true',
-		shareSignInRequired: event.url.searchParams.get('share') === 'sign-in-required'
+		shareSignInRequired: event.url.searchParams.get('share') === 'sign-in-required',
+		returnTo
 	};
 };
 
@@ -36,6 +39,7 @@ export const actions: Actions = {
 		const formData = await event.request.formData();
 		const email = formString(formData, 'email');
 		const password = formString(formData, 'password');
+		const returnTo = safeAuthReturnTo(formString(formData, 'returnTo'));
 		const parsedEmail = authEmailSchema.safeParse(email);
 		const parsedPassword = authPasswordSchema.safeParse(password);
 		if (!parsedEmail.success || !parsedPassword.success) {
@@ -55,7 +59,7 @@ export const actions: Actions = {
 		let result: unknown;
 		try {
 			result = await auth.api.signInEmail({
-				body: { email: parsedEmail.data, password: parsedPassword.data, callbackURL: '/app' },
+				body: { email: parsedEmail.data, password: parsedPassword.data, callbackURL: returnTo },
 				headers: event.request.headers
 			});
 		} catch (error) {
@@ -64,16 +68,17 @@ export const actions: Actions = {
 		}
 
 		if (requiresTwoFactor(result)) {
-			throw redirect(302, '/login/two-factor');
+			throw redirect(302, `/login/two-factor?returnTo=${encodeURIComponent(returnTo)}`);
 		}
 
-		throw redirect(302, '/app');
+		throw redirect(302, returnTo);
 	},
 	signUpEmail: async (event) => {
 		const formData = await event.request.formData();
 		const email = formString(formData, 'email');
 		const password = formString(formData, 'password');
 		const submittedName = formString(formData, 'name');
+		const returnTo = safeAuthReturnTo(formString(formData, 'returnTo'));
 		const parsedEmail = authEmailSchema.safeParse(email);
 		const parsedPassword = newPasswordSchema.safeParse(password);
 		if (!parsedEmail.success) {
@@ -112,7 +117,7 @@ export const actions: Actions = {
 					email: parsedEmail.data,
 					password: parsedPassword.data,
 					name,
-					callbackURL: '/app'
+					callbackURL: returnTo
 				},
 				headers: event.request.headers
 			});
@@ -120,9 +125,11 @@ export const actions: Actions = {
 			return authFailure(error, 'signUpEmail', 'Account could not be created.');
 		}
 
-		throw redirect(302, '/app');
+		throw redirect(302, returnTo);
 	},
 	signInOidc: async (event) => {
+		const formData = await event.request.formData();
+		const returnTo = safeAuthReturnTo(formString(formData, 'returnTo'));
 		const rateLimit = await consumeSecurityRateLimit(
 			oidcSignInRateLimitBuckets(event.getClientAddress())
 		);
@@ -135,7 +142,7 @@ export const actions: Actions = {
 		}
 		try {
 			const result = await auth.api.signInWithOAuth2({
-				body: { providerId: 'authentik', callbackURL: '/app' },
+				body: { providerId: 'authentik', callbackURL: returnTo },
 				headers: event.request.headers
 			});
 			if ('url' in result && result.url) {

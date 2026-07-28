@@ -1,5 +1,4 @@
 <script lang="ts">
-	import InstallAppControl from '$lib/components/InstallAppControl.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import LedgerRow from '$lib/components/visual/LedgerRow.svelte';
 </script>
@@ -12,8 +11,5 @@
 		<LedgerRow label="Theme" value="Light or dark interface">
 			{#snippet action()}<ThemeToggle />{/snippet}
 		</LedgerRow>
-	</div>
-	<div class="settings-group">
-		<InstallAppControl />
 	</div>
 </section>

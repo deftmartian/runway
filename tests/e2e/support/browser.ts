@@ -47,7 +47,7 @@ export async function waitForTrainingCalendarHydration(page: Page) {
 
 export async function openImportSourceSetup(
 	page: Page,
-	source: 'Android folder' | 'Browser folder' | 'Nextcloud' | 'Upload GPX' = 'Upload GPX'
+	source: 'Android app' | 'Nextcloud' | 'Upload GPX' = 'Upload GPX'
 ) {
 	const setup = page.locator('details.source-setup');
 	if ((await setup.getAttribute('open')) === null) {

@@ -14,16 +14,6 @@
 	const formMessage = $derived(
 		form && 'message' in form && typeof form.message === 'string' ? form.message : null
 	);
-	const androidPairing = $derived(
-		form &&
-			'pairingCode' in form &&
-			typeof form.pairingCode === 'string' &&
-			'pairingExpiresAt' in form &&
-			typeof form.pairingExpiresAt === 'string'
-			? { code: form.pairingCode, expiresAt: form.pairingExpiresAt }
-			: null
-	);
-
 	const scopedEnhance =
 		(key: string, section: ImportSection): SubmitFunction =>
 		({ cancel }) => {
@@ -85,14 +75,12 @@
 	/>
 
 	<ImportSourceSetup
-		userId={data.user.id}
 		candidates={data.candidates}
 		sources={data.sources}
 		androidDevices={data.androidDevices}
 		androidApplicationId={data.androidApplicationId}
 		importTimeZoneConfigured={data.importTimeZoneConfigured}
 		routeDataMode={data.routeDataMode}
-		{androidPairing}
 		startOpen={data.activities.items.length === 0 &&
 			data.sources.length === 0 &&
 			data.androidDevices.length === 0}

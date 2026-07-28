@@ -65,34 +65,20 @@ generated/current/actual traces together.
 The defaults are recommendations, not rules. You can change available days, workout timing,
 distance, duration, and the individual runs in the resulting plan.
 
-## Web, PWA, and Android
+## Web and Android
 
-| Surface       | What you get                                                                                                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser       | The complete product in any modern desktop or mobile browser, with manual, file, Nextcloud, and foreground-approved-folder imports.                                           |
-| Installed PWA | The same product with a home-screen launch, offline shell, OS sharing, and focus-time folder checks. Browser folder permission remains browser-managed.                       |
-| Android app   | The full web product in a browser-hosted Custom Tab, plus native server selection, durable folder access, background imports, GPX sharing, and optional Health Connect reads. |
+| Surface     | What you get                                                                                                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Web         | The complete responsive product in a modern desktop or mobile browser: planning, review, history, settings, manual uploads, and Nextcloud import. It is an online client, not an installable or offline PWA. |
+| Android app | A first-class Jetpack Compose client for the same account and plan. It adds durable folder access, background imports, GPX shares, and optional Health Connect reads.                                        |
 
-The Android package is deliberately **not an embedded WebView or a second, native Compose
-frontend**. The web app remains the product UI; the native layer handles capabilities the PWA
-cannot own reliably. It can read approved running and treadmill sessions, route samples, heart
-rate, pace, cadence, elevation, and related workout metrics from Health Connect. It never writes to
-Health Connect, and route access is requested separately.
-
-<table>
-  <tr>
-    <td width="50%">
-      <img src="docs/images/runway-android-server.png" alt="The Runway Android server connection screen">
-    </td>
-    <td width="50%">
-      <img src="docs/images/runway-android-folder.png" alt="The Runway Android folder and Health Connect import settings">
-    </td>
-  </tr>
-  <tr>
-    <td>Choose and verify your self-hosted server before sign-in.</td>
-    <td>Grant a Gadgetbridge folder and choose whether to import from Health Connect.</td>
-  </tr>
-</table>
+Android is not a browser wrapper or a WebView. It uses the versioned runway mobile API and device
+authorization for normal product use. The system browser appears only for deliberate security
+boundaries: approving device authorization and fresh account-security actions. Android can read
+approved running and treadmill sessions, route samples, heart rate, pace, cadence, elevation, and
+related workout metrics from Health Connect. It never writes to Health Connect, and route access is
+requested separately. Import setup stays inside the signed-in Android app; there is no pairing code
+to copy from the web client.
 
 Each published versioned [GitHub release](https://github.com/deftmartian/runway/releases) includes a
 signed universal APK. Release builds fail closed when the protected signing identity is missing or
@@ -190,8 +176,9 @@ browser and diff inspection.
 - [Training sources](docs/TRAINING_SOURCES.md)
 - [Contributing](CONTRIBUTING.md)
 
-The web screenshots above are generated from deterministic visual-regression states. The Android
-screenshots come from the built debug APK on the documented emulator profile.
+The web screenshots above are generated from deterministic visual-regression states. Native Android
+screenshots will be added after an emulator or device pass; see the Android build guide for the
+current verification boundary.
 
 ## License
 

@@ -58,21 +58,23 @@ Passkey registration uses Better Auth's fresh-session middleware with a ten-minu
 Passkey removal applies the same recent-sign-in window and a persistent per-user/per-address limit.
 After that window the UI requires the user to sign out and sign in again before changing passkeys.
 
-State-changing browser requests require the exact public Origin. The installed PWA has one
-missing-Origin exception for its `POST /app/import/share` navigation because the Web Share Target algorithm does not
-attach an Origin header. That exception requires the exact path, multipart content, and browser-set
-top-level navigation Fetch Metadata (`site=none`, `mode=navigate`, `dest=document`). The route still
-requires an authenticated session before reading the body, accepts exactly one bounded GPX, and uses
-the same strict parser and review-only import path as manual upload.
+State-changing browser requests require the exact public Origin. The responsive web client has no
+missing-Origin share-target exception. Manual upload requires an authenticated browser session and
+uses the same bounded parser and review-only import path as every other GPX source.
 
-The Android app has two separate no-Origin mutation shapes. `POST /api/android/pair` requires JSON plus the
-versioned Android client header and exchanges a high-entropy, ten-minute, single-use code created by
-an authenticated browser session. `POST /api/android/import` requires that client header, a
-GPX-specific content type, a valid scoped bearer credential, a UUID request id, and a SHA-256 content
-digest. Cross-origin browser requests still fail because an explicit non-matching Origin is rejected,
-and browsers cannot set the custom headers cross-site without a CORS preflight that runway does not
-allow. Neither route accepts browser cookies as Android authentication. Rate limits apply before and
-after device authentication, and the import route authenticates before reading a bounded body.
+Android has separate no-Origin native mutation shapes. Better Auth device authorization exchanges a
+high-entropy, short-lived device code only after the runner approves it in the system browser. The
+created session carries a server-controlled `runway-android` marker; ordinary browser sessions and
+unstamped bearer sessions cannot call `/api/mobile/v1`.
+`POST /api/mobile/v1/android/pairing` uses that marked session to create the short-lived internal code,
+and `POST /api/android/pair` immediately exchanges it for the import-only credential. The code is
+never shown or copied by the runner. The exchange requires JSON plus the versioned Android client
+header. `POST /api/android/import` requires that client header, a GPX-specific content type, a valid
+scoped bearer credential, a UUID request id, and a SHA-256 content digest. Cross-origin browser
+requests still fail because an explicit non-matching Origin is rejected, and browsers cannot set the
+custom headers cross-site without a CORS preflight that runway does not allow. Neither import route
+accepts browser cookies as Android authentication. Rate limits apply before and after device
+authentication, and the import route authenticates before reading a bounded body.
 
 Health Connect uses the same origin-bound, scoped Android device credential but a separate bounded
 changes endpoint. The native client reads only explicitly granted running or treadmill-running sessions
@@ -90,9 +92,8 @@ a completed disconnect.
 Before saving a server, Android calls public `GET /api/android/instance` with the versioned client
 header. The bounded response exposes only runway identity, the supported Android API range, and the
 release version. Android follows no redirect and requires valid HTTPS outside debug-only private
-network use. Every build uses browser-hosted Custom Tab UI with controls that remain available but may
-collapse while scrolling, and supports an explicitly selected server; the removed origin-bound build
-property fails configuration.
+network use. Every build supports an explicitly selected server and uses native Jetpack Compose UI;
+the removed origin-bound build property fails configuration.
 
 Production Compose keeps the schema-owner URL in the one-shot migrator and gives web and worker a
 separate runtime role limited to table DML, sequence use, and migration-ledger reads. The runtime
@@ -176,8 +177,7 @@ five minutes, without touching active exports. It is POST-only so runway's
 exact-origin mutation boundary applies; GET requests are rejected without creating an audit event.
 
 Full account deletion is a separate Settings action. It requires the runner to type an exact
-confirmation from a fresh session and is persistently throttled by user and client address. The PWA
-clears its origin-local folder capability database before sending the request. A Better Auth
+confirmation from a fresh session and is persistently throttled by user and client address. A Better Auth
 pre-deletion hook removes generic verification rows whose value is the user id, including trusted-device
 and in-progress two-factor grants. Better Auth then owns user deletion, session invalidation, and
 credential removal; database foreign keys cascade the deletion to
@@ -214,44 +214,23 @@ Importer behavior should:
 - disclose that the activity start time, heart-rate elapsed-time samples, average cadence, and—when
   route retention is enabled—representative route points including the first and last are stored.
 
-An approved device-folder source is a browser-local capability, not a server path. Store its
-`FileSystemDirectoryHandle` and only hashed handled-file markers in IndexedDB, scoped to the signed-in
-runway user. Never store or log local filenames, transmit the original filename, request write access,
-or scan another user's saved handle. IndexedDB is origin-wide rather than account-isolated: on
-authenticated app startup, delete handles and markers for every other user id; before sign-out, delete
-the entire device-folder database and stop sign-out if another open tab blocks that cleanup. Before
-deleting all imported activity data, stop any active scan and remove the current handle. The server
-also advances a per-user import generation inside the deletion transaction. Manual, share,
-device-folder, and Nextcloud imports capture that generation before parsing or remote I/O; the final
-recording transaction locks the profile row and rejects stale work. This is the authoritative barrier
-against another tab, process, or worker recreating activity after deletion.
+Folder automation is native Android-only. Android keeps the Storage Access Framework URI and bounded
+handled-revision markers in encrypted private app state, scoped to its selected server and import
+credential. It never stores a raw filesystem path, requests write access, or logs provider URIs or
+file names. Folder selection, server switch, credential revocation, sign-out, and imported-data
+deletion cancel native work and clear the appropriate local capability. The server's activity-import
+generation remains the authoritative barrier against a stale worker recreating data after deletion.
 
-Before enumerating an approved browser folder, the authenticated client fetches both the activity-data
-generation and a separate browser-folder generation from a private, no-store endpoint and submits those
-exact values with the selected upload. The final recording transaction locks and rechecks both.
-Plain folder disconnect advances only the folder generation before removing the local capability, so an
-upload already waiting in another tab cannot finish after disconnect. Immediately
-before uploading, it re-reads IndexedDB, verifies that the same directory capability and read permission
-are still current, and checks a cross-tab capability revision. Folder disconnect, sign-out, activity-data
-deletion, and account deletion broadcast revocation to other same-origin tabs; IndexedDB revalidation is
-the fallback when BroadcastChannel is unavailable. A stale handle cannot adopt a newer generation after
-privacy deletion.
+Android scans a selected folder only through the Storage Access Framework, with direct-entry and body
+limits, and treats permission loss as an explicit reconnect state. It uses content/revision receipts
+for idempotency; the server remains authoritative for complete hashing, parsing, duplicate detection,
+deletion tombstones, and Review state. The responsive web app has no browser folder scanner.
 
-Manual, share-target, and browser-folder GPX requests consume persistent user and client-address budgets
-before reading multipart content. Nextcloud connect, test, and sync consume separate persistent budgets
-before remote work. A per-user database lease permits one expensive import operation at a time across
-web and worker processes; a crashed process loses the lease after two minutes. Busy and exhausted
-interactive requests return `429` with `Retry-After` rather than continuing unbounded work.
-
-Scan only in a visible authenticated page, inspect at most 2,000 direct children and 500 GPX candidates,
-fingerprint candidates sequentially using fixed windows stratified from the start through the midpoint
-to the end plus metadata, and read no more than 4 MiB across a maximum-size scan. The server still hashes
-the complete selected upload for authoritative deduplication. Process at most one file per foreground
-check, and use the same server-side size, parsing, deletion-tombstone, and review-only controls as other
-PWA imports. Changing the approved directory clears the old handled markers. A malformed,
-oversized, or future-dated file is marked handled so it cannot starve older valid exports; reconnecting
-the folder deliberately clears those markers for a retry. Disconnect deletes the local handle and
-markers but does not alter Gadgetbridge files. Treat permission loss as an explicit reconnect state.
+Manual and native GPX requests consume persistent user and client-address budgets before reading a
+body. Nextcloud connect, test, and sync consume separate persistent budgets before remote work. A
+per-user database lease permits one expensive import operation at a time across web and worker
+processes; a crashed process loses the lease after two minutes. Busy and exhausted interactive
+requests return `429` with `Retry-After` rather than continuing unbounded work.
 
 ## Nextcloud Share Import
 

@@ -36,13 +36,11 @@ const exactStaticCsp = {
 	'form-action': ["'self'"],
 	'frame-ancestors': ["'none'"],
 	'img-src': ["'self'", 'data:'],
-	'manifest-src': ["'self'"],
 	'object-src': ["'none'"],
 	'style-src': ["'self'"],
 	'style-src-attr': ["'unsafe-inline'"],
-	'worker-src': ["'self'"],
 	'require-trusted-types-for': ["'script'"],
-	'trusted-types': ['svelte-trusted-html', 'sveltekit-trusted-url', 'runway-service-worker']
+	'trusted-types': ['svelte-trusted-html', 'sveltekit-trusted-url']
 };
 for (const [directive, expectedSources] of Object.entries(exactStaticCsp)) {
 	assertExactDirective(csp, directive, expectedSources);
@@ -101,9 +99,6 @@ if (!styleSrcAttr.includes("'unsafe-inline'")) {
 }
 if (!csp.includes("require-trusted-types-for 'script'")) {
 	failures.push('CSP is missing Trusted Types enforcement.');
-}
-if (!csp.includes('runway-service-worker')) {
-	failures.push('CSP trusted-types is missing the service worker policy.');
 }
 const firstNonce = csp.match(/'nonce-([^']+)'/)?.[1];
 const secondNonce = header(secondHome.headers, 'content-security-policy').match(
@@ -171,95 +166,37 @@ if (publicUrl.protocol === 'https:' && !resetCookie.toLowerCase().includes('secu
 }
 
 const manifest = await request(new URL('/manifest.webmanifest', siteUrl));
-try {
-	const parsedManifest = JSON.parse(manifest.body);
-	if (parsedManifest.name !== 'runway' || parsedManifest.short_name !== 'runway') {
-		failures.push('Manifest is missing the runway app name.');
-	}
-	if (parsedManifest.start_url !== '/app' || parsedManifest.display !== 'standalone') {
-		failures.push('Manifest is missing the expected install surface.');
-	}
-	if (parsedManifest.id !== '/' || parsedManifest.scope !== '/' || parsedManifest.lang !== 'en') {
-		failures.push('Manifest is missing its stable identity, scope, or language.');
-	}
-	const requiredIcons = [
-		['192x192', 'any'],
-		['512x512', 'any'],
-		['192x192', 'maskable'],
-		['512x512', 'maskable']
-	];
-	for (const [sizes, purpose] of requiredIcons) {
-		const icon = parsedManifest.icons?.find(
-			(candidate) =>
-				candidate.sizes === sizes && candidate.purpose === purpose && candidate.type === 'image/png'
-		);
-		if (!icon) failures.push(`Manifest is missing the ${sizes} ${purpose} PNG icon.`);
-		else await verifyPngAsset(icon.src, `Manifest ${sizes} ${purpose} icon`);
-	}
-	for (const formFactor of ['narrow', 'wide']) {
-		const screenshot = parsedManifest.screenshots?.find(
-			(candidate) => candidate.form_factor === formFactor && candidate.type === 'image/png'
-		);
-		if (!screenshot) failures.push(`Manifest is missing its ${formFactor} install screenshot.`);
-		else await verifyPngAsset(screenshot.src, `Manifest ${formFactor} screenshot`);
-	}
-	const shortcutUrls = parsedManifest.shortcuts?.map((shortcut) => shortcut.url);
-	for (const shortcut of ['/app', '/app/import', '/app/stats']) {
-		if (!shortcutUrls?.includes(shortcut))
-			failures.push(`Manifest is missing shortcut ${shortcut}.`);
-	}
-	const shareTarget = parsedManifest.share_target;
-	if (
-		shareTarget?.action !== '/app/import/share' ||
-		shareTarget?.method !== 'POST' ||
-		shareTarget?.enctype !== 'multipart/form-data' ||
-		shareTarget?.params?.files?.[0]?.name !== 'gpx'
-	) {
-		failures.push('Manifest is missing the authenticated GPX share target.');
-	}
-} catch {
-	failures.push('Manifest is not valid JSON.');
+if (manifest.statusCode !== 404) {
+	failures.push(
+		`/manifest.webmanifest returned ${manifest.statusCode}; the retired install surface is still live.`
+	);
 }
 
 const serviceWorker = await request(new URL('/service-worker.js', siteUrl));
 if (header(serviceWorker.headers, 'cache-control') !== 'public, max-age=0, must-revalidate') {
 	failures.push('/service-worker.js has the wrong cache policy.');
 }
-const cacheRevision = serviceWorker.body.match(/const CACHE_REVISION = "([^"]+)"/)?.[1];
-if (!cacheRevision || cacheRevision === 'runway-static-v1') {
-	failures.push('/service-worker.js is missing a deployment-specific cache revision.');
+for (const expected of [
+	'event.waitUntil(self.skipWaiting())',
+	"name.startsWith('runway-')",
+	'const unregistered = await self.registration.unregister();',
+	'if (!unregistered) return;',
+	'clients.map((client) => client.navigate(client.url))'
+]) {
+	if (!serviceWorker.body.includes(expected)) {
+		failures.push(`/service-worker.js is missing retirement behavior: ${expected}.`);
+	}
 }
-if (
-	!serviceWorker.body.includes("event.data?.type !== 'ACTIVATE_UPDATE'") ||
-	!serviceWorker.body.includes('event.waitUntil(self.skipWaiting())')
-) {
-	failures.push('/service-worker.js is missing user-controlled update activation.');
-}
-const installHandler = serviceWorker.body.match(
-	/self\.addEventListener\('install',[\s\S]*?\n}\);/
-)?.[0];
-if (!installHandler || installHandler.includes('skipWaiting')) {
-	failures.push('/service-worker.js activates updates during installation instead of waiting.');
-}
-if (
-	!serviceWorker.body.includes('self.registration.navigationPreload?.enable()') ||
-	!serviceWorker.body.includes('event.preloadResponse')
-) {
-	failures.push('/service-worker.js is missing navigation preload.');
-}
-if (
-	!serviceWorker.body.includes("url.pathname === prefix || url.pathname.startsWith(prefix + '/')")
-) {
-	failures.push('/service-worker.js is missing exact private-route cache boundaries.');
+for (const forbidden of ['self.clients.claim()', "self.addEventListener('fetch'", 'caches.open(']) {
+	if (serviceWorker.body.includes(forbidden)) {
+		failures.push(`/service-worker.js still contains active-worker behavior: ${forbidden}.`);
+	}
 }
 
 const live = await request(new URL('/health/live', siteUrl));
 if (live.statusCode !== 200) failures.push(`/health/live returned ${live.statusCode}.`);
 try {
 	const liveBody = JSON.parse(live.body);
-	if (!cacheRevision || liveBody.version !== cacheRevision) {
-		failures.push('Service-worker cache revision does not match the running application build.');
-	}
 	if (liveBody.build !== liveBody.version || liveBody.release !== packageMetadata.version) {
 		failures.push('Health identity does not match the application release and build.');
 	}
@@ -297,19 +234,13 @@ if (header(blockedCrossSitePost.headers, 'x-frame-options') !== 'DENY') {
 	failures.push('Blocked cross-site responses are missing security headers.');
 }
 
-const offline = await request(new URL('/offline.html', siteUrl));
-if (!offline.body.includes('Reconnect to open your calendar and training data.')) {
-	failures.push('/offline.html does not explain the private-data offline boundary.');
-}
-if (offline.body.includes('<style')) {
-	failures.push('/offline.html still contains inline styles.');
-}
-const offlineCss = await request(new URL('/offline.css', siteUrl));
-if (offlineCss.statusCode !== 200) {
-	failures.push(`/offline.css returned ${offlineCss.statusCode}.`);
-}
-if (header(offlineCss.headers, 'cache-control') !== 'public, max-age=0, must-revalidate') {
-	failures.push('/offline.css has the wrong cache policy.');
+for (const pathname of ['/offline.html', '/offline.css']) {
+	const response = await request(new URL(pathname, siteUrl));
+	if (response.statusCode !== 404) {
+		failures.push(
+			`${pathname} returned ${response.statusCode}; the retired offline surface is still live.`
+		);
+	}
 }
 
 const immutableAssetHref = firstImmutableAsset(home);
@@ -398,16 +329,4 @@ function firstImmutableAsset(response) {
 
 	const bodyMatch = response.body.match(/(?:href|src)="([^"]*\/_app\/immutable\/[^"]*)"/);
 	return bodyMatch?.[1] ?? null;
-}
-
-async function verifyPngAsset(pathname, label) {
-	if (typeof pathname !== 'string' || !pathname.startsWith('/pwa/') || pathname.includes('?')) {
-		failures.push(`${label} has an unsafe or unexpected path.`);
-		return;
-	}
-	const asset = await request(new URL(pathname, siteUrl));
-	if (asset.statusCode !== 200) failures.push(`${label} returned ${asset.statusCode}.`);
-	if (!header(asset.headers, 'content-type').toLowerCase().startsWith('image/png')) {
-		failures.push(`${label} is not served as image/png.`);
-	}
 }

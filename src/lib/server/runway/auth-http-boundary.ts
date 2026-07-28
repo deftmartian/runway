@@ -4,6 +4,8 @@ const allowedBetterAuthHttpRequests = new Set([
 	'GET /api/auth/oauth2/callback/authentik',
 	'GET /api/auth/passkey/generate-authenticate-options',
 	'GET /api/auth/passkey/generate-register-options',
+	'POST /api/auth/device/code',
+	'POST /api/auth/device/token',
 	'POST /api/auth/passkey/verify-authentication',
 	'POST /api/auth/passkey/verify-registration'
 ]);

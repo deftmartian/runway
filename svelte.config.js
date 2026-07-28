@@ -11,14 +11,12 @@ const cspDirectives = {
 	'form-action': ['self'],
 	'frame-ancestors': ['none'],
 	'img-src': ['self', 'data:'],
-	'manifest-src': ['self'],
 	'object-src': ['none'],
 	'script-src': ['self', 'strict-dynamic'],
 	'style-src': ['self'],
 	'style-src-attr': ['unsafe-inline'],
-	'worker-src': ['self'],
 	'require-trusted-types-for': ['script'],
-	'trusted-types': ['svelte-trusted-html', 'sveltekit-trusted-url', 'runway-service-worker']
+	'trusted-types': ['svelte-trusted-html', 'sveltekit-trusted-url']
 };
 
 /** @type {import('@sveltejs/kit').Config} */

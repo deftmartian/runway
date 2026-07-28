@@ -5,13 +5,7 @@ const groups = [
 	{
 		id: 'web',
 		name: 'web quality',
-		steps: [
-			['verify:docs'],
-			['verify:dependencies'],
-			['verify'],
-			['verify:pwa'],
-			['verify:pwa:assets']
-		]
+		steps: [['verify:docs'], ['verify:dependencies'], ['verify']]
 	},
 	{
 		id: 'browser',

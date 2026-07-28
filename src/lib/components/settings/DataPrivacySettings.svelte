@@ -182,8 +182,8 @@
 			<div class="control-body">
 				<p class="section-note">
 					This permanently deletes the account, training plans, workouts, feedback, activities,
-					imports, saved routes, health context, security credentials, and sessions. Browser folder
-					access is cleared before the deletion request is sent. This cannot be undone.
+					imports, saved routes, health context, security credentials, and sessions. This cannot be
+					undone.
 				</p>
 				{#if accountDeletionClientMessage}<p class="message bad-message" role="alert">
 						{accountDeletionClientMessage}
@@ -200,7 +200,6 @@
 					use:enhance={enhanceSettingsAction('deleteAccount')}
 					aria-busy={settingsActionPending === 'deleteAccount'}
 				>
-					<input type="hidden" name="browserFolderDataCleared" value="" />
 					<label
 						>Type DELETE to confirm<input
 							name="confirmation"

@@ -4,6 +4,7 @@ import { restoredLedgerState } from './database-backup-lib.mjs';
 const ledgerRows = (entries) =>
 	entries.map((entry) => ({ hash: entry.hash, createdAt: entry.createdAt }));
 const current = ledgerRows(migrationIntegrity.canonical);
+const predecessor = current.slice(0, -1);
 
 assert(migrationLedgerIsSupported([]), 'An empty database was rejected.');
 assert(
@@ -14,6 +15,14 @@ assert(migrationLedgerIsSupported(current), 'The clean-install baseline was reje
 assert(
 	migrationLedgerIsSupported(current, { final: true }),
 	'The clean-install baseline was not considered current.'
+);
+assert(
+	migrationLedgerIsSupported(predecessor),
+	'The immediately preceding released ledger was rejected.'
+);
+assert(
+	!migrationLedgerIsSupported(predecessor, { final: true }),
+	'The immediately preceding released ledger was incorrectly considered current.'
 );
 assert(
 	restoredLedgerState(current, migrationIntegrity) === 'current',
@@ -40,7 +49,7 @@ assert(
 	'A retired backup lineage was accepted.'
 );
 
-console.log('Clean-install baseline and fail-closed ledger policy verified.');
+console.log('Canonical predecessor upgrade and fail-closed ledger policy verified.');
 
 function assert(condition, message) {
 	if (!condition) throw new Error(message);

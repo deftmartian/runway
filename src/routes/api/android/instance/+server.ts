@@ -1,9 +1,12 @@
 import { json } from '@sveltejs/kit';
-import { buildAndroidInstanceDescriptor } from '$lib/server/runway/android-instance';
+import {
+	buildAndroidInstanceDescriptor,
+	isSupportedAndroidClient
+} from '$lib/server/runway/android-instance';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = ({ request }) => {
-	if (request.headers.get('x-runway-client') !== 'runway-android/1') {
+	if (!isSupportedAndroidClient(request.headers.get('x-runway-client'))) {
 		return json({ result: 'unsupported-client' }, { status: 400 });
 	}
 	return json(buildAndroidInstanceDescriptor(), {

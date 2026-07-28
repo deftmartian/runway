@@ -85,10 +85,6 @@ jobs:
       - name: Static, unit, and production build checks
         if: matrix.task == 'web'
         run: corepack pnpm verify
-      - name: PWA generated assets currentness
-        if: matrix.task == 'web'
-        run: corepack pnpm verify:pwa:assets
-
       - name: Compose configuration
         if: matrix.task == 'deployment'
         run: corepack pnpm verify:compose && corepack pnpm verify:compose:production

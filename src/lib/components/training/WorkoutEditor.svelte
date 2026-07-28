@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { notifyEnhancedFormSaved } from '$lib/pwa/lifecycle';
 	import type { TrainingCalendarWorkout } from '$lib/training/calendar-view';
 	import {
 		formatLoadChangeEvidence,
@@ -30,7 +29,6 @@
 	let workoutType = $state(initial.type);
 	let replaceIntervals = $state(initial.replaceIntervals);
 	const mode = readMode();
-	const dirtyScope = $derived(`workout-editor:${workout?.id ?? date}`);
 	const matchingForm = $derived.by(() => {
 		if (!form?.scope) return null;
 		if (
@@ -144,9 +142,8 @@
 		};
 	};
 
-	const applyEditorValues: SubmitFunction = ({ formElement }) => {
-		return async ({ result, update }) => {
-			if (result.type === 'success') notifyEnhancedFormSaved(formElement);
+	const applyEditorValues: SubmitFunction = () => {
+		return async ({ update }) => {
 			await update({ reset: false });
 		};
 	};
@@ -157,7 +154,6 @@
 	action={mode === 'edit' ? '?/previewWorkoutEdit' : '?/previewWorkoutAdd'}
 	use:enhance={preserveEditorValues}
 	class="workout-editor"
-	data-pwa-dirty-scope={dirtyScope}
 >
 	{#if workout}<input type="hidden" name="workoutId" value={workout.id} />{/if}
 	<input type="hidden" name="intervalStructureJson" value={initial.intervalStructureJson} />
@@ -377,7 +373,6 @@
 				method="post"
 				action={mode === 'edit' ? '?/applyWorkoutEdit' : '?/applyWorkoutAdd'}
 				use:enhance={applyEditorValues}
-				data-pwa-dirty-scope={dirtyScope}
 			>
 				{#if editValues.workoutId}<input
 						type="hidden"

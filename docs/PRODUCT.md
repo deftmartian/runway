@@ -128,7 +128,8 @@ Public and authentication routes use the same control geometry and runway trace 
 
 Route data, schedule patterns, pain/load-assessment notes, pace and heart-rate history, Nextcloud share credentials, and authentication secrets are sensitive.
 
-- Authenticated pages are private and are not stored by the service worker.
+- Authenticated pages are private, delivered with no-store semantics, and are not available for
+  offline reading.
 - Raw GPX content and coordinates are not logged or committed.
 - A bounded route trace is retained by default for authenticated activity maps; the runner can
   discard route points on future imports or clear retained traces without deleting activity totals.
@@ -140,16 +141,19 @@ Route data, schedule patterns, pain/load-assessment notes, pace and heart-rate h
 - Training-data export and destructive controls remain user-scoped and explicit. Full account
   deletion is separate from deleting imported activities and removes authentication and training
   records together.
-- Local device-folder access stays in the approving browser and is cleared at account handoff/sign-out.
-- Android folder access stays in the installed app. Its import-only credential is Keystore-encrypted,
+- Android folder access stays in the native app. The signed-in app establishes its separate
+  import-only credential without a user-visible pairing code. That credential is Keystore-encrypted,
   expires, can be revoked from Import sources, and is revoked automatically when imported activity
   data is deleted.
 
 ## Non-Goals
 
-- A separate native product that duplicates the planning UI. The Android package presents the
-  complete authenticated runway PWA and adds only Android-owned capabilities such as durable folder
-  access, shares, and background reconciliation.
+- An embedded browser wrapper. Android is a native Jetpack Compose client of the same product and
+  account, with Android-owned capabilities such as durable folder access, shares, background
+  reconciliation, and Health Connect reads.
+- An installable, offline, share-target, or browser-folder PWA. The web client remains responsive
+  and online; a temporary service-worker retirement endpoint exists only to remove old installations
+  cleanly.
 - Live GPS recording or watch replacement.
 - Social feeds, leaderboards, streak pressure, or public routes.
 - Guided audio, coaching personality, or motivation programs.

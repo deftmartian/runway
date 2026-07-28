@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { exchangeAndroidPairingCode } from '$lib/server/runway/android-devices';
+import { isSupportedAndroidClient } from '$lib/server/runway/android-instance';
 import { readBoundedRequestBody } from '$lib/server/runway/bounded-request-body';
 import {
 	androidPairingExchangeRateLimitBuckets,
@@ -10,7 +11,7 @@ import type { RequestHandler } from './$types';
 const maximumPairingBodyBytes = 2_048;
 
 export const POST: RequestHandler = async (event) => {
-	if (event.request.headers.get('x-runway-client') !== 'runway-android/1') {
+	if (!isSupportedAndroidClient(event.request.headers.get('x-runway-client'))) {
 		return json({ result: 'unsupported-client' }, { status: 400 });
 	}
 	const rateLimit = await consumeSecurityRateLimit(

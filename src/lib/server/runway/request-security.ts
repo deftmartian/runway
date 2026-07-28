@@ -1,6 +1,5 @@
 const mutationMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const webShareTargetPath = '/app/import/share';
-const androidClientHeader = 'runway-android/1';
+const androidClientHeaders = new Set(['runway-android/1', 'runway-android/2']);
 
 export function isMutationRequest(method: string): boolean {
 	return mutationMethods.has(method.toUpperCase());
@@ -11,42 +10,37 @@ export function hasExactRequestOrigin(origin: string | null, expectedOrigin: str
 }
 
 /**
- * Web Share Target POSTs are user-agent-created top-level navigations. The
- * Web Share Target algorithm does not add an Origin header, so the normal
- * exact-Origin check cannot identify a native-app share. Keep the exception
- * limited to the one action URL and Fetch Metadata values that a cross-site
- * HTML form cannot choose or forge in a browser.
- *
- * Authentication and multipart/file validation still happen in the route.
- */
-export function isWebShareTargetNavigation(request: Request, pathname: string): boolean {
-	if (pathname !== webShareTargetPath || request.method.toUpperCase() !== 'POST') return false;
-	if (request.headers.has('origin')) return false;
-	if (!request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data;')) {
-		return false;
-	}
-	return (
-		request.headers.get('sec-fetch-site') === 'none' &&
-		request.headers.get('sec-fetch-mode') === 'navigate' &&
-		request.headers.get('sec-fetch-dest') === 'document'
-	);
-}
-
-/**
- * Android cannot send a browser Origin header. Keep the exception to three
- * non-cookie API operations that browsers cannot submit cross-site without a
- * CORS preflight: JSON pairing, bearer-authenticated GPX upload, and bearer-authenticated
- * device disconnection.
+ * Android cannot send a browser Origin header. Keep the exception to versioned,
+ * non-cookie APIs with an explicit client marker, a deliberately scoped bearer,
+ * and content types a cross-site HTML form cannot submit without a CORS preflight.
  */
 export function isAndroidNativeApiRequest(request: Request, pathname: string): boolean {
 	const method = request.method.toUpperCase();
 	if (request.headers.has('origin')) return false;
-	if (request.headers.get('x-runway-client') !== androidClientHeader) return false;
+	const client = request.headers.get('x-runway-client');
+	if (!client || !androidClientHeaders.has(client)) return false;
+	const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
+
+	if (
+		client === 'runway-android/2' &&
+		method === 'POST' &&
+		(pathname === '/api/auth/device/code' || pathname === '/api/auth/device/token')
+	) {
+		return contentType.startsWith('application/json');
+	}
+	if (client === 'runway-android/2' && pathname.startsWith('/api/mobile/v1/')) {
+		const authorization = request.headers.get('authorization');
+		return (
+			method !== 'GET' &&
+			authorization?.startsWith('Bearer ') === true &&
+			!authorization.startsWith('Bearer rwy1_') &&
+			contentType.startsWith('application/json')
+		);
+	}
 	if (method === 'DELETE' && pathname === '/api/android/status') {
 		return request.headers.get('authorization')?.startsWith('Bearer rwy1_') === true;
 	}
 	if (method !== 'POST') return false;
-	const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
 	if (pathname === '/api/android/pair') return contentType.startsWith('application/json');
 	if (!request.headers.get('authorization')?.startsWith('Bearer rwy1_')) return false;
 	if (pathname === '/api/android/health-connect/changes')

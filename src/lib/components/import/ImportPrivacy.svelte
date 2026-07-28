@@ -11,8 +11,8 @@
 		{routeDataMode === 'private'
 			? ' Private route maps keep up to 600 representative coordinates, including the first and last points, with elapsed times and relative speed.'
 			: ' Route coordinates are discarded after those totals are calculated.'}
-		Browser folder permission stays in this browser. Android pairing does not store your password or browser
-		session on the device.
+		Android sign-in uses its own revocable session. Background imports use a separate limited credential.
+		Neither stores your password or browser cookies.
 	</p>
 </details>
 

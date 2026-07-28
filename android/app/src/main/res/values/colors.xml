@@ -4,7 +4,6 @@
     <color name="runway_background">#F7F3EA</color>
     <color name="runway_surface">#FFFEFB</color>
     <color name="runway_surface_variant">#E8F1EF</color>
-    <color name="runway_surface_dark">#07131D</color>
     <color name="runway_primary">#176F67</color>
     <color name="runway_on_primary">#FFFFFF</color>
     <color name="runway_text">#18302E</color>

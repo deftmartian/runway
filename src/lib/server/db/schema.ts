@@ -128,7 +128,6 @@ export const athleteProfile = pgTable(
 		preferredLongRunDay: integer('preferred_long_run_day'),
 		availability: jsonb('availability').$type<number[]>().notNull().default([]),
 		activityImportGeneration: integer('activity_import_generation').notNull().default(0),
-		browserFolderGeneration: integer('browser_folder_generation').notNull().default(0),
 		injuryFlags: jsonb('injury_flags')
 			.$type<{
 				recentInjury: boolean;
@@ -166,10 +165,6 @@ export const athleteProfile = pgTable(
 		check(
 			'athlete_profile_import_generation_nonnegative',
 			sql`${table.activityImportGeneration} >= 0`
-		),
-		check(
-			'athlete_profile_browser_folder_generation_nonnegative',
-			sql`${table.browserFolderGeneration} >= 0`
 		),
 		check(
 			'athlete_profile_route_data_mode_known',
@@ -888,6 +883,55 @@ export const healthConnectRequestReceipt = pgTable(
 			columns: [table.deviceId, table.userId],
 			foreignColumns: [androidDevice.id, androidDevice.userId]
 		}).onDelete('cascade')
+	]
+);
+
+/**
+ * Native UI mutations can outlive a mobile connection. This receipt makes a
+ * client-generated request ID an at-most-once boundary and stores the small,
+ * already-redacted response needed to replay a completed request.
+ */
+export const mobileRequestReceipt = pgTable(
+	'mobile_request_receipt',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		requestId: uuid('request_id').notNull(),
+		action: text('action').notNull(),
+		payloadHash: text('payload_hash').notNull(),
+		state: text('state').notNull().default('processing'),
+		responseStatus: integer('response_status'),
+		responseBody: jsonb('response_body').$type<Record<string, JsonValue>>(),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+		completedAt: timestamp('completed_at', { withTimezone: true })
+	},
+	(table) => [
+		uniqueIndex('mobile_request_receipt_user_request_unique').on(table.userId, table.requestId),
+		index('mobile_request_receipt_user_created_idx').on(table.userId, table.createdAt),
+		index('mobile_request_receipt_updated_idx').on(table.updatedAt),
+		check(
+			'mobile_request_receipt_action_nonempty',
+			sql`length(trim(${table.action})) between 1 and 80`
+		),
+		check('mobile_request_receipt_state_known', sql`${table.state} in ('processing', 'completed')`),
+		check(
+			'mobile_request_receipt_response_status_valid',
+			sql`${table.responseStatus} is null or ${table.responseStatus} between 200 and 499`
+		),
+		check(
+			'mobile_request_receipt_completion_consistent',
+			sql`(
+				(${table.state} = 'processing' and ${table.responseStatus} is null and ${table.responseBody} is null and ${table.completedAt} is null)
+				or
+				(${table.state} = 'completed' and ${table.responseStatus} is not null and ${table.responseBody} is not null and ${table.completedAt} is not null)
+			)`
+		)
 	]
 );
 

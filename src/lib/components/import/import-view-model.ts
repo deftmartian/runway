@@ -63,11 +63,6 @@ export type AndroidDeviceSummary = {
 	lastImportedAt: Date | string | null;
 };
 
-export type AndroidPairingSummary = {
-	code: string;
-	expiresAt: Date | string;
-};
-
 export type ImportShareNotice = {
 	message: string;
 	failed: boolean;

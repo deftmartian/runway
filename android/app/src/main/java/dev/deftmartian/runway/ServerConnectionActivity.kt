@@ -3,8 +3,6 @@ package dev.deftmartian.runway
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ShortcutManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -32,13 +30,13 @@ class ServerConnectionActivity : ComponentActivity() {
 
         val editing = intent.action == ACTION_CHANGE_SERVER
         if (!editing && initialConnection != null) {
-            openRunway(requireNotNull(initialConnection).origin)
+            openRunway()
             return
         }
 
-        if (Build.VERSION.SDK_INT >= 25 && editing) {
+        if (editing) {
             getSystemService(ShortcutManager::class.java)?.reportShortcutUsed(
-                RunwayLauncherActivity.SERVER_SHORTCUT_ID,
+                MainActivity.SERVER_SHORTCUT_ID,
             )
         }
         enableEdgeToEdge()
@@ -121,7 +119,7 @@ class ServerConnectionActivity : ComponentActivity() {
         }
         val previous = initialConnection?.origin
         if (previous == origin) {
-            openRunway(origin)
+            openRunway()
             return
         }
         if (previous != null && previous != origin) {
@@ -156,6 +154,14 @@ class ServerConnectionActivity : ComponentActivity() {
             }
             val previous = initialConnection
             if (previous != null && !allowUnrevoked) {
+                val mobileSession = MobileSessionStore(this, previous.origin).loadSession()
+                if (
+                    mobileSession != null &&
+                    !MobileApiClient(previous.origin).signOut(mobileSession)
+                ) {
+                    deliverSwitchResult(origin, SwitchResult.RevocationUnavailable)
+                    return@execute
+                }
                 val credentialStore = AndroidCredentialStore(this, previous.origin)
                 val credentialState = credentialStore.snapshot()
                 val disconnected = if (credentialState.credential == null) {
@@ -186,7 +192,7 @@ class ServerConnectionActivity : ComponentActivity() {
         runOnUiThread {
             if (isDestroyed) return@runOnUiThread
             when (result) {
-                is SwitchResult.Changed -> openRunway(result.connection.origin)
+                is SwitchResult.Changed -> openRunway()
                 SwitchResult.Conflict -> showConnectionChanged()
                 SwitchResult.Invalid -> {
                     setPending(false)
@@ -216,10 +222,12 @@ class ServerConnectionActivity : ComponentActivity() {
         status.setText(R.string.server_connection_changed)
     }
 
-    private fun openRunway(origin: String) {
-        startActivity(Intent(this, RunwayLauncherActivity::class.java).apply {
-            data = Uri.parse("$origin/app")
-        })
+    private fun openRunway() {
+        startActivity(
+            Intent(this, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            ),
+        )
         finish()
     }
 

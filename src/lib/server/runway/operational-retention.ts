@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import {
 	androidImportRequest,
 	healthConnectRequestReceipt,
+	mobileRequestReceipt,
 	passwordResetRateLimit,
 	passwordResetToken
 } from '$lib/server/db/schema';
@@ -19,6 +20,7 @@ export async function purgeExpiredOperationalRecords(now = new Date()): Promise<
 	passwordResetTokens: number;
 	androidImportRequests: number;
 	healthConnectRequestReceipts: number;
+	mobileRequestReceipts: number;
 	securityRateLimits: number;
 }> {
 	const cutoff = operationalRetentionCutoff(now);
@@ -27,6 +29,7 @@ export async function purgeExpiredOperationalRecords(now = new Date()): Promise<
 		expiredPasswordTokens,
 		expiredAndroidRequests,
 		expiredHealthConnectReceipts,
+		expiredMobileReceipts,
 		expiredSecurityRateLimits
 	] = await Promise.all([
 		db
@@ -53,6 +56,12 @@ export async function purgeExpiredOperationalRecords(now = new Date()): Promise<
 			.orderBy(asc(healthConnectRequestReceipt.createdAt), asc(healthConnectRequestReceipt.id))
 			.limit(operationalPurgeBatchSize),
 		db
+			.select({ id: mobileRequestReceipt.id })
+			.from(mobileRequestReceipt)
+			.where(lt(mobileRequestReceipt.updatedAt, cutoff))
+			.orderBy(asc(mobileRequestReceipt.updatedAt), asc(mobileRequestReceipt.id))
+			.limit(operationalPurgeBatchSize),
+		db
 			.select({ keyHash: passwordResetRateLimit.keyHash })
 			.from(passwordResetRateLimit)
 			.where(lt(passwordResetRateLimit.resetAt, rateLimitCutoff))
@@ -64,6 +73,7 @@ export async function purgeExpiredOperationalRecords(now = new Date()): Promise<
 		deletedPasswordTokens,
 		deletedAndroidRequests,
 		deletedHealthConnectReceipts,
+		deletedMobileReceipts,
 		deletedSecurityRateLimits
 	] = await Promise.all([
 		expiredPasswordTokens.length === 0
@@ -99,6 +109,17 @@ export async function purgeExpiredOperationalRecords(now = new Date()): Promise<
 						)
 					)
 					.returning({ id: healthConnectRequestReceipt.id }),
+		expiredMobileReceipts.length === 0
+			? Promise.resolve([])
+			: db
+					.delete(mobileRequestReceipt)
+					.where(
+						inArray(
+							mobileRequestReceipt.id,
+							expiredMobileReceipts.map(({ id }) => id)
+						)
+					)
+					.returning({ id: mobileRequestReceipt.id }),
 		expiredSecurityRateLimits.length === 0
 			? Promise.resolve([])
 			: db
@@ -116,6 +137,7 @@ export async function purgeExpiredOperationalRecords(now = new Date()): Promise<
 		passwordResetTokens: deletedPasswordTokens.length,
 		androidImportRequests: deletedAndroidRequests.length,
 		healthConnectRequestReceipts: deletedHealthConnectReceipts.length,
+		mobileRequestReceipts: deletedMobileReceipts.length,
 		securityRateLimits: deletedSecurityRateLimits.length
 	};
 }

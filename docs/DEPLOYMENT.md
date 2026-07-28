@@ -288,10 +288,10 @@ Then create or attach an Authentik application using that provider.
 
 Use Authentik only as runway's OIDC identity provider. Do not add an Authentik proxy provider,
 outpost, `forward_auth`, or Cloudflare Access policy in front of runway. A second authentication gate
-creates a separate session boundary, can block `/api/auth` callbacks and installed-PWA requests, and
-does not replace runway's own authorization. If an operator intentionally adds another access layer,
-that is a different topology and needs its own callback, logout, health-check, Android, PWA, and
-client-address review.
+creates a separate session boundary and can block `/api/auth` callbacks or device-authorization
+approval; it does not replace runway's own authorization. If an operator intentionally adds another
+access layer, that is a different topology and needs its own callback, logout, health-check, Android,
+and client-address review.
 
 OIDC enrollment is closed by default. To enroll the first intended account, set
 `ALLOW_OIDC_SIGNUPS=true`, deploy, complete that account's Authentik sign-in, then immediately set it
@@ -366,54 +366,30 @@ Verification:
 - the same GPX under a different file name is skipped by content hash;
 - deleting one imported activity writes a hash-only tombstone so a connected source cannot recreate it;
 - deleting all imported activity data disconnects import sources so scheduled sync cannot recreate deleted records.
-- concurrent manual, browser-folder, share-target, and Nextcloud work for one user is serialized by a
+- concurrent manual and Nextcloud work for one user is serialized by a
   two-minute crash-expiring database lease; a busy interactive request returns `429` and `Retry-After`;
 - persistent per-user and derived-client-address budgets apply before GPX body parsing or interactive
   Nextcloud WebDAV calls, so the proxy client-address contract must remain correct.
 
-## Gadgetbridge Device Folder
+## Gadgetbridge Device Folder (Android)
 
-Recent Gadgetbridge builds can automatically export a GPX after a GPS activity sync. In Gadgetbridge,
-open **Settings → Automations → Auto export GPX tracks**, choose a user-visible export directory, and
-select the devices that should export. Then install runway from its public HTTPS origin, open
-`/app/import`, choose **Allow device folder**, and select that same directory.
+Recent Gadgetbridge builds can export GPX after a GPS activity sync. For automatic access, use the
+native Android app: choose a user-visible export directory in Gadgetbridge, then select that
+directory from Android's native import settings. The app retains a read-only Storage Access Framework
+grant; the responsive web client does not retain browser folder permissions or watch a directory.
 
-The browser must expose the directory through Android's document picker. App-private or protected
-directories may not be selectable on every Android build; choose a dedicated user-visible export
-directory when possible. The installed PWA checks the direct children of the approved directory when
-runway opens or returns to the foreground. It imports at most one unhandled GPX per check, newest first,
-and never modifies the directory. It cannot run while closed. If access is revoked, choose the folder
-again from Import. Browsers without persistent directory access should use Android Share or the
-Nextcloud source instead.
+Android checks at most 10,000 direct entries, imports at most one eligible GPX per worker, and never
+modifies Gadgetbridge files. **Check now** provides an immediate check. WorkManager reconciliation is
+best effort and can be deferred, so operators and users must not rely on it as a filesystem watcher.
+Use a dedicated export directory and validate revocation, folder switching, malformed and oversized
+file handling, retry/idempotency, and a background/foreground return on a real device before relying
+on the workflow.
 
-Disconnect is server-authoritative: it rotates a browser-folder generation before deleting the local
-handle. An upload from another tab must present the prior generation and is rejected in its final
-recording transaction. This generation is separate from the activity-deletion generation so ordinary
-disconnect does not change deletion tombstones or other import sources.
-
-Use a dedicated export directory. runway refuses to enumerate beyond 2,000 direct entries or 500 GPX
-candidates in one check. Invalid, oversized, and future-dated files are skipped so they cannot block
-older exports; correct the source problem and reconnect the directory to retry them. Switching folders
-also clears the local handled-file markers. Signing out clears the browser's retained directory
-capability; another open runway tab can block sign-out until that tab is closed.
-
-Verify this on the actual Android device and public HTTPS origin: link the export directory, let
-Gadgetbridge write a GPX, background and foreground runway, confirm one review-only activity appears,
-then confirm repeated focus does not duplicate it. Also verify permission revocation, account switching,
-disconnect, folder switching, future-dated and malformed GPX quarantine, the entry bounds, the 10 MB
-limit, and local capability deletion on sign-out and privacy deletion.
-
-For a complete installed Android experience with reliable access after the browser process is stopped,
-use the Android design in [ANDROID.md](ANDROID.md). The normal APK lets the runner choose this public
-HTTPS origin and verifies `/api/android/instance` before opening sign in. It uses a browser-hosted
-Custom Tab whose controls may collapse while scrolling; there is no instance-bound build mode. Native
-folder access, origin-scoped device pairing, bounded background upload, review-only import, and
-optional running-only Health Connect reads are present. Health Connect reads explicit
-exercise/metric permissions, can use a
-separately approved background read, asks per route while foregrounded, never writes to Health
-Connect, and applies this server's route-data privacy mode before retaining a route trace. External distribution
-still depends on the signing, device-matrix, accessibility, upgrade, and release-evidence gates
-recorded there.
+The normal APK verifies `/api/android/instance`, signs in through native device authorization, and
+uses its native UI for the product. It has no instance-bound build mode. Its system-browser handoff is
+only for device-authorization approval and fresh account-security actions. Folder access,
+origin-scoped device pairing, bounded background upload, review-only import, and optional
+running-only Health Connect reads are described in [ANDROID.md](ANDROID.md).
 
 ## Reverse Proxy And Network Edge
 
@@ -469,8 +445,8 @@ public origin.
 
 Use a bypass-cache rule as the default for the runway hostname. If an explicit cache rule is desired,
 limit it to immutable `/_app/immutable/*` assets and do not override the response cache headers.
-Never shared-cache `/`, `/app*`, `/login*`, `/logout*`, `/api/auth*`, `/api/android*`, health routes,
-the service worker, or manifest. Cloudflare must not cache a response merely because a cookie was
+Never shared-cache `/`, `/app*`, `/login*`, `/logout*`, `/api/auth*`, `/api/android*`, `/api/mobile*`,
+health routes, or the temporary service-worker retirement endpoint. Cloudflare must not cache a response merely because a cookie was
 absent. Treat the current published Cloudflare address ranges as operational data: update the Caddy
 trust list and origin firewall together, then verify the derived client address at the app.
 
@@ -728,21 +704,21 @@ release, restore the pre-release backup into a new database and point the previo
 restored database; do not try to reverse Drizzle SQL in place. Keep the failed database intact until
 the incident is understood. Never print backup contents or database URLs into CI logs.
 
-## PWA Verification
+## Web and Android Verification
 
-The LAN preview is not proof of passkeys, installability, share-target integration, or secure-cookie behavior. Verify PWA behavior on the HTTPS origin and intended devices:
+The LAN preview is not proof of public HTTPS cookies, OIDC, passkeys, or Android server selection.
+Verify the responsive web client on the intended HTTPS origin: authentication redirects and cookies,
+no-store authenticated responses, manual and Nextcloud imports, privacy/deletion controls, and
+responsive browser layouts. The web client does not advertise installation, offline navigation, a
+share target, or browser folder access.
 
-- manifest has stable identity/scope, separate any/maskable 192px and 512px icons, install screenshots, and Calendar/Import/Stats shortcuts;
-- Apple touch icon and installed safe-area layout render cleanly on iOS/iPadOS;
-- service worker registers;
-- Settings offers installation only when the browser reports the app installable;
-- offline navigation shows the public offline shell;
-- authenticated pages are not cached for offline reading;
-- a new build presents `Update ready`, refuses to reload over dirty or pending forms, and activates after explicit confirmation;
-- sharing one GPX from a supported operating-system share sheet imports it into the authenticated activity inbox as review-only, while signed-out, malformed, duplicate, and oversized shares fail safely.
+For the first release after this cutover, verify one existing old installation: it should load the
+retirement worker once, delete only old `runway-*` caches, unregister, and reload to the current web
+page. A new browser visit must not register a worker. Remove the endpoint after the retirement
+window; do not treat that worker as a PWA feature.
 
-The service worker uses SvelteKit's build version for cache names and waits unless the runner accepts
-the in-app update action. The container publisher bakes the source commit SHA into each image; local
-source builds must pass `RUNWAY_BUILD_ID` explicitly. Confirm `/service-worker.js` exposes the new
-revision, the update notice appears in an already-open installation, and old `runway-*` caches are
-removed only after activation.
+Verify Android separately on an emulator and at least one real device: selected-server validation,
+device authorization approval in the system browser, native navigation, session expiry and sign-out,
+folder/GPX share handling, repeated import idempotency, Health Connect permissions, server switching,
+background deferral, large text, and TalkBack. The container publisher bakes the source commit SHA
+into each image; local source builds must pass `RUNWAY_BUILD_ID` explicitly.

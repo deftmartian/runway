@@ -58,12 +58,14 @@ describe('operational record retention', () => {
 			[{ id: 'reset-record' }],
 			[{ id: 'android-receipt' }],
 			[{ id: 'health-connect-receipt' }],
+			[{ id: 'mobile-receipt' }],
 			[{ keyHash: 'security-bucket' }]
 		);
 		database.deleteResults.push(
 			[{ id: 'reset-record' }],
 			[{ id: 'android-receipt' }],
 			[{ id: 'health-connect-receipt' }],
+			[{ id: 'mobile-receipt' }],
 			[{ keyHash: 'security-bucket' }]
 		);
 
@@ -73,19 +75,21 @@ describe('operational record retention', () => {
 			passwordResetTokens: 1,
 			androidImportRequests: 1,
 			healthConnectRequestReceipts: 1,
+			mobileRequestReceipts: 1,
 			securityRateLimits: 1
 		});
-		expect(database.select).toHaveBeenCalledTimes(4);
-		expect(database.deleteRecords).toHaveBeenCalledTimes(4);
+		expect(database.select).toHaveBeenCalledTimes(5);
+		expect(database.deleteRecords).toHaveBeenCalledTimes(5);
 	});
 
 	test('does not issue delete statements when no records have expired', async () => {
-		database.selectResults.push([], [], [], []);
+		database.selectResults.push([], [], [], [], []);
 
 		await expect(purgeExpiredOperationalRecords()).resolves.toEqual({
 			passwordResetTokens: 0,
 			androidImportRequests: 0,
 			healthConnectRequestReceipts: 0,
+			mobileRequestReceipts: 0,
 			securityRateLimits: 0
 		});
 		expect(database.deleteRecords).not.toHaveBeenCalled();

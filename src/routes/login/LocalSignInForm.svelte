@@ -7,12 +7,14 @@
 		message,
 		pendingAction,
 		passkeyPending,
+		returnTo,
 		primary = true,
 		enhancer
 	}: {
 		message: string | undefined;
 		pendingAction: string | null;
 		passkeyPending: boolean;
+		returnTo: string;
 		primary?: boolean;
 		enhancer: SubmitFunction;
 	} = $props();
@@ -24,6 +26,7 @@
 	use:enhance={enhancer}
 	aria-busy={pendingAction === 'signInEmail'}
 >
+	<input type="hidden" name="returnTo" value={returnTo} />
 	<h2>Email and password</h2>
 	{#if message}
 		<p class="message" role="status" aria-live="polite">{message}</p>

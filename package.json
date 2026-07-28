@@ -20,8 +20,6 @@
 	"scripts": {
 		"dev": "vite dev --host 0.0.0.0 --port 4100",
 		"build": "vite build",
-		"assets:pwa": "node scripts/generate-pwa-assets.mjs",
-		"assets:pwa:check": "node scripts/generate-pwa-assets.mjs --check",
 		"secret:generate": "node scripts/generate-secret.mjs",
 		"preview": "node scripts/run-preview.mjs",
 		"prepare": "svelte-kit sync",
@@ -52,8 +50,6 @@
 		"verify:dependencies": "node scripts/verify-dependencies.mjs",
 		"verify:image": "node scripts/verify-image.mjs",
 		"verify:migrations": "node scripts/verify-migration-integrity.mjs && node scripts/verify-migration-lineage.mjs && node scripts/verify-fresh-migrations.mjs",
-		"verify:pwa": "vitest run src/lib/pwa/*.spec.ts",
-		"verify:pwa:assets": "corepack pnpm assets:pwa:check",
 		"verify:preview": "node scripts/verify-preview.mjs",
 		"verify:preview:local": "node scripts/verify-local-preview.mjs",
 		"verify:release": "node scripts/verify-release-workflow.mjs",

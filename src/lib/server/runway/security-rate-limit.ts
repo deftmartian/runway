@@ -173,6 +173,16 @@ export function nextcloudImportRateLimitBuckets(
 	];
 }
 
+export function mobileMutationRateLimitBuckets(
+	userId: string,
+	clientAddress: string
+): RateLimitBucket[] {
+	return [
+		{ name: 'mobile-mutation:ip', subject: clientAddress, max: 600, windowMs: tenMinutes },
+		{ name: 'mobile-mutation:user', subject: userId, max: 300, windowMs: tenMinutes }
+	];
+}
+
 export async function consumeSecurityRateLimit(
 	buckets: RateLimitBucket[]
 ): Promise<SecurityRateLimitResult> {

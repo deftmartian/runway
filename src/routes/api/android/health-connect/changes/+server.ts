@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { json } from '@sveltejs/kit';
 import { authenticateAndroidDevice } from '$lib/server/runway/android-devices';
+import { isSupportedAndroidClient } from '$lib/server/runway/android-instance';
 import { readBoundedRequestBody } from '$lib/server/runway/bounded-request-body';
 import { blindHealthConnectId, syncHealthConnectChanges } from '$lib/server/runway/health-connect';
 import {
@@ -13,7 +14,7 @@ import type { RequestHandler } from './$types';
 
 const maximumJsonBytes = 256 * 1024;
 export const POST: RequestHandler = async (event) => {
-	if (event.request.headers.get('x-runway-client') !== 'runway-android/1')
+	if (!isSupportedAndroidClient(event.request.headers.get('x-runway-client')))
 		return json({ result: 'unsupported-client' }, { status: 400 });
 	const preAuth = await consumeSecurityRateLimit(
 		androidApiPreAuthRateLimitBuckets(event.getClientAddress(), 'import')

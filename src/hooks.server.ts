@@ -11,8 +11,7 @@ import { startImportSourceWorker } from '$lib/server/runway/import-worker';
 import {
 	hasExactRequestOrigin,
 	isAndroidNativeApiRequest,
-	isMutationRequest,
-	isWebShareTargetNavigation
+	isMutationRequest
 } from '$lib/server/runway/request-security';
 import {
 	consumeSecurityRateLimit,
@@ -31,14 +30,12 @@ const baselineCsp = [
 	"form-action 'self'",
 	"frame-ancestors 'none'",
 	"img-src 'self' data:",
-	"manifest-src 'self'",
 	"object-src 'none'",
 	"script-src 'self'",
 	"style-src 'self'",
 	"style-src-attr 'unsafe-inline'",
-	"worker-src 'self'",
 	"require-trusted-types-for 'script'",
-	'trusted-types svelte-trusted-html sveltekit-trusted-url runway-service-worker'
+	'trusted-types svelte-trusted-html sveltekit-trusted-url'
 ].join('; ');
 
 if (!building && env['IMPORT_WORKER_ENABLED'] === 'true') startImportSourceWorker();
@@ -49,7 +46,6 @@ const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 		const origin = event.request.headers.get('origin');
 		if (
 			!hasExactRequestOrigin(origin, event.url.origin) &&
-			!isWebShareTargetNavigation(event.request, event.url.pathname) &&
 			!isAndroidNativeApiRequest(event.request, event.url.pathname)
 		) {
 			return applySecurityHeaders(
@@ -89,13 +85,7 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 		response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
 	}
 
-	if (
-		response.status < 400 &&
-		(pathname === '/manifest.webmanifest' ||
-			pathname === '/offline.html' ||
-			pathname === '/offline.css' ||
-			pathname.endsWith('.svg'))
-	) {
+	if (response.status < 400 && pathname.endsWith('.svg')) {
 		response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
 	}
 
@@ -103,6 +93,7 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 		pathname.startsWith('/health/') ||
 		pathname === '/' ||
 		pathname.startsWith('/app') ||
+		pathname.startsWith('/device') ||
 		pathname.startsWith('/login') ||
 		pathname.startsWith('/logout') ||
 		pathname.startsWith('/api/android/') ||

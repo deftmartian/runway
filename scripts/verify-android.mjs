@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,7 @@ const requiredFiles = [
 	'android/app/src/main/AndroidManifest.xml',
 	'android/app/src/main/res/layout/activity_server_connection.xml',
 	'android/app/src/main/res/layout/activity_native_folder_settings.xml',
-	'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
+	'android/app/src/main/res/mipmap-anydpi/ic_launcher.xml',
 	'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml',
 	'android/app/src/main/res/drawable/ic_launcher_monochrome.xml',
 	'android/app/src/main/res/values-v27/styles.xml',
@@ -21,7 +22,12 @@ const requiredFiles = [
 	'android/app/src/main/res/values-night-v31/colors.xml',
 	'android/signing.properties.example',
 	'scripts/verify-android-artifact.mjs',
-	'android/app/src/main/java/dev/deftmartian/runway/RunwayLauncherActivity.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/MainActivity.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/MobileApiClient.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/MobileSessionStore.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeScreens.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/RunwayTheme.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/RunwayViewModel.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionActivity.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionStore.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionReset.kt',
@@ -34,6 +40,7 @@ const requiredFiles = [
 	'android/app/src/main/java/dev/deftmartian/runway/HealthConnectSync.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/HealthConnectWorker.kt',
 	'android/app/src/androidTest/java/dev/deftmartian/runway/AndroidIdentityLifecycleInstrumentedTest.kt',
+	'android/app/src/test/java/dev/deftmartian/runway/MobileApiClientContractTest.kt',
 	'android/gradle/wrapper/gradle-wrapper.jar',
 	'android/gradle/wrapper/gradle-wrapper.properties',
 	'android/gradle/verification-metadata.xml',
@@ -99,7 +106,7 @@ if (unexpectedSourcePermissions.length || missingSourcePermissions.length) {
 	);
 }
 for (const required of [
-	'.RunwayLauncherActivity',
+	'.MainActivity',
 	'.ServerConnectionActivity',
 	'.NativeFolderSettingsActivity',
 	'<package android:name="com.google.android.apps.healthdata" />',
@@ -121,8 +128,12 @@ for (const required of [
 	'.orElse("dev.deftmartian.runway")',
 	'namespace = "dev.deftmartian.runway"',
 	'storeType = "PKCS12"',
-	'androidx.browser:browser:1.10.0',
+	'org.jetbrains.kotlin.plugin.compose',
+	'androidx.activity:activity-compose:1.13.0',
+	'androidx.compose.material3:material3',
+	'androidx.lifecycle:lifecycle-runtime-compose:2.10.0',
 	'androidx.health.connect:connect-client:1.1.0',
+	'buildConfigField("String", "SOURCE_COMMIT"',
 	'verifyServerSelectionRelease',
 	'assembleRelease',
 	'runwayOrigin',
@@ -132,6 +143,12 @@ for (const required of [
 	'verifyReleaseSigning'
 ]) {
 	if (!build.includes(required)) errors.push(`Android Gradle contract is missing ${required}`);
+}
+if (!build.includes('testImplementation("org.json:json:20240303")')) {
+	errors.push('Android native API contract tests are missing their test-only JSON parser');
+}
+if (build.includes('implementation("org.json:json:20240303")')) {
+	errors.push('Android JSON parser for native API tests must remain test-only');
 }
 
 const versionVerification = read('scripts/verify-android-version.mjs');
@@ -288,28 +305,71 @@ for (const required of ['<verify-metadata>true</verify-metadata>', '<sha256 valu
 const dependencyLock = read('android/app/gradle.lockfile');
 for (const required of [
 	'androidx.activity:activity-ktx:',
+	'androidx.activity:activity-compose:',
+	'androidx.compose.material3:material3:',
 	'androidx.core:core-ktx:',
+	'androidx.lifecycle:lifecycle-runtime-compose:',
 	'androidx.work:work-runtime:',
-	'androidx.browser:browser:',
 	'androidx.health.connect:connect-client:',
 	'releaseRuntimeClasspath'
 ]) {
 	if (!dependencyLock.includes(required))
 		errors.push(`Android dependency lock is missing ${required}`);
 }
+const jsonLock = dependencyLock.match(/^org\.json:json:20240303=(.+)$/m)?.[1] ?? '';
+if (
+	!jsonLock.includes('debugUnitTestRuntimeClasspath') ||
+	/(?:^|,)releaseRuntimeClasspath(?:,|$)/.test(jsonLock)
+) {
+	errors.push(
+		'Android native API test JSON parser is absent from debug unit tests or leaked into release runtime'
+	);
+}
 
-const launcher = read('android/app/src/main/java/dev/deftmartian/runway/RunwayLauncherActivity.kt');
+const launcher = read('android/app/src/main/java/dev/deftmartian/runway/MainActivity.kt');
 for (const required of [
 	': ComponentActivity()',
-	'CustomTabsIntent.Builder()',
-	'InstanceOriginPolicy.belongsTo',
+	'setContent {',
+	'RunwayTheme {',
+	'RunwayNativeApp(',
+	'RunwayViewModel',
 	'ReconciliationScheduler.runOnce(this)',
-	'setShowTitle(false)',
-	'setUrlBarHidingEnabled(true)',
-	'ActivityNotFoundException'
+	'ServerConnectionActivity.ACTION_CHANGE_SERVER',
+	'NativeFolderSettingsActivity::class.java'
 ]) {
 	if (!launcher.includes(required))
-		errors.push(`Android Custom Tab launcher is missing ${required}`);
+		errors.push(`Android native Compose launcher is missing ${required}`);
+}
+
+const mobileClient = read('android/app/src/main/java/dev/deftmartian/runway/MobileApiClient.kt');
+for (const required of [
+	'/api/auth/device/code',
+	'/api/auth/device/token',
+	'/api/mobile/v1/view/',
+	'/api/mobile/v1/action/',
+	'Idempotency-Key',
+	'runway-android/2'
+]) {
+	if (!mobileClient.includes(required)) {
+		errors.push(`Android native API client is missing ${required}`);
+	}
+}
+
+const nativeScreens = read('android/app/src/main/java/dev/deftmartian/runway/NativeScreens.kt');
+for (const required of [
+	'NativeDestination.Today',
+	'NativeDestination.Calendar',
+	'NativeDestination.Review',
+	'NativeDestination.Progress',
+	'NativeDestination.Settings',
+	'preview_workout_edit',
+	'record_manual_run',
+	'update_health_context',
+	'connect_nextcloud'
+]) {
+	if (!nativeScreens.includes(required)) {
+		errors.push(`Android native product surface is missing ${required}`);
+	}
 }
 
 const serverConnection = read(
@@ -321,7 +381,7 @@ for (const required of [
 	'store.replace(initialConnection, origin)',
 	'RunwayApiClient(previous.origin).disconnect',
 	'R.string.server_change_consequence',
-	'RunwayLauncherActivity::class.java'
+	'MainActivity::class.java'
 ]) {
 	if (!serverConnection.includes(required)) {
 		errors.push(`Android server selection is missing ${required}`);
@@ -368,6 +428,20 @@ for (const required of [
 	}
 }
 
+const mobileApiContractTest = read(
+	'android/app/src/test/java/dev/deftmartian/runway/MobileApiClientContractTest.kt'
+);
+for (const required of [
+	'device authorization preserves the server-owned poll contract',
+	'mobile mutation sends bearer identity and a stable idempotency key',
+	'server change cannot send a prior instance session to the new origin',
+	'LocalHttpServer'
+]) {
+	if (!mobileApiContractTest.includes(required)) {
+		errors.push(`Android native API behavioral test is missing ${required}`);
+	}
+}
+
 const connectionStore = read(
 	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionStore.kt'
 );
@@ -396,12 +470,25 @@ for (const required of [
 
 const instanceRoute = read('src/routes/api/android/instance/+server.ts');
 for (const required of [
-	"request.headers.get('x-runway-client') !== 'runway-android/1'",
+	'isSupportedAndroidClient',
 	'buildAndroidInstanceDescriptor()',
 	"'Cache-Control': 'private, no-store'"
 ]) {
 	if (!instanceRoute.includes(required)) {
 		errors.push(`Android instance discovery route is missing ${required}`);
+	}
+}
+const instanceContract = read('src/lib/server/runway/android-instance.ts');
+for (const required of [
+	"'runway-android/1'",
+	"'runway-android/2'",
+	'minimum: 1',
+	'maximum: 2',
+	'nativeUi: true',
+	"nativeAuthorization: 'device_authorization'"
+]) {
+	if (!instanceContract.includes(required)) {
+		errors.push(`Android instance compatibility contract is missing ${required}`);
 	}
 }
 
@@ -559,8 +646,31 @@ if (errors.length > 0) {
 	process.exit(1);
 }
 
+const behavioralTests = spawnSync(
+	'android/gradlew',
+	[
+		'-p',
+		'android',
+		'--no-daemon',
+		'--dependency-verification',
+		'strict',
+		':app:testDebugUnitTest',
+		'--tests',
+		'dev.deftmartian.runway.MobileApiClientContractTest',
+		'--tests',
+		'dev.deftmartian.runway.MobileSessionNamespaceTest',
+		'--tests',
+		'dev.deftmartian.runway.ViewLoadRequestGateTest'
+	],
+	{ cwd: root, stdio: 'inherit' }
+);
+if (behavioralTests.status !== 0) {
+	console.error('Android verification failed: native mobile API behavioral tests did not pass.');
+	process.exit(1);
+}
+
 console.log(
-	`Android selectable-server contract verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
+	`Android selectable-server contract and native mobile API behavioral tests verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
 );
 
 function read(file) {

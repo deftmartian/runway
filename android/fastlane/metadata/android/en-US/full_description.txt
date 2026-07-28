@@ -1,9 +1,9 @@
 runway is a private, self-hosted running plan and activity review app.
 
-On first launch, choose your self-hosted runway server. The app verifies that address, then opens the
-complete runway PWA in a browser-hosted Custom Tab whose controls can collapse while scrolling.
-Planning, calendar, run detail, import review, history, stats, settings, and authentication are all
-part of the installed app experience. runway does not use an embedded WebView.
+On first launch, choose your self-hosted runway server. The app verifies that address, then presents
+the planner, calendar, run detail, import review, history, stats, settings, and sign-in in native
+Jetpack Compose UI. runway is not an embedded WebView or browser wrapper. The system browser appears
+only to approve sign-in or fresh account-security actions.
 
 Android also retains read access to a user-approved Gadgetbridge GPX export folder and can schedule
 bounded checks without broad storage, location, activity-recognition, Play Services, or advertising
@@ -17,5 +17,5 @@ is retained only when the runway server's private route setting allows it; other
 a redacted summary.
 
 Native folder and share imports use a scoped device credential, stable request ids, bounded reads,
-content-based revision checks, and the same review inbox as browser imports. Folder access remains
+content-based revision checks, and the same review inbox as web imports. Folder access remains
 limited to the directory you choose, and imported activities never change the plan before review.

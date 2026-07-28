@@ -144,7 +144,7 @@ jobs:
         run: node scripts/verify-compose-lifecycle.mjs
       - name: Start image-backed production stack
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
-      - name: Verify production runtime and PWA revision
+      - name: Verify production runtime and web release identity
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
       - name: Container diagnostics
         if: failure()
@@ -256,7 +256,7 @@ jobs:
         run: node scripts/verify-compose-lifecycle.mjs
       - name: Start image-backed production stack
         run: docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --wait app worker
-      - name: Verify production runtime and PWA revision
+      - name: Verify production runtime and web release identity
         run: SITE_URL=http://127.0.0.1:4100 node scripts/verify-preview.mjs
       - name: Verify exact ARM64 candidate runtime and migration contract
         env:

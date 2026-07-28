@@ -12,6 +12,7 @@ data class RunwaySigningIdentity(
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 if (providers.gradleProperty("runwayOrigin").isPresent) {
@@ -35,6 +36,14 @@ val fdroidSourceBuild = providers.gradleProperty("runwayFdroidSourceBuild")
     .map(String::toBoolean)
     .orElse(false)
     .get()
+val runwayBuildCommit = providers.gradleProperty("runwayBuildCommit")
+    .orElse(providers.environmentVariable("GITHUB_SHA"))
+    .orElse("unknown")
+    .get()
+    .trim()
+if (runwayBuildCommit != "unknown" && !runwayBuildCommit.matches(Regex("[0-9a-fA-F]{7,40}"))) {
+    throw GradleException("runwayBuildCommit must be a 7-40 character hexadecimal commit")
+}
 val releaseSigningProperties = if (releaseSigningPropertiesFile.isFile) {
     Properties().apply {
         releaseSigningPropertiesFile.inputStream().use(::load)
@@ -94,6 +103,7 @@ android {
         targetSdk = 36
         versionCode = 10
         versionName = "0.5.3"
+        buildConfigField("String", "SOURCE_COMMIT", "\"$runwayBuildCommit\"")
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -134,6 +144,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     compileOptions {
@@ -149,15 +160,32 @@ kotlin {
 }
 
 dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
+
     implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.work:work-runtime:2.11.2")
-    implementation("androidx.browser:browser:1.10.0")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.google.guava:guava:33.6.0-android")
+    implementation(composeBom)
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
 
     testImplementation("junit:junit:4.13.2")
+    // The Android platform supplies a mocked org.json on the JVM unit-test classpath. Keep the
+    // real parser test-only so native HTTP contract tests exercise encoded server responses.
+    testImplementation("org.json:json:20240303")
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
 val verifyServerSelectionRelease by tasks.registering {

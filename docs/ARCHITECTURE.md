@@ -2,11 +2,12 @@
 
 ## Boundary
 
-runway is a self-hosted planning, activity-review, and decision-ledger PWA. It does not record GPS live. Server code accepts goals, prescriptions, results, and imported activity data, then presents editable recommendations and explicit decisions.
+runway is a self-hosted responsive-web and native-Android planning, activity-review, and decision-ledger product. It does not record GPS live. Server code accepts goals, prescriptions, results, and imported activity data, then presents editable recommendations and explicit decisions.
 
 ## Stack
 
-- SvelteKit and TypeScript for routes, server actions, and the PWA.
+- SvelteKit and TypeScript for the responsive web client, routes, and server actions.
+- Jetpack Compose and Kotlin for the native Android client.
 - PostgreSQL for users, goals, plans, workouts, activities, feedback, adjustments, imports, and audit events.
 - Drizzle for typed schema and explicit migrations.
 - Better Auth for local password accounts, sessions, TOTP/recovery codes, OIDC, and WebAuthn/passkeys.
@@ -21,7 +22,7 @@ The app and preview bind to `0.0.0.0:4100`; the default local review URL is `htt
 - `/login` plus recovery/two-factor routes — OIDC, local, passkey, reset, and TOTP flows.
 - `/app/onboarding` — Goal, Starting point, Schedule, Review.
 - `/app` — calendar and bounded day inspector/sheet actions.
-- `/app/import` — activity ledger, manual GPX upload, share/device-folder/Nextcloud sources.
+- `/app/import` — activity ledger, manual GPX upload, and Nextcloud sources.
 - `/app/stats` — ramp assessments, generated/current/actual traces, exact values, and descriptive trends.
 - `/app/history` — plan lifecycle and plan records.
 - `/app/history/[planId]` — phase, adjustment, reversal, workout, and result timeline.
@@ -157,46 +158,29 @@ segments, start/finish markers, and no external tile request. Heart rate renders
 elapsed-time chart, a zone-duration summary when zones were configured at import, and an exact
 retained-sample table. Aggregate Stats remain available when no plan is active.
 
-### Manual and share target
+### Manual upload
 
-Manual upload can use an explicit match choice. The installed-PWA share target always creates an authenticated unlinked Review record; signed-out shares are discarded and must be shared again after login.
-
-### Browser device folder
-
-Supported Chromium PWAs can approve a Gadgetbridge export directory through File System Access. The handle and handled-file hashes remain in browser IndexedDB, keyed by runway user id. While the app is visible, an automatic check first compares a bounded, name-only directory signature. An unchanged, fully handled listing avoids reopening and hashing every file; a new name triggers the bounded fingerprint and import path. Automatic checks back off after empty, unavailable, or rate-limited results. **Scan now** is deliberately exhaustive so a same-name replacement can still be found. The browser submits at most one newest unhandled GPX per check, quarantines terminal rejects, never modifies the folder, and clears browser-local access at account handoff/sign-out. Browser-managed permission can still require another user gesture after the browser or operating system revokes it; the Android app exists for durable folder access and background reconciliation.
-
-The browser submits both the activity-deletion generation and a separate browser-folder generation.
-The final recording transaction locks and checks both. Plain folder disconnect increments only the
-folder generation before local capability removal, so another tab's already-submitted upload cannot
-finish after disconnect. A database-backed, two-minute crash-expiring operation lease allows at most
-one manual, share-target, browser-folder, or Nextcloud import operation per user at a time.
+Manual upload can use an explicit match choice. It creates an authenticated Review record and uses the
+same bounded parser, duplicate controls, activity-deletion barrier, and per-user operation lease as
+other import paths.
 
 ### Android app
 
-The normal Android app verifies a user-selected runway server and launches the complete PWA in a
-browser-hosted Custom Tab rather than WebView. Its controls can collapse while scrolling but remain
-available to the runner. There is no origin-bound build variant. Native code owns the
-persisted Storage Access Framework read grant, bounded shares, folder settings, inexact WorkManager
-reconciliation, and optional Health Connect ingestion. Health Connect availability comes from its SDK
-status rather than Play/ROM heuristics. It reads only running and treadmill-running exercise sessions,
-with distance, heart rate, speed, cadence, and elevation metrics after explicit permission. The
-separate background-read permission enables optional six-hour sync; routes require per-record
-foreground consent and are never read by the background worker. The client never writes Health
-Connect data. An authenticated PWA session creates a ten-minute, single-use pairing code. Android
-exchanges it for a one-year, revocable credential limited to `/api/android/status`,
-`/api/android/import`, and `/api/android/health-connect/changes`; the status route also lets that
-credential revoke itself during a server switch.
-The server stores only its hash and Android encrypts it in an origin-keyed slot with a Keystore-backed
-AES-GCM key. Each GPX request has a stable UUID receipt and user-scoped content key, enters Review,
-and uses the same parser, import-generation barrier, duplicate checks, and privacy rules as browser
-imports. Receipt claims lock the account and revalidate device revocation and expiry, closing the race
-between initial bearer authentication and privacy deletion. Health Connect activities use the same
-review boundary and idempotent device receipts; their write transaction revalidates the device under
-the same account lock. The Android client sends byte-bounded chunks and advances its provider cursor
-only after every chunk is accepted. The server enforces the runner's route-data mode:
-non-private settings retain a redacted route summary even if foreground route consent was granted.
-The boundary and remaining production
-gates are documented in [ANDROID.md](ANDROID.md).
+Android verifies a user-selected runway server and renders the product natively with Jetpack Compose.
+It uses Better Auth device authorization for the normal account session and the versioned
+`/api/mobile/v1` API for product views and mutations. The system browser is only an approval and
+fresh-account-security boundary; it does not render the product and no browser session is copied into
+Android. There is no origin-bound build variant.
+
+Native code owns the persisted Storage Access Framework read grant, bounded shares, folder settings,
+inexact WorkManager reconciliation, and optional Health Connect ingestion. The separate `rwy1_`
+import credential is limited to Android import endpoints; the signed-in native client establishes it
+without a user-visible pairing code. It is distinct from the native account session and
+Keystore-encrypted with its exact origin. Native mutations use user-scoped idempotency receipts. GPX
+and Health Connect activities enter Review and use the same parser, privacy, duplicate, and
+activity-deletion barriers as web uploads. Health Connect reads only explicitly approved running and
+treadmill-running sessions and metrics; background route reads and all Health Connect writes are out
+of scope. See [ANDROID.md](ANDROID.md) for the complete boundary.
 
 The public `GET /api/android/instance` endpoint exposes only product identity, supported Android API
 range, and release version. Android requires that handshake before saving a server. Credentials,
@@ -212,13 +196,19 @@ The server uses a password-protected public folder share, exact-origin allowlist
 Source-item claims, user-scoped content hashes, keyed revision constraints, and deletion tombstones make sync idempotent across processes. Every import also captures `athlete_profile.activity_import_generation`; the recording transaction locks and rechecks that generation. Deleting imported activity increments it, so an upload or remote fetch that began earlier cannot recreate data after deletion. Remote listing/download occurs outside long transactions.
 
 Interactive GPX and Nextcloud operations use persistent per-user and per-client-address request
-budgets before multipart parsing or remote WebDAV work. Nextcloud connect, test, and sync also share
-the per-user operation lease with the browser import paths; the scheduled worker observes the same
-lease and retries a busy source on a later pass.
+budgets before multipart parsing or remote WebDAV work. Nextcloud connect, test, and sync share the
+per-user operation lease; the scheduled worker observes the same lease and retries a busy source on a
+later pass.
 
-## PWA And Cache Boundary
+## Web Delivery And Service-worker Retirement
 
-The service worker caches only the offline shell and immutable public application assets. It never caches authenticated HTML, auth endpoints, private training data, mutation responses, or GPX content. Navigation preload reduces startup delay. Install, share-target, passkey, and full service-worker checks require a secure origin; LAN HTTP is only a visual/product preview.
+The web client is responsive and online. It does not promise installation, offline navigation, a
+share target, or browser-managed folder access. Authenticated responses are private and no-store.
+
+For one release after the hard cutover, `/service-worker.js` is a narrowly scoped retirement worker:
+an existing old installation may load it once, delete only old `runway-*` caches, unregister itself,
+and return clients to the current page. New visitors are not registered. Remove this compatibility
+endpoint after the documented retirement window; it is not a continuing PWA capability.
 
 ## Deployment Shape
 

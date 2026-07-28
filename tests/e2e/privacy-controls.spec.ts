@@ -262,10 +262,7 @@ test('bulk activity deletion removes activity-derived adjustment state from expo
 	expect(exported.adjustments.map(({ triggerType }) => triggerType)).not.toContain('import_match');
 });
 
-test('account deletion clears browser folder data across tabs and cascades every user-owned record', async ({
-	context,
-	page
-}) => {
+test('account deletion cascades every user-owned record', async ({ page }) => {
 	const email = await createPlan(page);
 	const userId = await getUserId(email);
 	await seedManualActivityRecords(userId, 2);
@@ -273,60 +270,10 @@ test('account deletion clears browser folder data across tabs and cascades every
 	await expect.poll(() => getUserOwnedRowCount(userId)).toBeGreaterThan(10);
 
 	await page.goto('/app/settings');
-	await page.evaluate(async () => {
-		await new Promise<void>((resolve, reject) => {
-			const request = indexedDB.open('runway-device-folders', 2);
-			request.onupgradeneeded = () => {
-				request.result.createObjectStore('folders', { keyPath: 'userId' });
-				const seen = request.result.createObjectStore('seen-files', {
-					keyPath: ['userId', 'digest']
-				});
-				seen.createIndex('user-id', 'userId');
-			};
-			request.onsuccess = () => {
-				request.result.close();
-				resolve();
-			};
-			request.onerror = () => {
-				reject(request.error ?? new Error('Test folder database could not be opened.'));
-			};
-		});
-	});
-	const otherTab = await context.newPage();
-	await otherTab.goto('/app/settings');
-	const controlMessage = otherTab.evaluate(
-		() =>
-			new Promise<unknown>((resolve, reject) => {
-				const channel = new BroadcastChannel('runway-device-folder-control-v1');
-				const timer = setTimeout(() => {
-					channel.close();
-					reject(new Error('Account deletion was not broadcast to the other tab.'));
-				}, 5_000);
-				channel.addEventListener(
-					'message',
-					(event) => {
-						clearTimeout(timer);
-						channel.close();
-						resolve(event.data as unknown);
-					},
-					{ once: true }
-				);
-			})
-	);
-
 	await page.getByText('Account deletion', { exact: true }).click();
 	await page.getByLabel('Type DELETE to confirm').fill('DELETE');
 	await page.getByRole('button', { name: 'Delete account permanently' }).click();
 	await expect(page).toHaveURL(/\/$/);
 	await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible();
-	await expect(controlMessage).resolves.toEqual({ type: 'clear-all' });
-	await expect
-		.poll(() =>
-			page.evaluate(async () =>
-				(await indexedDB.databases()).some((database) => database.name === 'runway-device-folders')
-			)
-		)
-		.toBe(false);
 	await expect.poll(() => getUserOwnedRowCount(userId)).toBe(0);
-	await otherTab.close();
 });

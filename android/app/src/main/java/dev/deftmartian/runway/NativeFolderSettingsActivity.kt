@@ -3,7 +3,6 @@ package dev.deftmartian.runway
 import android.content.Intent
 import android.content.pm.ShortcutManager
 import android.content.res.ColorStateList
-import android.os.Build
 import android.os.Bundle
 import android.text.InputFilter
 import android.view.View
@@ -41,6 +40,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var treeAccessStore: TreeAccessStore
     private lateinit var credentialStore: AndroidCredentialStore
+    private lateinit var mobileSessionStore: MobileSessionStore
     private lateinit var serverConnection: ServerConnection
     private lateinit var serverOrigin: String
 
@@ -48,7 +48,6 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private lateinit var setupIndicator: View
     private lateinit var pairingStatus: TextView
     private lateinit var pairingForm: View
-    private lateinit var pairingCode: EditText
     private lateinit var deviceLabel: EditText
     private lateinit var primaryAction: Button
     private lateinit var forgetButton: Button
@@ -140,16 +139,14 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         serverOrigin = configuredConnection.origin
         pickerConnection = savedInstanceState?.let(::restorePickerConnection)
         enableEdgeToEdge()
-        if (
-            Build.VERSION.SDK_INT >= 25 &&
-            intent.action == RunwayLauncherActivity.ACTION_OPEN_FOLDER_SETTINGS
-        ) {
+        if (intent.action == MainActivity.ACTION_OPEN_FOLDER_SETTINGS) {
             getSystemService(ShortcutManager::class.java)
-                ?.reportShortcutUsed(RunwayLauncherActivity.FOLDER_SHORTCUT_ID)
+                ?.reportShortcutUsed(MainActivity.FOLDER_SHORTCUT_ID)
         }
 
         treeAccessStore = TreeAccessStore(this)
         credentialStore = AndroidCredentialStore(this, serverOrigin)
+        mobileSessionStore = MobileSessionStore(this, serverOrigin)
         val setupStillCurrent = ServerConnectionStore(this).mutateIfCurrent(serverConnection) {
             if (credentialStore.load() == null) ReconciliationScheduler.cancelAll(this)
             true
@@ -199,9 +196,6 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         setupIndicator = findViewById(R.id.setup_indicator)
         pairingStatus = findViewById(R.id.pairing_status)
         pairingForm = findViewById(R.id.pairing_form)
-        pairingCode = findViewById<EditText>(R.id.pairing_code).apply {
-            filters = arrayOf(InputFilter.LengthFilter(PAIRING_CODE_MAX_LENGTH))
-        }
         deviceLabel = findViewById<EditText>(R.id.device_label).apply {
             filters = arrayOf(InputFilter.LengthFilter(DEVICE_LABEL_MAX_LENGTH))
         }
@@ -340,6 +334,10 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private fun performPrimaryAction() {
         if (!requireCurrentServer()) return
         when {
+            credentialStore.load() == null && mobileSessionStore.loadSession() == null -> {
+                startActivity(Intent(this, MainActivity::class.java))
+                finish()
+            }
             credentialStore.load() == null -> pairAccount()
             treeAccessStore.currentState(serverConnection) !is TreeAccessState.Connected -> openDirectoryPicker()
             else -> {
@@ -368,10 +366,15 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private fun pairAccount() {
         if (!requireCurrentServer()) return
-        val code = pairingCode.text.toString().trim()
+        val session = mobileSessionStore.loadSession()
+        if (session == null) {
+            pairingStatus.setText(R.string.pairing_sign_in_needed)
+            refreshScreen(keepPairingStatus = true)
+            return
+        }
         val label = deviceLabel.text.toString().trim()
-        if (code.isBlank() || label.isBlank()) {
-            pairingStatus.setText(R.string.pairing_invalid)
+        if (label.isBlank()) {
+            pairingStatus.setText(R.string.pairing_label_invalid)
             return
         }
         primaryAction.isEnabled = false
@@ -379,7 +382,31 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         val expectedCredentialState = credentialStore.snapshot()
         executor.execute {
             if (!isCurrentServer()) return@execute
-            val result = RunwayApiClient(serverOrigin).pair(code, label)
+            val pairing = MobileApiClient(serverOrigin).createImportPairing(session, label)
+            if (!isCurrentServer()) return@execute
+            if (pairing !is MobileImportPairingResult.Ready) {
+                if (pairing == MobileImportPairingResult.Unauthorized) {
+                    mobileSessionStore.clear()
+                }
+                runOnUiThread {
+                    if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                    pairingStatus.setText(
+                        when (pairing) {
+                            MobileImportPairingResult.Unauthorized ->
+                                R.string.pairing_sign_in_needed
+                            is MobileImportPairingResult.Rejected ->
+                                R.string.pairing_failed
+                            MobileImportPairingResult.Retryable ->
+                                R.string.pairing_failed
+                            is MobileImportPairingResult.Ready ->
+                                error("Handled before UI delivery")
+                        },
+                    )
+                    refreshScreen(keepPairingStatus = true)
+                }
+                return@execute
+            }
+            val result = RunwayApiClient(serverOrigin).pair(pairing.code, pairing.label)
             if (!isCurrentServer()) return@execute
             val completion = completePairing(
                 result = result,
@@ -393,7 +420,6 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (completion) {
                     is PairingCompletion.Connected -> {
-                        pairingCode.text.clear()
                         pairingStatus.setText(R.string.pairing_connected)
                         backgroundEnabled = automationStarted
                         if (automationStarted) lastCheckStatus.setText(R.string.last_check_queued)
@@ -571,13 +597,18 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         keepFolderStatus: Boolean = false,
     ) {
         val accountConnected = credentialStore.load() != null
+        val signedIn = mobileSessionStore.loadSession() != null
         val folderState = treeAccessStore.currentState(serverConnection)
 
-        pairingForm.visibility = if (accountConnected) View.GONE else View.VISIBLE
+        pairingForm.visibility = if (!accountConnected && signedIn) View.VISIBLE else View.GONE
         forgetButton.visibility = if (accountConnected) View.VISIBLE else View.GONE
         if (!keepPairingStatus) {
             pairingStatus.setText(
-                if (accountConnected) R.string.pairing_connected else R.string.pairing_intro,
+                when {
+                    accountConnected -> R.string.pairing_connected
+                    signedIn -> R.string.pairing_intro
+                    else -> R.string.pairing_sign_in_needed
+                },
             )
         }
 
@@ -596,6 +627,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
 
         val primaryLabel = when {
+            !accountConnected && !signedIn -> R.string.pairing_open_sign_in
             !accountConnected -> R.string.pair_device
             folderState is TreeAccessState.PermissionRequired -> R.string.restore_folder_access
             folderState is TreeAccessState.Missing -> R.string.choose_folder
@@ -914,7 +946,6 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val PAIRING_CODE_MAX_LENGTH = 19
         const val DEVICE_LABEL_MAX_LENGTH = 60
         const val PERIODIC_WORK_NAME = "runway-folder-reconciliation"
         const val PICKER_ORIGIN_KEY = "picker_server_origin"

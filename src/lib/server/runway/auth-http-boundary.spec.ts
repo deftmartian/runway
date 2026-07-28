@@ -27,6 +27,8 @@ describe('Better Auth HTTP boundary', () => {
 		['POST', '/api/auth/passkey/verify-authentication'],
 		['GET', '/api/auth/passkey/generate-register-options'],
 		['POST', '/api/auth/passkey/verify-registration'],
+		['POST', '/api/auth/device/code'],
+		['POST', '/api/auth/device/token'],
 		['GET', '/api/auth/oauth2/callback/authentik']
 	])('keeps the browser-required %s %s endpoint available', (method, pathname) => {
 		expect(isAllowedBetterAuthHttpRequest(pathname, method)).toBe(true);

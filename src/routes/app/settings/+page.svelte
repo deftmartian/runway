@@ -5,8 +5,6 @@
 	import SecuritySettings from '$lib/components/settings/SecuritySettings.svelte';
 	import TrainingSettings from '$lib/components/settings/TrainingSettings.svelte';
 	import type { SettingsFormState } from '$lib/components/settings/types';
-	import { clearAllDeviceFolderData, disconnectDeviceFolder } from '$lib/pwa/device-folder';
-	import { notifyEnhancedFormSaved } from '$lib/pwa/lifecycle';
 	import type { ActionData, PageData, SubmitFunction } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -17,53 +15,19 @@
 	const scopedForm = $derived((form ?? {}) as SettingsFormState);
 
 	function enhanceSettingsAction(key: string, confirmation?: string): SubmitFunction {
-		return async ({ cancel, formData, formElement }) => {
+		return ({ cancel }) => {
 			if (settingsActionPending || (confirmation && !globalThis.confirm(confirmation))) {
 				cancel();
 				return;
 			}
 			settingsActionPending = key;
 			if (key === 'routeDataMode' || key === 'deleteActivityData') privacyAttention = null;
-			if (key === 'deleteActivityData') {
-				privacyClientMessage = '';
-				try {
-					// Stop and forget any foreground scan before the server removes
-					// activity data, so an in-flight import cannot recreate a record.
-					await disconnectDeviceFolder(data.user.id);
-				} catch {
-					privacyClientMessage =
-						'Imported GPX activities were not deleted because runway could not clear this browser’s folder access. Close other runway tabs and try again.';
-					settingsActionPending = null;
-					cancel();
-					return;
-				}
-			}
-			if (key === 'deleteAccount') {
-				accountDeletionClientMessage = '';
-				try {
-					await clearAllDeviceFolderData();
-					formData.set('browserFolderDataCleared', 'yes');
-				} catch {
-					accountDeletionClientMessage =
-						'The account was not deleted because runway could not clear this browser’s folder access. Close other runway tabs and try again.';
-					settingsActionPending = null;
-					cancel();
-					return;
-				}
-			}
+			if (key === 'deleteActivityData') privacyClientMessage = '';
+			if (key === 'deleteAccount') accountDeletionClientMessage = '';
 			return async ({ result, update }) => {
 				try {
 					if (key === 'routeDataMode') privacyAttention = 'routeMaps';
 					if (key === 'deleteActivityData') privacyAttention = 'activityData';
-					if (result.type !== 'success' && key === 'deleteActivityData') {
-						privacyClientMessage =
-							'The folder was disconnected, but imported activities were not deleted. Try again, or reconnect the folder from Import.';
-					}
-					if (result.type !== 'redirect' && key === 'deleteAccount') {
-						accountDeletionClientMessage =
-							'Browser folder access was cleared, but the account was not deleted. Review the message below and try again.';
-					}
-					if (result.type === 'success') notifyEnhancedFormSaved(formElement);
 					await update({
 						reset: result.type === 'success',
 						invalidateAll: result.type === 'success'

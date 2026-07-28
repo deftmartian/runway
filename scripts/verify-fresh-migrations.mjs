@@ -1,18 +1,28 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import { assertFinalMigrationState } from './migration-state.mjs';
+import { assertFinalMigrationState, assertSupportedMigrationLedger } from './migration-state.mjs';
 
 const defaultDatabasePassword = process.env['POSTGRES_PASSWORD'] ?? 'runway_dev_password';
 const defaultDatabaseUrl = `postgres://runway:${encodeURIComponent(defaultDatabasePassword)}@127.0.0.1:5432/runway`;
 const baseDatabaseUrl = process.env['DATABASE_URL'] ?? defaultDatabaseUrl;
 const databaseName = `runway_migration_${process.pid}_${Date.now()}`.slice(0, 63);
 const nonemptyDatabaseName = `runway_nonempty_${process.pid}_${Date.now()}`.slice(0, 63);
+const predecessorDatabaseName = `runway_predecessor_${process.pid}_${Date.now()}`.slice(0, 63);
 const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'));
 const expectedMigration = journal.entries.at(-1);
+const predecessorMigration = journal.entries.at(-2);
+const predecessorJournal = journal.entries.slice(0, -1);
 
 if (!expectedMigration) throw new Error('The Drizzle migration journal is empty.');
+if (!predecessorMigration) {
+	throw new Error(
+		'Migration verification needs an immediate predecessor migration to test upgrades.'
+	);
+}
 await verifySnapshotParity();
 if (baseDatabaseUrl === defaultDatabaseUrl) {
 	await run('docker', ['compose', 'up', '-d', '--wait', 'db']);
@@ -26,14 +36,19 @@ const databaseUrl = new URL(base);
 databaseUrl.pathname = `/${databaseName}`;
 const nonemptyDatabaseUrl = new URL(base);
 nonemptyDatabaseUrl.pathname = `/${nonemptyDatabaseName}`;
+const predecessorDatabaseUrl = new URL(base);
+predecessorDatabaseUrl.pathname = `/${predecessorDatabaseName}`;
 let databaseCreated = false;
 let nonemptyDatabaseCreated = false;
+let predecessorDatabaseCreated = false;
 
 try {
 	await withSql(adminUrl, (sql) => sql`create database ${sql(databaseName)}`);
 	databaseCreated = true;
 	await withSql(adminUrl, (sql) => sql`create database ${sql(nonemptyDatabaseName)}`);
 	nonemptyDatabaseCreated = true;
+	await withSql(adminUrl, (sql) => sql`create database ${sql(predecessorDatabaseName)}`);
+	predecessorDatabaseCreated = true;
 
 	await withSql(
 		nonemptyDatabaseUrl,
@@ -97,8 +112,70 @@ try {
 		}
 	});
 
+	await applyImmediatePredecessor(predecessorDatabaseUrl);
+	await withSql(predecessorDatabaseUrl, async (sql) => {
+		await assertSupportedMigrationLedger(sql);
+		await sql`
+			insert into "user" (id, name, email)
+			values ('migration-upgrade-fixture-user', 'Migration upgrade fixture', 'migration-upgrade-fixture@example.invalid')
+		`;
+		await sql`
+			insert into athlete_profile (id, user_id, current_weekly_distance_meters)
+			values ('00000000-0000-4000-8000-000000000001', 'migration-upgrade-fixture-user', 42000)
+		`;
+	});
+	await run('node', ['scripts/run-migrations.mjs'], {
+		...process.env,
+		DATABASE_URL: predecessorDatabaseUrl.toString()
+	});
+	await run('node', ['scripts/run-migrations.mjs'], {
+		...process.env,
+		DATABASE_URL: predecessorDatabaseUrl.toString()
+	});
+	await withSql(predecessorDatabaseUrl, async (sql) => {
+		await assertFinalMigrationState(sql);
+		const [state] = await sql`
+			select
+				exists (
+					select 1
+					from athlete_profile
+					where id = '00000000-0000-4000-8000-000000000001'
+						and user_id = 'migration-upgrade-fixture-user'
+						and current_weekly_distance_meters = 42000
+				) as "sentinelPreserved",
+				to_regclass('public.device_code') is not null as "deviceCodeExists",
+				to_regclass('public.mobile_request_receipt') is not null as "mobileRequestReceiptExists",
+				not exists (
+					select 1
+					from information_schema.columns
+					where table_schema = 'public'
+						and table_name = 'athlete_profile'
+						and column_name = 'browser_folder_generation'
+				) as "obsoleteColumnRemoved"
+				,
+				exists (
+					select 1
+					from information_schema.columns
+					where table_schema = 'public'
+						and table_name = 'session'
+						and column_name = 'mobile_client_id'
+				) as "mobileSessionScopeExists"
+		`;
+		if (
+			!state?.sentinelPreserved ||
+			!state.deviceCodeExists ||
+			!state.mobileRequestReceiptExists ||
+			!state.obsoleteColumnRemoved ||
+			!state.mobileSessionScopeExists
+		) {
+			throw new Error(
+				'Immediate-predecessor upgrade did not preserve data and reach the required schema.'
+			);
+		}
+	});
+
 	console.log(
-		`Clean-install baseline ${expectedMigration.tag} rejected a non-empty database, then passed an empty install and idempotent rerun.`
+		`Clean-install baseline ${expectedMigration.tag} rejected a non-empty database; empty install and exact ${predecessorMigration.tag} upgrade both passed idempotent reruns.`
 	);
 } finally {
 	if (databaseCreated) {
@@ -112,6 +189,33 @@ try {
 			adminUrl,
 			(sql) => sql`drop database if exists ${sql(nonemptyDatabaseName)} with (force)`
 		);
+	}
+	if (predecessorDatabaseCreated) {
+		await withSql(
+			adminUrl,
+			(sql) => sql`drop database if exists ${sql(predecessorDatabaseName)} with (force)`
+		);
+	}
+}
+
+async function applyImmediatePredecessor(url) {
+	const temporaryRoot = await mkdtemp('.runway-predecessor-');
+	const migrationsFolder = join(temporaryRoot, 'drizzle');
+	try {
+		await mkdir(join(migrationsFolder, 'meta'), { recursive: true });
+		for (const migration of predecessorJournal) {
+			await cp(
+				join('drizzle', `${migration.tag}.sql`),
+				join(migrationsFolder, `${migration.tag}.sql`)
+			);
+		}
+		await writeFile(
+			join(migrationsFolder, 'meta', '_journal.json'),
+			`${JSON.stringify({ ...journal, entries: predecessorJournal }, null, '\t')}\n`
+		);
+		await withSql(url, (sql) => migrate(drizzle(sql), { migrationsFolder }));
+	} finally {
+		await rm(temporaryRoot, { recursive: true, force: true });
 	}
 }
 

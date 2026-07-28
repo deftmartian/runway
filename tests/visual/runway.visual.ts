@@ -101,7 +101,6 @@ for (const viewport of viewports) {
 
 			await page.goto('/app/settings');
 			await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-			await expect(page.getByRole('region', { name: 'Install runway' })).toBeVisible();
 			await expect(
 				page.getByRole('region', { name: 'About' }).getByText('Connected', { exact: true })
 			).toBeVisible();
@@ -110,15 +109,13 @@ for (const viewport of viewports) {
 	});
 }
 
-test('dark mode public, auth, and offline surfaces have visual coverage', async ({ page }) => {
+test('dark mode public and auth surfaces have visual coverage', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.emulateMedia({ colorScheme: 'dark' });
 	await page.goto('/');
 	await stableScreenshot(page, 'public-home-dark-desktop.png');
 	await page.goto('/login');
 	await stableScreenshot(page, 'login-dark-desktop.png');
-	await page.goto('/offline.html');
-	await stableScreenshot(page, 'offline-dark-desktop.png');
 });
 
 test('dark mode app state has visual coverage', async ({ page }) => {

@@ -2,11 +2,7 @@ import { expect, test } from '@playwright/test';
 import { fixedBrowserClockScript } from '../support/test-clock';
 import { createAccount, setTrainingTimeZone, openImportSourceSetup } from './support/runway';
 import { getGpxImportCounts, getUserId } from './support/db';
-import {
-	startHeldShareImport,
-	gpxForDistance,
-	startNextcloudShareFixture
-} from './support/import-fixtures';
+import { startNextcloudShareFixture } from './support/import-fixtures';
 
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(fixedBrowserClockScript());
@@ -86,32 +82,6 @@ test('Nextcloud share sync backfills files, tracks revisions, and honors deletio
 	} finally {
 		await share.close();
 	}
-});
-
-test('privacy deletion cancels a Share import that is still uploading', async ({ page }) => {
-	const email = await createAccount(page);
-	await setTrainingTimeZone(email);
-	await page.goto('/app/settings');
-
-	const cookies = await page.context().cookies();
-	const heldShare = await startHeldShareImport(
-		new URL('/app/import/share', page.url()),
-		cookies.map(({ name, value }) => `${name}=${value}`).join('; '),
-		gpxForDistance('2026-05-12', 5_000)
-	);
-
-	await page.getByText('Imported activity data', { exact: true }).click();
-	page.once('dialog', (dialog) => dialog.accept());
-	await page.getByRole('button', { name: 'Delete imported activities' }).click();
-	await expect(page.getByText('Deleted 0 imported activities.')).toBeVisible();
-
-	heldShare.finish();
-	const shareResponse = await heldShare.response;
-	expect(shareResponse.status).toBe(303);
-	expect(shareResponse.location).toContain('/app/import?share=deleted');
-
-	await page.goto('/app/import');
-	await expect(page.locator('.activity-record')).toHaveCount(0);
 });
 
 test('disconnecting a Nextcloud folder cancels a download already in flight', async ({ page }) => {

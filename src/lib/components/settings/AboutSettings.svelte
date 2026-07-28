@@ -5,7 +5,6 @@
 		healthConnectConnectionPresentation,
 		type HealthConnectConnection
 	} from '$lib/health-connect/presentation';
-	import { serviceWorkerSetupState, type ServiceWorkerSetupState } from '$lib/pwa/lifecycle';
 	import { sourceCodeUrl } from '$lib/project';
 
 	type ServerState = 'checking' | 'connected' | 'problem' | 'unreachable' | 'offline';
@@ -168,14 +167,6 @@
 		if (state === 'offline') return 'Offline';
 		return 'Checking…';
 	}
-
-	function browserAppStateLabel(state: ServiceWorkerSetupState): string {
-		if (state === 'ready') return 'Offline support ready';
-		if (state === 'failed') return 'Setup failed';
-		if (state === 'unsupported') return 'Web only';
-		if (state === 'development') return 'Development mode';
-		return 'Setting up…';
-	}
 </script>
 
 <section class="settings-section" aria-labelledby="about-settings-heading">
@@ -213,7 +204,6 @@
 		</div>
 		<LedgerRow label="Data service" value={dataStatus} />
 		<LedgerRow label="Web connection" detail="WebSocket is not used" value={transport} />
-		<LedgerRow label="Browser app" value={browserAppStateLabel($serviceWorkerSetupState)} />
 	</div>
 
 	<div class="settings-group connection-group" data-health-connect-status>

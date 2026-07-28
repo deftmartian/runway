@@ -2,8 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
 	hasExactRequestOrigin,
 	isAndroidNativeApiRequest,
-	isMutationRequest,
-	isWebShareTargetNavigation
+	isMutationRequest
 } from './request-security';
 
 describe('state-changing request origin checks', () => {
@@ -25,42 +24,6 @@ describe('state-changing request origin checks', () => {
 		expect(isMutationRequest('PATCH')).toBe(true);
 		expect(isMutationRequest('DELETE')).toBe(true);
 		expect(isMutationRequest('GET')).toBe(false);
-	});
-
-	test('recognizes only a native-style top-level multipart share navigation', () => {
-		const request = new Request('https://runway.example.test/app/import/share', {
-			method: 'POST',
-			headers: {
-				'content-type': 'multipart/form-data; boundary=share-boundary',
-				'sec-fetch-site': 'none',
-				'sec-fetch-mode': 'navigate',
-				'sec-fetch-dest': 'document'
-			}
-		});
-		expect(isWebShareTargetNavigation(request, '/app/import/share')).toBe(true);
-		expect(isWebShareTargetNavigation(request, '/app/import')).toBe(false);
-	});
-
-	test.each([
-		['cross-site initiator', { 'sec-fetch-site': 'cross-site' }],
-		['same-site initiator', { 'sec-fetch-site': 'same-site' }],
-		['non-navigation mode', { 'sec-fetch-mode': 'cors' }],
-		['non-document destination', { 'sec-fetch-dest': 'empty' }],
-		['explicit origin', { origin: 'https://attacker.example' }],
-		['wrong content type', { 'content-type': 'application/x-www-form-urlencoded' }]
-	])('rejects a share-target-shaped request with %s', (_label, override) => {
-		const headers = new Headers({
-			'content-type': 'multipart/form-data; boundary=share-boundary',
-			'sec-fetch-site': 'none',
-			'sec-fetch-mode': 'navigate',
-			'sec-fetch-dest': 'document',
-			...override
-		});
-		const request = new Request('https://runway.example.test/app/import/share', {
-			method: 'POST',
-			headers
-		});
-		expect(isWebShareTargetNavigation(request, '/app/import/share')).toBe(false);
 	});
 
 	test('allows only narrowly shaped no-origin Android API mutations', () => {
@@ -104,6 +67,70 @@ describe('state-changing request origin checks', () => {
 			true
 		);
 	});
+
+	test('allows the versioned native session boundary, but never its legacy import credential', () => {
+		const deviceCode = new Request('https://runway.example.test/api/auth/device/code', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-runway-client': 'runway-android/2'
+			}
+		});
+		const mobileAction = new Request(
+			'https://runway.example.test/api/mobile/v1/action/record-feedback',
+			{
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer better-auth-session-token',
+					'content-type': 'application/json; charset=utf-8',
+					'x-runway-client': 'runway-android/2'
+				}
+			}
+		);
+		const legacyCredential = new Request(
+			'https://runway.example.test/api/mobile/v1/action/record-feedback',
+			{
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer rwy1_device_secret',
+					'content-type': 'application/json',
+					'x-runway-client': 'runway-android/2'
+				}
+			}
+		);
+
+		expect(isAndroidNativeApiRequest(deviceCode, '/api/auth/device/code')).toBe(true);
+		expect(isAndroidNativeApiRequest(mobileAction, '/api/mobile/v1/action/record-feedback')).toBe(
+			true
+		);
+		expect(
+			isAndroidNativeApiRequest(legacyCredential, '/api/mobile/v1/action/record-feedback')
+		).toBe(false);
+	});
+
+	test.each([
+		['browser origin', { origin: 'https://attacker.example' }, false],
+		['missing JSON content type', {}, true],
+		['wrong client generation', { 'x-runway-client': 'runway-android/1' }, false],
+		['missing bearer', { authorization: '' }, false]
+	])(
+		'rejects malformed no-origin mobile action requests with %s',
+		(_label, override, omitContentType) => {
+			const headers = new Headers({
+				authorization: 'Bearer better-auth-session-token',
+				'x-runway-client': 'runway-android/2',
+				...override
+			});
+			if (!omitContentType) headers.set('content-type', 'application/json');
+			const request = new Request(
+				'https://runway.example.test/api/mobile/v1/action/record-feedback',
+				{ method: 'POST', headers }
+			);
+			expect(isAndroidNativeApiRequest(request, '/api/mobile/v1/action/record-feedback')).toBe(
+				false
+			);
+		}
+	);
 
 	test('rejects malformed native device disconnection requests', () => {
 		const missingBearer = new Request('https://runway.example.test/api/android/status', {

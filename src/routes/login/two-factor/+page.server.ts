@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { APIError } from 'better-auth/api';
 import { auth } from '$lib/server/auth';
+import { safeAuthReturnTo } from '$lib/server/runway/auth-return';
 import {
 	consumeSecurityRateLimit,
 	twoFactorChallengeFromHeaders,
@@ -9,11 +10,14 @@ import {
 import { backupCodeSchema, formString, totpCodeSchema } from '$lib/server/runway/validation';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = () => ({});
+export const load: PageServerLoad = (event) => ({
+	returnTo: safeAuthReturnTo(event.url.searchParams.get('returnTo'))
+});
 
 export const actions: Actions = {
 	verifyTotp: async (event) => {
 		const formData = await event.request.formData();
+		const returnTo = safeAuthReturnTo(formString(formData, 'returnTo'));
 		const code = formString(formData, 'code');
 		const parsedCode = totpCodeSchema.safeParse(code);
 		if (!parsedCode.success) {
@@ -41,10 +45,11 @@ export const actions: Actions = {
 		} catch (error) {
 			return twoFactorFailure(error, 'verifyTotp', 'Two-factor verification failed.');
 		}
-		throw redirect(302, '/app');
+		throw redirect(302, returnTo);
 	},
 	verifyBackupCode: async (event) => {
 		const formData = await event.request.formData();
+		const returnTo = safeAuthReturnTo(formString(formData, 'returnTo'));
 		const code = formString(formData, 'code');
 		const parsedCode = backupCodeSchema.safeParse(code);
 		if (!parsedCode.success) {
@@ -75,7 +80,7 @@ export const actions: Actions = {
 		} catch (error) {
 			return twoFactorFailure(error, 'verifyBackupCode', 'Backup code verification failed.');
 		}
-		throw redirect(302, '/app');
+		throw redirect(302, returnTo);
 	}
 };
 

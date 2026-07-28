@@ -2,7 +2,8 @@
 
 ## Product Boundary
 
-This repo is for runway, a self-hosted PWA for conservative running-goal planning, workout feedback, activity imports, history, and stats.
+This repo is for runway, a self-hosted responsive web app and first-class native Android client for
+conservative running-goal planning, workout feedback, activity imports, history, and stats.
 
 Do not let implementation convenience redefine the product. runway is not a GPS tracker, a social fitness app, a generic admin dashboard, or a medical coach. The app earns its keep by making the training ramp, missed work, completed work, rest, and next decision easier to reason about than a paper plan.
 
@@ -112,7 +113,10 @@ Review output should be:
 
 Use independent review passes when available. If subagents are unreliable, use separate exec-launched review agents or separate read-only review sessions.
 
-Visual and UX review must use a browser tool and interact with the PWA. Review agents should navigate public home, auth flows, onboarding, calendar/day detail, import, stats, settings, and responsive mobile/desktop viewports where practical. Screenshot-only or source-only visual review is not enough.
+Visual and UX review must use a browser tool and interact with the responsive web app. Review agents
+should navigate public home, auth flows, onboarding, calendar/day detail, import, stats, settings,
+and responsive mobile/desktop viewports where practical. Native Android changes also need an
+emulator or device pass. Screenshot-only or source-only visual review is not enough.
 
 Before calling a major implementation complete, perform and record:
 
@@ -120,7 +124,7 @@ Before calling a major implementation complete, perform and record:
 - Accessibility audit.
 - Security audit.
 - Personal data handling audit.
-- Performance/PWA audit.
+- Performance/web-delivery and native-client audit.
 - Architecture/code-quality audit.
 - Training-logic truthfulness audit against recorded sources.
 

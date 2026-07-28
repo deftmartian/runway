@@ -33,3 +33,9 @@ test('the passkey authentication endpoint remains available', async ({ page }) =
 		rpId: expect.any(String)
 	});
 });
+
+test('Android device approval redirects are private and never stored', async ({ page }) => {
+	const response = await page.request.get('/device?user_code=ABCDEFGH', { maxRedirects: 0 });
+	expect(response.status()).toBe(302);
+	expect(response.headers()['cache-control']).toBe('private, no-store');
+});

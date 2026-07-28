@@ -33,16 +33,19 @@ internal class HandledMarkerDatabase(context: Context) : SQLiteOpenHelper(
 
     override fun onUpgrade(database: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
-    fun contains(deviceKey: String, marker: String): Boolean = readableDatabase.query(
-        TABLE_HANDLED_MARKER,
-        arrayOf(COLUMN_MARKER),
-        "$COLUMN_DEVICE_KEY = ? AND $COLUMN_MARKER = ?",
-        arrayOf(deviceKey, marker),
-        null,
-        null,
-        null,
-        "1",
-    ).use { it.moveToFirst() }
+    fun contains(deviceKey: String, marker: String): Boolean {
+        val cursor = readableDatabase.query(
+            TABLE_HANDLED_MARKER,
+            arrayOf(COLUMN_MARKER),
+            "$COLUMN_DEVICE_KEY = ? AND $COLUMN_MARKER = ?",
+            arrayOf(deviceKey, marker),
+            null,
+            null,
+            null,
+            "1",
+        )
+        return cursor.use { it.moveToFirst() }
+    }
 
     fun findHandled(deviceKey: String, markers: Collection<String>): Set<String> {
         if (markers.isEmpty()) return emptySet()
@@ -51,7 +54,7 @@ internal class HandledMarkerDatabase(context: Context) : SQLiteOpenHelper(
             val placeholders = List(chunk.size) { "?" }.joinToString(",")
             val selection = "$COLUMN_DEVICE_KEY = ? AND $COLUMN_MARKER IN ($placeholders)"
             val arguments = arrayOf(deviceKey, *chunk.toTypedArray())
-            readableDatabase.query(
+            val cursor = readableDatabase.query(
                 TABLE_HANDLED_MARKER,
                 arrayOf(COLUMN_MARKER),
                 selection,
@@ -59,8 +62,9 @@ internal class HandledMarkerDatabase(context: Context) : SQLiteOpenHelper(
                 null,
                 null,
                 null,
-            ).use { cursor ->
-                while (cursor.moveToNext()) handled += cursor.getString(0)
+            )
+            cursor.use { row ->
+                while (row.moveToNext()) handled += row.getString(0)
             }
         }
         return handled

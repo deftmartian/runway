@@ -1,0 +1,1 @@
+ALTER TABLE "session" ADD COLUMN "mobile_client_id" text;

@@ -386,13 +386,6 @@ export const actions: Actions = {
 				message: 'Type DELETE exactly to confirm account deletion.'
 			});
 		}
-		if (formString(formData, 'browserFolderDataCleared') !== 'yes') {
-			return fail(400, {
-				scope: 'accountDeletion',
-				message: 'Browser folder access must be cleared before deleting the account.'
-			});
-		}
-
 		let responseHeaders: Headers;
 		try {
 			const result = await auth.api.deleteUser({
