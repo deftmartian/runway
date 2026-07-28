@@ -65,6 +65,25 @@ describe('extra activity consequences', () => {
 		expect(consequence.options).not.toContain('rebalance_week');
 	});
 
+	it('marks a duration-only activity against a distance plan as non-comparable', () => {
+		const consequence = calculateExtraActivityConsequence(
+			{ distanceMeters: 0, durationSeconds: 1_800, feltHard: false, pain: false },
+			{
+				nextRunTargetDistanceMeters: 5_000,
+				nextRunTargetDurationSeconds: null,
+				weekTargetDistanceMeters: 15_000,
+				weekTargetDurationSeconds: 0
+			}
+		);
+
+		expect(consequence.metric).toBe('none');
+		expect(consequence.comparisonStatus).toBe('not_comparable');
+		expect(consequence.weeklyLoadDelta).toBeNull();
+		expect(consequence.risk).toBe('moderate');
+		expect(consequence.recommendedDecision).toBe('keep_plan');
+		expect(consequence.options).not.toContain('rebalance_week');
+	});
+
 	it('keeps pain authoritative without inventing a distance reduction for timed work', () => {
 		const consequence = calculateExtraActivityConsequence(
 			{ distanceMeters: 2_000, durationSeconds: 1_200, feltHard: false, pain: true },

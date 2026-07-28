@@ -348,16 +348,26 @@ export function feedbackMeasurementError(input: {
 	return null;
 }
 
-export const manualRunSchema = z.object({
-	occurredDate: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/)
-		.refine((value) => isValidIsoDate(value), 'Choose a real calendar date.'),
-	distanceKm: z.coerce.number().min(0.1).max(100),
-	durationMinutes: optionalNumber(z.coerce.number().min(1).max(600)),
-	feltHard: z.coerce.boolean().default(false),
-	pain: z.coerce.boolean().default(false)
-});
+export const manualRunSchema = z
+	.object({
+		occurredDate: z
+			.string()
+			.regex(/^\d{4}-\d{2}-\d{2}$/)
+			.refine((value) => isValidIsoDate(value), 'Choose a real calendar date.'),
+		distanceKm: optionalNumber(z.coerce.number().min(0.1).max(100)),
+		durationMinutes: optionalNumber(z.coerce.number().min(1).max(600)),
+		feltHard: z.coerce.boolean().default(false),
+		pain: z.coerce.boolean().default(false)
+	})
+	.superRefine((value, context) => {
+		if (value.distanceKm === undefined && value.durationMinutes === undefined) {
+			context.addIssue({
+				code: 'custom',
+				path: ['distanceKm'],
+				message: 'Enter the distance, duration, or both.'
+			});
+		}
+	});
 
 export const activityLinkSchema = z.object({
 	activityId: z.uuid(),

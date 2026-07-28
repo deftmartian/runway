@@ -1,0 +1,424 @@
+package dev.deftmartian.runway
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.roundToInt
+
+/**
+ * Reusable, deliberately un-routed detail surface for an imported activity.  It receives a
+ * selected record from a native view and only emits existing, idempotent mobile commands.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ImportedActivityDetailSheet(
+    activity: NativeActivity,
+    candidates: List<NativeWorkout>,
+    evidence: NativeActivityEvidence?,
+    evidenceLoading: Boolean,
+    evidenceFailed: Boolean,
+    actionPending: Boolean,
+    onDismiss: () -> Unit,
+    onLoadRouteTrace: () -> Unit,
+    onAction: (MobileCommand) -> Unit,
+) {
+    var feltHard by rememberSaveable(activity.id, activity.feltHard) { mutableStateOf(activity.feltHard == true) }
+    var pain by rememberSaveable(activity.id, activity.pain) { mutableStateOf(activity.pain == true) }
+    var confirmDelete by rememberSaveable(activity.id) { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Activity detail",
+                modifier = Modifier.semantics { heading() },
+                style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ImportedActivitySummary(activity)
+            ImportedActivityProvenance(activity)
+            HealthConnectResolutionControls(activity, actionPending, onAction)
+            ImportedActivityHeartRate(activity, evidence)
+            ImportedActivityRouteDisclosure(
+                activity = activity,
+                evidence = evidence,
+                loading = evidenceLoading,
+                failed = evidenceFailed,
+                onRetry = onLoadRouteTrace,
+            )
+
+            if (activity.reviewState == "review") {
+                Text("Review")
+                if (candidates.isEmpty()) {
+                    Text("No open planned workout is available for this imported run.")
+                } else {
+                    candidates.forEach { workout ->
+                        OutlinedButton(
+                            onClick = {
+                                onAction(LinkActivityCommand(activity.id.orEmpty(), workout.id.orEmpty()))
+                            },
+                            enabled = !actionPending && activity.id != null && workout.id != null,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Link: ${workout.scheduledDate.orDash()} · ${workout.purpose.orDash()}")
+                        }
+                    }
+                }
+                Button(
+                    onClick = { onAction(ConfirmActivityExtraCommand(activity.id.orEmpty())) },
+                    enabled = !actionPending && activity.id != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Count as extra training") }
+            } else if (!activity.workoutId.isNullOrBlank()) {
+                OutlinedButton(
+                    onClick = { onAction(UnlinkActivityCommand(activity.id.orEmpty())) },
+                    enabled = !actionPending && activity.id != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Unlink from planned run") }
+                Text("Unlinking returns this imported activity to Review. It stops counting until you accept a new role.")
+            }
+
+            Text("Correct recorded feedback")
+            CheckRow("Felt harder than expected", feltHard) { feltHard = it }
+            CheckRow("Pain occurred during or after this run", pain) { pain = it }
+            OutlinedButton(
+                onClick = {
+                    onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard, pain))
+                },
+                enabled = !actionPending && activity.id != null,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save feedback correction") }
+
+            TextButton(
+                onClick = { confirmDelete = true },
+                enabled = !actionPending && activity.id != null,
+            ) { Text("Delete imported activity") }
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete imported activity?") },
+            text = { Text("This removes the imported activity and cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    confirmDelete = false
+                    onAction(DeleteActivityCommand(activity.id.orEmpty()))
+                }, enabled = !actionPending) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun ImportedActivitySummary(activity: NativeActivity) {
+    SettingCard("Exact summary") {
+        SettingRow("Date", activity.occurredDate.orDash())
+        SettingRow(
+            "Distance",
+            activity.distanceMeters?.takeIf { it > 0 }?.let(::formatDistance).orDash(),
+        )
+        SettingRow("Duration", activity.durationSeconds?.let(::formatDuration).orDash())
+        activity.averagePaceSecondsPerKm?.let { SettingRow("Average pace", formatPace(it)) }
+    }
+}
+
+@Composable
+private fun ImportedActivityProvenance(activity: NativeActivity) {
+    SettingCard("Source and plan state") {
+        SettingRow("Source", activitySourceLabel(activity))
+        SettingRow("Review", activityReviewLabel(activity))
+        when {
+            !activity.matchedWorkoutPurpose.isNullOrBlank() ->
+                SettingRow("Matched run", "${activity.matchedWorkoutDate.orDash()} · ${activity.matchedWorkoutPurpose}")
+            activity.extraPlanImpactConfirmed == true -> SettingRow("Plan state", "Counted as extra training")
+            else -> SettingRow("Plan state", "Not matched to a planned run")
+        }
+    }
+}
+
+@Composable
+private fun HealthConnectResolutionControls(
+    activity: NativeActivity,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) {
+    val healthConnect = activity.healthConnect ?: return
+    val mappingId = healthConnect.mappingId?.takeIf(String::isNotBlank) ?: return
+    when (healthConnect.recordState) {
+        "pending_correction" -> SettingCard("Source update") {
+            Text("A correction from the source is waiting for your decision.")
+            if (!activity.workoutId.isNullOrBlank() || activity.extraPlanImpactConfirmed == true) {
+                Text("Before accepting it, unlink this accepted activity or stop counting it as extra training.")
+            }
+            Button(
+                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.AcceptCorrection)) },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Accept correction") }
+            OutlinedButton(
+                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.KeepCurrent)) },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Keep current record") }
+        }
+        "pending_source_deletion" -> SettingCard("Source update") {
+            Text("The source deleted this record. Choose whether runway should remove it too.")
+            TextButton(
+                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.DeleteFromRunway)) },
+                enabled = !actionPending,
+            ) { Text("Remove from runway") }
+            OutlinedButton(
+                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.RetainInRunway)) },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Keep in runway") }
+        }
+    }
+    healthConnect.duplicateCandidate?.let { candidate ->
+        SettingCard("Possible duplicate") {
+            Text("Another ${candidate.distanceMeters?.let(::formatDistance).orDash()} activity on ${candidate.activityDate.orDash()} already exists as ${candidate.sourceLabel.orDash()}.")
+            Button(
+                onClick = { onAction(ResolveHealthConnectDuplicateCommand(mappingId, HealthConnectDuplicateDecision.KeepHealthConnect)) },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Keep this record") }
+            OutlinedButton(
+                onClick = { onAction(ResolveHealthConnectDuplicateCommand(mappingId, HealthConnectDuplicateDecision.UseExisting)) },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Use existing record") }
+        }
+    }
+}
+
+@Composable
+private fun ImportedActivityHeartRate(activity: NativeActivity, evidence: NativeActivityEvidence?) {
+    val summary = activity.heartRateSummary
+    if (
+        activity.averageHeartRate == null &&
+        activity.maxHeartRate == null &&
+        summary == null &&
+        evidence?.heartRateSeries == null &&
+        evidence?.averageCadence == null
+    ) {
+        return
+    }
+    SettingCard("Recorded metrics") {
+        activity.averageHeartRate?.let { SettingRow("Average", "$it bpm") }
+        activity.maxHeartRate?.let { SettingRow("Maximum", "$it bpm") }
+        summary?.let {
+            it.highSeconds?.let { seconds -> SettingRow("High-zone time", formatDuration(seconds.toDouble())) }
+            it.highShare?.let { share -> SettingRow("High-zone share", "${(share * 100).roundToInt()}%") }
+            Text("Zone time is descriptive; it does not change the plan automatically.")
+        }
+        evidence?.averageCadence?.let { SettingRow("Average cadence", "$it rpm") }
+        evidence?.heartRateSeries?.let { HeartRateTrace(it) }
+    }
+}
+
+@Composable
+private fun ImportedActivityRouteDisclosure(
+    activity: NativeActivity,
+    evidence: NativeActivityEvidence?,
+    loading: Boolean,
+    failed: Boolean,
+    onRetry: () -> Unit,
+) {
+    val route = activity.routeSummary
+    val disclosure = evidence?.disclosure
+    if (route == null && disclosure == null && evidence?.routeTrace == null) return
+    SettingCard("Private activity detail") {
+        if (route != null || disclosure?.routeTraceRetained != null || evidence?.routeTrace != null) {
+            val message = if (route?.traceRetained == true || disclosure?.routeTraceRetained == true) {
+                "This private route trace is drawn on this phone. Runway does not contact a map or tile service."
+            } else {
+                "No route trace is retained for this activity."
+            }
+            Text(message)
+        }
+        when {
+            evidence?.routeTrace != null -> PrivateRouteTrace(requireNotNull(evidence.routeTrace))
+            loading -> {
+                CircularProgressIndicator()
+                Text("Loading the private route trace…")
+            }
+            failed && (route?.traceRetained == true || disclosure?.routeTraceRetained == true) -> {
+                Text("The private route trace could not be loaded.")
+                OutlinedButton(onClick = onRetry) { Text("Try again") }
+            }
+        }
+        (disclosure?.routePointCount ?: route?.pointCount)?.let {
+            SettingRow("Imported route points", it.toString())
+        }
+        if (disclosure?.hasElevation == true || route?.hasElevation == true) {
+            SettingRow("Elevation", "Present in import")
+        }
+        if (disclosure?.startEndRedacted == true || route?.startEndRedacted == true) {
+            Text("Start and end details are redacted.")
+        }
+        disclosure?.heartRateSeriesRetained?.let {
+            SettingRow("Heart-rate samples", if (it) "${disclosure.heartRateSampleCount ?: 0} retained" else "Not retained")
+        }
+    }
+}
+
+@Composable
+private fun HeartRateTrace(series: NativeHeartRateSeries) {
+    val points = series.points.filter { it.elapsedSeconds != null && it.bpm != null }
+    if (points.isEmpty()) return
+    val low = points.minOf { requireNotNull(it.bpm) }
+    val high = points.maxOf { requireNotNull(it.bpm) }
+    val latest = points.last()
+    val traceColor = androidx.compose.material3.MaterialTheme.colorScheme.tertiary
+    val sourceCount = series.sourceSampleCount ?: points.size
+    val countLabel = if (sourceCount > points.size) {
+        "${points.size} shown of $sourceCount retained"
+    } else {
+        "$sourceCount retained"
+    }
+    SettingRow("Heart-rate samples", "$countLabel · $low–$high bpm")
+    Canvas(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(120.dp)) {
+        val maxElapsed = points.maxOf { requireNotNull(it.elapsedSeconds) }.coerceAtLeast(1)
+        val range = (high - low).coerceAtLeast(10)
+        val inset = 8.dp.toPx()
+        fun project(point: NativeHeartRatePoint): Offset = Offset(
+            inset + (requireNotNull(point.elapsedSeconds).toFloat() / maxElapsed) * (size.width - inset * 2),
+            size.height - inset - ((requireNotNull(point.bpm) - low).toFloat() / range) * (size.height - inset * 2),
+        )
+        points.zipWithNext().forEach { (left, right) ->
+            drawLine(
+                color = traceColor,
+                start = project(left), end = project(right), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round,
+            )
+        }
+    }
+    Text(
+        "Recorded heart rate over elapsed time. Latest ${latest.bpm} bpm at ${formatDuration(latest.elapsedSeconds?.toDouble() ?: 0.0)}.",
+        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun PrivateRouteTrace(trace: NativeRouteTrace) {
+    val points = trace.points.filter { it.latitudeE6 != null && it.longitudeE6 != null }
+    if (points.size < 2) return
+    val lats = points.map { requireNotNull(it.latitudeE6).toFloat() }
+    val lons = points.map { requireNotNull(it.longitudeE6).toFloat() }
+    val minLat = lats.min(); val maxLat = lats.max(); val minLon = lons.min(); val maxLon = lons.max()
+    val meanLatitudeRadians =
+        ((minLat + maxLat).toDouble() / 2.0 / 1_000_000.0) * (PI / 180.0)
+    val longitudeScale = cos(meanLatitudeRadians).coerceAtLeast(0.01).toFloat()
+    val minX = minLon * longitudeScale
+    val maxX = maxLon * longitudeScale
+    val routeColor = androidx.compose.material3.MaterialTheme.colorScheme.primary
+    val sourceCount = trace.sourcePointCount ?: points.size
+    val countLabel = if (sourceCount > points.size) {
+        "${points.size} shown of $sourceCount retained"
+    } else {
+        "$sourceCount retained points"
+    }
+    SettingRow("Private route", countLabel)
+    Canvas(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(160.dp)) {
+        val inset = 10.dp.toPx()
+        val availableWidth = (size.width - inset * 2).coerceAtLeast(1f)
+        val availableHeight = (size.height - inset * 2).coerceAtLeast(1f)
+        val routeWidth = (maxX - minX).coerceAtLeast(1f)
+        val routeHeight = (maxLat - minLat).coerceAtLeast(1f)
+        val scale = min(availableWidth / routeWidth, availableHeight / routeHeight)
+        val drawnWidth = routeWidth * scale
+        val drawnHeight = routeHeight * scale
+        val leftInset = (size.width - drawnWidth) / 2f
+        val topInset = (size.height - drawnHeight) / 2f
+        fun project(lat: Float, lon: Float): Offset {
+            val x = leftInset + ((lon * longitudeScale) - minX) * scale
+            val y = topInset + (maxLat - lat) * scale
+            return Offset(x, y)
+        }
+        points.zipWithNext().forEach { (left, right) ->
+            drawLine(
+                color = routeColor,
+                start = project(left.latitudeE6!!.toFloat(), left.longitudeE6!!.toFloat()),
+                end = project(right.latitudeE6!!.toFloat(), right.longitudeE6!!.toFloat()),
+                strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round,
+            )
+        }
+        val markerRadius = 5.dp.toPx()
+        val start = points.first()
+        val end = points.last()
+        drawCircle(
+            color = routeColor,
+            radius = markerRadius,
+            center = project(start.latitudeE6!!.toFloat(), start.longitudeE6!!.toFloat()),
+            style = Stroke(width = 2.dp.toPx()),
+        )
+        val endCenter = project(end.latitudeE6!!.toFloat(), end.longitudeE6!!.toFloat())
+        drawRect(
+            color = routeColor,
+            topLeft = Offset(endCenter.x - markerRadius, endCenter.y - markerRadius),
+            size = Size(markerRadius * 2, markerRadius * 2),
+        )
+    }
+    Text(
+        "○ Start · ■ Finish",
+        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+private fun activitySourceLabel(activity: NativeActivity): String = when (activity.source) {
+    "gpx" -> "GPX import"
+    "health_connect" -> activity.healthConnect?.originLabel?.takeIf(String::isNotBlank) ?: "Health Connect"
+    else -> activity.source.orDash()
+}
+
+private fun activityReviewLabel(activity: NativeActivity): String = when (activity.reviewState) {
+    "review" -> "Review — excluded from training totals"
+    "accepted" -> "Accepted"
+    else -> activity.reviewState.orDash()
+}
+
+internal fun formatPace(secondsPerKm: Double): String {
+    if (!secondsPerKm.isFinite() || secondsPerKm < 0) return "—"
+    val rounded = secondsPerKm.roundToInt()
+    return "%d:%02d /km".format(rounded / 60, rounded % 60)
+}

@@ -17,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -28,14 +27,15 @@ internal fun SettingsScreen(
     onAction: (MobileCommand) -> Unit,
     onOpenServer: () -> Unit,
     onOpenFolder: () -> Unit,
+    onOpenAccountSecurity: () -> Unit,
     onSignOut: () -> Unit,
 ) {
-    val uriHandler = LocalUriHandler.current
     var editingTimeZone by rememberSaveable { mutableStateOf(false) }
     var editingHealthContext by rememberSaveable { mutableStateOf(false) }
     var editingHeartRate by rememberSaveable { mutableStateOf(false) }
     var connectingNextcloud by rememberSaveable { mutableStateOf(false) }
     var disconnectingSource by remember { mutableStateOf<NativeImportSource?>(null) }
+    var confirmingRouteDiscard by rememberSaveable { mutableStateOf(false) }
     var timeZone by rememberSaveable(payload?.profile?.timeZone) {
         mutableStateOf(payload?.profile?.timeZone.orEmpty())
     }
@@ -71,7 +71,8 @@ internal fun SettingsScreen(
                                 } else {
                                     "discard"
                                 }
-                            onAction(UpdateRouteDataModeCommand(next))
+                            if (next == "discard") confirmingRouteDiscard = true
+                            else onAction(UpdateRouteDataModeCommand(next))
                         },
                         enabled = !actionPending,
                     ) {
@@ -175,13 +176,14 @@ internal fun SettingsScreen(
             item {
                 SettingCard("Account") {
                     Text(
-                        "Passkeys, two-factor authentication, exports, and account deletion use the secure server page.",
+                        "Review sign-in methods, active sessions, and import devices from this phone.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    payload.accountSecurityUrl?.takeIf(String::isNotBlank)?.let { url ->
-                        OutlinedButton(onClick = { uriHandler.openUri(url) }) {
-                            Text("Account security")
-                        }
+                    OutlinedButton(
+                        onClick = onOpenAccountSecurity,
+                        enabled = payload.accountSecurityAvailable == true && !actionPending,
+                    ) {
+                        Text("Account security")
                     }
                 }
             }
@@ -219,6 +221,20 @@ internal fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { editingTimeZone = false }) { Text("Cancel") }
             },
+        )
+    }
+    if (confirmingRouteDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmingRouteDiscard = false },
+            title = { Text("Discard all retained route points?") },
+            text = { Text("This removes every saved route trace from runway. Activity totals and heart-rate data remain. This cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    confirmingRouteDiscard = false
+                    onAction(UpdateRouteDataModeCommand("discard"))
+                }, enabled = !actionPending) { Text("Discard route points") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingRouteDiscard = false }) { Text("Cancel") } },
         )
     }
     if (editingHealthContext) {

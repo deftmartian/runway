@@ -1,18 +1,23 @@
 package dev.deftmartian.runway
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,11 +27,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -35,11 +38,35 @@ internal fun RunwayNativeApp(
     state: RunwayUiState,
     onStartAuthorization: () -> Unit,
     onCancelAuthorization: () -> Unit,
+    onSignInLocal: (String, String) -> Unit,
+    onSignUpLocal: (String, String, String) -> Unit,
+    onVerifyTwoFactor: (String) -> Unit,
+    onSelectSecondFactor: (NativeSecondFactor) -> Unit,
+    onCancelTwoFactor: () -> Unit,
+    onOpenExternalAuthorization: (String) -> Unit,
+    onOpenPasswordReset: () -> Unit,
     onRetry: () -> Unit,
     onDestinationSelected: (NativeDestination) -> Unit,
     onCalendarMonthSelected: (String) -> Unit,
+    onLoadMoreHistory: () -> Unit,
+    onLoadMoreImports: () -> Unit,
+    onLoadActivityTrace: (String) -> Unit,
+    onOpenHistoryDetail: (String) -> Unit,
     onRefresh: () -> Unit,
     onAction: (MobileCommand) -> Unit,
+    onRequestPasswordReset: () -> Unit,
+    onChangePassword: (String, String) -> Unit,
+    onEnableTwoFactor: (String) -> Unit,
+    onOpenAuthenticator: (String) -> Unit,
+    onVerifyTwoFactorSetup: (String) -> Unit,
+    onCancelTotpSetup: () -> Unit,
+    onDisableTwoFactor: (String) -> Unit,
+    onRegenerateRecoveryCodes: (String) -> Unit,
+    onSaveRecoveryCodes: () -> Unit,
+    onClearRecoveryCodes: () -> Unit,
+    onRevokeAccountSession: (String) -> Unit,
+    onExportTrainingData: () -> Unit,
+    onDeleteAccount: (String) -> Unit,
     onConfirmActionPreview: () -> Unit,
     onDismissActionPreview: () -> Unit,
     onSignOut: () -> Unit,
@@ -48,18 +75,43 @@ internal fun RunwayNativeApp(
 ) {
     when (state) {
         RunwayUiState.Loading -> LoadingScreen()
-        is RunwayUiState.SignedOut -> DeviceAuthorizationScreen(
+        is RunwayUiState.SignedOut -> NativeSignInScreen(
             state = state,
-            onStartAuthorization = onStartAuthorization,
-            onCancelAuthorization = onCancelAuthorization,
+            onSignInLocal = onSignInLocal,
+            onSignUpLocal = onSignUpLocal,
+            onVerifyTwoFactor = onVerifyTwoFactor,
+            onSelectSecondFactor = onSelectSecondFactor,
+            onCancelTwoFactor = onCancelTwoFactor,
+            onStartExternalAuthorization = onStartAuthorization,
+            onOpenExternalAuthorization = onOpenExternalAuthorization,
+            onCancelExternalAuthorization = onCancelAuthorization,
+            onRetryCapabilities = onRetry,
+            onOpenPasswordReset = onOpenPasswordReset,
         )
         is RunwayUiState.Failed -> FailureScreen(state.message, onRetry)
         is RunwayUiState.Ready -> NativeProductShell(
             state = state,
             onDestinationSelected = onDestinationSelected,
             onCalendarMonthSelected = onCalendarMonthSelected,
+            onLoadMoreHistory = onLoadMoreHistory,
+            onLoadMoreImports = onLoadMoreImports,
+            onLoadActivityTrace = onLoadActivityTrace,
+            onOpenHistoryDetail = onOpenHistoryDetail,
             onRefresh = onRefresh,
             onAction = onAction,
+            onRequestPasswordReset = onRequestPasswordReset,
+            onChangePassword = onChangePassword,
+            onEnableTwoFactor = onEnableTwoFactor,
+            onOpenAuthenticator = onOpenAuthenticator,
+            onVerifyTwoFactorSetup = onVerifyTwoFactorSetup,
+            onCancelTotpSetup = onCancelTotpSetup,
+            onDisableTwoFactor = onDisableTwoFactor,
+            onRegenerateRecoveryCodes = onRegenerateRecoveryCodes,
+            onSaveRecoveryCodes = onSaveRecoveryCodes,
+            onClearRecoveryCodes = onClearRecoveryCodes,
+            onRevokeAccountSession = onRevokeAccountSession,
+            onExportTrainingData = onExportTrainingData,
+            onDeleteAccount = onDeleteAccount,
             onConfirmActionPreview = onConfirmActionPreview,
             onDismissActionPreview = onDismissActionPreview,
             onSignOut = onSignOut,
@@ -91,73 +143,31 @@ private fun FailureScreen(message: String, onRetry: () -> Unit) {
     }
 }
 
-@Composable
-private fun DeviceAuthorizationScreen(
-    state: RunwayUiState.SignedOut,
-    onStartAuthorization: () -> Unit,
-    onCancelAuthorization: () -> Unit,
-) {
-    val uriHandler = LocalUriHandler.current
-    CenteredSurface {
-        Text(
-            "runway",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("Your training, on this phone.", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Sign in in your browser, then return here. The browser keeps your account credentials; this app receives only its own session.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(24.dp))
-        when {
-            state.starting -> CircularProgressIndicator()
-            state.pending != null -> {
-                Text("Enter this code if the browser asks:", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Text(
-                        state.pending.userCode.chunked(4).joinToString(" "),
-                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { uriHandler.openUri(state.pending.verificationUri) }) {
-                    Text("Open secure sign-in")
-                }
-                TextButton(onClick = onCancelAuthorization) { Text("Cancel") }
-                Text(
-                    "Waiting for approval…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            else -> Button(onClick = onStartAuthorization) { Text("Sign in") }
-        }
-        state.message?.let {
-            Spacer(Modifier.height(16.dp))
-            Notice(it, isError = true)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NativeProductShell(
     state: RunwayUiState.Ready,
     onDestinationSelected: (NativeDestination) -> Unit,
     onCalendarMonthSelected: (String) -> Unit,
+    onLoadMoreHistory: () -> Unit,
+    onLoadMoreImports: () -> Unit,
+    onLoadActivityTrace: (String) -> Unit,
+    onOpenHistoryDetail: (String) -> Unit,
     onRefresh: () -> Unit,
     onAction: (MobileCommand) -> Unit,
+    onRequestPasswordReset: () -> Unit,
+    onChangePassword: (String, String) -> Unit,
+    onEnableTwoFactor: (String) -> Unit,
+    onOpenAuthenticator: (String) -> Unit,
+    onVerifyTwoFactorSetup: (String) -> Unit,
+    onCancelTotpSetup: () -> Unit,
+    onDisableTwoFactor: (String) -> Unit,
+    onRegenerateRecoveryCodes: (String) -> Unit,
+    onSaveRecoveryCodes: () -> Unit,
+    onClearRecoveryCodes: () -> Unit,
+    onRevokeAccountSession: (String) -> Unit,
+    onExportTrainingData: () -> Unit,
+    onDeleteAccount: (String) -> Unit,
     onConfirmActionPreview: () -> Unit,
     onDismissActionPreview: () -> Unit,
     onSignOut: () -> Unit,
@@ -165,29 +175,37 @@ private fun NativeProductShell(
     onOpenFolder: () -> Unit,
 ) {
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RunwayMark()
+                        Spacer(Modifier.size(10.dp))
                         Text(
                             "runway",
-                            modifier = Modifier.semantics { heading() },
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            listOfNotNull(
-                                state.destination.label,
-                                state.bootstrap.user?.name?.takeIf(String::isNotBlank),
-                            ).joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 actions = {
-                    TextButton(onClick = onRefresh, enabled = !state.loading) {
-                        Text(if (state.loading) "Loading" else "Refresh")
+                    IconButton(
+                        onClick = onRefresh,
+                        enabled = !state.loading && !state.actionPending,
+                    ) {
+                        if (state.loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_refresh),
+                                contentDescription = "Refresh ${state.destination.label}",
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -197,10 +215,18 @@ private fun NativeProductShell(
         },
         bottomBar = {
             if (state.destination != NativeDestination.Setup) {
-                NavigationBar {
-                    NativeDestination.entries.filterNot { it == NativeDestination.Setup }.forEach { destination ->
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                ) {
+                    val selectedDestination =
+                        state.destination.primaryNavigationDestination()
+                    NativeDestination.entries
+                        .filter(NativeDestination::primaryNavigation)
+                        .forEach { destination ->
                         NavigationBarItem(
-                            selected = state.destination == destination,
+                            selected = selectedDestination == destination,
+                            enabled = !state.actionPending,
                             onClick = { onDestinationSelected(destination) },
                             icon = {
                                 Icon(
@@ -209,7 +235,14 @@ private fun NativeProductShell(
                                 )
                             },
                             label = { Text(destination.label) },
-                            alwaysShowLabel = false,
+                            alwaysShowLabel = true,
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
                         )
                     }
                 }
@@ -230,25 +263,40 @@ private fun NativeProductShell(
                     actionPending = state.actionPending,
                     actionNotice = state.notice,
                     completedAction = state.completedAction,
+                    activityEvidence = state.activityEvidence,
+                    activityEvidenceLoading = state.activityEvidenceLoading,
+                    activityEvidenceFailures = state.activityEvidenceFailures,
+                    onLoadActivityTrace = onLoadActivityTrace,
                     onDestinationSelected = onDestinationSelected,
                     onAction = onAction,
                 )
                 NativeDestination.Calendar -> CalendarScreen(
-                    state.payload as? NativeCalendarPayload,
-                    state.loading,
-                    state.actionPending,
-                    state.notice,
-                    state.completedAction,
-                    onCalendarMonthSelected,
-                    onAction,
+                    payload = state.payload as? NativeCalendarPayload,
+                    loading = state.loading,
+                    actionPending = state.actionPending,
+                    actionNotice = state.notice,
+                    completedAction = state.completedAction,
+                    onCalendarMonthSelected = onCalendarMonthSelected,
+                    activityEvidence = state.activityEvidence,
+                    activityEvidenceLoading = state.activityEvidenceLoading,
+                    activityEvidenceFailures = state.activityEvidenceFailures,
+                    onLoadActivityTrace = onLoadActivityTrace,
+                    onAction = onAction,
                 )
-                NativeDestination.Review -> ReviewScreen(
+                NativeDestination.Imports -> ReviewScreen(
                     state.payload as? NativeReviewPayload,
                     state.loading,
                     state.actionPending,
                     state.notice,
                     state.completedAction,
                     onAction,
+                    onLoadMoreImports,
+                    state.activityEvidence,
+                    state.activityEvidenceLoading,
+                    state.activityEvidenceFailures,
+                    onLoadActivityTrace,
+                    onOpenFolder,
+                    { onDestinationSelected(NativeDestination.More) },
                 )
                 NativeDestination.Progress -> ProgressScreen(
                     state.payload as? NativeStatsPayload,
@@ -257,14 +305,48 @@ private fun NativeProductShell(
                     onDestinationSelected,
                     onAction,
                 )
-                NativeDestination.Settings -> SettingsScreen(
+                NativeDestination.More -> SettingsScreen(
                     payload = state.payload as? NativeSettingsPayload,
                     loading = state.loading,
                     actionPending = state.actionPending,
                     onAction = onAction,
                     onOpenServer = onOpenServer,
                     onOpenFolder = onOpenFolder,
+                    onOpenAccountSecurity = { onDestinationSelected(NativeDestination.AccountSecurity) },
                     onSignOut = onSignOut,
+                )
+                NativeDestination.AccountSecurity -> AccountSecurityScreen(
+                    payload = state.payload as? NativeAccountSecurityPayload,
+                    ephemeral = state.accountSecurityEphemeral,
+                    loading = state.loading,
+                    actionPending = state.actionPending,
+                    onBack = { onDestinationSelected(NativeDestination.More) },
+                    onAction = onAction,
+                    onRequestPasswordReset = onRequestPasswordReset,
+                    onChangePassword = onChangePassword,
+                    onEnableTwoFactor = onEnableTwoFactor,
+                    onOpenAuthenticator = onOpenAuthenticator,
+                    onVerifyTwoFactorSetup = onVerifyTwoFactorSetup,
+                    onCancelTotpSetup = onCancelTotpSetup,
+                    onDisableTwoFactor = onDisableTwoFactor,
+                    onRegenerateRecoveryCodes = onRegenerateRecoveryCodes,
+                    onSaveRecoveryCodes = onSaveRecoveryCodes,
+                    onClearRecoveryCodes = onClearRecoveryCodes,
+                    onRevokeSession = onRevokeAccountSession,
+                    onExportTrainingData = onExportTrainingData,
+                    onDeleteAccount = onDeleteAccount,
+                )
+                NativeDestination.History -> HistoryScreen(
+                    payload = state.payload as? NativeHistoryPayload,
+                    loading = state.loading,
+                    onBack = { onDestinationSelected(NativeDestination.Progress) },
+                    onLoadMore = onLoadMoreHistory,
+                    onOpenPlan = onOpenHistoryDetail,
+                )
+                NativeDestination.HistoryDetail -> HistoryDetailScreen(
+                    payload = state.payload as? NativeHistoryDetailPayload,
+                    loading = state.loading,
+                    onBack = { onDestinationSelected(NativeDestination.History) },
                 )
             }
         }
@@ -277,5 +359,43 @@ private fun NativeProductShell(
             onDismiss = onDismissActionPreview,
             onConfirm = onConfirmActionPreview,
         )
+    }
+}
+
+@Composable
+internal fun RunwayMark() {
+    val rail = MaterialTheme.colorScheme.primary
+    val center = MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(
+        modifier = Modifier
+            .size(width = 30.dp, height = 22.dp),
+    ) {
+        val left = size.width * 0.22f
+        val right = size.width * 0.78f
+        drawLine(
+            color = rail,
+            start = Offset(left, 0f),
+            end = Offset(left, size.height),
+            strokeWidth = 4f,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = rail,
+            start = Offset(right, 0f),
+            end = Offset(right, size.height),
+            strokeWidth = 4f,
+            cap = StrokeCap.Round,
+        )
+        val dash = size.height / 5f
+        repeat(3) { index ->
+            val startY = index * dash * 2f
+            drawLine(
+                color = center,
+                start = Offset(size.width / 2f, startY),
+                end = Offset(size.width / 2f, (startY + dash).coerceAtMost(size.height)),
+                strokeWidth = 2f,
+                cap = StrokeCap.Round,
+            )
+        }
     }
 }

@@ -79,7 +79,11 @@ export function accountSecurityRateLimitBuckets(
 		| 'enable-two-factor'
 		| 'verify-two-factor-setup'
 		| 'disable-two-factor'
+		| 'regenerate-recovery-codes'
+		| 'change-password'
 		| 'delete-passkey'
+		| 'request-password-reset'
+		| 'revoke-session'
 		| 'export-data'
 		| 'delete-account',
 	userId: string,

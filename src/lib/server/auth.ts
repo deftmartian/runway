@@ -109,8 +109,8 @@ export const auth = betterAuth({
 	databaseHooks: {
 		session: {
 			create: {
-				before: (_session, context) => {
-					const scope = androidDeviceAuthorizationSessionScope(context);
+				before: (session, context) => {
+					const scope = androidDeviceAuthorizationSessionScope(context, session);
 					return Promise.resolve(scope ? { data: scope } : undefined);
 				}
 			}

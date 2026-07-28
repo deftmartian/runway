@@ -6,7 +6,13 @@ const authApi = vi.hoisted(() => ({
 
 vi.mock('$lib/server/auth', () => ({ auth: { api: authApi } }));
 
-import { authenticateMobileRequest, mobileClientHeader } from './mobile-api';
+import {
+	authenticateMobileRequest,
+	boundedActivityId,
+	boundedPlanId,
+	mobileActivityEvidenceDetail,
+	mobileClientHeader
+} from './mobile-api';
 
 describe('native mobile session boundary', () => {
 	beforeEach(() => {
@@ -64,4 +70,54 @@ describe('native mobile session boundary', () => {
 			expect(authApi.getSession).not.toHaveBeenCalled();
 		}
 	);
+});
+
+describe('native activity trace query boundary', () => {
+	test('accepts only a bounded UUID activity identifier', () => {
+		expect(boundedActivityId('6f4d8d2c-6b26-4d68-9b69-4f93b5e94923')).toBe(
+			'6f4d8d2c-6b26-4d68-9b69-4f93b5e94923'
+		);
+		expect(boundedActivityId('other-user-activity')).toBeNull();
+	});
+
+	test('includes bounded selected evidence only in the lazy detail projection', () => {
+		const detail = mobileActivityEvidenceDetail({
+			id: '6f4d8d2c-6b26-4d68-9b69-4f93b5e94923',
+			routeTrace: {
+				version: 1,
+				sourcePointCount: 601,
+				points: Array.from({ length: 601 }, (_, index) => ({
+					latitudeE6: index,
+					longitudeE6: -index,
+					elapsedSeconds: index,
+					segmentIndex: 0,
+					speedMetersPerSecond: null
+				}))
+			},
+			heartRateSeries: {
+				version: 1,
+				sourceSampleCount: 1_001,
+				points: Array.from({ length: 1_001 }, (_, index) => ({ elapsedSeconds: index, bpm: 140 }))
+			},
+			averageCadence: 168,
+			routeSummary: { pointCount: 601, startEndRedacted: true, hasElevation: false, traceRetained: true }
+		} as never);
+
+		expect(detail).toMatchObject({
+			averageCadence: 168,
+			disclosure: { routeTraceRetained: true, heartRateSeriesRetained: true, startEndRedacted: true }
+		});
+		expect(detail?.routeTrace?.points).toHaveLength(600);
+		expect(detail?.heartRateSeries?.points).toHaveLength(1_000);
+	});
+});
+
+describe('native history detail query boundary', () => {
+	test('accepts only a bounded UUID plan identifier', () => {
+		expect(boundedPlanId('6f4d8d2c-6b26-4d68-9b69-4f93b5e94923')).toBe(
+			'6f4d8d2c-6b26-4d68-9b69-4f93b5e94923'
+		);
+		expect(boundedPlanId('not-a-plan')).toBeNull();
+		expect(boundedPlanId('6f4d8d2c-6b26-4d68-7b69-4f93b5e94923')).toBeNull();
+	});
 });

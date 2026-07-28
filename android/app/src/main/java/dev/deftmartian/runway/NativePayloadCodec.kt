@@ -17,9 +17,12 @@ internal object NativePayloadCodec {
         "onboarding" -> source.onboarding()
         "calendar" -> source.calendarView()
         "review" -> source.review()
+        "activity-trace" -> source.activityEvidence()
         "stats" -> source.stats()
         "history" -> source.history()
+        "history-detail" -> source.historyDetailPayload()
         "settings" -> source.settings()
+        "account-security" -> source.accountSecurity()
         else -> null
     }
 
@@ -33,6 +36,20 @@ internal object NativePayloadCodec {
 
     fun decodeAction(source: String): NativeActionResponse? =
         runCatching { decodeAction(JSONObject(source)) }.getOrNull()
+
+    fun decodeAccountOperation(source: String): NativeAccountOperationResponse? =
+        runCatching {
+            val payload = JSONObject(source)
+            NativeAccountOperationResponse(
+                ok = payload.optionalBoolean("ok"),
+                message = payload.optionalString("message"),
+                error = payload.optionalString("error"),
+                sessionToken = payload.optionalString("sessionToken"),
+                totpUri = payload.optionalString("totpUri"),
+                recoveryCodes = payload.optionalArray("recoveryCodes").strings(),
+                accountDeleted = payload.optionalBoolean("accountDeleted"),
+            )
+        }.getOrNull()
 
     fun encodeCommand(command: MobileCommand): String = when (command) {
         is CreatePlanCommand -> JSONObject()
@@ -69,10 +86,12 @@ internal object NativePayloadCodec {
         is DeleteFeedbackCommand -> idBody("workoutId", command.workoutId)
         is RecordManualRunCommand -> JSONObject()
             .put("occurredDate", command.occurredDate)
-            .put("distanceKm", command.distanceKm)
             .put("feltHard", command.feltHard)
             .put("pain", command.pain)
-            .apply { command.durationMinutes?.let { put("durationMinutes", it) } }
+            .apply {
+                command.distanceKm?.let { put("distanceKm", it) }
+                command.durationMinutes?.let { put("durationMinutes", it) }
+            }
         is LinkActivityCommand -> JSONObject()
             .put("activityId", command.activityId)
             .put("workoutId", command.workoutId)
@@ -83,6 +102,12 @@ internal object NativePayloadCodec {
             .put("feltHard", command.feltHard)
             .put("pain", command.pain)
         is DeleteActivityCommand -> idBody("activityId", command.activityId)
+        is ResolveHealthConnectRecordCommand -> JSONObject()
+            .put("mappingId", command.mappingId)
+            .put("decision", command.decision.wireValue)
+        is ResolveHealthConnectDuplicateCommand -> JSONObject()
+            .put("mappingId", command.mappingId)
+            .put("decision", command.decision.wireValue)
         is ApplyPlanDecisionCommand -> JSONObject()
             .put("source", command.source)
             .put("sourceId", command.sourceId)
@@ -128,6 +153,9 @@ internal object NativePayloadCodec {
         is TestNextcloudCommand -> idBody("sourceId", command.sourceId)
         is SyncNextcloudCommand -> idBody("sourceId", command.sourceId)
         is DisconnectNextcloudCommand -> idBody("sourceId", command.sourceId)
+        is RevokeAndroidDeviceCommand -> idBody("deviceId", command.deviceId)
+        DeleteImportedActivityDataCommand -> JSONObject()
+            .put("confirmation", "DELETE IMPORTED ACTIVITY DATA")
     }.toString()
 
     private fun JSONObject.bootstrap() = NativeBootstrapPayload(
@@ -160,6 +188,15 @@ internal object NativePayloadCodec {
         androidDevices = optionalArray("androidDevices").objects { it.androidDevice() },
         routeDataMode = optionalString("routeDataMode"),
     )
+    private fun JSONObject.activityEvidence() = NativeActivityEvidencePayload(
+        optionalString("activityId"),
+        NativeActivityEvidence(
+            routeTrace = optionalObject("routeTrace")?.routeTrace(),
+            heartRateSeries = optionalObject("heartRateSeries")?.heartRateSeries(),
+            averageCadence = optionalInt("averageCadence"),
+            disclosure = optionalObject("disclosure")?.activityDisclosure(),
+        ),
+    )
 
     private fun JSONObject.stats() = NativeStatsPayload(
         onboardingRequired = optionalBoolean("onboardingRequired"),
@@ -179,14 +216,76 @@ internal object NativePayloadCodec {
         offset = optionalInt("offset"), pageSize = optionalInt("pageSize"),
     )
 
+    private fun JSONObject.historyDetailPayload() = NativeHistoryDetailPayload(
+        onboardingRequired = optionalBoolean("onboardingRequired"),
+        detail = optionalObject("detail")?.historyDetail(),
+    )
+
+    private fun JSONObject.historyDetail() = NativeHistoryDetail(
+        plan = optionalObject("plan")?.historyDetailPlan(),
+        goal = optionalObject("goal")?.historyDetailGoal(),
+        cutoffDate = optionalString("cutoffDate"),
+        timeline = optionalArray("timeline").objects { it.historyTimelineItem() },
+        weeks = optionalArray("weeks").objects { it.historyWeek() },
+    )
+
+    private fun JSONObject.historyDetailPlan() = NativeHistoryDetailPlan(
+        id = optionalString("id"), status = optionalString("status"), phase = optionalString("phase"),
+        startDate = optionalString("startDate"), targetDate = optionalString("targetDate"),
+        weeks = optionalInt("weeks"), risk = optionalString("risk"), completedAt = optionalString("completedAt"),
+        archivedAt = optionalString("archivedAt"), lifecycleReason = optionalString("lifecycleReason"),
+        summary = optionalObject("summary")?.historyPlanSummary(),
+    )
+    private fun JSONObject.historyPlanSummary() = NativeHistoryPlanSummary(
+        kind = optionalString("kind"),
+        requiredWeeklyIncreasePercent = optionalDouble("requiredWeeklyIncreasePercent"),
+        defaultWeeklyIncreasePercent = optionalDouble("defaultWeeklyIncreasePercent"),
+    )
+    private fun JSONObject.historyDetailGoal() = NativeHistoryDetailGoal(
+        title = optionalString("title"), distance = optionalString("distance"), priority = optionalString("priority"),
+    )
+    private fun JSONObject.historyTimelineItem() = NativeHistoryTimelineItem(
+        id = optionalString("id"), triggerType = optionalString("triggerType"), createdAt = optionalString("createdAt"),
+        reversedAt = optionalString("reversedAt"), reversalReason = optionalString("reversalReason"),
+        reason = optionalString("reason"), newState = optionalObject("newState")?.historyWorkoutState(),
+    )
+    private fun JSONObject.historyWorkoutState() = NativeHistoryWorkoutState(
+        scheduledDate = optionalString("scheduledDate"), type = optionalString("type"),
+        prescriptionKind = optionalString("prescriptionKind"), targetDistanceMeters = optionalDouble("targetDistanceMeters"),
+        targetDurationSeconds = optionalDouble("targetDurationSeconds"), isRemoved = optionalBoolean("isRemoved"),
+    )
+    private fun JSONObject.historyWeek() = NativeHistoryWeek(
+        id = optionalString("id"), weekNumber = optionalInt("weekNumber"), startDate = optionalString("startDate"),
+        targetDistanceMeters = optionalDouble("targetDistanceMeters"), targetDurationSeconds = optionalDouble("targetDurationSeconds"),
+        risk = optionalString("risk"), isDownWeek = optionalBoolean("isDownWeek"), isTaper = optionalBoolean("isTaper"),
+        workouts = optionalArray("workouts").objects { it.historyWorkout() },
+    )
+    private fun JSONObject.historyWorkout() = NativeHistoryWorkout(
+        id = optionalString("id"), scheduledDate = optionalString("scheduledDate"), type = optionalString("type"),
+        status = optionalString("status"), prescriptionKind = optionalString("prescriptionKind"),
+        targetDistanceMeters = optionalDouble("targetDistanceMeters"), targetDurationSeconds = optionalDouble("targetDurationSeconds"),
+        purpose = optionalString("purpose"), isRemoved = optionalBoolean("isRemoved"),
+        result = optionalObject("result")?.historyResult(),
+    )
+    private fun JSONObject.historyResult() = NativeHistoryResult(
+        source = optionalString("source"), completedDistanceMeters = optionalDouble("completedDistanceMeters"),
+        completedDurationSeconds = optionalDouble("completedDurationSeconds"), feltHard = optionalBoolean("feltHard"),
+        pain = optionalBoolean("pain"), consequence = optionalObject("consequence")?.consequence(),
+    )
+
     private fun JSONObject.settings() = NativeSettingsPayload(
         profile = optionalObject("profile")?.profile(),
         healthConnect = optionalObject("healthConnect")?.healthConnectStatus(),
         androidDevices = optionalArray("androidDevices").objects { it.androidDevice() },
         sources = optionalArray("sources").objects { it.importSource() },
         about = optionalObject("about")?.about(),
-        accountSecurityUrl = optionalString("accountSecurityUrl"),
-        localAuthEnabled = optionalBoolean("localAuthEnabled"),
+        accountSecurityAvailable = optionalBoolean("accountSecurityAvailable"),
+    )
+
+    private fun JSONObject.accountSecurity() = NativeAccountSecurityPayload(
+        authentication = optionalObject("authentication")?.authenticationSecurity(),
+        sessions = optionalObject("sessions")?.sessionSecurity(),
+        importDevices = optionalArray("importDevices").objects { it.accountImportDevice() },
     )
 
     private fun JSONObject.user() = NativeUser(
@@ -296,13 +395,47 @@ internal object NativePayloadCodec {
         optionalDouble("averagePaceSecondsPerKm"),
         optionalInt("averageHeartRate"),
         optionalInt("maxHeartRate"),
+        optionalObject("heartRateSummary")?.heartRateSummary(),
         optionalBoolean("feltHard"),
         optionalBoolean("pain"),
         optionalBoolean("extraPlanImpactConfirmed"),
         optionalObject("consequence")?.consequence(),
+        optionalObject("routeSummary")?.routeSummary(),
         optionalString("matchedWorkoutPurpose"),
         optionalString("matchedWorkoutDate"),
         optionalObject("healthConnect")?.healthConnectActivity(),
+    )
+    private fun JSONObject.heartRateSummary() = NativeHeartRateSummary(
+        optionalInt("highSeconds"),
+        optionalDouble("highShare"),
+        optionalObject("secondsByZone")?.heartRateZones(),
+        optionalString("settingsSource"),
+    )
+    private fun JSONObject.heartRateZones() = NativeHeartRateZones(
+        optionalInt("z1"), optionalInt("z2"), optionalInt("z3"), optionalInt("z4"), optionalInt("z5"),
+    )
+    private fun JSONObject.routeSummary() = NativeRouteSummary(
+        optionalInt("pointCount"), optionalBoolean("startEndRedacted"), optionalBoolean("hasElevation"),
+        optionalBoolean("traceRetained"),
+    )
+    private fun JSONObject.routeTrace() = NativeRouteTrace(
+        optionalInt("sourcePointCount"),
+        optionalArray("points").objects { it.routePoint() },
+    )
+    private fun JSONObject.routePoint() = NativeRoutePoint(
+        optionalInt("latitudeE6"), optionalInt("longitudeE6"), optionalInt("elapsedSeconds"),
+        optionalInt("segmentIndex"), optionalDouble("speedMetersPerSecond"),
+    )
+    private fun JSONObject.heartRateSeries() = NativeHeartRateSeries(
+        optionalInt("sourceSampleCount"), optionalArray("points").objects { it.heartRatePoint() },
+    )
+    private fun JSONObject.heartRatePoint() = NativeHeartRatePoint(
+        optionalInt("elapsedSeconds"), optionalInt("bpm"),
+    )
+    private fun JSONObject.activityDisclosure() = NativeActivityDisclosure(
+        optionalBoolean("routeTraceRetained"), optionalInt("routePointCount"),
+        optionalBoolean("startEndRedacted"), optionalBoolean("hasElevation"),
+        optionalBoolean("heartRateSeriesRetained"), optionalInt("heartRateSampleCount"),
     )
     private fun JSONObject.healthConnectActivity() = NativeHealthConnectActivity(
         optionalString("mappingId"),
@@ -350,6 +483,10 @@ internal object NativePayloadCodec {
         optionalString("id"),
         optionalInt("weekNumber"),
         optionalString("startDate"),
+        optionalDouble("recommendedDistanceMeters"),
+        optionalDouble("recommendedDurationSeconds"),
+        optionalDouble("currentDistanceMeters"),
+        optionalDouble("currentDurationSeconds"),
     )
     private fun JSONObject.phaseReview() = NativePhaseReview(
         optionalString("planId"),
@@ -389,18 +526,59 @@ internal object NativePayloadCodec {
     private fun JSONObject.trainingHistory() = NativeTrainingHistory(
         optionalArray("weeklySummaries").objects { it.weekSummary() },
         optionalString("todayIso"),
+        optionalObject("currentSignal")?.currentSignal(),
+        optionalBoolean("hasAcceptedActivities"),
+        optionalObject("recordedSummary")?.recordedHistorySummary(),
+        optionalObject("heartRateSample")?.heartRateSample(),
+    )
+    private fun JSONObject.currentSignal() = NativeCurrentSignal(
+        optionalString("risk"), optionalArray("reasons").strings(), optionalString("source"),
+        optionalObject("healthNotice")?.healthNotice(),
+    )
+    private fun JSONObject.healthNotice() = NativeHealthNotice(
+        optionalString("level"), optionalString("heading"), optionalString("message"),
+    )
+    private fun JSONObject.recordedHistorySummary() = NativeRecordedHistorySummary(
+        optionalInt("totalRuns"),
+        optionalDouble("totalDistanceMeters"),
+        optionalDouble("totalDurationSeconds"),
+        optionalDouble("longestRunMeters"),
+        optionalInt("currentPlanRuns"),
+        optionalDouble("currentPlanDistanceMeters"),
+        optionalInt("archivedPlanRuns"),
+        optionalDouble("archivedPlanDistanceMeters"),
+        optionalInt("unlinkedRuns"),
+        optionalDouble("unlinkedDistanceMeters"),
+    )
+    private fun JSONObject.heartRateSample() = NativeHeartRateSample(
+        optionalInt("windowDays"),
+        optionalString("windowStart"),
+        optionalString("windowEnd"),
+        optionalInt("sampleCount"),
+        optionalInt("averageHeartRate"),
+        optionalDouble("highZoneSeconds"),
+        optionalObject("latest")?.heartRateObservation(),
+        optionalObject("oldest")?.heartRateObservation(),
+    )
+    private fun JSONObject.heartRateObservation() = NativeHeartRateObservation(
+        optionalString("activityDate"),
+        optionalInt("averageHeartRate"),
+        optionalInt("maxHeartRate"),
     )
     private fun JSONObject.weekSummary() = NativeWeekSummary(
         optionalInt("weekNumber"),
         optionalString("startDate"),
         optionalDouble("targetDistanceMeters"),
         optionalDouble("completedDistanceMeters"),
+        optionalDouble("completedDurationSeconds"),
         optionalInt("plannedRuns"),
         optionalInt("completedRuns"),
         optionalInt("missedRuns"),
         optionalInt("skippedRuns"),
         optionalInt("painFlags"),
         optionalInt("hardFlags"),
+        optionalDouble("averagePaceSecondsPerKm"),
+        optionalInt("averageHeartRate"),
     )
     private fun JSONObject.planHistoryPage() = NativePlanHistoryPage(
         optionalArray("items").objects { it.planHistoryItem() },
@@ -475,6 +653,23 @@ internal object NativePayloadCodec {
         optionalString("release"),
         optionalString("commit"),
         optionalString("serverOrigin"),
+    )
+    private fun JSONObject.authenticationSecurity() = NativeAuthenticationSecurity(
+        optionalBoolean("localPassword"), optionalBoolean("oidc"), optionalBoolean("twoFactor"),
+        optionalInt("passkeyCount"),
+    )
+    private fun JSONObject.sessionSecurity() = NativeSessionSecurity(
+        optionalInt("activeCount"), optionalBoolean("currentIsNative"),
+        optionalBoolean("requiresFreshSession"),
+        optionalArray("items").objects { it.accountSession() },
+    )
+    private fun JSONObject.accountSession() = NativeAccountSession(
+        optionalString("id"), optionalString("client"), optionalBoolean("current"),
+        optionalString("createdAt"), optionalString("updatedAt"), optionalString("expiresAt"),
+    )
+    private fun JSONObject.accountImportDevice() = NativeAccountImportDevice(
+        optionalString("id"), optionalString("label"), optionalString("lastSeenAt"),
+        optionalString("lastImportedAt"), optionalString("expiresAt"),
     )
     private fun JSONObject.actionPreview() = NativeActionPreviewDto(
         optionalString("risk"),

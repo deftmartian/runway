@@ -39,3 +39,18 @@ test('Android device approval redirects are private and never stored', async ({ 
 	expect(response.status()).toBe(302);
 	expect(response.headers()['cache-control']).toBe('private, no-store');
 });
+
+test('only the fixed native app return marker survives sign-in and two-factor pages', async ({ page }) => {
+	const nativeReturnTo = '/device?user_code=ABCDEFGH&return_to_app=runway-native';
+	const encodedReturnTo = encodeURIComponent(nativeReturnTo);
+
+	for (const pathname of ['/login', '/login/two-factor']) {
+		await page.goto(`${pathname}?returnTo=${encodedReturnTo}`);
+		await expect(page.locator('input[name="returnTo"]').first()).toHaveValue(nativeReturnTo);
+	}
+
+	await page.goto(
+		`/login?returnTo=${encodeURIComponent('/device?user_code=ABCDEFGH&return_to_app=https://attacker.example')}`
+	);
+	await expect(page.locator('input[name="returnTo"]').first()).toHaveValue('/app');
+});

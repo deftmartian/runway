@@ -21,6 +21,9 @@ data class MobileSession(
 ) {
     fun isExpired(nowEpochMs: Long = System.currentTimeMillis()): Boolean =
         expiresAtEpochMs <= nowEpochMs
+
+    override fun toString(): String =
+        "MobileSession(origin=$origin, token=<redacted>, expiresAtEpochMs=$expiresAtEpochMs)"
 }
 
 data class PendingMobileAuthorization(

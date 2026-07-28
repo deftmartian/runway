@@ -108,6 +108,55 @@ describe('state-changing request origin checks', () => {
 		).toBe(false);
 	});
 
+	test('allows the bounded JSON native account export request through the global hook boundary', () => {
+		const pathname = '/api/mobile/v1/account/export';
+		const exportRequest = new Request(`https://runway.example.test${pathname}`, {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer better-auth-session-token',
+				'content-type': 'application/json',
+				'x-runway-client': 'runway-android/2'
+			},
+			body: '{}'
+		});
+		const missingContentType = new Request(`https://runway.example.test${pathname}`, {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer better-auth-session-token',
+				'x-runway-client': 'runway-android/2'
+			},
+			body: '{}'
+		});
+
+		expect(isAndroidNativeApiRequest(exportRequest, pathname)).toBe(true);
+		expect(isAndroidNativeApiRequest(missingContentType, pathname)).toBe(false);
+	});
+
+	test.each([
+		'/api/auth/sign-in/email',
+		'/api/auth/sign-up/email',
+		'/api/auth/two-factor/verify-totp',
+		'/api/auth/two-factor/verify-backup-code'
+	])('allows only originless JSON Android authentication at %s', (pathname) => {
+		const nativeRequest = new Request(`https://runway.example.test${pathname}`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-runway-client': 'runway-android/2'
+			}
+		});
+		const browserRequest = new Request(`https://runway.example.test${pathname}`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				origin: 'https://runway.example.test',
+				'x-runway-client': 'runway-android/2'
+			}
+		});
+		expect(isAndroidNativeApiRequest(nativeRequest, pathname)).toBe(true);
+		expect(isAndroidNativeApiRequest(browserRequest, pathname)).toBe(false);
+	});
+
 	test.each([
 		['browser origin', { origin: 'https://attacker.example' }, false],
 		['missing JSON content type', {}, true],

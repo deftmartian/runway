@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { APIError } from 'better-auth/api';
 import { env } from '$env/dynamic/private';
 import { auth } from '$lib/server/auth';
+import { authLogger } from '$lib/server/runway/auth-log';
 import { safeAuthReturnTo } from '$lib/server/runway/auth-return';
 import {
 	consumeSecurityRateLimit,
@@ -169,6 +170,10 @@ function authFailure(
 		const message = normalizeAuthError(error, fallback);
 		return fail(error.statusCode || 400, { scope, message });
 	}
+	authLogger.log(
+		'error',
+		`Unexpected ${scope} failure (${error instanceof Error ? error.name : 'unknown error'}).`
+	);
 	return fail(500, { scope, message: fallback });
 }
 

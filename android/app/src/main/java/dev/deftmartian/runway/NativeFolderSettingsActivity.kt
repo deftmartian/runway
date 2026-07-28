@@ -2,33 +2,20 @@ package dev.deftmartian.runway
 
 import android.content.Intent
 import android.content.pm.ShortcutManager
-import android.content.res.ColorStateList
 import android.os.Bundle
-import android.text.InputFilter
-import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.contracts.ExerciseRouteRequestContract
 import androidx.health.connect.client.records.ExerciseRoute
-import androidx.core.view.ViewCompat
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.Executors
-
-internal val NATIVE_IMPORTS_ACCESSIBILITY_HEADING_IDS = intArrayOf(
-    R.id.screen_heading,
-    R.id.server_section_heading,
-    R.id.pairing_heading,
-    R.id.folder_heading,
-    R.id.background_heading,
-    R.id.health_connect_heading,
-)
 
 class NativeFolderSettingsActivity : ComponentActivity() {
     private enum class AutomationMutation {
@@ -44,27 +31,12 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private lateinit var serverConnection: ServerConnection
     private lateinit var serverOrigin: String
 
-    private lateinit var setupStatus: TextView
-    private lateinit var setupIndicator: View
-    private lateinit var pairingStatus: TextView
-    private lateinit var pairingForm: View
-    private lateinit var deviceLabel: EditText
-    private lateinit var primaryAction: Button
-    private lateinit var forgetButton: Button
-    private lateinit var folderStatus: TextView
-    private lateinit var changeFolderButton: Button
-    private lateinit var disconnectButton: Button
-    private lateinit var backgroundStatus: TextView
-    private lateinit var lastCheckStatus: TextView
-    private lateinit var backgroundButton: Button
-    private lateinit var healthConnectStatus: TextView
-    private lateinit var healthConnectPermission: Button
-    private lateinit var healthConnectSync: Button
-    private lateinit var healthConnectBackground: Button
+    private var uiState by mutableStateOf(NativeImportSetupUiState())
 
     private var backgroundEnabled = false
     private val workRunningByName = mutableMapOf<String, Boolean>()
     private var pickerConnection: ServerConnection? = null
+    private var oneOffPickerConnection: ServerConnection? = null
     private var healthConnectBackgroundEnabled = false
     private var healthConnectPermissionsGranted = false
     private var healthConnectBackgroundSupported = false
@@ -90,7 +62,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             HealthConnectCursorStore(this, serverOrigin).clear()
             syncHealthConnectForeground(newAction = false)
         } else {
-            healthConnectStatus.setText(R.string.health_connect_route_not_granted)
+            updateUi { copy(healthConnectStatus = getString(R.string.health_connect_route_not_granted)) }
         }
     }
 
@@ -110,19 +82,32 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                     TreeAccessMutation.Changed -> {
                         if (automationStarted) {
                             backgroundEnabled = true
-                            folderStatus.setText(R.string.folder_connected_background)
-                            lastCheckStatus.setText(R.string.last_check_queued)
+                            updateUi { copy(folderStatus = getString(R.string.folder_connected_background), lastCheckStatus = getString(R.string.last_check_queued)) }
                         } else {
-                            folderStatus.setText(R.string.folder_connected_pairing_needed)
+                            updateUi { copy(folderStatus = getString(R.string.folder_connected_pairing_needed)) }
                         }
                     }
                     TreeAccessMutation.Conflict -> {
                         finish()
                         return@runOnUiThread
                     }
-                    TreeAccessMutation.Failed -> folderStatus.setText(R.string.folder_connection_failed)
+                    TreeAccessMutation.Failed -> updateUi { copy(folderStatus = getString(R.string.folder_connection_failed)) }
                 }
                 refreshScreen(keepFolderStatus = true)
+            }
+        }
+    }
+
+    private val chooseOneOffGpx = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val expected = oneOffPickerConnection
+        oneOffPickerConnection = null
+        if (uri == null || expected == null) return@registerForActivityResult
+        executor.execute {
+            val outcome = OneOffGpxImport.importUri(this, expected, uri)
+            runOnUiThread {
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                updateUi { copy(oneOffImportStatus = getString(oneOffGpxStatus(outcome))) }
+                refreshScreen(keepPairingStatus = true)
             }
         }
     }
@@ -137,7 +122,12 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
         serverConnection = configuredConnection
         serverOrigin = configuredConnection.origin
-        pickerConnection = savedInstanceState?.let(::restorePickerConnection)
+        pickerConnection = savedInstanceState?.let {
+            restorePickerConnection(it, PICKER_ORIGIN_KEY, PICKER_GENERATION_KEY)
+        }
+        oneOffPickerConnection = savedInstanceState?.let {
+            restorePickerConnection(it, ONE_OFF_PICKER_ORIGIN_KEY, ONE_OFF_PICKER_GENERATION_KEY)
+        }
         enableEdgeToEdge()
         if (intent.action == MainActivity.ACTION_OPEN_FOLDER_SETTINGS) {
             getSystemService(ShortcutManager::class.java)
@@ -155,10 +145,32 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             finish()
             return
         }
-        setContentView(R.layout.activity_native_folder_settings)
-        EdgeToEdgeLayout.applySystemBarPadding(findViewById(R.id.folder_settings_scroll))
-        bindViews()
-        bindActions()
+        uiState = uiState.copy(
+            serverOrigin = serverOrigin,
+            deviceLabel = savedInstanceState?.getString(DEVICE_LABEL_KEY)
+                ?: getString(R.string.device_label_default),
+        )
+        setContent {
+            RunwayTheme {
+                NativeImportSetupScreen(
+                    state = uiState,
+                    onDeviceLabelChange = { label -> updateUi { copy(deviceLabel = label.take(DEVICE_LABEL_MAX_LENGTH)) } },
+                    onPrimaryAction = ::performPrimaryAction,
+                    onChangeServer = ::changeServer,
+                    onForgetAccount = ::beginForgetAccount,
+                    onChangeFolder = { if (requireCurrentServer()) openDirectoryPicker() },
+                    onDisconnectFolder = ::disconnectFolder,
+                    onBackgroundAction = ::toggleBackground,
+                    onHealthPermission = ::showHealthPermissionDialog,
+                    onHealthSync = { syncHealthConnectForeground() },
+                    onHealthBackground = ::toggleHealthBackground,
+                    onPickOneOffGpx = ::openOneOffGpxPicker,
+                    onReturnToRunway = ::returnToRunway,
+                    onDismissDialog = ::dismissDialog,
+                    onConfirmDialog = ::confirmDialog,
+                )
+            }
+        }
         refreshScreen()
         refreshBackgroundWorkState()
         refreshHealthConnectWorkState()
@@ -180,6 +192,11 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             outState.putString(PICKER_ORIGIN_KEY, connection.origin)
             outState.putLong(PICKER_GENERATION_KEY, connection.generation)
         }
+        oneOffPickerConnection?.let { connection ->
+            outState.putString(ONE_OFF_PICKER_ORIGIN_KEY, connection.origin)
+            outState.putLong(ONE_OFF_PICKER_GENERATION_KEY, connection.generation)
+        }
+        outState.putString(DEVICE_LABEL_KEY, uiState.deviceLabel)
         super.onSaveInstanceState(outState)
     }
 
@@ -188,147 +205,94 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         if (::serverConnection.isInitialized && !isCurrentServer()) finish()
     }
 
-    private fun bindViews() {
-        NATIVE_IMPORTS_ACCESSIBILITY_HEADING_IDS.forEach { headingId ->
-            ViewCompat.setAccessibilityHeading(findViewById<View>(headingId), true)
-        }
-        setupStatus = findViewById(R.id.setup_status)
-        setupIndicator = findViewById(R.id.setup_indicator)
-        pairingStatus = findViewById(R.id.pairing_status)
-        pairingForm = findViewById(R.id.pairing_form)
-        deviceLabel = findViewById<EditText>(R.id.device_label).apply {
-            filters = arrayOf(InputFilter.LengthFilter(DEVICE_LABEL_MAX_LENGTH))
-        }
-        primaryAction = findViewById(R.id.primary_action)
-        forgetButton = findViewById(R.id.forget_account)
-        folderStatus = findViewById(R.id.folder_status)
-        changeFolderButton = findViewById(R.id.change_folder)
-        disconnectButton = findViewById(R.id.disconnect_folder)
-        backgroundStatus = findViewById(R.id.background_status)
-        lastCheckStatus = findViewById(R.id.last_check_status)
-        backgroundButton = findViewById(R.id.background_action)
-        healthConnectStatus = findViewById(R.id.health_connect_status)
-        healthConnectPermission = findViewById(R.id.health_connect_permission)
-        healthConnectSync = findViewById(R.id.health_connect_sync)
-        healthConnectBackground = findViewById(R.id.health_connect_background)
-        findViewById<TextView>(R.id.server_origin_status).text = serverOrigin
-        findViewById<Button>(R.id.change_server).apply {
-            setOnClickListener {
-                if (!requireCurrentServer()) return@setOnClickListener
-                startActivity(Intent(this@NativeFolderSettingsActivity, ServerConnectionActivity::class.java).apply {
-                    action = ServerConnectionActivity.ACTION_CHANGE_SERVER
-                })
-                finish()
+    private fun changeServer() {
+        if (!requireCurrentServer()) return
+        startActivity(Intent(this, ServerConnectionActivity::class.java).apply {
+            action = ServerConnectionActivity.ACTION_CHANGE_SERVER
+        })
+        finish()
+    }
+
+    private fun disconnectFolder() {
+        if (!requireCurrentServer()) return
+        executor.execute {
+            val result = treeAccessStore.disconnect(serverConnection)
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                if (result == TreeAccessMutation.Conflict) {
+                    finish()
+                    return@runOnUiThread
+                }
+                backgroundEnabled = false
+                updateUi { copy(folderStatus = getString(if (result == TreeAccessMutation.Changed) R.string.folder_disconnected else R.string.folder_connection_failed)) }
+                refreshScreen(keepFolderStatus = true)
+                refreshLastCheckStatus()
             }
         }
     }
 
-    private fun bindActions() {
-        primaryAction.setOnClickListener { performPrimaryAction() }
-        deviceLabel.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
-            pairAccount()
-            true
-        }
-        forgetButton.setOnClickListener {
-            beginForgetAccount()
-        }
-        changeFolderButton.setOnClickListener {
-            if (requireCurrentServer()) openDirectoryPicker()
-        }
-        disconnectButton.setOnClickListener {
-            if (!requireCurrentServer()) return@setOnClickListener
-            executor.execute {
-                val result = treeAccessStore.disconnect(serverConnection)
-                runOnUiThread {
-                    if (isDestroyed) return@runOnUiThread
-                    if (result == TreeAccessMutation.Conflict) {
-                        finish()
-                        return@runOnUiThread
-                    }
-                    backgroundEnabled = false
-                    folderStatus.setText(
-                        if (result == TreeAccessMutation.Changed) {
-                            R.string.folder_disconnected
-                        } else {
-                            R.string.folder_connection_failed
-                        },
-                    )
-                    refreshScreen(keepFolderStatus = true)
-                    refreshLastCheckStatus()
-                }
+    private fun toggleBackground() {
+        if (!requireCurrentServer()) return
+        val enable = !backgroundEnabled
+        when (setPeriodicAutomationEnabled(enable)) {
+            AutomationMutation.Changed -> {
+                backgroundEnabled = enable
+                updateUi { copy(backgroundStatus = getString(if (enable) R.string.background_enabled else R.string.background_disabled)) }
+                refreshAutomationState(keepStatus = true)
             }
+            AutomationMutation.SetupRequired -> refreshScreen()
+            AutomationMutation.ServerChanged -> finish()
         }
-        backgroundButton.setOnClickListener {
-            if (!requireCurrentServer()) return@setOnClickListener
-            val enable = !backgroundEnabled
-            when (setPeriodicAutomationEnabled(enable)) {
-                AutomationMutation.Changed -> {
-                    backgroundEnabled = enable
-                    backgroundStatus.setText(
-                        if (enable) R.string.background_enabled else R.string.background_disabled,
-                    )
-                    refreshAutomationState(keepStatus = true)
-                }
-                AutomationMutation.SetupRequired -> {
-                    refreshScreen()
-                }
-                AutomationMutation.ServerChanged -> finish()
-            }
-        }
-        healthConnectPermission.setOnClickListener {
-            if (!requireCurrentServer()) return@setOnClickListener
-            android.app.AlertDialog.Builder(this)
-                .setTitle(R.string.health_connect_title)
-                .setMessage(R.string.health_connect_permission_needed)
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.health_connect_grant_permission) { _, _ ->
-                    requestHealthConnectPermissions.launch(HEALTH_CONNECT_PERMISSIONS)
-                }
-                .show()
-        }
-        healthConnectSync.setOnClickListener { syncHealthConnectForeground() }
-        healthConnectBackground.setOnClickListener {
-            if (!requireCurrentServer()) return@setOnClickListener
-            if (healthConnectBackgroundEnabled) {
-                ReconciliationScheduler.disableHealthConnectPeriodic(this)
-                healthConnectBackgroundEnabled = false
-            } else {
-                healthConnectBackground.isEnabled = false
-                executor.execute {
-                    val gateway = AndroidHealthConnectGateway(this)
-                    val granted = runCatching {
-                        gateway.supportsBackgroundRead() && gateway.hasBackgroundPermission()
-                    }.getOrDefault(false)
-                    runOnUiThread {
-                        if (isDestroyed || !isCurrentServer()) return@runOnUiThread
-                        if (!granted) {
-                            android.app.AlertDialog.Builder(this)
-                                .setTitle(R.string.health_connect_title)
-                                .setMessage(R.string.health_connect_background_permission_needed)
-                                .setNegativeButton(R.string.cancel, null)
-                                .setPositiveButton(R.string.health_connect_grant_permission) { _, _ ->
-                                    requestHealthConnectPermissions.launch(
-                                        HEALTH_CONNECT_PERMISSIONS + HEALTH_CONNECT_BACKGROUND_PERMISSION,
-                                    )
-                                }
-                                .show()
-                        } else {
-                            ReconciliationScheduler.enableHealthConnectPeriodic(this)
-                            healthConnectBackgroundEnabled = true
-                        }
-                        refreshHealthConnectState()
-                    }
-                }
-                return@setOnClickListener
-            }
+    }
+
+    private fun showHealthPermissionDialog() {
+        if (requireCurrentServer()) updateUi { copy(dialog = NativeImportSetupDialog.HealthPermission) }
+    }
+
+    private fun toggleHealthBackground() {
+        if (!requireCurrentServer()) return
+        if (healthConnectBackgroundEnabled) {
+            ReconciliationScheduler.disableHealthConnectPeriodic(this)
+            healthConnectBackgroundEnabled = false
             refreshHealthConnectState()
+            return
         }
-        findViewById<Button>(R.id.return_to_runway).setOnClickListener {
-            if (!requireCurrentServer()) return@setOnClickListener
-            startActivity(Intent(this, ServerConnectionActivity::class.java))
-            finish()
+        updateUi { copy(healthBackgroundActionEnabled = false) }
+        executor.execute {
+            val gateway = AndroidHealthConnectGateway(this)
+            val granted = runCatching { gateway.supportsBackgroundRead() && gateway.hasBackgroundPermission() }.getOrDefault(false)
+            runOnUiThread {
+                if (isDestroyed || !isCurrentServer()) return@runOnUiThread
+                if (!granted) updateUi { copy(dialog = NativeImportSetupDialog.HealthBackgroundPermission) }
+                else {
+                    ReconciliationScheduler.enableHealthConnectPeriodic(this)
+                    healthConnectBackgroundEnabled = true
+                }
+                refreshHealthConnectState()
+            }
         }
+    }
+
+    private fun returnToRunway() {
+        if (!requireCurrentServer()) return
+        startActivity(Intent(this, ServerConnectionActivity::class.java))
+        finish()
+    }
+
+    private fun confirmDialog(dialog: NativeImportSetupDialog) {
+        updateUi { copy(dialog = NativeImportSetupDialog.None) }
+        when (dialog) {
+            NativeImportSetupDialog.HealthPermission -> requestHealthConnectPermissions.launch(HEALTH_CONNECT_PERMISSIONS)
+            NativeImportSetupDialog.HealthBackgroundPermission -> requestHealthConnectPermissions.launch(HEALTH_CONNECT_PERMISSIONS + HEALTH_CONNECT_BACKGROUND_PERMISSION)
+            NativeImportSetupDialog.ForgetUnrevoked -> beginForgetAccount(allowUnrevoked = true)
+            NativeImportSetupDialog.RouteConsent -> pendingRouteConsentRecordId?.let(requestExerciseRoute::launch)
+            NativeImportSetupDialog.None -> Unit
+        }
+    }
+
+    private fun dismissDialog() {
+        if (uiState.dialog == NativeImportSetupDialog.RouteConsent) pendingRouteConsentRecordId = null
+        updateUi { copy(dialog = NativeImportSetupDialog.None) }
     }
 
     private fun performPrimaryAction() {
@@ -343,8 +307,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             else -> {
                 when (queueReconciliationIfReady()) {
                     AutomationMutation.Changed -> {
-                        folderStatus.setText(R.string.check_queued)
-                        lastCheckStatus.setText(R.string.last_check_queued)
+                        updateUi { copy(folderStatus = getString(R.string.check_queued), lastCheckStatus = getString(R.string.last_check_queued)) }
                     }
                     AutomationMutation.SetupRequired -> refreshScreen()
                     AutomationMutation.ServerChanged -> finish()
@@ -364,21 +327,26 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         chooseDirectory.launch(initialUri)
     }
 
+    private fun openOneOffGpxPicker() {
+        if (!requireCurrentServer() || credentialStore.load() == null) return
+        oneOffPickerConnection = serverConnection
+        chooseOneOffGpx.launch(arrayOf("application/gpx+xml", "application/xml", "text/xml", "application/octet-stream"))
+    }
+
     private fun pairAccount() {
         if (!requireCurrentServer()) return
         val session = mobileSessionStore.loadSession()
         if (session == null) {
-            pairingStatus.setText(R.string.pairing_sign_in_needed)
+            updateUi { copy(pairingStatus = getString(R.string.pairing_sign_in_needed)) }
             refreshScreen(keepPairingStatus = true)
             return
         }
-        val label = deviceLabel.text.toString().trim()
+        val label = uiState.deviceLabel.trim()
         if (label.isBlank()) {
-            pairingStatus.setText(R.string.pairing_label_invalid)
+            updateUi { copy(pairingStatus = getString(R.string.pairing_label_invalid)) }
             return
         }
-        primaryAction.isEnabled = false
-        pairingStatus.setText(R.string.pairing_in_progress)
+        updateUi { copy(primaryActionEnabled = false, pairingStatus = getString(R.string.pairing_in_progress)) }
         val expectedCredentialState = credentialStore.snapshot()
         executor.execute {
             if (!isCurrentServer()) return@execute
@@ -390,8 +358,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 }
                 runOnUiThread {
                     if (isDestroyed || !isCurrentServer()) return@runOnUiThread
-                    pairingStatus.setText(
-                        when (pairing) {
+                    updateUi { copy(pairingStatus = getString(when (pairing) {
                             MobileImportPairingResult.Unauthorized ->
                                 R.string.pairing_sign_in_needed
                             is MobileImportPairingResult.Rejected ->
@@ -400,8 +367,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                                 R.string.pairing_failed
                             is MobileImportPairingResult.Ready ->
                                 error("Handled before UI delivery")
-                        },
-                    )
+                        })) }
                     refreshScreen(keepPairingStatus = true)
                 }
                 return@execute
@@ -420,13 +386,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (completion) {
                     is PairingCompletion.Connected -> {
-                        pairingStatus.setText(R.string.pairing_connected)
+                        updateUi { copy(pairingStatus = getString(R.string.pairing_connected)) }
                         backgroundEnabled = automationStarted
-                        if (automationStarted) lastCheckStatus.setText(R.string.last_check_queued)
+                        if (automationStarted) updateUi { copy(lastCheckStatus = getString(R.string.last_check_queued)) }
                     }
-                    PairingCompletion.Invalid -> pairingStatus.setText(R.string.pairing_invalid)
-                    PairingCompletion.Retryable -> pairingStatus.setText(R.string.pairing_failed)
-                    PairingCompletion.StorageFailed -> pairingStatus.setText(R.string.pairing_store_failed)
+                    PairingCompletion.Invalid -> updateUi { copy(pairingStatus = getString(R.string.pairing_invalid)) }
+                    PairingCompletion.Retryable -> updateUi { copy(pairingStatus = getString(R.string.pairing_failed)) }
+                    PairingCompletion.StorageFailed -> updateUi { copy(pairingStatus = getString(R.string.pairing_store_failed)) }
                 }
                 refreshScreen(keepPairingStatus = true)
             }
@@ -467,15 +433,15 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 when (result) {
-                    is DeviceStatusApiResult.Connected -> pairingStatus.setText(R.string.pairing_connected)
+                    is DeviceStatusApiResult.Connected -> updateUi { copy(pairingStatus = getString(R.string.pairing_connected)) }
                     DeviceStatusApiResult.Unauthorized -> {
                         backgroundEnabled = false
-                        pairingStatus.setText(R.string.pairing_expired_or_revoked)
+                        updateUi { copy(pairingStatus = getString(R.string.pairing_expired_or_revoked)) }
                         refreshScreen(keepPairingStatus = true)
                         refreshLastCheckStatus()
                     }
                     DeviceStatusApiResult.Retryable -> {
-                        pairingStatus.setText(R.string.pairing_status_unavailable)
+                        updateUi { copy(pairingStatus = getString(R.string.pairing_status_unavailable)) }
                     }
                 }
             }
@@ -552,13 +518,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
 
     private fun refreshLastCheckStatus() {
         if (workRunningByName.values.any { it }) {
-            lastCheckStatus.setText(R.string.last_check_running)
+            updateUi { copy(lastCheckStatus = getString(R.string.last_check_running)) }
             return
         }
 
         val record = ReconciliationStatusStore(this).load()
         if (record == null) {
-            lastCheckStatus.setText(R.string.last_check_never)
+            updateUi { copy(lastCheckStatus = getString(R.string.last_check_never)) }
             return
         }
         var text = getString(
@@ -589,7 +555,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         if (record.scanTruncated && record.state != ReconciliationWorker.STATE_SCAN_LIMIT) {
             text = getString(R.string.last_check_scan_limit_suffix, text)
         }
-        lastCheckStatus.text = text
+        updateUi { copy(lastCheckStatus = text) }
     }
 
     private fun refreshScreen(
@@ -600,29 +566,23 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         val signedIn = mobileSessionStore.loadSession() != null
         val folderState = treeAccessStore.currentState(serverConnection)
 
-        pairingForm.visibility = if (!accountConnected && signedIn) View.VISIBLE else View.GONE
-        forgetButton.visibility = if (accountConnected) View.VISIBLE else View.GONE
-        if (!keepPairingStatus) {
-            pairingStatus.setText(
-                when {
+        updateUi {
+            copy(
+                showPairingForm = !accountConnected && signedIn,
+                showForgetAccount = accountConnected,
+                oneOffImportEnabled = accountConnected,
+                pairingStatus = if (keepPairingStatus) pairingStatus else getString(when {
                     accountConnected -> R.string.pairing_connected
                     signedIn -> R.string.pairing_intro
                     else -> R.string.pairing_sign_in_needed
-                },
-            )
-        }
-
-        changeFolderButton.visibility =
-            if (folderState is TreeAccessState.Connected) View.VISIBLE else View.GONE
-        disconnectButton.visibility =
-            if (folderState is TreeAccessState.Missing) View.GONE else View.VISIBLE
-        if (!keepFolderStatus) {
-            folderStatus.setText(
-                when (folderState) {
+                }),
+                showChangeFolder = folderState is TreeAccessState.Connected,
+                showDisconnectFolder = folderState !is TreeAccessState.Missing,
+                folderStatus = if (keepFolderStatus) folderStatus else getString(when (folderState) {
                     is TreeAccessState.Connected -> R.string.folder_connected
                     is TreeAccessState.PermissionRequired -> R.string.folder_permission_needed
                     TreeAccessState.Missing -> R.string.folder_not_connected
-                },
+                }),
             )
         }
 
@@ -633,64 +593,50 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             folderState is TreeAccessState.Missing -> R.string.choose_folder
             else -> R.string.check_now
         }
-        primaryAction.setText(primaryLabel)
-        primaryAction.isEnabled = true
-        setupStatus.setText(
-            when {
-                !accountConnected -> R.string.setup_connect_account
-                folderState is TreeAccessState.PermissionRequired -> R.string.setup_restore_folder
-                folderState is TreeAccessState.Missing -> R.string.setup_choose_folder
-                else -> R.string.setup_ready
-            },
-        )
-        setupIndicator.backgroundTintList = ColorStateList.valueOf(
-            getColor(
-                if (accountConnected && folderState !is TreeAccessState.PermissionRequired) {
-                    R.color.runway_status
-                } else {
-                    R.color.runway_attention
-                },
-            ),
-        )
+        updateUi {
+            copy(
+                primaryActionLabel = getString(primaryLabel),
+                primaryActionEnabled = true,
+                setupStatus = getString(when {
+                    !accountConnected -> R.string.setup_connect_account
+                    folderState is TreeAccessState.PermissionRequired -> R.string.setup_restore_folder
+                    folderState is TreeAccessState.Missing -> R.string.setup_choose_folder
+                    else -> R.string.setup_ready
+                }),
+                setupReady = accountConnected && folderState !is TreeAccessState.PermissionRequired,
+            )
+        }
         refreshAutomationState()
         refreshHealthConnectState()
     }
 
     private fun refreshHealthConnectState() {
-        if (!::healthConnectStatus.isInitialized) return
         val gateway = AndroidHealthConnectGateway(this)
         val availability = gateway.availability()
         val connected = credentialStore.load() != null
         val permitted = availability == HealthConnectAvailability.Available && healthConnectPermissionsGranted
-        healthConnectPermission.visibility = if (!connected || permitted) View.GONE else View.VISIBLE
-        healthConnectSync.visibility = if (connected && permitted) View.VISIBLE else View.GONE
-        healthConnectBackground.visibility =
-            if (connected && permitted && healthConnectBackgroundSupported) View.VISIBLE else View.GONE
-        healthConnectSync.isEnabled = connected && permitted
-        healthConnectBackground.isEnabled = connected && permitted && healthConnectBackgroundSupported
-        healthConnectBackground.setText(
-            if (healthConnectBackgroundEnabled) {
-                R.string.health_connect_disable_background
-            } else {
-                R.string.health_connect_enable_background
-            },
-        )
-        healthConnectStatus.setText(
-            when {
-                !connected -> R.string.health_connect_pairing_needed
-                availability == HealthConnectAvailability.Unavailable -> R.string.health_connect_unavailable
-                availability == HealthConnectAvailability.UpdateRequired -> R.string.health_connect_update_required
-                !permitted -> R.string.health_connect_permission_needed
-                HealthConnectCursorStore(this, serverOrigin).needsAttention() ->
-                    R.string.health_connect_needs_attention
-                healthConnectBackgroundEnabled -> R.string.health_connect_background_enabled
-                else -> R.string.health_connect_ready
-            },
-        )
+        updateUi {
+            copy(
+                showHealthPermission = connected && !permitted,
+                showHealthSync = connected && permitted,
+                showHealthBackground = connected && permitted && healthConnectBackgroundSupported,
+                healthSyncActionEnabled = connected && permitted,
+                healthBackgroundActionEnabled = connected && permitted && healthConnectBackgroundSupported,
+                healthBackgroundActionLabel = getString(if (healthConnectBackgroundEnabled) R.string.health_connect_disable_background else R.string.health_connect_enable_background),
+                healthConnectStatus = getString(when {
+                    !connected -> R.string.health_connect_pairing_needed
+                    availability == HealthConnectAvailability.Unavailable -> R.string.health_connect_unavailable
+                    availability == HealthConnectAvailability.UpdateRequired -> R.string.health_connect_update_required
+                    !permitted -> R.string.health_connect_permission_needed
+                    HealthConnectCursorStore(this@NativeFolderSettingsActivity, serverOrigin).needsAttention() -> R.string.health_connect_needs_attention
+                    healthConnectBackgroundEnabled -> R.string.health_connect_background_enabled
+                    else -> R.string.health_connect_ready
+                }),
+            )
+        }
     }
 
     private fun queryHealthConnectPermissions() {
-        if (!::healthConnectStatus.isInitialized) return
         executor.execute {
             val gateway = AndroidHealthConnectGateway(this)
             val available = gateway.availability() == HealthConnectAvailability.Available
@@ -722,8 +668,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             refreshHealthConnectState()
             return
         }
-        healthConnectSync.isEnabled = false
-        healthConnectStatus.setText(R.string.health_connect_syncing)
+        updateUi { copy(healthSyncActionEnabled = false, healthConnectStatus = getString(R.string.health_connect_syncing)) }
         executor.execute {
             val cursor = HealthConnectCursorStore(this, serverOrigin)
             val refreshed = refreshHealthCredential(
@@ -776,8 +721,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private fun deliverHealthSyncOutcome(outcome: HealthSyncResult, gateway: AndroidHealthConnectGateway?) {
         runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
-                healthConnectStatus.setText(
-                    when (outcome) {
+                updateUi { copy(healthConnectStatus = getString(when (outcome) {
                         HealthSyncResult.Synced -> R.string.health_connect_synced
                         HealthSyncResult.PermissionRequired -> R.string.health_connect_permission_needed
                         HealthSyncResult.Unavailable -> R.string.health_connect_unavailable
@@ -785,41 +729,25 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                         HealthSyncResult.PairingRequired -> R.string.health_connect_pairing_needed
                         HealthSyncResult.Retryable -> R.string.health_connect_retryable
                         HealthSyncResult.NeedsAttention -> R.string.health_connect_needs_attention
-                    },
-                )
+                    })) }
                 refreshHealthConnectState()
                 gateway?.routeConsentRecordId?.takeIf { !routePromptConsumed }?.let { recordId ->
                     pendingRouteConsentRecordId = recordId
                     routePromptConsumed = true
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle(R.string.health_connect_title)
-                        .setMessage(R.string.health_connect_route_consent)
-                        .setNegativeButton(R.string.cancel) { _, _ ->
-                            pendingRouteConsentRecordId = null
-                        }
-                        .setPositiveButton(R.string.health_connect_route_allow) { _, _ ->
-                            requestExerciseRoute.launch(recordId)
-                        }
-                        .setOnCancelListener { pendingRouteConsentRecordId = null }
-                        .show()
+                    updateUi { copy(dialog = NativeImportSetupDialog.RouteConsent) }
                 }
         }
     }
 
     private fun refreshAutomationState(keepStatus: Boolean = false) {
         val ready = isReady()
-        backgroundButton.isEnabled = ready
-        backgroundButton.setText(
-            if (backgroundEnabled) R.string.disable_background else R.string.enable_background,
-        )
+        updateUi { copy(backgroundActionEnabled = ready, backgroundActionLabel = getString(if (backgroundEnabled) R.string.disable_background else R.string.enable_background)) }
         if (!keepStatus) {
-            backgroundStatus.setText(
-                when {
+            updateUi { copy(backgroundStatus = getString(when {
                     !ready -> R.string.background_setup_required
                     backgroundEnabled -> R.string.background_enabled
                     else -> R.string.background_disabled
-                },
-            )
+                })) }
         }
     }
 
@@ -889,8 +817,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         if (!requireCurrentServer()) return
         val credentialState = credentialStore.snapshot()
         val credential = credentialState.credential ?: return
-        forgetButton.isEnabled = false
-        pairingStatus.setText(R.string.pairing_disconnecting)
+        updateUi { copy(forgetActionEnabled = false, pairingStatus = getString(R.string.pairing_disconnecting)) }
         executor.execute {
             val disconnected = if (allowUnrevoked) {
                 DeviceDisconnectApiResult.Unauthorized
@@ -903,16 +830,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             if (disconnected == DeviceDisconnectApiResult.Retryable) {
                 runOnUiThread {
                     if (isDestroyed || !isCurrentServer()) return@runOnUiThread
-                    forgetButton.isEnabled = true
-                    pairingStatus.setText(R.string.pairing_disconnect_unavailable)
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle(R.string.pairing_disconnect_unavailable_title)
-                        .setMessage(R.string.pairing_disconnect_unavailable_consequence)
-                        .setNegativeButton(R.string.cancel, null)
-                        .setPositiveButton(R.string.forget_anyway) { _, _ ->
-                            beginForgetAccount(allowUnrevoked = true)
-                        }
-                        .show()
+                    updateUi {
+                        copy(
+                            forgetActionEnabled = true,
+                            pairingStatus = getString(R.string.pairing_disconnect_unavailable),
+                            dialog = NativeImportSetupDialog.ForgetUnrevoked,
+                        )
+                    }
                 }
                 return@execute
             }
@@ -932,17 +856,25 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             runOnUiThread {
                 if (isDestroyed || !isCurrentServer()) return@runOnUiThread
                 backgroundEnabled = false
-                pairingStatus.setText(R.string.pairing_disconnected)
+                updateUi { copy(pairingStatus = getString(R.string.pairing_disconnected)) }
                 refreshScreen(keepPairingStatus = true)
                 refreshLastCheckStatus()
             }
         }
     }
 
-    private fun restorePickerConnection(state: Bundle): ServerConnection? {
-        val origin = state.getString(PICKER_ORIGIN_KEY) ?: return null
-        if (!state.containsKey(PICKER_GENERATION_KEY)) return null
-        return ServerConnection(origin, state.getLong(PICKER_GENERATION_KEY))
+    private fun restorePickerConnection(
+        state: Bundle,
+        originKey: String,
+        generationKey: String,
+    ): ServerConnection? {
+        val origin = state.getString(originKey) ?: return null
+        if (!state.containsKey(generationKey)) return null
+        return ServerConnection(origin, state.getLong(generationKey))
+    }
+
+    private fun updateUi(transform: NativeImportSetupUiState.() -> NativeImportSetupUiState) {
+        uiState = uiState.transform()
     }
 
     private companion object {
@@ -950,5 +882,8 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         const val PERIODIC_WORK_NAME = "runway-folder-reconciliation"
         const val PICKER_ORIGIN_KEY = "picker_server_origin"
         const val PICKER_GENERATION_KEY = "picker_server_generation"
+        const val ONE_OFF_PICKER_ORIGIN_KEY = "one_off_picker_server_origin"
+        const val ONE_OFF_PICKER_GENERATION_KEY = "one_off_picker_server_generation"
+        const val DEVICE_LABEL_KEY = "device_label"
     }
 }

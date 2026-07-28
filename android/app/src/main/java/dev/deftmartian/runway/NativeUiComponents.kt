@@ -1,42 +1,83 @@
 package dev.deftmartian.runway
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun NativeList(loading: Boolean, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    LazyColumn(
+    Box(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        if (loading) item { LinearLoadingNotice() }
-        content()
+        LazyColumn(
+            modifier = Modifier
+                .widthIn(max = 760.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (loading) item { LinearLoadingNotice() }
+            content()
+        }
     }
 }
 
 @Composable
 internal fun ScreenIntro(title: String, body: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+    val railColor = MaterialTheme.colorScheme.primary
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = railColor,
+                    start = Offset(0f, 2.dp.toPx()),
+                    end = Offset(0f, size.height - 2.dp.toPx()),
+                    strokeWidth = 3.dp.toPx(),
+                )
+            }
+            .padding(start = 13.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            title,
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+        )
         Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -49,42 +90,54 @@ internal fun WorkoutCard(
     onReset: (() -> Unit)? = null,
     onUndo: (() -> Unit)? = null,
 ) {
-    val type = workout.type.orEmpty().replaceFirstChar { it.uppercase() }
-    val distance = workout.targetDistanceMeters?.let(::formatDistance)
-    val duration = workout.targetDurationSeconds?.let(::formatDuration)
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(workout.scheduledDate.orEmpty(), style = MaterialTheme.typography.labelLarge)
-            Text(type.ifBlank { "Run" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                listOfNotNull(distance, duration).joinToString(" · ").ifBlank { "Use the plan details" },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val type = workout.type.orEmpty().replaceFirstChar { it.uppercase() }.ifBlank { "Run" }
+    val isRest = workout.type == "rest"
+    val measurement = if (isRest) {
+        "Recovery day"
+    } else {
+        listOfNotNull(
+            workout.targetDistanceMeters?.let(::formatDistance),
+            workout.targetDurationSeconds?.let(::formatDuration),
+        ).joinToString(" · ").ifBlank { "Plan details" }
+    }
+    val emphasis = if (isRest) LedgerEmphasis.Neutral else LedgerEmphasis.Planned
+    LedgerSurface {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                workout.scheduledDate?.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(type, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                workout.purpose?.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            LedgerState(
+                text = when {
+                    isRest -> "Rest"
+                    workout.isEdited == true -> "↺ Edited"
+                    else -> workout.status.orEmpty().replaceFirstChar { it.uppercase() }
+                },
+                emphasis = if (workout.isEdited == true) LedgerEmphasis.Review else emphasis,
             )
-            workout.purpose?.takeIf(String::isNotBlank)?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(12.dp))
+        MeasurementReadout(if (isRest) "Schedule" else "Planned", measurement, emphasis)
+        if (onRecord != null || onEdit != null) {
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                onRecord?.let { Button(onClick = it) { Text("Record result") } }
+                onEdit?.let { OutlinedButton(onClick = it) { Text("Adjust") } }
             }
-            if (workout.isEdited == true) {
-                Text("Adjusted", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            }
-            if (onRecord != null || onEdit != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    onRecord?.let {
-                        Button(onClick = it) { Text("Record result") }
-                    }
-                    onEdit?.let {
-                        OutlinedButton(onClick = it) { Text("Adjust") }
-                    }
-                }
-            }
-            if (onReset != null || onUndo != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    onUndo?.let {
-                        TextButton(onClick = it) { Text("Undo last change") }
-                    }
-                    onReset?.let {
-                        TextButton(onClick = it) { Text("Restore recommendation") }
-                    }
-                }
+        }
+        if (onReset != null || onUndo != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                onUndo?.let { TextButton(onClick = it) { Text("Undo last change") } }
+                onReset?.let { TextButton(onClick = it) { Text("Restore recommendation") } }
             }
         }
     }
@@ -96,80 +149,126 @@ internal fun ActivityCard(
     title: String? = null,
     actions: (@Composable () -> Unit)? = null,
 ) {
-    val distance = activity.distanceMeters?.let(::formatDistance)
-    val duration = activity.durationSeconds?.let(::formatDuration)
-    Card {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            title?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
-            Text(
-                activity.occurredDate.orEmpty().ifBlank { activity.activityDate.orEmpty() }
-                    .ifBlank { "Activity" },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                listOfNotNull(distance, duration, activity.source?.takeIf(String::isNotBlank))
-                    .joinToString(" · "),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (activity.pain == true) Text("Pain noted", color = MaterialTheme.colorScheme.error)
-            else if (activity.feltHard == true) Text("Hard effort noted", color = MaterialTheme.colorScheme.primary)
-            actions?.invoke()
+    val measurement = listOfNotNull(
+        activity.distanceMeters?.takeIf { it > 0 }?.let(::formatDistance),
+        activity.durationSeconds?.let(::formatDuration),
+    ).joinToString(" · ").ifBlank { "Recorded activity" }
+    val date = activity.occurredDate.orEmpty().ifBlank { activity.activityDate.orEmpty() }.ifBlank { "Activity" }
+    val state = when {
+        activity.pain == true -> "! Pain noted"
+        activity.feltHard == true -> "Hard effort"
+        activity.reviewState == "review" -> "! Needs review"
+        else -> "✓ Accepted"
+    }
+    val emphasis = when {
+        activity.pain == true -> LedgerEmphasis.Danger
+        activity.feltHard == true || activity.reviewState == "review" -> LedgerEmphasis.Review
+        else -> LedgerEmphasis.Actual
+    }
+    LedgerSurface {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                title?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+                Text(date, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                activity.source?.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            LedgerState(state, emphasis)
+        }
+        Spacer(Modifier.height(12.dp))
+        MeasurementReadout("Actual", measurement, emphasis)
+        actions?.let {
+            Spacer(Modifier.height(10.dp))
+            it()
         }
     }
 }
 
 @Composable
 internal fun WeekCard(week: NativeWeek, summary: NativeWeekSummary?) {
-    val target = week.targetDistanceMeters?.let(::formatDistance)
-    val completed = summary?.completedDistanceMeters?.let(::formatDistance)
-    Card {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("Week ${week.weekNumber ?: 0}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("${completed ?: "0 km"} completed · ${target ?: "—"} planned")
-            Text(
-                listOfNotNull(
-                    week.startDate?.takeIf(String::isNotBlank),
-                    week.risk?.takeIf(String::isNotBlank)?.replaceFirstChar { it.uppercase() },
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    val planned = summary?.targetDistanceMeters ?: week.targetDistanceMeters
+    val actual = summary?.completedDistanceMeters ?: week.completedDistanceMeters
+    LedgerSurface {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Week ${week.weekNumber ?: 0}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                week.startDate?.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            week.risk?.takeIf(String::isNotBlank)?.let {
+                LedgerState(it.replaceFirstChar { character -> character.uppercase() }, LedgerEmphasis.Neutral)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            MeasurementReadout("Planned", planned?.let(::formatDistance).orDash(), LedgerEmphasis.Planned, Modifier.weight(1f))
+            MeasurementReadout("Actual", actual?.let(::formatDistance).orDash(), LedgerEmphasis.Actual, Modifier.weight(1f))
+        }
+        summary?.let {
+            val count = listOfNotNull(it.completedRuns, it.plannedRuns).joinToString(" / ")
+            if (count.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text("Runs recorded / planned: $count", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
 
 @Composable
 internal fun SettingCard(title: String, content: @Composable () -> Unit) {
-    Card {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            content()
-        }
+    LedgerSurface {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
     }
 }
 
 @Composable
 internal fun SettingRow(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.End,
+        )
     }
 }
 
 @Composable
 internal fun SectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(
+        text,
+        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
 }
 
 @Composable
 internal fun EmptyCard(message: String) {
-    Card {
-        Text(
-            message,
-            modifier = Modifier.padding(18.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.padding(vertical = 16.dp, horizontal = 14.dp), verticalAlignment = Alignment.Top) {
+            Spacer(Modifier.width(3.dp).height(34.dp).background(MaterialTheme.colorScheme.outline))
+            Spacer(Modifier.width(12.dp))
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -185,6 +284,62 @@ internal fun Notice(message: String, isError: Boolean = false) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             color = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
         )
+    }
+}
+
+@Composable
+internal fun MeasurementReadout(
+    label: String,
+    value: String,
+    emphasis: LedgerEmphasis,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            color = emphasis.color(),
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+internal fun LedgerState(text: String, emphasis: LedgerEmphasis) {
+    if (text.isBlank()) return
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = emphasis.color(),
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.End,
+    )
+}
+
+internal enum class LedgerEmphasis { Planned, Actual, Review, Danger, Neutral }
+
+@Composable
+private fun LedgerEmphasis.color() = when (this) {
+    LedgerEmphasis.Planned -> MaterialTheme.colorScheme.primary
+    LedgerEmphasis.Actual -> MaterialTheme.colorScheme.tertiary
+    LedgerEmphasis.Review -> MaterialTheme.colorScheme.secondary
+    LedgerEmphasis.Danger -> MaterialTheme.colorScheme.error
+    LedgerEmphasis.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+internal fun LedgerSurface(content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+                content = content,
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

@@ -12,7 +12,6 @@ const requiredFiles = [
 	'android/.gitignore',
 	'android/app/src/main/AndroidManifest.xml',
 	'android/app/src/main/res/layout/activity_server_connection.xml',
-	'android/app/src/main/res/layout/activity_native_folder_settings.xml',
 	'android/app/src/main/res/mipmap-anydpi/ic_launcher.xml',
 	'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml',
 	'android/app/src/main/res/drawable/ic_launcher_monochrome.xml',
@@ -27,6 +26,13 @@ const requiredFiles = [
 	'android/app/src/main/java/dev/deftmartian/runway/MobileCommands.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/MobileSessionStore.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeApp.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeAccountSecurityScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeActivityDetail.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeAuthReturn.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeAuthScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeHistoryDetailScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeHistoryScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeImportSetupScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativePayloadCodec.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativePayloadModels.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewDialogs.kt',
@@ -35,6 +41,7 @@ const requiredFiles = [
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsDialogs.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSetupScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeStatsSurface.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeTodayCalendarScreens.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiComponents.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiModelHelpers.kt',
@@ -380,13 +387,20 @@ for (const file of productionMobileClientFiles) {
 }
 
 const nativeUiFiles = [
+	'android/app/src/main/java/dev/deftmartian/runway/NativeAccountSecurityScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeActivityDetail.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeApp.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeAuthScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeHistoryDetailScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeHistoryScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeImportSetupScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewDialogs.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeReviewProgressScreens.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeRunDialogs.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsDialogs.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSetupScreen.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeStatsSurface.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeTodayCalendarScreens.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiComponents.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiModelHelpers.kt'
@@ -398,9 +412,9 @@ const nativeProduct = `${nativeUi}\n${read(
 for (const required of [
 	'NativeDestination.Today',
 	'NativeDestination.Calendar',
-	'NativeDestination.Review',
+	'NativeDestination.Imports',
 	'NativeDestination.Progress',
-	'NativeDestination.Settings',
+	'NativeDestination.More',
 	'preview_workout_edit',
 	'record_manual_run',
 	'update_health_context',
@@ -551,7 +565,7 @@ for (const required of [
 	'minimum: 1',
 	'maximum: 2',
 	'nativeUi: true',
-	"nativeAuthorization: 'device_authorization'"
+	"nativeAuthorization: 'local_and_device_authorization'"
 ]) {
 	if (!instanceContract.includes(required)) {
 		errors.push(`Android instance compatibility contract is missing ${required}`);
@@ -562,12 +576,10 @@ const folderSettings = read(
 	'android/app/src/main/java/dev/deftmartian/runway/NativeFolderSettingsActivity.kt'
 );
 for (const required of [
-	'setContentView(R.layout.activity_native_folder_settings)',
-	'R.id.primary_action',
-	'R.id.background_status',
+	'setContent {',
+	'NativeImportSetupScreen(',
 	'getWorkInfosForUniqueWork',
 	'enableEdgeToEdge()',
-	'EdgeToEdgeLayout.applySystemBarPadding',
 	'executor.shutdown()',
 	'pickerConnection',
 	'clearIfCurrent',
@@ -575,8 +587,16 @@ for (const required of [
 ]) {
 	if (!folderSettings.includes(required)) {
 		errors.push(
-			`Android folder settings are missing the resource-backed state contract: ${required}`
+			`Android folder settings are missing the Compose state contract: ${required}`
 		);
+	}
+}
+const importSetup = read(
+	'android/app/src/main/java/dev/deftmartian/runway/NativeImportSetupScreen.kt'
+);
+for (const required of ['safeDrawingPadding()', 'LiveRegionMode.Polite', 'ImportSetupDialog(']) {
+	if (!importSetup.includes(required)) {
+		errors.push(`Android import setup is missing the Compose accessibility contract: ${required}`);
 	}
 }
 

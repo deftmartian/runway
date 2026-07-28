@@ -53,6 +53,9 @@ import {
 	syncNextcloudSource,
 	testNextcloudSource
 } from './import-sources';
+import { revokeAndroidDevice } from './android-devices';
+import { deleteActivityData } from './repositories/activity-mutations';
+import { resolveHealthConnectDuplicate, resolveHealthConnectRecord } from './health-connect';
 
 export const mobileActionNames = [
 	'create_plan',
@@ -64,6 +67,8 @@ export const mobileActionNames = [
 	'confirm_activity_extra',
 	'update_activity_feedback',
 	'delete_activity',
+	'resolve_health_connect_record',
+	'resolve_health_connect_duplicate',
 	'apply_plan_decision',
 	'preview_workout_edit',
 	'apply_workout_edit',
@@ -84,7 +89,9 @@ export const mobileActionNames = [
 	'connect_nextcloud',
 	'test_nextcloud',
 	'sync_nextcloud',
-	'disconnect_nextcloud'
+	'disconnect_nextcloud',
+	'revoke_android_device',
+	'delete_imported_activity_data'
 ] as const;
 
 export type MobileActionName = (typeof mobileActionNames)[number];
@@ -104,10 +111,22 @@ const nextcloudSourceBody = z.strictObject({
 	sharePassword: z.string().max(1_024)
 });
 const sourceIdBody = z.strictObject({ sourceId: uuid });
+const androidDeviceIdBody = z.strictObject({ deviceId: uuid });
+const deleteImportedActivityDataBody = z.strictObject({
+	confirmation: z.literal('DELETE IMPORTED ACTIVITY DATA')
+});
 const activityFeedbackBody = z.strictObject({
 	activityId: uuid,
 	feltHard: z.boolean(),
 	pain: z.boolean()
+});
+const healthConnectRecordDecisionBody = z.strictObject({
+	mappingId: uuid,
+	decision: z.enum(['accept_correction', 'keep_current', 'delete_from_runway', 'retain_in_runway'])
+});
+const healthConnectDuplicateDecisionBody = z.strictObject({
+	mappingId: uuid,
+	decision: z.enum(['keep_health_connect', 'use_existing'])
 });
 const timedSegment = z.strictObject({
 	kind: z.enum(['run', 'walk']),
@@ -205,7 +224,7 @@ export async function runMobileAction(
 				if (!input.ok) return input.response;
 				const result = await recordManualRun(userId, {
 					occurredDate: input.data.occurredDate,
-					distanceMeters: Math.round(input.data.distanceKm * 1_000),
+					distanceMeters: Math.round((input.data.distanceKm ?? 0) * 1_000),
 					feltHard: input.data.feltHard,
 					pain: input.data.pain,
 					...(input.data.durationMinutes === undefined
@@ -256,6 +275,28 @@ export async function runMobileAction(
 				if (!input.ok) return input.response;
 				await deleteActivityRecord(userId, input.data.activityId);
 				return success('Activity deleted.');
+			}
+			case 'resolve_health_connect_record': {
+				const input = parse(healthConnectRecordDecisionBody, body);
+				if (!input.ok) return input.response;
+				await resolveHealthConnectRecord(userId, input.data.mappingId, input.data.decision);
+				return success(
+					input.data.decision === 'accept_correction'
+						? 'Health Connect correction applied.'
+						: input.data.decision === 'delete_from_runway'
+							? 'Activity removed from runway.'
+							: 'Health Connect source decision saved.'
+				);
+			}
+			case 'resolve_health_connect_duplicate': {
+				const input = parse(healthConnectDuplicateDecisionBody, body);
+				if (!input.ok) return input.response;
+				await resolveHealthConnectDuplicate(userId, input.data.mappingId, input.data.decision);
+				return success(
+					input.data.decision === 'keep_health_connect'
+						? 'Health Connect record kept.'
+						: 'Existing activity kept.'
+				);
 			}
 			case 'apply_plan_decision': {
 				const input = parse(consequenceDecisionSchema, body);
@@ -447,6 +488,25 @@ export async function runMobileAction(
 					return nextcloudFailure(error, 'Nextcloud folder could not be disconnected.');
 				}
 			}
+			case 'revoke_android_device': {
+				const input = parse(androidDeviceIdBody, body);
+				if (!input.ok) return input.response;
+				const revoked = await revokeAndroidDevice(userId, input.data.deviceId);
+				return revoked
+					? success('Import device revoked.')
+					: notFound('That import device is no longer active.');
+			}
+			case 'delete_imported_activity_data': {
+				const input = parse(deleteImportedActivityDataBody, body);
+				if (!input.ok) return input.response;
+				const result = await deleteActivityData(userId);
+				return success(
+					'Imported activity data deleted. This phone was disconnected from imports.',
+					{
+						deleted: result
+					}
+				);
+			}
 		}
 	} catch (error) {
 		const message = safeDomainMessage(error);
@@ -541,7 +601,8 @@ function safeDomainMessage(error: unknown): string | null {
 	if (!message || message.length > 300) return null;
 	const safePatterns = [
 		/^(Activity|Workout|Future workout|Rest days|Feedback|Manual run|Manual runs|Linked|Unlink|That workout|This activity|This goal|Training plans|Race events|No active plan|No reversible|The active plan|The beginner phase|There is no completed|The recorded work|The current phase|The proposed workout|Review and confirm|Generated recommendation|Workout dates|Only workouts|Reset or undo|Set training time zone|Choose a valid|Unknown plan lifecycle)/,
-		/^(Distance|Timed|Rest|Run) prescriptions/
+		/^(Distance|Timed|Rest|Run) prescriptions/,
+		/^(Health Connect record is not available|Source deletion is not pending|Correction is not pending|Unlink this accepted activity before applying a correction|Stop counting this activity as extra before applying a correction|Duplicate candidate is not available)$/
 	];
 	return safePatterns.some((pattern) => pattern.test(message)) ? message : null;
 }

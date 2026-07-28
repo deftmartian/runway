@@ -103,6 +103,13 @@ internal class AndroidHealthConnectGateway(
         client().permissionController.getGrantedPermissions().contains(HEALTH_CONNECT_BACKGROUND_PERMISSION)
     }
 
+    fun revokeAllPermissions(): Boolean = runCatching {
+        if (availability() == HealthConnectAvailability.Available) {
+            runBlocking { client().permissionController.revokeAllPermissions() }
+        }
+        true
+    }.getOrDefault(false)
+
     fun supportsBackgroundRead(): Boolean =
         HealthConnectBackgroundPolicy.supported(
             client().features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND),

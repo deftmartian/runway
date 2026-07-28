@@ -44,27 +44,6 @@ class ShareReceiverActivity : ComponentActivity() {
             status.setText(R.string.share_server_required)
             return
         }
-        val origin = serverConnection.origin
-        val credentialStore = AndroidCredentialStore(this, origin)
-        val credentialState = credentialStore.snapshot()
-        val credential = credentialState.credential
-        if (credential == null) {
-            val handled = serverStore.mutateIfCurrent(serverConnection) {
-                if (!credentialStore.isCurrent(credentialState)) {
-                    false
-                } else {
-                    ReconciliationScheduler.cancelAll(this)
-                    ReconciliationStatusStore(this).record(
-                        ReconciliationWorker.STATE_PAIRING_REQUIRED,
-                    )
-                    true
-                }
-            } == true
-            status.setText(
-                if (handled) R.string.share_pairing_required else R.string.share_server_changed,
-            )
-            return
-        }
         val uri = resolveSingleContentUri()
         if (intent.action != Intent.ACTION_SEND || uri == null) {
             status.setText(R.string.share_rejected)
@@ -82,85 +61,8 @@ class ShareReceiverActivity : ComponentActivity() {
             return
         }
 
-        val metadata = readMetadata(uri)
-        val mimeType = runCatching { contentResolver.getType(uri) }.getOrNull() ?: intent.type
-        if (!GpxCandidatePolicy.isCandidate(metadata.displayName, mimeType, metadata.sizeBytes)) {
-            status.setText(
-                if (metadata.sizeBytes != null && metadata.sizeBytes > GpxCandidatePolicy.MAX_FILE_BYTES) {
-                    R.string.share_too_large
-                } else {
-                    R.string.share_rejected
-                },
-            )
-            return
-        }
-
         executor.execute {
-            val result = try {
-                val bytes = contentResolver.openInputStream(uri)?.use {
-                    BoundedStreamInspector.readBytes(it, GpxCandidatePolicy.MAX_FILE_BYTES)
-                } ?: ByteArray(0)
-                if (bytes.isEmpty()) {
-                    R.string.share_rejected
-                } else {
-                    val contentSha256 = sha256(bytes)
-                    val requestStore = ShareImportRequestStore(this)
-                    val requestId = requestStore.requestIdFor(
-                        origin = origin,
-                        deviceId = credential.deviceId,
-                        contentSha256 = contentSha256,
-                    )
-                    val imported = credentialStore.useIfCurrent(credentialState) { current ->
-                        if (!serverStore.isCurrent(serverConnection)) return@useIfCurrent null
-                        RunwayApiClient(origin).importGpx(current, bytes, requestId)
-                    }
-                    if (imported == null || !serverStore.isCurrent(serverConnection)) {
-                        R.string.share_server_changed
-                    } else when (imported) {
-                        is ImportApiResult.Handled -> {
-                            requestStore.clear(origin, credential.deviceId, contentSha256)
-                            when (imported.result) {
-                                "imported" -> R.string.share_imported
-                                "duplicate" -> R.string.share_duplicate
-                                else -> R.string.share_quarantined
-                            }
-                        }
-                        ImportApiResult.Unauthorized -> {
-                            requestStore.clear(origin, credential.deviceId, contentSha256)
-                            val cleared = serverStore.mutateIfCurrent(serverConnection) {
-                                if (!credentialStore.clearIfCurrent(credentialState)) {
-                                    false
-                                } else {
-                                    HandledImportStore(this).clearForDevice(credential.deviceId)
-                                    ReconciliationScheduler.cancelAll(this)
-                                    ReconciliationStatusStore(this).record(
-                                        ReconciliationWorker.STATE_PAIRING_REQUIRED,
-                                    )
-                                    true
-                                }
-                            } == true
-                            if (cleared) {
-                                R.string.share_pairing_required
-                            } else {
-                                R.string.share_server_changed
-                            }
-                        }
-                        ImportApiResult.RequestConflict -> {
-                            requestStore.clear(origin, credential.deviceId, contentSha256)
-                            R.string.share_retryable
-                        }
-                        ImportApiResult.Retryable -> R.string.share_retryable
-                    }
-                }
-            } catch (_: PayloadTooLargeException) {
-                R.string.share_too_large
-            } catch (_: SecurityException) {
-                R.string.share_rejected
-            } catch (_: IOException) {
-                R.string.share_rejected
-            } catch (_: RuntimeException) {
-                R.string.share_rejected
-            }
+            val result = oneOffGpxStatus(OneOffGpxImport.importUri(this, serverConnection, uri))
             runOnUiThread {
                 if (!isDestroyed) status.setText(result)
             }

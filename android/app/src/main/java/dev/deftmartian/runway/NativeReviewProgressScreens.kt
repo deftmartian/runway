@@ -2,11 +2,12 @@ package dev.deftmartian.runway
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,6 +31,13 @@ internal fun ReviewScreen(
     actionNotice: NativeNotice?,
     completedAction: String?,
     onAction: (MobileCommand) -> Unit,
+    onLoadMore: () -> Unit,
+    activityEvidence: Map<String, NativeActivityEvidence>,
+    activityEvidenceLoading: Set<String>,
+    activityEvidenceFailures: Set<String>,
+    onLoadActivityTrace: (String) -> Unit,
+    onOpenPhoneImports: () -> Unit,
+    onOpenImportSettings: () -> Unit,
 ) {
     val candidates = payload?.candidates.orEmpty()
     val activities = payload?.activities.orEmpty()
@@ -47,7 +55,12 @@ internal fun ReviewScreen(
         }
     }
     NativeList(loading) {
-        item { ScreenIntro("Review", "Imported and unplanned activity, kept separate until you decide where it belongs.") }
+        item {
+            ScreenIntro(
+                "Imports",
+                "Review new activity before it changes your training record.",
+            )
+        }
         when {
             payload == null -> item { EmptyCard("Loading activity review…") }
             activities.none { it.reviewState == "review" } ->
@@ -62,10 +75,10 @@ internal fun ReviewScreen(
                         title = "Needs review",
                         actions = {
                             Button(
-                                onClick = { selectedActivity = activity },
+                                onClick = { selectedActivity = activity; activity.id?.let(onLoadActivityTrace) },
                                 enabled = !actionPending,
                             ) {
-                                Text("Decide")
+                                Text("Review")
                             }
                         },
                     )
@@ -79,19 +92,13 @@ internal fun ReviewScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActivityCard(
                         activity = activity,
-                        actions = if (!activity.workoutId.isNullOrBlank()) {
-                            {
-                                TextButton(
-                                    onClick = {
-                                        onAction(UnlinkActivityCommand(activity.id.orEmpty()))
-                                    },
-                                    enabled = !actionPending,
-                                ) {
-                                    Text("Unlink from planned run")
-                                }
+                        actions = {
+                            TextButton(
+                                onClick = { selectedActivity = activity; activity.id?.let(onLoadActivityTrace) },
+                                enabled = !actionPending,
+                            ) {
+                                Text("Open details")
                             }
-                        } else {
-                            null
                         },
                     )
                     activity.consequence?.let { consequence ->
@@ -111,14 +118,80 @@ internal fun ReviewScreen(
                 }
             }
         }
+        if (payload != null) {
+            item { SectionLabel("Import sources") }
+            item {
+                SettingCard("This phone") {
+                    SettingRow(
+                        "Import connection",
+                        if (payload.androidDevices.isEmpty()) "Not connected" else "Connected",
+                    )
+                    Text(
+                        "Folder access and Health Connect stay on this phone. Open phone imports to choose a folder, review permissions, or run a sync.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = onOpenPhoneImports,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Phone imports")
+                    }
+                }
+            }
+            item {
+                SettingCard("Server folders") {
+                    if (payload.sources.isEmpty()) {
+                        Text(
+                            "No Nextcloud GPX folder is connected.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        payload.sources.forEach { source ->
+                            SettingRow(
+                                source.label.orDash(),
+                                source.lastError?.takeIf(String::isNotBlank)
+                                    ?: if (source.enabled == true) "Connected" else "Disabled",
+                            )
+                        }
+                    }
+                    TextButton(onClick = onOpenImportSettings) {
+                        Text("Manage server folders")
+                    }
+                }
+            }
+            item {
+                SettingCard("Route privacy") {
+                    Text(
+                        if (payload.routeDataMode == "discard") {
+                            "New imports keep totals and discard route points."
+                        } else {
+                            "Private route traces are retained for authenticated activity detail."
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        if (payload?.activityPage?.nextOffset != null) {
+            item {
+                OutlinedButton(
+                    onClick = onLoadMore,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (loading) "Loading…" else "Load earlier activity") }
+            }
+        }
     }
     selectedActivity?.let { activity ->
-        ActivityReviewDialog(
+        ImportedActivityDetailSheet(
             activity = activity,
             candidates = candidates,
+            evidence = activity.id?.let { activityEvidence[it] },
+            evidenceLoading = activity.id?.let(activityEvidenceLoading::contains) == true,
+            evidenceFailed = activity.id?.let(activityEvidenceFailures::contains) == true,
             actionPending = actionPending,
-            errorMessage = actionNotice?.takeIf { it.isError }?.message,
             onDismiss = { selectedActivity = null },
+            onLoadRouteTrace = { activity.id?.let(onLoadActivityTrace) },
             onAction = { command ->
                 submittedDialogAction = command.action
                 onAction(command)
@@ -155,18 +228,23 @@ internal fun ProgressScreen(
     val today = payload?.history?.todayIso?.takeIf(String::isNotBlank)
     val targetReached = targetDate != null && today != null && targetDate <= today
     val planHistory = payload?.planHistory?.items.orEmpty()
+    val noActiveSummary = noActiveProgressSummary(payload?.history, planHistory.size)
     var confirmArchive by rememberSaveable { mutableStateOf(false) }
     NativeList(loading) {
-        item { ScreenIntro("Progress", "A clear view of the ramp, with recovery visible too.") }
+        item { ScreenIntro("Progress", "Planned work beside accepted actual work. Recovery stays in the record.") }
         when {
             payload == null -> item { EmptyCard("Loading plan progress…") }
             payload.onboardingRequired == true -> item {
                 EmptyCard("Finish your training setup to see progress.")
             }
-            active == null -> item { EmptyCard("There is no active plan. Your history is still kept here.") }
+            active == null -> item { NativeNoActiveProgress(noActiveSummary) }
             weeks.isEmpty() -> item { EmptyCard("This plan does not have weekly progress yet.") }
-            else -> items(weeks, key = { it.id.orEmpty() }) { week ->
-                WeekCard(week, completedByStart[week.startDate.orEmpty()])
+            else -> {
+                item { ProgressAssessment(payload.history) }
+                item { NativeStatsTraces(payload.planTrace, payload.history?.weeklySummaries.orEmpty()) }
+                items(weeks, key = { it.id.orEmpty() }) { week ->
+                    WeekCard(week, completedByStart[week.startDate.orEmpty()])
+                }
             }
         }
         phaseReview?.let { review ->
@@ -201,21 +279,19 @@ internal fun ProgressScreen(
             item { SectionLabel("Plan history") }
             items(planHistory, key = { it.plan?.id.orEmpty() }) {
                 val plan = it.plan
-                Card {
-                    Column(
-                        Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            it.goal?.title.orDash(),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            "${plan?.startDate.orDash()} – ${plan?.targetDate.orDash()}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                SettingCard(it.goal?.title.orDash()) {
+                    Text(
+                        "${plan?.startDate.orDash()} – ${plan?.targetDate.orDash()}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = { onDestinationSelected(NativeDestination.History) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Open full history")
                 }
             }
         }
@@ -240,6 +316,37 @@ internal fun ProgressScreen(
                 TextButton(onClick = { confirmArchive = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun ProgressAssessment(history: NativeTrainingHistory?) {
+    val weeks = history?.weeklySummaries.orEmpty()
+    val signal = history?.currentSignal
+    signal?.healthNotice?.let { notice ->
+        SettingCard(notice.heading.orEmpty().ifBlank { "Health context" }) {
+            Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    if (signal != null) {
+        SettingCard("Current assessment") {
+            SettingRow("Assessment", signal.risk.orEmpty().replaceFirstChar(Char::uppercase).ifBlank { "Recorded" })
+            signal.reasons.forEach { Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+    if (weeks.isNotEmpty()) {
+        val plannedRuns = weeks.sumOf { it.plannedRuns ?: 0 }
+        val completedRuns = weeks.sumOf { it.completedRuns ?: 0 }
+        val missedRuns = weeks.sumOf { it.missedRuns ?: 0 }
+        val skippedRuns = weeks.sumOf { it.skippedRuns ?: 0 }
+        val plannedDistance = weeks.sumOf { it.targetDistanceMeters ?: 0.0 }
+        val completedDistance = weeks.sumOf { it.completedDistanceMeters ?: 0.0 }
+        SettingCard("Plan versus actual") {
+            SettingRow("Recorded / scheduled", "$completedRuns / $plannedRuns")
+            SettingRow("Recorded distance", formatDistance(completedDistance))
+            if (plannedDistance > 0) SettingRow("Planned distance", formatDistance(plannedDistance))
+            SettingRow("Missed / skipped", "$missedRuns / $skippedRuns")
+        }
     }
 }
 

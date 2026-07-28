@@ -1,11 +1,17 @@
 package dev.deftmartian.runway
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeFolderSettingsAccessibilityTest {
     @Test
-    fun `health connect section is available through heading navigation`() {
-        assertTrue(NATIVE_IMPORTS_ACCESSIBILITY_HEADING_IDS.contains(R.id.health_connect_heading))
+    fun `compose setup state keeps the health connect action unavailable until permission is known`() {
+        val pending = NativeImportSetupUiState()
+        val ready = pending.copy(showHealthSync = true, healthSyncActionEnabled = true)
+
+        assertFalse(pending.healthSyncActionEnabled)
+        assertTrue(ready.showHealthSync)
+        assertTrue(ready.healthSyncActionEnabled)
     }
 }

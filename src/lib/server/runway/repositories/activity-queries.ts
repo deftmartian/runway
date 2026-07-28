@@ -179,7 +179,9 @@ export async function getActivityTraceDetail(userId: string, activityId: string)
 		.select({
 			id: activity.id,
 			routeTrace: activity.routeTrace,
-			heartRateSeries: activity.heartRateSeries
+			heartRateSeries: activity.heartRateSeries,
+			averageCadence: activity.averageCadence,
+			routeSummary: activity.routeSummary
 		})
 		.from(activity)
 		.where(and(eq(activity.userId, userId), eq(activity.id, activityId)))

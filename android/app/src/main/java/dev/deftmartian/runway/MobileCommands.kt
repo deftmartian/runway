@@ -51,7 +51,7 @@ internal data class DeleteFeedbackCommand(val workoutId: String) : MobileCommand
 
 internal data class RecordManualRunCommand(
     val occurredDate: String,
-    val distanceKm: Double,
+    val distanceKm: Double?,
     val durationMinutes: Double?,
     val feltHard: Boolean,
     val pain: Boolean,
@@ -84,6 +84,32 @@ internal data class UpdateActivityFeedbackCommand(
 
 internal data class DeleteActivityCommand(val activityId: String) : MobileCommand {
     override val action = "delete_activity"
+}
+
+internal enum class HealthConnectRecordDecision(val wireValue: String) {
+    AcceptCorrection("accept_correction"),
+    KeepCurrent("keep_current"),
+    DeleteFromRunway("delete_from_runway"),
+    RetainInRunway("retain_in_runway"),
+}
+
+internal data class ResolveHealthConnectRecordCommand(
+    val mappingId: String,
+    val decision: HealthConnectRecordDecision,
+) : MobileCommand {
+    override val action = "resolve_health_connect_record"
+}
+
+internal enum class HealthConnectDuplicateDecision(val wireValue: String) {
+    KeepHealthConnect("keep_health_connect"),
+    UseExisting("use_existing"),
+}
+
+internal data class ResolveHealthConnectDuplicateCommand(
+    val mappingId: String,
+    val decision: HealthConnectDuplicateDecision,
+) : MobileCommand {
+    override val action = "resolve_health_connect_duplicate"
 }
 
 internal data class ApplyPlanDecisionCommand(
@@ -226,4 +252,12 @@ internal data class SyncNextcloudCommand(val sourceId: String) : MobileCommand {
 
 internal data class DisconnectNextcloudCommand(val sourceId: String) : MobileCommand {
     override val action = "disconnect_nextcloud"
+}
+
+internal data class RevokeAndroidDeviceCommand(val deviceId: String) : MobileCommand {
+    override val action = "revoke_android_device"
+}
+
+internal data object DeleteImportedActivityDataCommand : MobileCommand {
+    override val action = "delete_imported_activity_data"
 }

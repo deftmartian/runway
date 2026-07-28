@@ -68,11 +68,8 @@ internal fun FeedbackDialog(
                     )
                 }
                 item {
-                    ChoiceRow("Completed", status == "done") { status = "done" }
-                    ChoiceRow("Completed less than planned", status == "shortened") {
-                        status = "shortened"
-                    }
-                    ChoiceRow("Skipped", status == "skipped") { status = "skipped" }
+                    ChoiceRow("I completed a run", status != "skipped") { status = "done" }
+                    ChoiceRow("I skipped this run", status == "skipped") { status = "skipped" }
                 }
                 if (status != "skipped") {
                     item {
@@ -82,6 +79,11 @@ internal fun FeedbackDialog(
                         ) {
                             if (timed) duration = it else distance = it
                         }
+                        Text(
+                            "Enter what happened. Runway will compare it with the prescription and show whether it was near, under, or over plan.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 item {
@@ -140,10 +142,13 @@ internal fun ManualRunDialog(
     var duration by rememberSaveable { mutableStateOf("") }
     var harderThanExpected by rememberSaveable { mutableStateOf(false) }
     var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
+    val distanceNumber = distance.toDoubleOrNull()
+    val durationNumber = duration.toDoubleOrNull()
     val valid =
         runCatching { LocalDate.parse(date) }.isSuccess &&
-            (distance.toDoubleOrNull() ?: 0.0) >= 0.1 &&
-            (duration.isBlank() || (duration.toDoubleOrNull() ?: 0.0) >= 1)
+            (distance.isBlank() || (distanceNumber ?: 0.0) in 0.1..100.0) &&
+            (duration.isBlank() || (durationNumber ?: 0.0) in 1.0..600.0) &&
+            (distanceNumber != null || durationNumber != null)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Record an unplanned run") },
@@ -160,8 +165,15 @@ internal fun ManualRunDialog(
                         singleLine = true,
                     )
                 }
-                item { NumberField("Distance (km)", distance) { distance = it } }
+                item { NumberField("Distance (km, optional)", distance) { distance = it } }
                 item { NumberField("Duration (minutes, optional)", duration) { duration = it } }
+                item {
+                    Text(
+                        "Enter the distance, duration, or both.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 item {
                     CheckRow("Felt harder than expected", harderThanExpected) {
                         harderThanExpected = it
@@ -180,8 +192,8 @@ internal fun ManualRunDialog(
                     onSubmit(
                         RecordManualRunCommand(
                             occurredDate = date,
-                            distanceKm = distance.toDouble(),
-                            durationMinutes = duration.toDoubleOrNull(),
+                            distanceKm = distanceNumber,
+                            durationMinutes = durationNumber,
                             feltHard = harderThanExpected,
                             pain = painDuringOrAfter,
                         ),

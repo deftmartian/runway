@@ -43,10 +43,10 @@ function requireRecord(value: unknown): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 
-function actionEvent(request: Request) {
+function actionEvent(request: Request, action = 'record-feedback') {
 	return {
 		request,
-		params: { action: 'record-feedback' },
+		params: { action },
 		getClientAddress: () => '192.0.2.25'
 	} as Parameters<typeof POST>[0];
 }
@@ -84,6 +84,90 @@ describe('native action endpoint', () => {
 		await expect(response.json()).resolves.toMatchObject({ error: 'invalid_request_id' });
 		expect(dependencies.readBody).not.toHaveBeenCalled();
 		expect(dependencies.claim).not.toHaveBeenCalled();
+	});
+
+	test('keeps imported-data deletion inside the idempotent, no-store mobile mutation boundary', async () => {
+		dependencies.readBody.mockResolvedValue({
+			result: 'ok',
+			buffer: Buffer.from('{"confirmation":"DELETE IMPORTED ACTIVITY DATA"}')
+		});
+		dependencies.claim.mockResolvedValue({
+			result: 'claimed',
+			payloadHash: '12be39fdea3651a12e0975c46c3d4981ae2def5381bc7b330109e36221bb43c4'
+		});
+		dependencies.runAction.mockResolvedValue({
+			status: 200,
+			body: { ok: true, message: 'Imported activity data deleted.' }
+		});
+
+		const response = await POST(
+			actionEvent(
+				new Request(
+					'https://runway.example.test/api/mobile/v1/action/delete_imported_activity_data',
+					{
+						method: 'POST',
+						headers: {
+							authorization: 'Bearer session',
+							'content-type': 'application/json',
+							'idempotency-key': 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+						},
+						body: '{"confirmation":"DELETE IMPORTED ACTIVITY DATA"}'
+					}
+				),
+				'delete_imported_activity_data'
+			)
+		);
+
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+		expect(dependencies.runAction).toHaveBeenCalledWith(
+			'delete_imported_activity_data',
+			'runner-1',
+			{ confirmation: 'DELETE IMPORTED ACTIVITY DATA' }
+		);
+		expect(dependencies.complete).toHaveBeenCalledTimes(1);
+	});
+
+	test('keeps Health Connect record resolution inside the idempotent, no-store mobile mutation boundary', async () => {
+		dependencies.readBody.mockResolvedValue({
+			result: 'ok',
+			buffer: Buffer.from(
+				'{"mappingId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","decision":"accept_correction"}'
+			)
+		});
+		dependencies.claim.mockResolvedValue({
+			result: 'claimed',
+			payloadHash: '12be39fdea3651a12e0975c46c3d4981ae2def5381bc7b330109e36221bb43c4'
+		});
+		dependencies.runAction.mockResolvedValue({
+			status: 200,
+			body: { ok: true, message: 'Health Connect correction applied.' }
+		});
+
+		const response = await POST(
+			actionEvent(
+				new Request(
+					'https://runway.example.test/api/mobile/v1/action/resolve_health_connect_record',
+					{
+						method: 'POST',
+						headers: {
+							authorization: 'Bearer session',
+							'content-type': 'application/json',
+							'idempotency-key': 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+						},
+						body: '{"mappingId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","decision":"accept_correction"}'
+					}
+				),
+				'resolve_health_connect_record'
+			)
+		);
+
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+		expect(dependencies.runAction).toHaveBeenCalledWith(
+			'resolve_health_connect_record',
+			'runner-1',
+			{ mappingId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', decision: 'accept_correction' }
+		);
+		expect(dependencies.complete).toHaveBeenCalledTimes(1);
 	});
 
 	test('returns the stored response rather than running a replayed action twice', async () => {

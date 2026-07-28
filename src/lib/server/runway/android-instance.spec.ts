@@ -10,13 +10,18 @@ describe('Android instance discovery', () => {
 	test('publishes the narrow compatibility contract without account data', () => {
 		const descriptor = buildAndroidInstanceDescriptor();
 		expect(typeof descriptor.release).toBe('string');
-		expect({ ...descriptor, release: 'checked-separately' }).toEqual({
+		expect(typeof descriptor.auth.local).toBe('boolean');
+		expect(typeof descriptor.auth.localSignups).toBe('boolean');
+		expect(typeof descriptor.auth.oidc).toBe('boolean');
+		expect(descriptor.auth.passkeys).toBe(true);
+		expect({ ...descriptor, auth: 'checked-separately', release: 'checked-separately' }).toEqual({
 			result: 'runway-instance',
 			product: 'runway',
 			minimumAndroidApi: 1,
 			maximumAndroidApi: 2,
 			nativeUi: true,
-			nativeAuthorization: 'device_authorization',
+			nativeAuthorization: 'local_and_device_authorization',
+			auth: 'checked-separately',
 			release: 'checked-separately'
 		});
 		expect(androidApiCompatibility.minimum).toBeLessThanOrEqual(androidApiCompatibility.maximum);

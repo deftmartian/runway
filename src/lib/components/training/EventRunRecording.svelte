@@ -65,13 +65,14 @@
 			<fieldset>
 				<legend>Record {formatDay(event.date)}</legend>
 				<label>
-					Distance (km)
-					<input name="distanceKm" type="number" min="0.1" max="100" step="0.1" required />
+					Distance (km, optional)
+					<input name="distanceKm" type="number" min="0.1" max="100" step="0.1" />
 				</label>
 				<label>
-					Duration (min)
+					Duration (min, optional)
 					<input name="durationMinutes" type="number" min="1" max="600" step="1" />
 				</label>
+				<p class="muted">Enter the distance, duration, or both.</p>
 				<div class="check-row">
 					<label><input type="checkbox" name="feltHard" /> Effort was unusually hard</label>
 					<label><input type="checkbox" name="pain" /> Pain changed or limited this run</label>

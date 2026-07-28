@@ -1,0 +1,369 @@
+package dev.deftmartian.runway
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import kotlin.math.max
+
+private data class NativeWeeklyTrace(
+    val label: String,
+    val recommendation: Double?,
+    val current: Double?,
+    val acceptedActual: Double?,
+    val summary: NativeWeekSummary?,
+)
+
+private enum class NativeTraceStyle {
+    Generated,
+    Current,
+    Actual,
+}
+
+internal data class NativeNoActiveProgressSummary(
+    val statusMessage: String,
+    val recordedHistory: NativeRecordedHistorySummary?,
+    val acceptedHeartRate: NativeHeartRateSample?,
+)
+
+/**
+ * A plan-free progress state must stay factual. It can expose recorded work and accepted
+ * heart-rate context, but it must not turn an archived plan or an activity total into a current
+ * recommendation.
+ */
+internal fun noActiveProgressSummary(
+    history: NativeTrainingHistory?,
+    planHistoryCount: Int,
+): NativeNoActiveProgressSummary {
+    val recorded = history?.recordedSummary?.takeIf {
+        history.hasAcceptedActivities == true ||
+            (it.totalRuns ?: 0) > 0 ||
+            (it.totalDistanceMeters ?: 0.0) > 0.0 ||
+            (it.totalDurationSeconds ?: 0.0) > 0.0
+    }
+    val acceptedHeartRate = history?.heartRateSample?.takeIf {
+        (it.sampleCount ?: 0) > 0
+    }
+    val status = when {
+        recorded != null || acceptedHeartRate != null ->
+            "There is no active plan or recommendation. Recorded work remains available below."
+        planHistoryCount > 0 ->
+            "There is no active plan or recommendation. Past plans remain available below."
+        else ->
+            "There is no active plan or recommendation. Record a run or build a plan to start progress."
+    }
+    return NativeNoActiveProgressSummary(status, recorded, acceptedHeartRate)
+}
+
+/**
+ * Native equivalent of the web stats trace: generated recommendation, the runner's current
+ * editable plan, and only accepted actual activity.  The table-like ledger below each chart is
+ * deliberately retained for TalkBack and for runners who need exact values rather than a shape.
+ */
+@Composable
+internal fun NativeStatsTraces(
+    planTrace: List<NativePlanTraceWeek>,
+    weeklySummaries: List<NativeWeekSummary>,
+) {
+    val summariesByStart = weeklySummaries.associateBy { it.startDate.orEmpty() }
+    val distance = planTrace.map { trace ->
+        NativeWeeklyTrace(
+            label = "Week ${trace.weekNumber ?: 0}",
+            recommendation = trace.recommendedDistanceMeters,
+            current = trace.currentDistanceMeters,
+            acceptedActual = summariesByStart[trace.startDate.orEmpty()]?.completedDistanceMeters,
+            summary = summariesByStart[trace.startDate.orEmpty()],
+        )
+    }
+    val duration = planTrace.map { trace ->
+        NativeWeeklyTrace(
+            label = "Week ${trace.weekNumber ?: 0}",
+            recommendation = trace.recommendedDurationSeconds,
+            current = trace.currentDurationSeconds,
+            acceptedActual = summariesByStart[trace.startDate.orEmpty()]?.completedDurationSeconds,
+            summary = summariesByStart[trace.startDate.orEmpty()],
+        )
+    }
+
+    if (distance.any { it.recommendation != null || it.current != null || it.acceptedActual != null }) {
+        NativeWeeklyTraceChart(
+            title = "Weekly distance",
+            points = distance,
+            format = ::formatDistance,
+        )
+    }
+    if (duration.any { it.recommendation != null || it.current != null || it.acceptedActual != null }) {
+        NativeWeeklyTraceChart(
+            title = "Weekly training time",
+            points = duration,
+            format = ::formatDuration,
+        )
+    }
+    NativeAcceptedContext(weeklySummaries)
+}
+
+@Composable
+private fun NativeWeeklyTraceChart(
+    title: String,
+    points: List<NativeWeeklyTrace>,
+    format: (Double) -> String,
+) {
+    val recommendationColor = MaterialTheme.colorScheme.primary
+    val currentColor = MaterialTheme.colorScheme.secondary
+    val actualColor = MaterialTheme.colorScheme.tertiary
+    val railColor = MaterialTheme.colorScheme.outlineVariant
+    val chartDescription = points.joinToString(separator = "; ") { point ->
+        "${point.label}: generated recommendation ${point.recommendation?.let(format).orDash()}, current edited plan ${point.current?.let(format).orDash()}, accepted actual ${point.acceptedActual?.let(format).orDash()}"
+    }
+    SettingCard(title) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            NativeTraceLegend("Generated · dashed", recommendationColor, NativeTraceStyle.Generated)
+            NativeTraceLegend("Current · solid", currentColor, NativeTraceStyle.Current)
+            NativeTraceLegend("Accepted actual · square", actualColor, NativeTraceStyle.Actual)
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(176.dp)
+                .semantics {
+                    contentDescription = "$title trace. $chartDescription Exact values follow in the weekly ledger."
+                },
+        ) {
+            val left = 14.dp.toPx()
+            val right = size.width - 14.dp.toPx()
+            val top = 18.dp.toPx()
+            val bottom = size.height - 24.dp.toPx()
+            val maximum = points.flatMap { listOfNotNull(it.recommendation, it.current, it.acceptedActual) }
+                .maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+            val span = max(right - left, 1f)
+            val step = if (points.size > 1) span / (points.size - 1) else 0f
+            drawLine(railColor, Offset(left, bottom), Offset(right, bottom), 1.dp.toPx())
+            drawLine(railColor, Offset(left, top), Offset(right, top), 1.dp.toPx())
+            drawNativeTraceLine(
+                points,
+                { it.recommendation },
+                recommendationColor,
+                NativeTraceStyle.Generated,
+                maximum,
+                left,
+                step,
+                top,
+                bottom,
+            )
+            drawNativeTraceLine(
+                points,
+                { it.current },
+                currentColor,
+                NativeTraceStyle.Current,
+                maximum,
+                left,
+                step,
+                top,
+                bottom,
+            )
+            drawNativeTraceLine(
+                points,
+                { it.acceptedActual },
+                actualColor,
+                NativeTraceStyle.Actual,
+                maximum,
+                left,
+                step,
+                top,
+                bottom,
+            )
+        }
+        points.forEach { point ->
+            SettingRow("${point.label} · generated", point.recommendation?.let(format).orDash())
+            SettingRow("${point.label} · current", point.current?.let(format).orDash())
+            SettingRow("${point.label} · accepted actual", point.acceptedActual?.let(format).orDash())
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNativeTraceLine(
+    points: List<NativeWeeklyTrace>,
+    value: (NativeWeeklyTrace) -> Double?,
+    color: Color,
+    style: NativeTraceStyle,
+    maximum: Double,
+    left: Float,
+    step: Float,
+    top: Float,
+    bottom: Float,
+) {
+    var previous: Offset? = null
+    points.forEachIndexed { index, point ->
+        val currentValue = value(point)
+        if (currentValue == null) {
+            previous = null
+            return@forEachIndexed
+        }
+        val x = if (points.size == 1) size.width / 2 else left + step * index
+        val y = bottom - (bottom - top) * (currentValue / maximum).coerceIn(0.0, 1.0).toFloat()
+        val current = Offset(x, y)
+        previous?.let {
+            drawLine(
+                color = color,
+                start = it,
+                end = current,
+                strokeWidth = if (style == NativeTraceStyle.Current) 3.dp.toPx() else 2.dp.toPx(),
+                cap = StrokeCap.Round,
+                pathEffect = if (style == NativeTraceStyle.Generated) {
+                    PathEffect.dashPathEffect(floatArrayOf(9.dp.toPx(), 6.dp.toPx()))
+                } else {
+                    null
+                },
+            )
+        }
+        when (style) {
+            NativeTraceStyle.Generated ->
+                drawCircle(color, 4.dp.toPx(), current, style = Stroke(width = 2.dp.toPx()))
+            NativeTraceStyle.Current ->
+                drawCircle(color, 4.dp.toPx(), current)
+            NativeTraceStyle.Actual -> {
+                val radius = 4.dp.toPx()
+                drawRect(
+                    color = color,
+                    topLeft = Offset(current.x - radius, current.y - radius),
+                    size = Size(radius * 2, radius * 2),
+                )
+            }
+        }
+        previous = current
+    }
+}
+
+@Composable
+private fun NativeTraceLegend(
+    label: String,
+    color: Color,
+    style: NativeTraceStyle,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Canvas(Modifier.width(18.dp).height(12.dp)) {
+            val center = Offset(size.width / 2, size.height / 2)
+            drawLine(
+                color = color,
+                start = Offset(0f, center.y),
+                end = Offset(size.width, center.y),
+                strokeWidth = if (style == NativeTraceStyle.Current) 3.dp.toPx() else 2.dp.toPx(),
+                cap = StrokeCap.Round,
+                pathEffect = if (style == NativeTraceStyle.Generated) {
+                    PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 3.dp.toPx()))
+                } else {
+                    null
+                },
+            )
+            when (style) {
+                NativeTraceStyle.Generated ->
+                    drawCircle(color, 3.dp.toPx(), center, style = Stroke(width = 1.dp.toPx()))
+                NativeTraceStyle.Current -> drawCircle(color, 3.dp.toPx(), center)
+                NativeTraceStyle.Actual -> {
+                    val radius = 3.dp.toPx()
+                    drawRect(
+                        color,
+                        Offset(center.x - radius, center.y - radius),
+                        Size(radius * 2, radius * 2),
+                    )
+                }
+            }
+        }
+        Text(label, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun NativeAcceptedContext(summaries: List<NativeWeekSummary>) {
+    val contextualWeeks = summaries.filter {
+        it.averagePaceSecondsPerKm != null || it.averageHeartRate != null ||
+            (it.hardFlags ?: 0) > 0 || (it.painFlags ?: 0) > 0
+    }
+    if (contextualWeeks.isEmpty()) return
+    SettingCard("Accepted-record context") {
+        Text(
+            "Pace and heart-rate values describe accepted records only. They do not diagnose effort or change the plan.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        contextualWeeks.forEach { week ->
+            val label = "Week ${week.weekNumber ?: 0}"
+            week.averagePaceSecondsPerKm?.let { SettingRow("$label · average pace", formatPace(it)) }
+            week.averageHeartRate?.let { SettingRow("$label · average heart rate", "$it bpm") }
+            if ((week.hardFlags ?: 0) > 0) SettingRow("$label · reported hard effort", week.hardFlags.toString())
+            if ((week.painFlags ?: 0) > 0) SettingRow("$label · reported pain", week.painFlags.toString())
+        }
+    }
+}
+
+@Composable
+internal fun NativeNoActiveProgress(summary: NativeNoActiveProgressSummary) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        EmptyCard(summary.statusMessage)
+        summary.recordedHistory?.let { recorded ->
+            SettingCard("Recorded history") {
+                Text(
+                    "Completed and accepted work kept by runway. With no active plan, these are facts rather than a plan comparison.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SettingRow("Recorded runs", (recorded.totalRuns ?: 0).toString())
+                SettingRow("Recorded distance", formatDistance(recorded.totalDistanceMeters ?: 0.0))
+                if ((recorded.totalDurationSeconds ?: 0.0) > 0.0) {
+                    SettingRow("Recorded time", formatDuration(recorded.totalDurationSeconds ?: 0.0))
+                }
+                if ((recorded.longestRunMeters ?: 0.0) > 0.0) {
+                    SettingRow("Longest recorded run", formatDistance(recorded.longestRunMeters ?: 0.0))
+                }
+                if ((recorded.archivedPlanRuns ?: 0) > 0) {
+                    SettingRow(
+                        "Archived-plan work",
+                        "${recorded.archivedPlanRuns ?: 0} runs · ${formatDistance(recorded.archivedPlanDistanceMeters ?: 0.0)}",
+                    )
+                }
+                if ((recorded.unlinkedRuns ?: 0) > 0) {
+                    SettingRow(
+                        "Unmatched records",
+                        "${recorded.unlinkedRuns ?: 0} runs · ${formatDistance(recorded.unlinkedDistanceMeters ?: 0.0)}",
+                    )
+                }
+            }
+        }
+        summary.acceptedHeartRate?.let { sample ->
+            SettingCard("Accepted heart-rate context") {
+                Text(
+                    "Descriptive values from accepted activities only. They do not create a recommendation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val window = listOfNotNull(
+                    sample.windowDays?.let { "$it days" },
+                    sample.windowEnd?.takeIf(String::isNotBlank)?.let { "ending $it" },
+                ).joinToString(" · ")
+                if (window.isNotBlank()) SettingRow("Window", window)
+                SettingRow("Runs with heart rate", (sample.sampleCount ?: 0).toString())
+                sample.averageHeartRate?.let { SettingRow("Average heart rate", "$it bpm") }
+                if ((sample.highZoneSeconds ?: 0.0) > 0.0) {
+                    SettingRow("Recorded high-zone time", formatDuration(sample.highZoneSeconds ?: 0.0))
+                }
+                sample.latest?.maxHeartRate?.let { SettingRow("Latest maximum", "$it bpm") }
+            }
+        }
+    }
+}

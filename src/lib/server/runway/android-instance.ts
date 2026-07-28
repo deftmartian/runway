@@ -1,4 +1,5 @@
 import { buildIdentity } from './build-identity';
+import { env } from '$env/dynamic/private';
 
 const androidApplicationIdPattern = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const defaultAndroidApplicationId = 'dev.deftmartian.runway';
@@ -16,7 +17,15 @@ export function buildAndroidInstanceDescriptor() {
 		minimumAndroidApi: androidApiCompatibility.minimum,
 		maximumAndroidApi: androidApiCompatibility.maximum,
 		nativeUi: true,
-		nativeAuthorization: 'device_authorization' as const,
+		nativeAuthorization: 'local_and_device_authorization' as const,
+		auth: {
+			local: env['LOCAL_AUTH_ENABLED'] !== 'false',
+			localSignups: env['ALLOW_LOCAL_SIGNUPS'] === 'true',
+			oidc: Boolean(
+				env['OIDC_ISSUER'] && env['OIDC_CLIENT_ID'] && env['OIDC_CLIENT_SECRET']
+			),
+			passkeys: true
+		},
 		release: buildIdentity.release
 	};
 }

@@ -1,5 +1,11 @@
 const mutationMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const androidClientHeaders = new Set(['runway-android/1', 'runway-android/2']);
+const androidNativeAuthPaths = new Set([
+	'/api/auth/sign-in/email',
+	'/api/auth/sign-up/email',
+	'/api/auth/two-factor/verify-totp',
+	'/api/auth/two-factor/verify-backup-code'
+]);
 
 export function isMutationRequest(method: string): boolean {
 	return mutationMethods.has(method.toUpperCase());
@@ -25,6 +31,13 @@ export function isAndroidNativeApiRequest(request: Request, pathname: string): b
 		client === 'runway-android/2' &&
 		method === 'POST' &&
 		(pathname === '/api/auth/device/code' || pathname === '/api/auth/device/token')
+	) {
+		return contentType.startsWith('application/json');
+	}
+	if (
+		client === 'runway-android/2' &&
+		method === 'POST' &&
+		androidNativeAuthPaths.has(pathname)
 	) {
 		return contentType.startsWith('application/json');
 	}

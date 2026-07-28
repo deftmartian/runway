@@ -9,6 +9,12 @@ const allowedBetterAuthHttpRequests = new Set([
 	'POST /api/auth/passkey/verify-authentication',
 	'POST /api/auth/passkey/verify-registration'
 ]);
+const androidNativeBetterAuthRequests = new Set([
+	'POST /api/auth/sign-in/email',
+	'POST /api/auth/sign-up/email',
+	'POST /api/auth/two-factor/verify-totp',
+	'POST /api/auth/two-factor/verify-backup-code'
+]);
 
 /**
  * Keep Better Auth's raw HTTP surface explicit. Password, signup, two-factor,
@@ -16,9 +22,17 @@ const allowedBetterAuthHttpRequests = new Set([
  * use runway server actions or are not product features. Browser passkey calls
  * and the one configured OIDC callback must continue through the HTTP router.
  */
-export function isAllowedBetterAuthHttpRequest(pathname: string, method: string): boolean {
+export function isAllowedBetterAuthHttpRequest(
+	pathname: string,
+	method: string,
+	androidNativeRequest = false
+): boolean {
 	if (!pathname.startsWith('/api/auth')) return true;
-	return allowedBetterAuthHttpRequests.has(`${method.toUpperCase()} ${pathname}`);
+	const request = `${method.toUpperCase()} ${pathname}`;
+	return (
+		allowedBetterAuthHttpRequests.has(request) ||
+		(androidNativeRequest && androidNativeBetterAuthRequests.has(request))
+	);
 }
 
 export function passkeyAuthenticationAction(

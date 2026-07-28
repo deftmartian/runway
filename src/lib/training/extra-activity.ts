@@ -42,14 +42,23 @@ export function calculateExtraActivityConsequence(
 	input: ExtraActivityInput,
 	targets: ExtraActivityTargets
 ): ConsequenceResult {
-	const timedPlanWithoutDuration =
-		(targets.nextRunTargetDurationSeconds ?? 0) > 0 && (input.durationSeconds ?? 0) <= 0;
-	if (timedPlanWithoutDuration) {
-		const nextDuration = targets.nextRunTargetDurationSeconds ?? 0;
+	const timedPlan = (targets.nextRunTargetDurationSeconds ?? 0) > 0;
+	const nativeMeasurementMissing = timedPlan
+		? (input.durationSeconds ?? 0) <= 0
+		: input.distanceMeters <= 0;
+	if (nativeMeasurementMissing) {
+		const nextTarget = timedPlan
+			? (targets.nextRunTargetDurationSeconds ?? 0)
+			: targets.nextRunTargetDistanceMeters;
+		const adjustmentMetric = timedPlan ? ('duration' as const) : ('distance' as const);
+		const minimumAdjustment = timedPlan ? 300 : 1_000;
 		const nextRunAdjustment = input.pain
 			? null
 			: input.feltHard
-				? { metric: 'duration' as const, value: -Math.max(300, Math.round(nextDuration * 0.15)) }
+				? {
+						metric: adjustmentMetric,
+						value: -Math.max(minimumAdjustment, Math.round(nextTarget * 0.15))
+					}
 				: null;
 		return {
 			kind: input.pain ? 'pain_reported' : 'extra_activity',
@@ -60,7 +69,8 @@ export function calculateExtraActivityConsequence(
 			weeklyLoadDelta: null,
 			nextRunAdjustment,
 			weeklyDistanceDeltaMeters: input.distanceMeters,
-			nextRunAdjustmentMeters: 0,
+			nextRunAdjustmentMeters:
+				nextRunAdjustment?.metric === 'distance' ? nextRunAdjustment.value : 0,
 			risk: input.pain ? 'unsafe' : 'moderate',
 			recommendedDecision: input.pain ? 'next_rest' : input.feltHard ? 'reduce_next' : 'keep_plan',
 			options: input.pain

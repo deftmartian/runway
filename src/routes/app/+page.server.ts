@@ -336,7 +336,7 @@ export const actions: Actions = {
 		try {
 			const result = await recordManualRun(event.locals.user.id, {
 				occurredDate: parsed.data.occurredDate,
-				distanceMeters: Math.round(parsed.data.distanceKm * 1_000),
+				distanceMeters: Math.round((parsed.data.distanceKm ?? 0) * 1_000),
 				feltHard: parsed.data.feltHard,
 				pain: parsed.data.pain,
 				...(parsed.data.durationMinutes === undefined

@@ -10,14 +10,20 @@
 		<p class="eyebrow">Android sign-in</p>
 		<h1>Connect this phone</h1>
 		<p>
-			The runway app is asking to use <strong>{data.accountName}</strong> on this server.
+			{#if data.nativeAppReturn}
+				Continue to runway on this phone as <strong>{data.accountName}</strong>.
+			{:else}
+				The runway app is asking to use <strong>{data.accountName}</strong> on this server.
+			{/if}
 		</p>
-		<dl>
-			<div>
-				<dt>Code</dt>
-				<dd>{data.userCode}</dd>
-			</div>
-		</dl>
+		{#if !data.nativeAppReturn}
+			<dl>
+				<div>
+					<dt>Code</dt>
+					<dd>{data.userCode}</dd>
+				</div>
+			</dl>
+		{/if}
 		{#if form?.message}
 			<p class="message" role="status">{form.message}</p>
 		{/if}
@@ -27,14 +33,29 @@
 			<p>Return to the runway app to cancel or start again.</p>
 		{:else if data.status === 'pending'}
 			<div class="actions">
-				<form method="post" action="?/approve" use:enhance>
-					<input type="hidden" name="userCode" value={data.userCode} />
-					<button class="primary">Allow this phone</button>
-				</form>
-				<form method="post" action="?/deny" use:enhance>
-					<input type="hidden" name="userCode" value={data.userCode} />
-					<button>Deny</button>
-				</form>
+				{#if data.nativeAppReturn}
+					<form method="post" action="?/approve">
+						<input type="hidden" name="userCode" value={data.userCode} />
+						<input type="hidden" name="returnTo" value={data.returnTo} />
+						<button class="primary">Continue to runway</button>
+					</form>
+					<form method="post" action="?/deny">
+						<input type="hidden" name="userCode" value={data.userCode} />
+						<input type="hidden" name="returnTo" value={data.returnTo} />
+						<button>Deny</button>
+					</form>
+				{:else}
+					<form method="post" action="?/approve" use:enhance>
+						<input type="hidden" name="userCode" value={data.userCode} />
+						<input type="hidden" name="returnTo" value={data.returnTo} />
+						<button class="primary">Allow this phone</button>
+					</form>
+					<form method="post" action="?/deny" use:enhance>
+						<input type="hidden" name="userCode" value={data.userCode} />
+						<input type="hidden" name="returnTo" value={data.returnTo} />
+						<button>Deny</button>
+					</form>
+				{/if}
 			</div>
 		{:else}
 			<p>This request has already been handled.</p>

@@ -44,6 +44,12 @@ internal class ShareImportRequestStore(context: Context) {
         }
     }
 
+    /** A confirmed imported-data deletion invalidates every local import receipt. */
+    fun clearAll() = synchronized(storeLock) {
+        val keys = preferences.all.keys.filter { it.startsWith(SHARE_REQUEST_KEY_PREFIX) }
+        if (keys.isNotEmpty()) preferences.edit(commit = true) { keys.forEach(::remove) }
+    }
+
     private fun prune(nowEpochMs: Long) {
         val records = preferences.all.mapNotNull { (key, value) ->
             if (!key.startsWith(SHARE_REQUEST_KEY_PREFIX) || value !is String) return@mapNotNull null

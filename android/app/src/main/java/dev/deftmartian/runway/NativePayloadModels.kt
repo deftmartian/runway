@@ -50,6 +50,18 @@ internal data class NativeReviewPayload(
 ) : NativeViewPayload {
     override val onboardingRequired: Boolean? = null
 }
+internal data class NativeActivityEvidencePayload(
+    val activityId: String?,
+    val evidence: NativeActivityEvidence?,
+) : NativeViewPayload {
+    override val onboardingRequired: Boolean? = null
+}
+internal data class NativeActivityEvidence(
+    val routeTrace: NativeRouteTrace?,
+    val heartRateSeries: NativeHeartRateSeries?,
+    val averageCadence: Int?,
+    val disclosure: NativeActivityDisclosure?,
+)
 
 internal data class NativeStatsPayload(
     override val onboardingRequired: Boolean?,
@@ -70,17 +82,96 @@ internal data class NativeHistoryPayload(
     val pageSize: Int?,
 ) : NativeViewPayload
 
+internal data class NativeHistoryDetailPayload(
+    override val onboardingRequired: Boolean?,
+    val detail: NativeHistoryDetail?,
+) : NativeViewPayload
+
+internal data class NativeHistoryDetail(
+    val plan: NativeHistoryDetailPlan?,
+    val goal: NativeHistoryDetailGoal?,
+    val cutoffDate: String?,
+    val timeline: List<NativeHistoryTimelineItem>,
+    val weeks: List<NativeHistoryWeek>,
+)
+internal data class NativeHistoryDetailPlan(
+    val id: String?, val status: String?, val phase: String?, val startDate: String?,
+    val targetDate: String?, val weeks: Int?, val risk: String?, val completedAt: String?,
+    val archivedAt: String?, val lifecycleReason: String?, val summary: NativeHistoryPlanSummary?,
+)
+internal data class NativeHistoryPlanSummary(
+    val kind: String?, val requiredWeeklyIncreasePercent: Double?, val defaultWeeklyIncreasePercent: Double?,
+)
+internal data class NativeHistoryDetailGoal(val title: String?, val distance: String?, val priority: String?)
+internal data class NativeHistoryTimelineItem(
+    val id: String?, val triggerType: String?, val createdAt: String?, val reversedAt: String?,
+    val reversalReason: String?, val reason: String?, val newState: NativeHistoryWorkoutState?,
+)
+internal data class NativeHistoryWorkoutState(
+    val scheduledDate: String?, val type: String?, val prescriptionKind: String?,
+    val targetDistanceMeters: Double?, val targetDurationSeconds: Double?, val isRemoved: Boolean?,
+)
+internal data class NativeHistoryWeek(
+    val id: String?, val weekNumber: Int?, val startDate: String?, val targetDistanceMeters: Double?,
+    val targetDurationSeconds: Double?, val risk: String?, val isDownWeek: Boolean?, val isTaper: Boolean?,
+    val workouts: List<NativeHistoryWorkout>,
+)
+internal data class NativeHistoryWorkout(
+    val id: String?, val scheduledDate: String?, val type: String?, val status: String?,
+    val prescriptionKind: String?, val targetDistanceMeters: Double?, val targetDurationSeconds: Double?,
+    val purpose: String?, val isRemoved: Boolean?, val result: NativeHistoryResult?,
+)
+internal data class NativeHistoryResult(
+    val source: String?, val completedDistanceMeters: Double?, val completedDurationSeconds: Double?,
+    val feltHard: Boolean?, val pain: Boolean?, val consequence: NativeConsequence?,
+)
+
 internal data class NativeSettingsPayload(
     val profile: NativeProfile?,
     val healthConnect: NativeHealthConnectStatus?,
     val androidDevices: List<NativeAndroidDevice>,
     val sources: List<NativeImportSource>,
     val about: NativeAbout?,
-    val accountSecurityUrl: String?,
-    val localAuthEnabled: Boolean?,
+    val accountSecurityAvailable: Boolean?,
 ) : NativeViewPayload {
     override val onboardingRequired: Boolean? = null
 }
+
+internal data class NativeAccountSecurityPayload(
+    val authentication: NativeAuthenticationSecurity?,
+    val sessions: NativeSessionSecurity?,
+    val importDevices: List<NativeAccountImportDevice>,
+) : NativeViewPayload {
+    override val onboardingRequired: Boolean? = null
+}
+
+internal data class NativeAuthenticationSecurity(
+    val localPassword: Boolean?,
+    val oidc: Boolean?,
+    val twoFactor: Boolean?,
+    val passkeyCount: Int?,
+)
+internal data class NativeSessionSecurity(
+    val activeCount: Int?,
+    val currentIsNative: Boolean?,
+    val requiresFreshSession: Boolean?,
+    val items: List<NativeAccountSession>,
+)
+internal data class NativeAccountSession(
+    val id: String?,
+    val client: String?,
+    val current: Boolean?,
+    val createdAt: String?,
+    val updatedAt: String?,
+    val expiresAt: String?,
+)
+internal data class NativeAccountImportDevice(
+    val id: String?,
+    val label: String?,
+    val lastSeenAt: String?,
+    val lastImportedAt: String?,
+    val expiresAt: String?,
+)
 
 internal data class NativeUser(val id: String?, val name: String?, val email: String?)
 internal data class NativeFeatures(
@@ -182,13 +273,47 @@ internal data class NativeActivity(
     val averagePaceSecondsPerKm: Double?,
     val averageHeartRate: Int?,
     val maxHeartRate: Int?,
+    val heartRateSummary: NativeHeartRateSummary?,
     val feltHard: Boolean?,
     val pain: Boolean?,
     val extraPlanImpactConfirmed: Boolean?,
     val consequence: NativeConsequence?,
+    val routeSummary: NativeRouteSummary?,
     val matchedWorkoutPurpose: String?,
     val matchedWorkoutDate: String?,
     val healthConnect: NativeHealthConnectActivity?,
+)
+
+internal data class NativeHeartRateSummary(
+    val highSeconds: Int?,
+    val highShare: Double?,
+    val secondsByZone: NativeHeartRateZones?,
+    val settingsSource: String?,
+)
+internal data class NativeHeartRateZones(
+    val z1: Int?, val z2: Int?, val z3: Int?, val z4: Int?, val z5: Int?,
+)
+internal data class NativeRouteSummary(
+    val pointCount: Int?,
+    val startEndRedacted: Boolean?,
+    val hasElevation: Boolean?,
+    val traceRetained: Boolean?,
+)
+internal data class NativeRouteTrace(
+    val sourcePointCount: Int?,
+    val points: List<NativeRoutePoint>,
+)
+internal data class NativeRoutePoint(
+    val latitudeE6: Int?, val longitudeE6: Int?, val elapsedSeconds: Int?,
+    val segmentIndex: Int?, val speedMetersPerSecond: Double?,
+)
+internal data class NativeHeartRateSeries(
+    val sourceSampleCount: Int?, val points: List<NativeHeartRatePoint>,
+)
+internal data class NativeHeartRatePoint(val elapsedSeconds: Int?, val bpm: Int?)
+internal data class NativeActivityDisclosure(
+    val routeTraceRetained: Boolean?, val routePointCount: Int?, val startEndRedacted: Boolean?,
+    val hasElevation: Boolean?, val heartRateSeriesRetained: Boolean?, val heartRateSampleCount: Int?,
 )
 
 internal data class NativeHealthConnectActivity(
@@ -226,7 +351,15 @@ internal data class NativeWeek(
     val completedDistanceMeters: Double?,
     val risk: String?,
 )
-internal data class NativePlanTraceWeek(val id: String?, val weekNumber: Int?, val startDate: String?)
+internal data class NativePlanTraceWeek(
+    val id: String?,
+    val weekNumber: Int?,
+    val startDate: String?,
+    val recommendedDistanceMeters: Double?,
+    val recommendedDurationSeconds: Double?,
+    val currentDistanceMeters: Double?,
+    val currentDurationSeconds: Double?,
+)
 internal data class NativePhaseReview(
     val planId: String?,
     val phase: String?,
@@ -265,18 +398,56 @@ internal data class NativeDistanceSummary(
 internal data class NativeTrainingHistory(
     val weeklySummaries: List<NativeWeekSummary>,
     val todayIso: String?,
+    val currentSignal: NativeCurrentSignal?,
+    val hasAcceptedActivities: Boolean?,
+    val recordedSummary: NativeRecordedHistorySummary?,
+    val heartRateSample: NativeHeartRateSample?,
+)
+internal data class NativeCurrentSignal(
+    val risk: String?, val reasons: List<String>, val source: String?, val healthNotice: NativeHealthNotice?,
+)
+internal data class NativeHealthNotice(val level: String?, val heading: String?, val message: String?)
+internal data class NativeRecordedHistorySummary(
+    val totalRuns: Int?,
+    val totalDistanceMeters: Double?,
+    val totalDurationSeconds: Double?,
+    val longestRunMeters: Double?,
+    val currentPlanRuns: Int?,
+    val currentPlanDistanceMeters: Double?,
+    val archivedPlanRuns: Int?,
+    val archivedPlanDistanceMeters: Double?,
+    val unlinkedRuns: Int?,
+    val unlinkedDistanceMeters: Double?,
+)
+internal data class NativeHeartRateSample(
+    val windowDays: Int?,
+    val windowStart: String?,
+    val windowEnd: String?,
+    val sampleCount: Int?,
+    val averageHeartRate: Int?,
+    val highZoneSeconds: Double?,
+    val latest: NativeHeartRateObservation?,
+    val oldest: NativeHeartRateObservation?,
+)
+internal data class NativeHeartRateObservation(
+    val activityDate: String?,
+    val averageHeartRate: Int?,
+    val maxHeartRate: Int?,
 )
 internal data class NativeWeekSummary(
     val weekNumber: Int?,
     val startDate: String?,
     val targetDistanceMeters: Double?,
     val completedDistanceMeters: Double?,
+    val completedDurationSeconds: Double?,
     val plannedRuns: Int?,
     val completedRuns: Int?,
     val missedRuns: Int?,
     val skippedRuns: Int?,
     val painFlags: Int?,
     val hardFlags: Int?,
+    val averagePaceSecondsPerKm: Double?,
+    val averageHeartRate: Int?,
 )
 internal data class NativePlanHistoryPage(val items: List<NativePlanHistoryItem>, val nextOffset: Int?, val today: String?)
 internal data class NativePlanHistoryItem(
@@ -354,6 +525,21 @@ internal data class NativeActionResponse(
     val preview: NativeActionPreviewDto?,
     val setupComplete: Boolean?,
 )
+internal data class NativeAccountOperationResponse(
+    val ok: Boolean?,
+    val message: String?,
+    val error: String?,
+    val sessionToken: String?,
+    val totpUri: String?,
+    val recoveryCodes: List<String>,
+    val accountDeleted: Boolean?,
+) {
+    override fun toString(): String =
+        "NativeAccountOperationResponse(" +
+            "ok=$ok, message=$message, error=$error, " +
+            "sessionToken=<redacted>, totpUri=<redacted>, " +
+            "recoveryCodes=<redacted>, accountDeleted=$accountDeleted)"
+}
 internal data class NativeActionPreviewDto(
     val risk: String?,
     val weeklyLoadChangePercent: Double?,

@@ -1,6 +1,8 @@
 package dev.deftmartian.runway
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeUiModelHelpersTest {
@@ -61,6 +63,147 @@ class NativeUiModelHelpersTest {
         assertEquals(null, placement.byWorkoutId["rest-1"])
     }
 
+    @Test
+    fun `plan-free progress preserves recorded facts without inventing a recommendation`() {
+        val recorded = NativeRecordedHistorySummary(
+            totalRuns = 7,
+            totalDistanceMeters = 32_100.0,
+            totalDurationSeconds = 10_800.0,
+            longestRunMeters = 8_100.0,
+            currentPlanRuns = 0,
+            currentPlanDistanceMeters = 0.0,
+            archivedPlanRuns = 5,
+            archivedPlanDistanceMeters = 25_100.0,
+            unlinkedRuns = 2,
+            unlinkedDistanceMeters = 7_000.0,
+        )
+        val heartRate = NativeHeartRateSample(
+            windowDays = 90,
+            windowStart = "2026-04-30",
+            windowEnd = "2026-07-28",
+            sampleCount = 4,
+            averageHeartRate = 141,
+            highZoneSeconds = 600.0,
+            latest = NativeHeartRateObservation("2026-07-27", 144, 168),
+            oldest = NativeHeartRateObservation("2026-05-02", 138, null),
+        )
+        val history = NativeTrainingHistory(
+            weeklySummaries = emptyList(),
+            todayIso = "2026-07-28",
+            currentSignal = null,
+            hasAcceptedActivities = true,
+            recordedSummary = recorded,
+            heartRateSample = heartRate,
+        )
+
+        val summary = noActiveProgressSummary(history, planHistoryCount = 1)
+
+        assertEquals(
+            "There is no active plan or recommendation. Recorded work remains available below.",
+            summary.statusMessage,
+        )
+        assertEquals(recorded, summary.recordedHistory)
+        assertEquals(heartRate, summary.acceptedHeartRate)
+    }
+
+    @Test
+    fun `plan-free progress falls back honestly to past plans when no actual work summary exists`() {
+        val summary = noActiveProgressSummary(history = null, planHistoryCount = 2)
+
+        assertEquals(
+            "There is no active plan or recommendation. Past plans remain available below.",
+            summary.statusMessage,
+        )
+        assertEquals(null, summary.recordedHistory)
+        assertEquals(null, summary.acceptedHeartRate)
+    }
+
+    @Test
+    fun `replacement session is returned only after durable persistence succeeds`() {
+        val current = MobileSession(
+            origin = "https://runway.example",
+            token = "c".repeat(32),
+            expiresAtEpochMs = System.currentTimeMillis() + 60_000,
+        )
+        val replacement = MobileSession(
+            origin = current.origin,
+            token = "r".repeat(32),
+            expiresAtEpochMs = System.currentTimeMillis() + 120_000,
+        )
+        var persisted: MobileSession? = null
+
+        val installed = installReplacementSession(current, replacement) {
+            assertEquals(null, persisted)
+            persisted = it
+            true
+        }
+
+        assertEquals(replacement, persisted)
+        assertEquals(replacement, installed)
+        assertEquals(
+            null,
+            installReplacementSession(current, replacement) { false },
+        )
+        assertEquals(
+            null,
+            installReplacementSession(
+                current,
+                replacement.copy(origin = "https://other.example"),
+            ) { true },
+        )
+        assertEquals(
+            null,
+            installReplacementSession(
+                current,
+                replacement.copy(token = current.token),
+            ) { true },
+        )
+    }
+
+    @Test
+    fun `authenticator handoff clears the setup key but keeps verification pending`() {
+        val secret = "JBSWY3DPEHPK3PXP"
+        val pending = NativeAccountSecurityEphemeral(
+            setupPending = true,
+            totpSetup = NativeTotpSetup(
+                uri = "otpauth://totp/runway?secret=$secret",
+                manualSecret = secret,
+            ),
+            recoveryCodes = listOf("ABCDE-FGHIJ"),
+        )
+
+        val afterBackground = pending.clearSensitiveMaterialForBackground()
+
+        assertTrue(afterBackground.setupPending)
+        assertEquals(null, afterBackground.totpSetup)
+        assertTrue(afterBackground.recoveryCodes.isEmpty())
+        assertFalse(afterBackground.toString().contains(secret))
+    }
+
+    @Test
+    fun `recovery document handoff preserves one background only`() {
+        val handoff = OneShotBackgroundPreservation()
+        val codes = NativeAccountSecurityEphemeral(
+            recoveryCodes = listOf("ABCDE-FGHIJ"),
+        )
+
+        handoff.arm()
+        val whilePickerOwnsDocument = if (handoff.consume()) {
+            codes
+        } else {
+            codes.clearSensitiveMaterialForBackground()
+        }
+        handoff.cancel()
+        val afterCancelledPickerBackground = if (handoff.consume()) {
+            whilePickerOwnsDocument
+        } else {
+            whilePickerOwnsDocument.clearSensitiveMaterialForBackground()
+        }
+
+        assertEquals(codes.recoveryCodes, whilePickerOwnsDocument.recoveryCodes)
+        assertTrue(afterCancelledPickerBackground.recoveryCodes.isEmpty())
+    }
+
     private fun workout(id: String, date: String, type: String) = NativeWorkout(
         id = id,
         weekId = null,
@@ -96,10 +239,12 @@ class NativeUiModelHelpersTest {
         averagePaceSecondsPerKm = null,
         averageHeartRate = null,
         maxHeartRate = null,
+        heartRateSummary = null,
         feltHard = false,
         pain = false,
         extraPlanImpactConfirmed = true,
         consequence = null,
+        routeSummary = null,
         matchedWorkoutPurpose = null,
         matchedWorkoutDate = null,
         healthConnect = null,

@@ -16,8 +16,13 @@ import {
 import {
 	consumeSecurityRateLimit,
 	passkeyAuthenticationRateLimitBuckets,
-	passkeyRegistrationRateLimitBuckets
+	passkeyRegistrationRateLimitBuckets,
+	signInRateLimitBuckets,
+	signUpRateLimitBuckets,
+	twoFactorChallengeFromHeaders,
+	twoFactorRateLimitBuckets
 } from '$lib/server/runway/security-rate-limit';
+import { authEmailSchema } from '$lib/server/runway/validation';
 import { startStagedExportReaper } from '$lib/server/runway/staged-json-export';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { sequence } from '@sveltejs/kit/hooks';
@@ -111,11 +116,26 @@ function applySecurityHeaders(response: Response, pathname: string): Response {
 
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/health/')) return resolve(event);
-	if (!isAllowedBetterAuthHttpRequest(event.url.pathname, event.request.method)) {
+	const androidNativeRequest = isAndroidNativeApiRequest(
+		event.request,
+		event.url.pathname
+	);
+	if (
+		!isAllowedBetterAuthHttpRequest(
+			event.url.pathname,
+			event.request.method,
+			androidNativeRequest
+		)
+	) {
 		return new Response('Not found', {
 			status: 404,
 			headers: { 'Content-Type': 'text/plain; charset=utf-8' }
 		});
+	}
+
+	if (androidNativeRequest) {
+		const nativeRateLimit = await rateLimitNativeAuthentication(event);
+		if (nativeRateLimit) return nativeRateLimit;
 	}
 
 	const passkeyAction = passkeyAuthenticationAction(
@@ -148,6 +168,48 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 
 	return svelteKitHandler({ event, resolve, auth, building });
 };
+
+async function rateLimitNativeAuthentication(
+	event: Parameters<Handle>[0]['event']
+): Promise<Response | null> {
+	const pathname = event.url.pathname;
+	if (pathname === '/api/auth/sign-in/email' || pathname === '/api/auth/sign-up/email') {
+		const body = await event.request
+			.clone()
+			.json()
+			.catch(() => null);
+		const email = authEmailSchema.safeParse(
+			typeof body === 'object' && body !== null && 'email' in body ? body.email : null
+	);
+		if (!email.success) {
+			return new Response('Email or password is not correct.', {
+				status: 400,
+				headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+			});
+		}
+		const rateLimit = await consumeSecurityRateLimit(
+			pathname === '/api/auth/sign-in/email'
+				? signInRateLimitBuckets(email.data, event.getClientAddress())
+				: signUpRateLimitBuckets(email.data, event.getClientAddress())
+		);
+		return rateLimit.allowed ? null : rateLimitedAuthResponse(rateLimit.retryAfterSeconds);
+	}
+	const method =
+		pathname === '/api/auth/two-factor/verify-totp'
+			? 'totp'
+			: pathname === '/api/auth/two-factor/verify-backup-code'
+				? 'backup'
+				: null;
+	if (!method) return null;
+	const rateLimit = await consumeSecurityRateLimit(
+		twoFactorRateLimitBuckets(
+			method,
+			twoFactorChallengeFromHeaders(event.request.headers),
+			event.getClientAddress()
+		)
+	);
+	return rateLimit.allowed ? null : rateLimitedAuthResponse(rateLimit.retryAfterSeconds);
+}
 
 function rateLimitedAuthResponse(retryAfterSeconds: number): Response {
 	return new Response('Too many authentication attempts. Try again later.', {

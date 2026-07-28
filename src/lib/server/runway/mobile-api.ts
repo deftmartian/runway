@@ -1,4 +1,3 @@
-import { env } from '$env/dynamic/private';
 import { auth } from '$lib/server/auth';
 import { buildIdentity } from './build-identity';
 import { getSettingsHealthConnectConnectionStatus } from './health-connect';
@@ -10,6 +9,7 @@ import { getHistory } from './repositories/history';
 import {
 	getPlanTrace,
 	getPlanWeeks,
+	getPlanDetail,
 	hasPlanHistory,
 	listPlanHistory
 } from './repositories/plan-queries';
@@ -19,6 +19,10 @@ import { getTrainingReadContext } from './repositories/training-read-context';
 import { getGoalSetupView } from './plan-setup';
 import { zoneFloors } from '$lib/training/heart-rate';
 import { isAndroidMobileSession } from './mobile-session-scope';
+import { mobileActivityDetail } from './mobile-activity-detail';
+import { getActivityTraceDetail } from './repositories/activity-queries';
+import { getMobileAccountSecurity } from './mobile-account-security';
+import { mobileStatsPayload } from './mobile-stats';
 
 export const mobileClientHeader = 'runway-android/2';
 export const mobileSchemaVersion = 1;
@@ -46,17 +50,78 @@ export async function getMobileView(
 			return getMobileCalendar(userId, url);
 		case 'review':
 			return getMobileReview(userId, url);
+		case 'activity-trace':
+			return getMobileActivityTrace(userId, url);
 		case 'stats':
 			return getMobileStats(userId);
 		case 'history':
 			return getMobileHistory(userId, url);
+		case 'history-detail':
+			return getMobileHistoryDetail(userId, url);
 		case 'settings':
 			return getMobileSettings(userId, url);
+		case 'account-security':
+			return getMobileAccountSecurity(userId, request);
 		case 'onboarding':
 			return getMobileOnboarding(userId);
 		default:
 			return null;
 	}
+}
+
+async function getMobileActivityTrace(userId: string, url: URL) {
+	const activityId = boundedActivityId(url.searchParams.get('activityId'));
+	if (!activityId) return null;
+	const detail = await getActivityTraceDetail(userId, activityId);
+	if (!detail) return null;
+	return {
+		activityId,
+		...mobileActivityEvidenceDetail(detail)
+	};
+}
+
+/**
+ * The only mobile response that carries route coordinates or HR samples. Its caller has already
+ * validated a UUID and `getActivityTraceDetail` scopes the row to the authenticated user.
+ */
+export function mobileActivityEvidenceDetail(detail: Awaited<ReturnType<typeof getActivityTraceDetail>>) {
+	if (!detail) return null;
+	const routeTrace = detail.routeTrace
+		? {
+				version: detail.routeTrace.version,
+				sourcePointCount: detail.routeTrace.sourcePointCount,
+				points: detail.routeTrace.points.slice(0, 600).map((point) => ({
+					latitudeE6: point.latitudeE6,
+					longitudeE6: point.longitudeE6,
+					elapsedSeconds: point.elapsedSeconds,
+					segmentIndex: point.segmentIndex,
+					speedMetersPerSecond: point.speedMetersPerSecond
+				}))
+			}
+		: null;
+	const heartRateSeries = detail.heartRateSeries
+		? {
+				version: detail.heartRateSeries.version,
+				sourceSampleCount: detail.heartRateSeries.sourceSampleCount,
+				points: detail.heartRateSeries.points.slice(0, 1_000).map((point) => ({
+					elapsedSeconds: point.elapsedSeconds,
+					bpm: point.bpm
+				}))
+			}
+		: null;
+	return {
+		routeTrace,
+		heartRateSeries,
+		averageCadence: detail.averageCadence,
+		disclosure: {
+			routeTraceRetained: detail.routeSummary.traceRetained === true,
+			routePointCount: detail.routeSummary.pointCount,
+			startEndRedacted: detail.routeSummary.startEndRedacted,
+			hasElevation: detail.routeSummary.hasElevation,
+			heartRateSeriesRetained: heartRateSeries !== null,
+			heartRateSampleCount: heartRateSeries?.sourceSampleCount ?? 0
+		}
+	};
 }
 
 async function getMobileBootstrap(userId: string, request: Request, url: URL) {
@@ -105,7 +170,7 @@ async function getMobileReview(userId: string, url: URL) {
 	]);
 	return {
 		candidates,
-		activities: activityPage.items,
+		activities: activityPage.items.map(mobileActivityDetail),
 		activityPage: {
 			total: activityPage.total,
 			nextOffset: activityPage.nextOffset,
@@ -128,15 +193,7 @@ async function getMobileStats(userId: string) {
 		listPlanHistory(userId, { limit: 20, offset: 0, context }),
 		getPhaseCompletionReview(userId)
 	]);
-	return {
-		onboardingRequired: false,
-		active,
-		detail: weeks ? { weeks } : null,
-		history,
-		planTrace,
-		planHistory,
-		phaseReview
-	};
+	return mobileStatsPayload({ active, weeks, history, planTrace, planHistory, phaseReview });
 }
 
 async function getMobileHistory(userId: string, url: URL) {
@@ -158,6 +215,110 @@ async function getMobileHistory(userId: string, url: URL) {
 		phaseReview,
 		offset,
 		pageSize: 20
+	};
+}
+
+async function getMobileHistoryDetail(userId: string, url: URL) {
+	const planId = boundedPlanId(url.searchParams.get('planId'));
+	if (!planId) return null;
+	const detail = await getPlanDetail(userId, planId);
+	if (!detail) return null;
+
+	const latestFeedbackByWorkout = new Map<string, (typeof detail.feedback)[number]>();
+	for (const feedback of detail.feedback) {
+		if (!latestFeedbackByWorkout.has(feedback.workoutId)) {
+			latestFeedbackByWorkout.set(feedback.workoutId, feedback);
+		}
+	}
+	const activityByWorkout = new Map<string, (typeof detail.activities)[number]>();
+	for (const activity of detail.activities) {
+		if (activity.workoutId && !activityByWorkout.has(activity.workoutId)) {
+			activityByWorkout.set(activity.workoutId, activity);
+		}
+	}
+
+	return {
+		onboardingRequired: false,
+		detail: {
+			plan: {
+				id: detail.plan.id,
+				status: detail.plan.status,
+				phase: detail.plan.phase,
+				startDate: detail.plan.startDate,
+				targetDate: detail.plan.targetDate,
+				weeks: detail.plan.weeks,
+				risk: detail.plan.risk,
+				completedAt: detail.plan.completedAt,
+				archivedAt: detail.plan.archivedAt,
+				lifecycleReason: detail.plan.lifecycleReason,
+				summary: {
+					kind: detail.plan.summary.kind,
+					requiredWeeklyIncreasePercent:
+						detail.plan.summary.kind === 'distance'
+							? detail.plan.summary.requiredWeeklyIncreasePercent
+							: null,
+					defaultWeeklyIncreasePercent:
+						detail.plan.summary.kind === 'distance'
+							? detail.plan.summary.defaultWeeklyIncreasePercent
+							: null
+				}
+			},
+			goal: {
+				title: detail.goal.title,
+				distance: detail.goal.distance,
+				priority: detail.goal.priority
+			},
+			cutoffDate: detail.cutoffDate,
+			timeline: detail.adjustments.map((adjustment) => ({
+				id: adjustment.id,
+				triggerType: adjustment.triggerType,
+				createdAt: adjustment.createdAt,
+				reversedAt: adjustment.reversedAt,
+				reversalReason: adjustment.reversalReason,
+				reason: adjustment.reason,
+				newState: adjustment.newState
+			})),
+			weeks: detail.weeks.map((week) => ({
+				id: week.id,
+				weekNumber: week.weekNumber,
+				startDate: week.startDate,
+				targetDistanceMeters: week.targetDistanceMeters,
+				targetDurationSeconds: week.targetDurationSeconds,
+				risk: week.risk,
+				isDownWeek: week.isDownWeek,
+				isTaper: week.isTaper,
+				workouts: detail.workouts
+					.filter((workout) => workout.weekId === week.id)
+					.map((workout) => {
+						const feedback = latestFeedbackByWorkout.get(workout.id);
+						const activity = activityByWorkout.get(workout.id);
+						const result = activity ?? feedback;
+						return {
+							id: workout.id,
+							scheduledDate: workout.scheduledDate,
+							type: workout.type,
+							status: workout.status,
+							prescriptionKind: workout.prescriptionKind,
+							targetDistanceMeters: workout.targetDistanceMeters,
+							targetDurationSeconds: workout.targetDurationSeconds,
+							purpose: workout.purpose,
+							isRemoved: workout.isRemoved,
+							result: result
+								? {
+										source: activity?.source ?? 'feedback',
+										completedDistanceMeters:
+											activity?.distanceMeters ?? feedback?.completedDistanceMeters,
+										completedDurationSeconds:
+											activity?.durationSeconds ?? feedback?.completedDurationSeconds,
+										feltHard: activity?.feltHard ?? feedback?.feltHard,
+										pain: activity?.pain ?? feedback?.pain,
+										consequence: activity?.consequence ?? feedback?.consequence
+									}
+								: null
+						};
+					})
+			}))
+		}
 	};
 }
 
@@ -193,8 +354,9 @@ async function getMobileSettings(userId: string, url: URL) {
 			commit: buildIdentity.commit,
 			serverOrigin: url.origin
 		},
-		accountSecurityUrl: `${url.origin}/app/settings`,
-		localAuthEnabled: env['LOCAL_AUTH_ENABLED'] !== 'false'
+		// Account security has a native summary view. Credential administration remains a
+		// separate fresh-auth browser boundary and is intentionally not linked from Android.
+		accountSecurityAvailable: true
 	};
 }
 
@@ -206,3 +368,12 @@ function boundedOffset(value: string | null): number {
 	const parsed = Number(value ?? 0);
 	return Number.isSafeInteger(parsed) && parsed >= 0 ? Math.min(parsed, 10_000) : 0;
 }
+
+export function boundedPlanId(value: string | null): string | null {
+	if (!value || value.length !== 36) return null;
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+		? value
+		: null;
+}
+
+export const boundedActivityId = boundedPlanId;

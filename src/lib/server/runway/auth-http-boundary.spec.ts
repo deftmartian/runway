@@ -50,6 +50,17 @@ describe('Better Auth HTTP boundary', () => {
 		).toBe(false);
 	});
 
+	test.each([
+		'/api/auth/sign-in/email',
+		'/api/auth/sign-up/email',
+		'/api/auth/two-factor/verify-totp',
+		'/api/auth/two-factor/verify-backup-code'
+	])('allows the reviewed %s endpoint only for a classified native request', (pathname) => {
+		expect(isAllowedBetterAuthHttpRequest(pathname, 'POST', true)).toBe(true);
+		expect(isAllowedBetterAuthHttpRequest(pathname, 'POST', false)).toBe(false);
+		expect(isAllowedBetterAuthHttpRequest(pathname, 'GET', true)).toBe(false);
+	});
+
 	test('classifies only the public passkey authentication calls', async () => {
 		const { passkeyAuthenticationAction } = await import('./auth-http-boundary');
 		expect(
