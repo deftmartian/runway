@@ -13,10 +13,10 @@ import { validateProductionSecretConfiguration } from '$lib/server/runway/produc
 import { revokeUserVerificationRecords } from '$lib/server/runway/trusted-devices';
 import {
 	authFreshSessionSeconds,
+	authentikOidcConfig,
 	canonicalAppOrigin,
 	omitStoredOidcIdToken,
 	oauthTokenStorageOptions,
-	oidcDiscoveryUrl,
 	passkeyRpIdProblem,
 	publicOriginMismatchProblem
 } from '$lib/server/runway/auth-config';
@@ -71,17 +71,12 @@ const oidcPlugins =
 		? [
 				genericOAuth({
 					config: [
-						{
-							providerId: 'authentik',
-							discoveryUrl: oidcDiscoveryUrl(oidcIssuer),
+						authentikOidcConfig({
 							issuer: oidcIssuer,
 							clientId: oidcClientId,
 							clientSecret: oidcClientSecret,
-							scopes: ['openid', 'profile', 'email'],
-							pkce: true,
-							disableSignUp: !oidcSignupsEnabled,
-							requireIssuerValidation: true
-						}
+							signupsEnabled: oidcSignupsEnabled
+						})
 					]
 				})
 			]

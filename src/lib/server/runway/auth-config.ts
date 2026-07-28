@@ -1,8 +1,38 @@
+import type { GenericOAuthConfig } from 'better-auth/plugins';
+
 export const oauthTokenStorageOptions = Object.freeze({
 	encryptOAuthTokens: true as const
 });
 
 export const authFreshSessionSeconds = 10 * 60;
+
+type AuthentikOidcConfigOptions = {
+	issuer: string;
+	clientId: string;
+	clientSecret: string;
+	signupsEnabled: boolean;
+};
+
+export function authentikOidcConfig({
+	issuer,
+	clientId,
+	clientSecret,
+	signupsEnabled
+}: AuthentikOidcConfigOptions): GenericOAuthConfig {
+	return {
+		providerId: 'authentik',
+		discoveryUrl: oidcDiscoveryUrl(issuer),
+		issuer,
+		clientId,
+		clientSecret,
+		scopes: ['openid', 'profile', 'email'],
+		pkce: true,
+		disableSignUp: !signupsEnabled,
+		// Authentik does not currently send RFC 9207's optional `iss` callback parameter.
+		// Better Auth still rejects a mismatched issuer whenever the provider supplies one.
+		requireIssuerValidation: false
+	};
+}
 
 export function isFreshAuthSession(
 	createdAt: Date | string,

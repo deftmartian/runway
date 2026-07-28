@@ -2,6 +2,7 @@ import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import { describe, expect, test } from 'vitest';
 import {
 	authFreshSessionSeconds,
+	authentikOidcConfig,
 	canonicalAppOrigin,
 	isFreshAuthSession,
 	omitStoredOidcIdToken,
@@ -46,6 +47,25 @@ describe('authentication configuration', () => {
 		expect(oidcDiscoveryUrl('https://id.example.test/application/o/runway')).toBe(
 			'https://id.example.test/application/o/runway/.well-known/openid-configuration'
 		);
+	});
+
+	test('allows Authentik callbacks that omit the optional RFC 9207 issuer', () => {
+		expect(
+			authentikOidcConfig({
+				issuer: 'https://auth.example.test/application/o/runway/',
+				clientId: 'runway',
+				clientSecret: 'synthetic-client-secret',
+				signupsEnabled: false
+			})
+		).toMatchObject({
+			providerId: 'authentik',
+			issuer: 'https://auth.example.test/application/o/runway/',
+			discoveryUrl:
+				'https://auth.example.test/application/o/runway/.well-known/openid-configuration',
+			pkce: true,
+			disableSignUp: true,
+			requireIssuerValidation: false
+		});
 	});
 
 	test('requires the passkey RP ID to match the public hostname', () => {
