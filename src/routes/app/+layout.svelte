@@ -259,4 +259,14 @@
 			display: flex;
 		}
 	}
+
+	@media (min-width: 721px) and (max-width: 820px) {
+		.topbar {
+			grid-template-columns: auto minmax(0, 1fr) auto;
+		}
+
+		.shell-actions {
+			justify-self: end;
+		}
+	}
 </style>

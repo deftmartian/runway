@@ -71,8 +71,7 @@ test('account deletion rejects a stale session', async ({ page }) => {
 	const response = await page.request.post('/app/settings?/deleteAccount', {
 		headers: { origin: new URL(page.url()).origin },
 		multipart: {
-			confirmation: 'DELETE',
-			browserFolderDataCleared: 'yes'
+			confirmation: 'DELETE'
 		}
 	});
 	await expect(response.text()).resolves.toContain(
@@ -89,8 +88,7 @@ test('account-deletion confirmations are persistently rate limited', async ({ pa
 		const response = await page.request.post('/app/settings?/deleteAccount', {
 			headers: { origin },
 			multipart: {
-				confirmation: 'delete',
-				browserFolderDataCleared: 'yes'
+				confirmation: 'delete'
 			}
 		});
 		await expect(response.text()).resolves.toContain('Type DELETE exactly');
@@ -99,8 +97,7 @@ test('account-deletion confirmations are persistently rate limited', async ({ pa
 	const blocked = await page.request.post('/app/settings?/deleteAccount', {
 		headers: { origin },
 		multipart: {
-			confirmation: 'delete',
-			browserFolderDataCleared: 'yes'
+			confirmation: 'delete'
 		}
 	});
 	expect(blocked.headers()['retry-after']).toMatch(/^\d+$/);
@@ -112,6 +109,14 @@ test('privacy copy names the training export and retained GPX fields', async ({ 
 	await setTrainingTimeZone(email);
 	await page.goto('/app/settings');
 	await expect(page.getByRole('button', { name: 'Export training data' })).toBeVisible();
+	await page.getByText('Imported activity data', { exact: true }).click();
+	const importedActivityDeletionCopy = page.getByText(
+		/Deleting imported activities also disconnects/
+	);
+	await expect(importedActivityDeletionCopy).toContainText(
+		'disconnects import folders and paired Android devices'
+	);
+	await expect(importedActivityDeletionCopy).not.toContainText('browser');
 	await page.getByText('Audit history', { exact: true }).click();
 	await expect(
 		page.getByText(/private record of security and training-data changes/)

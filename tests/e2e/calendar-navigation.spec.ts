@@ -82,7 +82,9 @@ test('current decision keeps a clear review state non-actionable', async ({ page
 	await expect(review).toBeDisabled();
 });
 
-test('authenticated app avoids horizontal overflow on mobile and desktop', async ({ page }) => {
+test('authenticated app avoids horizontal overflow on mobile, tablet, and desktop', async ({
+	page
+}) => {
 	await createPlan(page);
 	await page.setViewportSize({ width: 320, height: 800 });
 	await page.goto('/app');
@@ -98,12 +100,32 @@ test('authenticated app avoids horizontal overflow on mobile and desktop', async
 
 	for (const viewport of [
 		{ width: 390, height: 844 },
+		{ width: 721, height: 900 },
+		{ width: 820, height: 900 },
 		{ width: 1366, height: 900 }
 	]) {
 		await page.setViewportSize(viewport);
 		for (const label of ['Calendar', 'Inbox', 'Stats', 'Settings']) {
 			await page.getByRole('link', { name: label, exact: true }).click();
 			await expectNoHorizontalOverflow(page);
+		}
+		if (viewport.width >= 721 && viewport.width <= 820) {
+			const navigationBox = await page
+				.getByRole('navigation', { name: 'App navigation' })
+				.boundingBox();
+			const signOutBox = await page
+				.getByRole('banner')
+				.getByRole('button', { name: 'Sign out' })
+				.boundingBox();
+			expect(navigationBox).not.toBeNull();
+			expect(signOutBox).not.toBeNull();
+			expect(
+				Math.abs(
+					(navigationBox?.y ?? 0) +
+						(navigationBox?.height ?? 0) / 2 -
+						((signOutBox?.y ?? 0) + (signOutBox?.height ?? 0) / 2)
+				)
+			).toBeLessThanOrEqual(2);
 		}
 	}
 

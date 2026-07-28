@@ -155,17 +155,16 @@
 			>
 			<div class="control-body">
 				<p class="section-note">
-					Deleting imported activities also disconnects import folders and paired Android devices,
-					and clears this browser’s folder access. Manual runs remain. GPX fingerprints stay behind
-					as deletion markers, so the same private files are not silently imported again. This
-					cannot be undone.
+					Deleting imported activities also disconnects import folders and paired Android devices.
+					Manual runs remain. GPX fingerprints stay behind as deletion markers, so the same private
+					files are not silently imported again. This cannot be undone.
 				</p>
 				<form
 					method="post"
 					action="?/deleteActivityData"
 					use:enhance={enhanceSettingsAction(
 						'deleteActivityData',
-						'Delete imported activities and import records, disconnect import folders and paired Android devices, and clear this browser’s folder access? Manual runs remain. This cannot be undone.'
+						'Delete imported activities and import records, and disconnect import folders and paired Android devices? Manual runs remain. This cannot be undone.'
 					)}
 					aria-busy={settingsActionPending === 'deleteActivityData'}
 				>
