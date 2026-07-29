@@ -163,7 +163,7 @@ async function rateLimitNativeAuthentication(
 ): Promise<Response | null> {
 	const pathname = event.url.pathname;
 	if (pathname === '/api/auth/sign-in/email' || pathname === '/api/auth/sign-up/email') {
-		const body = await event.request
+		const body: unknown = await event.request
 			.clone()
 			.json()
 			.catch(() => null);

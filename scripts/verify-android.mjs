@@ -11,7 +11,6 @@ const requiredFiles = [
 	'android/app/build.gradle.kts',
 	'android/.gitignore',
 	'android/app/src/main/AndroidManifest.xml',
-	'android/app/src/main/res/layout/activity_server_connection.xml',
 	'android/app/src/main/res/mipmap-anydpi/ic_launcher.xml',
 	'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml',
 	'android/app/src/main/res/drawable/ic_launcher_monochrome.xml',
@@ -42,6 +41,7 @@ const requiredFiles = [
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSetupScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeStatsSurface.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeCalendarDaySurface.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeTodayCalendarScreens.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiComponents.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiModelHelpers.kt',
@@ -401,6 +401,7 @@ const nativeUiFiles = [
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSettingsScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeSetupScreen.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeStatsSurface.kt',
+	'android/app/src/main/java/dev/deftmartian/runway/NativeCalendarDaySurface.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeTodayCalendarScreens.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiComponents.kt',
 	'android/app/src/main/java/dev/deftmartian/runway/NativeUiModelHelpers.kt'
@@ -455,6 +456,10 @@ const serverConnection = read(
 	'android/app/src/main/java/dev/deftmartian/runway/ServerConnectionActivity.kt'
 );
 for (const required of [
+	'setContent {',
+	'ServerConnectionScreen(',
+	'ConfirmServerChangeDialog(',
+	'OfflineSwitchDialog(',
 	'RunwayApiClient(origin).probe()',
 	'InstanceOriginPolicy.normalizeOrigin',
 	'store.replace(initialConnection, origin)',
@@ -465,6 +470,10 @@ for (const required of [
 	if (!serverConnection.includes(required)) {
 		errors.push(`Android server selection is missing ${required}`);
 	}
+}
+const androidStrings = read('android/app/src/main/res/values/strings.xml');
+if (!androidStrings.includes('<string name="server_change_consequence">')) {
+	errors.push('Android server selection is missing the server-change consequence string resource');
 }
 
 const credentialStore = read(
@@ -586,9 +595,7 @@ for (const required of [
 	'RunwayApiClient(serverOrigin).disconnect'
 ]) {
 	if (!folderSettings.includes(required)) {
-		errors.push(
-			`Android folder settings are missing the Compose state contract: ${required}`
-		);
+		errors.push(`Android folder settings are missing the Compose state contract: ${required}`);
 	}
 }
 const importSetup = read(

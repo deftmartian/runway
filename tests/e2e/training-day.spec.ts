@@ -33,8 +33,8 @@ test('rest days can record manual unplanned runs', async ({ page }) => {
 
 	expect(foundRecordableRestDay).toBe(true);
 	await page.getByText('Record unplanned run').click();
-	await page.getByLabel('Distance (km)').fill('2');
-	await page.getByLabel('Duration (min)').fill('20');
+	await page.getByLabel('Distance (km, optional)').fill('2');
+	await page.getByLabel('Duration (min, optional)').fill('20');
 	await page.getByRole('button', { name: /Save unplanned run/ }).click();
 	await expect(page.getByText('Run recorded.')).toBeVisible();
 	await page.getByText('Close', { exact: true }).click();

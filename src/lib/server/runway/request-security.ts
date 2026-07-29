@@ -34,11 +34,7 @@ export function isAndroidNativeApiRequest(request: Request, pathname: string): b
 	) {
 		return contentType.startsWith('application/json');
 	}
-	if (
-		client === 'runway-android/2' &&
-		method === 'POST' &&
-		androidNativeAuthPaths.has(pathname)
-	) {
+	if (client === 'runway-android/2' && method === 'POST' && androidNativeAuthPaths.has(pathname)) {
 		return contentType.startsWith('application/json');
 	}
 	if (client === 'runway-android/2' && pathname.startsWith('/api/mobile/v1/')) {

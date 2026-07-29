@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import java.util.concurrent.Executors
 
 class ServerConnectionActivity : ComponentActivity() {
@@ -341,13 +342,7 @@ private fun ConfirmServerChangeDialog(onDismiss: () -> Unit, onConfirm: () -> Un
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Change runway server?") },
-        text = {
-            Text(
-                "This disconnects this phone from the current server, then removes its saved account connection, " +
-                    "Gadgetbridge folder access, queued checks, and local import markers. It does not delete GPX " +
-                    "files or data already stored on either server.",
-            )
-        },
+        text = { Text(stringResource(R.string.server_change_consequence)) },
         confirmButton = { Button(onClick = onConfirm) { Text("Change server") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

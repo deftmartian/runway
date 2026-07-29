@@ -415,7 +415,7 @@ export async function previewConsequenceDecision(
 			throw new Error('This plan-change proposal is no longer available.');
 		}
 		if (input.decision === 'keep_plan') return { decision: input.decision, changes: [] };
-		const decision = input.decision as Exclude<PlanDecision, 'keep_plan'>;
+		const decision = input.decision;
 		const candidates = await readFutureConsequenceCandidates(tx, userId, source, today);
 		const projection = projectConsequenceDecisionChanges({
 			decision,

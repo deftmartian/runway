@@ -53,8 +53,6 @@ export function isNativeDeviceAuthorizationReturn(input: string | null | undefin
  * existing device-code poll. Device codes, browser sessions, identities, and
  * bearer tokens must never cross this boundary.
  */
-export function nativeDeviceAuthorizationCallback(
-	result: NativeDeviceAuthorizationResult
-): string {
+export function nativeDeviceAuthorizationCallback(result: NativeDeviceAuthorizationResult): string {
 	return `runway-native://auth?result=${result}`;
 }

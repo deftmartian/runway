@@ -14,6 +14,7 @@
     <string name="server_switching">Switching servers…</string>
     <string name="server_connection_changed">The server connection changed in another window. Review the current server and try again.</string>
     <string name="server_disconnect_unavailable">The current server could not be reached, so this phone may still have an active session there.</string>
+    <string name="server_change_consequence">This disconnects this phone from the current server, then removes its saved account connection, Gadgetbridge folder access, queued checks, and local import markers. It does not delete GPX files or data already stored on either server.</string>
     <string name="switch_anyway">Switch anyway</string>
     <string name="change_server">Change server</string>
     <string name="cancel">Cancel</string>

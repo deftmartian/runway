@@ -40,7 +40,9 @@ test('Android device approval redirects are private and never stored', async ({ 
 	expect(response.headers()['cache-control']).toBe('private, no-store');
 });
 
-test('only the fixed native app return marker survives sign-in and two-factor pages', async ({ page }) => {
+test('only the fixed native app return marker survives sign-in and two-factor pages', async ({
+	page
+}) => {
 	const nativeReturnTo = '/device?user_code=ABCDEFGH&return_to_app=runway-native';
 	const encodedReturnTo = encodeURIComponent(nativeReturnTo);
 
