@@ -324,7 +324,7 @@ jobs:
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
       - name: Verify release identity and source contracts
-        run: corepack pnpm verify:android && corepack pnpm verify:android:version
+        run: corepack pnpm verify:android:static && corepack pnpm verify:android:version
       - name: Build unsigned release APK
         run: >-
           android/gradlew -p android --no-daemon --stacktrace --dependency-verification strict

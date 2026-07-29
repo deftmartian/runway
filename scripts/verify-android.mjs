@@ -7,6 +7,14 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const errors = [];
+const argumentsSet = new Set(process.argv.slice(2));
+const staticOnly = argumentsSet.delete('--static-only');
+if (argumentsSet.size > 0) {
+	console.error(
+		`Android verification failed: unknown argument(s): ${[...argumentsSet].join(', ')}`
+	);
+	process.exit(1);
+}
 const requiredFiles = [
 	'android/app/build.gradle.kts',
 	'android/.gitignore',
@@ -747,35 +755,39 @@ if (errors.length > 0) {
 	process.exit(1);
 }
 
-const behavioralTests = spawnSync(
-	'android/gradlew',
-	[
-		'-p',
-		'android',
-		'--no-daemon',
-		'--dependency-verification',
-		'strict',
-		':app:testDebugUnitTest',
-		'--tests',
-		'dev.deftmartian.runway.MobileApiClientContractTest',
-		'--tests',
-		'dev.deftmartian.runway.MobileSessionNamespaceTest',
-		'--tests',
-		'dev.deftmartian.runway.NativePayloadCodecTest',
-		'--tests',
-		'dev.deftmartian.runway.NativeUiModelHelpersTest',
-		'--tests',
-		'dev.deftmartian.runway.ViewLoadRequestGateTest'
-	],
-	{ cwd: root, stdio: 'inherit' }
-);
-if (behavioralTests.status !== 0) {
-	console.error('Android verification failed: native mobile API behavioral tests did not pass.');
-	process.exit(1);
+if (!staticOnly) {
+	const behavioralTests = spawnSync(
+		'android/gradlew',
+		[
+			'-p',
+			'android',
+			'--no-daemon',
+			'--dependency-verification',
+			'strict',
+			':app:testDebugUnitTest',
+			'--tests',
+			'dev.deftmartian.runway.MobileApiClientContractTest',
+			'--tests',
+			'dev.deftmartian.runway.MobileSessionNamespaceTest',
+			'--tests',
+			'dev.deftmartian.runway.NativePayloadCodecTest',
+			'--tests',
+			'dev.deftmartian.runway.NativeUiModelHelpersTest',
+			'--tests',
+			'dev.deftmartian.runway.ViewLoadRequestGateTest'
+		],
+		{ cwd: root, stdio: 'inherit' }
+	);
+	if (behavioralTests.status !== 0) {
+		console.error('Android verification failed: native mobile API behavioral tests did not pass.');
+		process.exit(1);
+	}
 }
 
 console.log(
-	`Android selectable-server contract and native mobile API behavioral tests verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
+	staticOnly
+		? `Android selectable-server static contract verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
+		: `Android selectable-server contract and native mobile API behavioral tests verified across ${xmlFiles.length} XML files and ${kotlinFiles.length} Kotlin files.`
 );
 
 function read(file) {

@@ -510,6 +510,25 @@ for (const required of [
 ]) {
 	requireText(check, required, `check workflow includes ${required}`);
 }
+const qualityJob = checkYaml.jobs.checks;
+if ((qualityJob?.['timeout-minutes'] ?? 0) < 30) {
+	errors.push('Android quality work does not have enough cold-runner time');
+}
+assertExact(
+	'Android static contract command',
+	stepByName(qualityJob, 'Android selectable-server static contract')?.run,
+	'corepack pnpm verify:android:static && corepack pnpm verify:android:version'
+);
+requireText(
+	String(stepByName(qualityJob, 'Android unit tests')?.run),
+	' test',
+	'Android unit step retains behavioral coverage after the static-only contract'
+);
+assertExact(
+	'unsigned Android source contract command',
+	stepByName(ciYaml.jobs['android-build'], 'Verify release identity and source contracts')?.run,
+	'corepack pnpm verify:android:static && corepack pnpm verify:android:version'
+);
 
 const functionalBrowser = section(browser, '  functional:', '  visual:');
 for (const required of [
