@@ -101,10 +101,10 @@ android {
         // Health Connect's Jetpack client supports Android 8.0.
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.7.0"
+        versionCode = 13
+        versionName = "0.7.1"
         buildConfigField("String", "SOURCE_COMMIT", "\"$runwayBuildCommit\"")
-        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
@@ -184,6 +184,8 @@ dependencies {
     // real parser test-only so native HTTP contract tests exercise encoded server responses.
     testImplementation("org.json:json:20240303")
     androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.test:runner:1.5.0")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     debugImplementation("androidx.compose.ui:ui-tooling")

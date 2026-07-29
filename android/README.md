@@ -16,8 +16,10 @@ stored on either server.
 | Choose a server, then sign in or create a local account without leaving Android. OIDC and passkeys use the system browser. | Grant a Gadgetbridge folder or Health Connect permissions from Android settings. |
 
 <p align="center">
-  <img src="../docs/images/runway-android-calendar-dark.png" width="300" alt="Native Android calendar following the system dark theme">
-  <img src="../docs/images/runway-android-progress.png" width="300" alt="Native Android progress screen showing the training ramp">
+  <img src="../docs/images/runway-android-calendar-dark.png" width="220" alt="Native Android Calendar following the system dark theme">
+  <img src="../docs/images/runway-android-inbox-light.png" width="220" alt="Native Android Inbox following the system light theme">
+  <img src="../docs/images/runway-android-stats-light.png" width="220" alt="Native Android Stats following the system light theme">
+  <img src="../docs/images/runway-android-history-dark.png" width="220" alt="Native Android History following the system dark theme">
 </p>
 
 The system browser is deliberately limited to identity-provider and website-owned boundaries: OIDC
@@ -28,12 +30,14 @@ never copies browser cookies or puts a session token in a URL.
 
 ## Android capability surface
 
-The Compose client covers normal planning use: onboarding, today and the next run, a month calendar
-with day detail, workout adjustments and results, review, progress/history, imports, settings, and
-server/account state. It talks to the versioned mobile API with a server-stamped Better Auth native
-session. Local credentials create that session directly; OIDC and passkeys use Better Auth device
-authorization without transferring a browser session. Training mutations carry stable idempotency
-keys so a retry does not record a run or apply an edit twice.
+The Compose client uses the same five destinations as the web client: Calendar, Inbox, Stats,
+History, and Settings. Calendar carries today, next run, the month, day detail, workout adjustments,
+and results. Inbox owns activity review and import sources. Stats owns comparisons and recorded
+training context. History owns plan lifecycle and past plans. Settings owns server and account state.
+It talks to the versioned mobile API with a server-stamped Better Auth native session. Local
+credentials create that session directly; OIDC and passkeys use Better Auth device authorization
+without transferring a browser session. Training mutations carry stable idempotency keys so a retry
+does not record a run or apply an edit twice.
 
 The presentation layer is typed: one codec translates bounded JSON responses into immutable Kotlin
 payloads and sealed commands into mutation bodies. Compose screens and the ViewModel do not consume

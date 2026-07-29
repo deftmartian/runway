@@ -181,6 +181,7 @@ internal object NativePayloadCodec {
 
     private fun JSONObject.calendarView() = NativeCalendarPayload(
         onboardingRequired = optionalBoolean("onboardingRequired"),
+        hasActivePlan = optionalObject("activePlan") != null,
         calendar = optionalObject("calendar")?.calendar(),
         nextWorkout = optionalObject("nextWorkout")?.workout(),
         activityCandidates = optionalArray("activityCandidates").objects { it.workout() },
@@ -546,6 +547,7 @@ internal object NativePayloadCodec {
         optionalBoolean("hasAcceptedActivities"),
         optionalObject("recordedSummary")?.recordedHistorySummary(),
         optionalObject("heartRateSample")?.heartRateSample(),
+        optionalArray("recentFeedback")?.length() ?: 0,
     )
     private fun JSONObject.currentSignal() = NativeCurrentSignal(
         optionalString("risk"), optionalArray("reasons").strings(), optionalString("source"),

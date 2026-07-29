@@ -119,19 +119,18 @@ Android is the primary interaction surface. The responsive web client is a compl
 desktop, recovery, and workflows such as manual upload or Nextcloud configuration. Both clients use
 the same plan, activity ledger, decisions, privacy rules, and server-owned domain behavior.
 
-1. Today and calendar — today/next/review readouts, monthly schedule, recovery days, and focused run
-   detail.
-2. Imports and Review — compact activity ledger first; source setup second; opened records include
-   route and heart-rate visuals where retained.
-3. Progress and history — accessible generated/current/actual traces, exact values, plan phases,
-   edits, feedback-driven changes, reversals, and results.
-4. Settings and account — training profile, server/build status, account security, imports, export,
-   and privacy controls with progressive disclosure.
-5. Onboarding — four focused steps: Goal, Starting point, Schedule, Review.
+1. Calendar — the operating surface: today, next decision, review count, monthly schedule, recovery
+   days, and focused run detail.
+2. Inbox — the imported-activity ledger. Link a run, count it as extra training, or delete it before
+   it affects the plan; import-source controls remain secondary to that review work.
+3. Stats — accessible generated/current/actual traces, exact values, and recorded training context.
+4. History — active-plan actions, plan phase and lifecycle, past plans, edits, feedback-driven
+   changes, reversals, and results.
+5. Settings — training profile, server/build status, account security, imports, export, and privacy
+   controls with progressive disclosure.
 
-The web routes mirror those product areas at `/app`, `/app/import`, `/app/stats`, `/app/history`,
-`/app/settings`, and `/app/onboarding`; route names do not define the native information
-architecture.
+The web and Android clients share these five product surfaces. Onboarding remains a focused entry
+flow: Goal, Starting point, Schedule, and Review.
 
 Public and authentication routes use the same control geometry and runway trace identity without turning into marketing or decorative container pages.
 

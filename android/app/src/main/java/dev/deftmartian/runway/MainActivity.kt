@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
                     onDestinationSelected = runwayViewModel::selectDestination,
                     onCalendarMonthSelected = runwayViewModel::loadCalendarMonth,
                     onLoadMoreHistory = runwayViewModel::loadMoreHistory,
-                    onLoadMoreImports = runwayViewModel::loadMoreImports,
+                    onLoadMoreInbox = runwayViewModel::loadMoreInbox,
                     onLoadActivityTrace = runwayViewModel::loadActivityTrace,
                     onOpenHistoryDetail = runwayViewModel::openHistoryDetail,
                     onRefresh = runwayViewModel::refresh,

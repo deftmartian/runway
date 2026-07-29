@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,7 +51,7 @@ internal fun RunwayNativeApp(
     onDestinationSelected: (NativeDestination) -> Unit,
     onCalendarMonthSelected: (String) -> Unit,
     onLoadMoreHistory: () -> Unit,
-    onLoadMoreImports: () -> Unit,
+    onLoadMoreInbox: () -> Unit,
     onLoadActivityTrace: (String) -> Unit,
     onOpenHistoryDetail: (String) -> Unit,
     onRefresh: () -> Unit,
@@ -97,7 +98,7 @@ internal fun RunwayNativeApp(
             onDestinationSelected = onDestinationSelected,
             onCalendarMonthSelected = onCalendarMonthSelected,
             onLoadMoreHistory = onLoadMoreHistory,
-            onLoadMoreImports = onLoadMoreImports,
+            onLoadMoreInbox = onLoadMoreInbox,
             onLoadActivityTrace = onLoadActivityTrace,
             onOpenHistoryDetail = onOpenHistoryDetail,
             onRefresh = onRefresh,
@@ -155,7 +156,7 @@ private fun NativeProductShell(
     onDestinationSelected: (NativeDestination) -> Unit,
     onCalendarMonthSelected: (String) -> Unit,
     onLoadMoreHistory: () -> Unit,
-    onLoadMoreImports: () -> Unit,
+    onLoadMoreInbox: () -> Unit,
     onLoadActivityTrace: (String) -> Unit,
     onOpenHistoryDetail: (String) -> Unit,
     onRefresh: () -> Unit,
@@ -181,7 +182,12 @@ private fun NativeProductShell(
     onOpenServer: () -> Unit,
     onOpenFolder: () -> Unit,
 ) {
-    val navigationParent = state.destination.navigationParent
+    val navigationParent =
+        state.destination.navigationParent
+            ?: NativeDestination.Calendar.takeIf {
+                state.destination == NativeDestination.Setup &&
+                    state.bootstrap.setupComplete == true
+            }
     BackHandler(enabled = navigationParent != null && !state.actionPending) {
         navigationParent?.let(onDestinationSelected)
     }
@@ -249,6 +255,7 @@ private fun NativeProductShell(
                         .filter(NativeDestination::primaryNavigation)
                         .forEach { destination ->
                         NavigationBarItem(
+                            modifier = Modifier.testTag("primary-destination-${destination.view}"),
                             selected = selectedDestination == destination,
                             enabled = !state.actionPending,
                             onClick = { onDestinationSelected(destination) },
@@ -281,20 +288,6 @@ private fun NativeProductShell(
                     actionPending = state.actionPending,
                     onAction = onAction,
                 )
-                NativeDestination.Today -> TodayScreen(
-                    payload = state.payload as? NativeCalendarPayload,
-                    loading = state.loading,
-                    actionPending = state.actionPending,
-                    actionNotice = state.notice,
-                    completedAction = state.completedAction,
-                    activityEvidence = state.activityEvidence,
-                    activityEvidenceLoading = state.activityEvidenceLoading,
-                    activityEvidenceFailures = state.activityEvidenceFailures,
-                    onLoadActivityTrace = onLoadActivityTrace,
-                    onDestinationSelected = onDestinationSelected,
-                    onCalendarMonthSelected = onCalendarMonthSelected,
-                    onAction = onAction,
-                )
                 NativeDestination.Calendar -> CalendarScreen(
                     payload = state.payload as? NativeCalendarPayload,
                     loading = state.loading,
@@ -306,31 +299,39 @@ private fun NativeProductShell(
                     activityEvidenceLoading = state.activityEvidenceLoading,
                     activityEvidenceFailures = state.activityEvidenceFailures,
                     onLoadActivityTrace = onLoadActivityTrace,
+                    onDestinationSelected = onDestinationSelected,
                     onAction = onAction,
                 )
-                NativeDestination.Imports -> ReviewScreen(
+                NativeDestination.Inbox -> InboxScreen(
                     state.payload as? NativeReviewPayload,
                     state.loading,
                     state.actionPending,
                     state.notice,
                     state.completedAction,
                     onAction,
-                    onLoadMoreImports,
+                    onLoadMoreInbox,
                     state.activityEvidence,
                     state.activityEvidenceLoading,
                     state.activityEvidenceFailures,
                     onLoadActivityTrace,
                     onOpenFolder,
-                    { onDestinationSelected(NativeDestination.More) },
+                    { onDestinationSelected(NativeDestination.Settings) },
                 )
-                NativeDestination.Progress -> ProgressScreen(
+                NativeDestination.Stats -> StatsScreen(
                     state.payload as? NativeStatsPayload,
                     state.loading,
-                    state.actionPending,
                     onDestinationSelected,
-                    onAction,
                 )
-                NativeDestination.More -> SettingsScreen(
+                NativeDestination.History -> HistoryScreen(
+                    payload = state.payload as? NativeHistoryPayload,
+                    loading = state.loading,
+                    actionPending = state.actionPending,
+                    onLoadMore = onLoadMoreHistory,
+                    onOpenPlan = onOpenHistoryDetail,
+                    onDestinationSelected = onDestinationSelected,
+                    onAction = onAction,
+                )
+                NativeDestination.Settings -> SettingsScreen(
                     payload = state.payload as? NativeSettingsPayload,
                     loading = state.loading,
                     actionPending = state.actionPending,
@@ -338,7 +339,6 @@ private fun NativeProductShell(
                     onOpenServer = onOpenServer,
                     onOpenFolder = onOpenFolder,
                     onOpenAccountSecurity = { onDestinationSelected(NativeDestination.AccountSecurity) },
-                    onOpenHistory = { onDestinationSelected(NativeDestination.History) },
                     onSignOut = onSignOut,
                 )
                 NativeDestination.AccountSecurity -> AccountSecurityScreen(
@@ -346,7 +346,7 @@ private fun NativeProductShell(
                     ephemeral = state.accountSecurityEphemeral,
                     loading = state.loading,
                     actionPending = state.actionPending,
-                    onBack = { onDestinationSelected(NativeDestination.More) },
+                    onBack = { onDestinationSelected(NativeDestination.Settings) },
                     onAction = onAction,
                     onRequestPasswordReset = onRequestPasswordReset,
                     onChangePassword = onChangePassword,
@@ -364,12 +364,6 @@ private fun NativeProductShell(
                     onExportTrainingData = onExportTrainingData,
                     onDeleteAccount = onDeleteAccount,
                     onReauthenticate = onSignOut,
-                )
-                NativeDestination.History -> HistoryScreen(
-                    payload = state.payload as? NativeHistoryPayload,
-                    loading = state.loading,
-                    onLoadMore = onLoadMoreHistory,
-                    onOpenPlan = onOpenHistoryDetail,
                 )
                 NativeDestination.HistoryDetail -> HistoryDetailScreen(
                     payload = state.payload as? NativeHistoryDetailPayload,

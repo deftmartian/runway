@@ -28,7 +28,6 @@ internal fun SettingsScreen(
     onOpenServer: () -> Unit,
     onOpenFolder: () -> Unit,
     onOpenAccountSecurity: () -> Unit,
-    onOpenHistory: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     var editingTimeZone by rememberSaveable { mutableStateOf(false) }
@@ -174,20 +173,6 @@ internal fun SettingsScreen(
                         onClick = onOpenServer,
                         shape = MaterialTheme.shapes.small,
                     ) { Text("Change server") }
-                }
-            }
-            item {
-                SettingCard("Records") {
-                    Text(
-                        "Review completed and archived plans, changes, and recorded results.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedButton(
-                        onClick = onOpenHistory,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Training history")
-                    }
                 }
             }
             item {

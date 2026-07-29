@@ -67,10 +67,10 @@ distance, duration, and the individual runs in the resulting plan.
 
 ## Android first, web when you need it
 
-| Surface     | What you get                                                                                                                                                                            |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Android app | The primary, full-featured client: planning, calendar and run detail, review, progress/history, account controls, durable folder access, GPX shares, and optional Health Connect reads. |
-| Web         | The complete responsive alternative for the same account and plan, including manual uploads and Nextcloud import. It is an online client, not an installable or offline PWA.            |
+| Surface     | What you get                                                                                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android app | The primary, full-featured client: Calendar, Inbox, Stats, History, Settings, account controls, durable folder access, GPX shares, and optional Health Connect reads.        |
+| Web         | The complete responsive alternative for the same account and plan, including manual uploads and Nextcloud import. It is an online client, not an installable or offline PWA. |
 
 Android is not a browser wrapper or a WebView. Local signup, password sign-in, two-factor
 verification, normal navigation, workout changes, and account management use native Compose
@@ -85,9 +85,10 @@ route access is requested separately. Import setup stays inside the signed-in An
 no pairing code to copy from the web client.
 
 <p align="center">
-  <img src="docs/images/runway-android-today.png" width="250" alt="runway's native Android Today screen showing a planned rest day">
-  <img src="docs/images/runway-android-calendar-dark.png" width="250" alt="runway's native Android calendar in the system dark theme">
-  <img src="docs/images/runway-android-progress.png" width="250" alt="runway's native Android progress screen showing the planned training ramp">
+  <img src="docs/images/runway-android-calendar-dark.png" width="220" alt="runway's native Android Calendar showing the current decision in the system dark theme">
+  <img src="docs/images/runway-android-inbox-light.png" width="220" alt="runway's native Android Inbox and import connections in the system light theme">
+  <img src="docs/images/runway-android-stats-light.png" width="220" alt="runway's native Android Stats first-run state in the system light theme">
+  <img src="docs/images/runway-android-history-dark.png" width="220" alt="runway's native Android History plan record in the system dark theme">
 </p>
 
 <p align="center">

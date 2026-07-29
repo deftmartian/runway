@@ -64,7 +64,7 @@ class NativeUiModelHelpersTest {
     }
 
     @Test
-    fun `plan-free progress preserves recorded facts without inventing a recommendation`() {
+    fun `plan-free stats preserves recorded facts without inventing a recommendation`() {
         val recorded = NativeRecordedHistorySummary(
             totalRuns = 7,
             totalDistanceMeters = 32_100.0,
@@ -96,7 +96,7 @@ class NativeUiModelHelpersTest {
             heartRateSample = heartRate,
         )
 
-        val summary = noActiveProgressSummary(history, planHistoryCount = 1)
+        val summary = noActiveStatsSummary(history)
 
         assertEquals(
             "There is no active plan or recommendation. Recorded work remains available below.",
@@ -107,15 +107,33 @@ class NativeUiModelHelpersTest {
     }
 
     @Test
-    fun `plan-free progress falls back honestly to past plans when no actual work summary exists`() {
-        val summary = noActiveProgressSummary(history = null, planHistoryCount = 2)
+    fun `plan-free stats does not imply that past plans are a recommendation`() {
+        val summary = noActiveStatsSummary(history = null)
 
         assertEquals(
-            "There is no active plan or recommendation. Past plans remain available below.",
+            "There is no active plan or recommendation. Record a run or build a plan to see comparisons here.",
             summary.statusMessage,
         )
         assertEquals(null, summary.recordedHistory)
         assertEquals(null, summary.acceptedHeartRate)
+    }
+
+    @Test
+    fun `stats waits for recorded work before showing comparisons`() {
+        val empty = NativeTrainingHistory(
+            weeklySummaries = emptyList(), todayIso = "2026-07-28", currentSignal = null,
+            hasAcceptedActivities = false, recordedSummary = NativeRecordedHistorySummary(
+                totalRuns = 0, totalDistanceMeters = 0.0, totalDurationSeconds = 0.0,
+                longestRunMeters = 0.0, currentPlanRuns = 0, currentPlanDistanceMeters = 0.0,
+                archivedPlanRuns = 0, archivedPlanDistanceMeters = 0.0,
+                unlinkedRuns = 0, unlinkedDistanceMeters = 0.0,
+            ), heartRateSample = null,
+        )
+
+        assertFalse(hasRecordedStatsHistory(empty))
+        assertTrue(hasRecordedStatsHistory(empty.copy(recentFeedbackCount = 1)))
+        assertTrue(hasRecordedStatsHistory(empty.copy(hasAcceptedActivities = true)))
+        assertTrue(hasRecordedStatsHistory(empty.copy(recordedSummary = empty.recordedSummary?.copy(totalRuns = 1))))
     }
 
     @Test

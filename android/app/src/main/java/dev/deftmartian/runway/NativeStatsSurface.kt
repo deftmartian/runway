@@ -40,21 +40,20 @@ private enum class NativeTraceStyle {
     Actual,
 }
 
-internal data class NativeNoActiveProgressSummary(
+internal data class NativeNoActiveStatsSummary(
     val statusMessage: String,
     val recordedHistory: NativeRecordedHistorySummary?,
     val acceptedHeartRate: NativeHeartRateSample?,
 )
 
 /**
- * A plan-free progress state must stay factual. It can expose recorded work and accepted
+ * A plan-free stats state must stay factual. It can expose recorded work and accepted
  * heart-rate context, but it must not turn an archived plan or an activity total into a current
  * recommendation.
  */
-internal fun noActiveProgressSummary(
+internal fun noActiveStatsSummary(
     history: NativeTrainingHistory?,
-    planHistoryCount: Int,
-): NativeNoActiveProgressSummary {
+): NativeNoActiveStatsSummary {
     val recorded = history?.recordedSummary?.takeIf {
         history.hasAcceptedActivities == true ||
             (it.totalRuns ?: 0) > 0 ||
@@ -67,13 +66,17 @@ internal fun noActiveProgressSummary(
     val status = when {
         recorded != null || acceptedHeartRate != null ->
             "There is no active plan or recommendation. Recorded work remains available below."
-        planHistoryCount > 0 ->
-            "There is no active plan or recommendation. Past plans remain available below."
         else ->
-            "There is no active plan or recommendation. Record a run or build a plan to start progress."
+            "There is no active plan or recommendation. Record a run or build a plan to see comparisons here."
     }
-    return NativeNoActiveProgressSummary(status, recorded, acceptedHeartRate)
+    return NativeNoActiveStatsSummary(status, recorded, acceptedHeartRate)
 }
+
+/** Mirrors the web Stats gate: plans become comparable only after recorded work exists. */
+internal fun hasRecordedStatsHistory(history: NativeTrainingHistory?): Boolean =
+    (history?.recordedSummary?.totalRuns ?: 0) > 0 ||
+        history?.hasAcceptedActivities == true ||
+        (history?.recentFeedbackCount ?: 0) > 0
 
 /**
  * Native equivalent of the web stats trace: generated recommendation, the runner's current
@@ -353,7 +356,7 @@ private fun NativeAcceptedContext(summaries: List<NativeWeekSummary>) {
 }
 
 @Composable
-internal fun NativeNoActiveProgress(summary: NativeNoActiveProgressSummary) {
+internal fun NativeNoActiveStats(summary: NativeNoActiveStatsSummary) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         EmptyCard(summary.statusMessage)
         summary.recordedHistory?.let { recorded ->

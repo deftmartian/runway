@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest';
-import { redactAuthLogMessage } from './auth-log';
+import { describe, expect, test, vi } from 'vitest';
+import { authLogger, redactAuthLogMessage } from './auth-log';
 
 describe('authentication logging', () => {
 	test('does not reveal whether an account or password exists', () => {
@@ -24,5 +24,24 @@ describe('authentication logging', () => {
 		expect(message).not.toContain('hunter2');
 		expect(message).not.toContain('123456');
 		expect(message).not.toContain('A1b2C-3d4E5');
+	});
+
+	test('never forwards Better Auth positional error data to the process logger', () => {
+		expect.assertions(3);
+		const syntheticToken = 'synthetic-token-that-must-not-be-logged';
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+		try {
+			authLogger.log('error', 'Failed to create user', {
+				query: 'insert into session values (...)',
+				params: [syntheticToken]
+			});
+
+			expect(errorSpy).toHaveBeenCalledTimes(1);
+			expect(errorSpy).toHaveBeenCalledWith('[Better Auth] Failed to create user');
+			expect(errorSpy.mock.calls.flat().join(' ')).not.toContain(syntheticToken);
+		} finally {
+			errorSpy.mockRestore();
+		}
 	});
 });

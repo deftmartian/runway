@@ -26,32 +26,25 @@ internal enum class NativeDestination(
     Setup(
         "Set up",
         "onboarding",
-        R.drawable.ic_nav_today,
+        R.drawable.ic_nav_calendar,
         primaryNavigation = false,
     ),
-    Today("Today", "calendar", R.drawable.ic_nav_today),
     Calendar("Calendar", "calendar", R.drawable.ic_nav_calendar),
-    Imports("Imports", "review", R.drawable.ic_nav_review),
-    Progress("Progress", "stats", R.drawable.ic_nav_progress),
-    More("More", "settings", R.drawable.ic_nav_settings),
+    Inbox("Inbox", "review", R.drawable.ic_nav_inbox),
+    Stats("Stats", "stats", R.drawable.ic_nav_stats),
+    History("History", "history", R.drawable.ic_nav_history),
+    Settings("Settings", "settings", R.drawable.ic_nav_settings),
     AccountSecurity(
         "Account security",
         "account-security",
         R.drawable.ic_nav_settings,
         primaryNavigation = false,
-        navigationParent = More,
-    ),
-    History(
-        "History",
-        "history",
-        R.drawable.ic_nav_progress,
-        primaryNavigation = false,
-        navigationParent = Progress,
+        navigationParent = Settings,
     ),
     HistoryDetail(
         "Plan record",
         "history-detail",
-        R.drawable.ic_nav_progress,
+        R.drawable.ic_nav_history,
         primaryNavigation = false,
         navigationParent = History,
     ),
@@ -95,6 +88,29 @@ internal fun installReplacementSession(
         return null
     }
     return if (runCatching { persist(replacement) }.getOrDefault(false)) replacement else null
+}
+
+internal fun mergeNativeHistoryPayloads(
+    previous: NativeHistoryPayload?,
+    next: NativeHistoryPayload?,
+): NativeHistoryPayload? {
+    if (previous == null || next == null) return null
+    val previousHistory = previous.history ?: return next
+    val nextHistory = next.history ?: return previous
+    val mergedItems = (previousHistory.items + nextHistory.items)
+        .distinctBy { item ->
+            item.plan?.id
+                ?: listOf(
+                    item.plan?.startDate,
+                    item.plan?.targetDate,
+                    item.goal?.title,
+                ).joinToString("|")
+        }
+    return previous.copy(
+        history = nextHistory.copy(items = mergedItems),
+        offset = next.offset,
+        pageSize = next.pageSize,
+    )
 }
 
 internal sealed interface RunwayUiState {
@@ -353,7 +369,11 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
 
     fun loadMoreHistory() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
-        if (ready.destination != NativeDestination.History || ready.loading) return
+        if (
+            ready.destination != NativeDestination.History ||
+            ready.loading ||
+            ready.actionPending
+        ) return
         val history = ready.payload as? NativeHistoryPayload ?: return
         val nextOffset = history.history?.nextOffset ?: return
         val query = "?offset=$nextOffset"
@@ -361,14 +381,18 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         loadView(NativeDestination.History, query, appendHistory = true)
     }
 
-    fun loadMoreImports() {
+    fun loadMoreInbox() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
-        if (ready.destination != NativeDestination.Imports || ready.loading) return
+        if (
+            ready.destination != NativeDestination.Inbox ||
+            ready.loading ||
+            ready.actionPending
+        ) return
         val review = ready.payload as? NativeReviewPayload ?: return
         val nextOffset = review.activityPage?.nextOffset ?: return
         val query = "?offset=$nextOffset"
         currentQuery = query
-        loadView(NativeDestination.Imports, query, appendReview = true)
+        loadView(NativeDestination.Inbox, query, appendReview = true)
     }
 
     fun loadActivityTrace(activityId: String) {
@@ -1069,7 +1093,7 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
                     }
                     val setupComplete = bootstrap.setupComplete == true
                     val destination = if (setupComplete) {
-                        NativeDestination.Today
+                        NativeDestination.Calendar
                     } else {
                         NativeDestination.Setup
                     }
@@ -1128,7 +1152,7 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
                         )
                     ) {
                         val payload = if (appendHistory) {
-                            mergeHistoryPayloads(
+                            mergeNativeHistoryPayloads(
                                 latest.payload as? NativeHistoryPayload,
                                 result.payload as? NativeHistoryPayload,
                             ) ?: result.payload
@@ -1194,29 +1218,6 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
                 }
             }
         }
-    }
-
-    private fun mergeHistoryPayloads(
-        previous: NativeHistoryPayload?,
-        next: NativeHistoryPayload?,
-    ): NativeHistoryPayload? {
-        if (previous == null || next == null) return null
-        val previousHistory = previous.history ?: return next
-        val nextHistory = next.history ?: return previous
-        val mergedItems = (previousHistory.items + nextHistory.items)
-            .distinctBy { item ->
-                item.plan?.id
-                    ?: listOf(
-                        item.plan?.startDate,
-                        item.plan?.targetDate,
-                        item.goal?.title,
-                    ).joinToString("|")
-            }
-        return previous.copy(
-            history = nextHistory.copy(items = mergedItems),
-            offset = next.offset,
-            pageSize = next.pageSize,
-        )
     }
 
     private fun mergeReviewPayloads(

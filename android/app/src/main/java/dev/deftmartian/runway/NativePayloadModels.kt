@@ -36,6 +36,7 @@ internal data class NativeOnboardingPayload(
 
 internal data class NativeCalendarPayload(
     override val onboardingRequired: Boolean?,
+    val hasActivePlan: Boolean,
     val calendar: NativeCalendar?,
     val nextWorkout: NativeWorkout?,
     val activityCandidates: List<NativeWorkout>,
@@ -414,6 +415,8 @@ internal data class NativeTrainingHistory(
     val hasAcceptedActivities: Boolean?,
     val recordedSummary: NativeRecordedHistorySummary?,
     val heartRateSample: NativeHeartRateSample?,
+    /** Kept as a count because Stats only needs evidence that feedback exists. */
+    val recentFeedbackCount: Int? = null,
 )
 internal data class NativeCurrentSignal(
     val risk: String?, val reasons: List<String>, val source: String?, val healthNotice: NativeHealthNotice?,

@@ -213,11 +213,11 @@ Use the same control geometry, SVG mark, and trace identity. Do not wrap every p
 ## Visual Verification
 
 Android is the primary interaction surface. Check Compose changes on an emulator or device, not from
-source or desktop screenshots alone. Exercise Today, Calendar and day detail, Imports, Progress,
-More/account security, onboarding, sign-in, and server selection in both system themes. At minimum,
-also check Android font scale `1.3`, system Back from nested screens, relaunch/session restoration,
-and content descriptions for dense calendar cells. TalkBack and a physical device remain separate
-release evidence; an emulator screenshot does not prove either.
+source or desktop screenshots alone. Exercise Calendar and its current decision/day detail, Inbox,
+Stats, History, Settings/account security, onboarding, sign-in, and server selection in both system
+themes. At minimum, also check Android font scale `1.3`, system Back from nested screens,
+relaunch/session restoration, and content descriptions for dense calendar cells. TalkBack and a
+physical device remain separate release evidence; an emulator screenshot does not prove either.
 
 Run:
 

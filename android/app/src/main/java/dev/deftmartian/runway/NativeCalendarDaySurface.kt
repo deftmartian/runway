@@ -335,7 +335,7 @@ internal fun CalendarDayDetailSheet(
                 activityPlacement.byWorkoutId[workout.id.orEmpty()]
                     .orEmpty()
                     .forEach { activity ->
-                        TodayActivity(
+                        CalendarActivityRecord(
                             activity = activity,
                             actionPending = actionPending,
                             onOpenDetails = { onOpenActivity(activity) },
@@ -357,7 +357,7 @@ internal fun CalendarDayDetailSheet(
             if (activityPlacement.unplaced.isNotEmpty()) {
                 SectionLabel("Other completed activity")
                 activityPlacement.unplaced.forEach { activity ->
-                    TodayActivity(
+                    CalendarActivityRecord(
                         activity = activity,
                         actionPending = actionPending,
                         onOpenDetails = { onOpenActivity(activity) },

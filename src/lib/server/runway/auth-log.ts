@@ -28,7 +28,11 @@ export function redactAuthLogMessage(message: string): string {
 export const authLogger = {
 	level: 'warn' as const,
 	disableColors: true,
-	log(level: AuthLogLevel, message: string): void {
+	log(level: AuthLogLevel, message: string, ..._unsafeArgs: unknown[]): void {
+		// Better Auth passes database and provider failures as variadic arguments.
+		// They may include credentials or query parameters, so intentionally never
+		// forward or serialize them to the process logger.
+		void _unsafeArgs;
 		const safeMessage = redactAuthLogMessage(message);
 		if (level === 'error') {
 			console.error(`[Better Auth] ${safeMessage}`);

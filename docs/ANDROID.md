@@ -61,13 +61,15 @@ the server's mutation shapes. The ViewModel and Compose screens do not inspect `
 assemble action names and payloads ad hoc. Screen code is separated by product surface and shared
 components rather than collected in one application-wide file.
 
-The ordinary native surface includes onboarding, today and next run, a month calendar and day
-detail, workout adjustments, result recording, review, progress/history, imports, privacy/settings,
-account security, sign-out, and selected server/build state. Local password and two-factor setup,
-recovery-code replacement, session revocation, passkey rename/removal, export, and account deletion
-are native. Password reset and passkey registration remain website-owned. Risky workout changes use
-the same server-side preview and explicit confirmation boundary as the web client. The app must not
-silently change a plan after an import, a short run, an overrun, or reported pain.
+The ordinary native surface uses the same five destinations as the web client: Calendar, Inbox,
+Stats, History, and Settings. Calendar carries today, the next run, review state, the month, and day
+detail; Inbox owns activity review and import-source setup; Stats owns evidence and comparisons;
+History owns plan lifecycle and past plans; Settings owns privacy, account security, sign-out, and
+selected server/build state. Local password and two-factor setup, recovery-code replacement, session
+revocation, passkey rename/removal, export, and account deletion are native. Password reset and
+passkey registration remain website-owned. Risky workout changes use the same server-side preview
+and explicit confirmation boundary as the web client. The app must not silently change a plan after
+an import, a short run, an overrun, or reported pain.
 
 ## Native imports and separate device credential
 
@@ -149,8 +151,12 @@ WorkManager deferral, large text, TalkBack, and at least one physical device. A 
 does not establish those behaviours.
 
 The README's Android images were captured from the real Compose client on a Pixel 6-shaped API 35
-AVD with a disposable account and synthetic plan. That pass exercised server selection and canonical
-origin rejection, native account creation, password sign-in, all onboarding steps, Today, Calendar
-and selected-day actions, Progress, account security, app relaunch, large text, and both system
-themes. It does not claim physical-device, Health Connect provider, background scheduling, TalkBack,
-OIDC, passkey, or TOTP coverage.
+AVD with a disposable account and synthetic plan. The current pass exercised private-server
+selection, native account creation, all onboarding steps, the five primary destinations, Calendar
+day detail, History plan detail, nested Back behavior, app relaunch, font scale `1.3`, and both
+system themes. The local pass also ran a deterministic rendered-shell device test covering all five
+destinations and Back from History detail and account security; CI currently compiles that test but
+does not run an emulator. Screenshot evidence must still be refreshed after a navigation or
+visual-surface change; it is not automated visual regression evidence. This pass does not claim
+physical-device, Health Connect provider, background scheduling, TalkBack, OIDC, passkey, TOTP, or
+production-server coverage.

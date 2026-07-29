@@ -79,7 +79,7 @@ class NativePayloadCodecTest {
     @Test
     fun `calendar decoder preserves nullable values and ignores malformed array entries`() {
         val decoded = requireNotNull(NativePayloadCodec.decodeView("calendar", """
-            {"onboardingRequired":false,
+            {"onboardingRequired":false,"activePlan":{"plan":{"id":"plan-1"}},
             "nextWorkout":{"id":"w-next","scheduledDate":"2026-08-03","targetDurationSeconds":1680},
             "calendar":{"month":"2026-07","today":"2026-07-28",
             "workouts":[{"id":"w-1","isRemoved":false,"targetDistanceMeters":5000},17],
@@ -87,6 +87,7 @@ class NativePayloadCodecTest {
         """)) as NativeCalendarPayload
 
         assertEquals(false, decoded.onboardingRequired)
+        assertTrue(decoded.hasActivePlan)
         assertEquals("w-next", decoded.nextWorkout?.id)
         assertEquals(1_680.0, decoded.nextWorkout?.targetDurationSeconds)
         assertEquals("2026-07", decoded.calendar?.month)
@@ -163,7 +164,7 @@ class NativePayloadCodecTest {
              "planTrace":[{"id":"week-1","weekNumber":1,"startDate":"2026-07-27",
              "recommendedDistanceMeters":5000,"currentDistanceMeters":6000,
              "recommendedDurationSeconds":1500,"currentDurationSeconds":1800}],
-             "history":{"weeklySummaries":[{"weekNumber":1,"startDate":"2026-07-27",
+             "history":{"recentFeedback":[{"id":"feedback-1"}],"weeklySummaries":[{"weekNumber":1,"startDate":"2026-07-27",
              "targetDistanceMeters":6000,"completedDistanceMeters":4500,"completedDurationSeconds":1440,
              "averagePaceSecondsPerKm":320,"averageHeartRate":142,"plannedRuns":2,"completedRuns":1}]}}
         """)) as NativeStatsPayload
@@ -181,6 +182,7 @@ class NativePayloadCodecTest {
         assertEquals(1_440.0, decoded.history?.weeklySummaries?.single()?.completedDurationSeconds)
         assertEquals(320.0, decoded.history?.weeklySummaries?.single()?.averagePaceSecondsPerKm)
         assertEquals(142, decoded.history?.weeklySummaries?.single()?.averageHeartRate)
+        assertEquals(1, decoded.history?.recentFeedbackCount)
     }
 
     @Test
@@ -259,6 +261,47 @@ class NativePayloadCodecTest {
         assertTrue("confirm_race_baseline" in review.options)
         assertEquals(10, review.racePlan?.weeks)
         assertEquals(6.1, review.racePlan?.summary?.requiredWeeklyIncreasePercent)
+    }
+
+    @Test
+    fun `history decoder and pagination keep lifecycle state with past plans`() {
+        val first = requireNotNull(NativePayloadCodec.decodeView("history", """
+            {"onboardingRequired":false,"offset":0,"pageSize":20,
+             "history":{"today":"2026-07-29","nextOffset":20,"items":[
+               {"plan":{"id":"active","status":"active","startDate":"2026-06-01",
+                "targetDate":"2026-07-29","weeks":9},
+                "goal":{"title":"Run for 30 minutes"},
+                "summary":{"plannedRuns":27,"completedRuns":24}},
+               {"plan":{"id":"past-1","status":"completed","startDate":"2026-03-01",
+                "targetDate":"2026-05-01","completedAt":"2026-05-01"},
+                "goal":{"title":"First plan"}}]},
+             "activeItem":{"plan":{"id":"active","status":"active","startDate":"2026-06-01",
+               "targetDate":"2026-07-29","weeks":9},
+               "goal":{"title":"Run for 30 minutes"},
+               "summary":{"plannedRuns":27,"completedRuns":24}},
+             "phaseReview":{"planId":"active","phase":"foundation","goalKind":"race",
+               "baseline":{"activityCount":4,"totalDurationSeconds":7200},
+               "options":["confirm_race_baseline","another_foundation_week"],
+               "racePlan":{"weeks":10,"startDate":"2026-08-03","targetDate":"2026-10-11",
+                 "warnings":[]}}}
+        """)) as NativeHistoryPayload
+        val next = requireNotNull(NativePayloadCodec.decodeView("history", """
+            {"onboardingRequired":false,"offset":20,"pageSize":20,
+             "history":{"today":"2026-07-29","items":[
+               {"plan":{"id":"past-2","status":"archived","startDate":"2025-10-01",
+                "targetDate":"2025-12-01","archivedAt":"2025-11-12"},
+                "goal":{"title":"Earlier plan"}}]}}
+        """)) as NativeHistoryPayload
+
+        assertEquals("active", first.activeItem?.plan?.id)
+        assertEquals(4, first.phaseReview?.baseline?.activityCount)
+        assertTrue(first.phaseReview?.racePlan != null)
+
+        val merged = requireNotNull(mergeNativeHistoryPayloads(first, next))
+        assertEquals(listOf("active", "past-1", "past-2"), merged.history?.items?.map { it.plan?.id })
+        assertEquals("active", merged.activeItem?.plan?.id)
+        assertEquals("foundation", merged.phaseReview?.phase)
+        assertEquals(20, merged.offset)
     }
 
     @Test
