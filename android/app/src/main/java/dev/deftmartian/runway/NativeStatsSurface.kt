@@ -2,6 +2,7 @@ package dev.deftmartian.runway
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,8 +18,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 
@@ -194,21 +198,41 @@ private fun NativeWeeklyTraceChart(
             )
         }
         points.forEach { point ->
-            SettingRow(
+            NativeTraceValueRow(
                 "${point.label} · generated",
                 point.recommendation?.let(format).orDash(),
-                monospace = true,
             )
-            SettingRow(
+            NativeTraceValueRow(
                 "${point.label} · current",
                 point.current?.let(format).orDash(),
-                monospace = true,
             )
-            SettingRow(
+            NativeTraceValueRow(
                 "${point.label} · accepted actual",
                 point.acceptedActual?.let(format).orDash(),
-                monospace = true,
             )
+        }
+    }
+}
+
+internal fun usesStackedNativeTraceRow(availableWidthDp: Float, fontScale: Float): Boolean =
+    availableWidthDp < 480f || fontScale > 1f
+
+@Composable
+internal fun NativeTraceValueRow(label: String, value: String) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (usesStackedNativeTraceRow(maxWidth.value, LocalDensity.current.fontScale)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(label, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    value,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.End,
+                )
+            }
+        } else {
+            SettingRow(label, value, monospace = true)
         }
     }
 }
