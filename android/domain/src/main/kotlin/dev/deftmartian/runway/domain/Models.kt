@@ -19,8 +19,15 @@ data class InjuryFlags(
     val notes: String = ""
 )
 
-data class PrescriptionSegment(val kind: SegmentKind, val durationSeconds: Int)
-data class RunWalkBlock(val repetitions: Int, val segments: List<PrescriptionSegment>)
+data class PrescriptionSegment(
+    val kind: SegmentKind,
+    val durationSeconds: Int,
+)
+
+data class RunWalkBlock(
+    val repetitions: Int,
+    val segments: List<PrescriptionSegment>,
+)
 sealed interface WorkoutPrescription {
     data class Distance(val distanceMeters: Int) : WorkoutPrescription
     data class Timed(
@@ -55,7 +62,11 @@ data class FoundationIntake(
     val availability: List<Int>,
     val injuryFlags: InjuryFlags,
     val startDate: String? = null
-) : PlannerIntake { init { require(startMode == StartMode.FOUNDATION_TO_GOAL || startMode == StartMode.FOUNDATION_ONLY) } }
+) : PlannerIntake {
+    init {
+        require(startMode == StartMode.FOUNDATION_TO_GOAL || startMode == StartMode.FOUNDATION_ONLY)
+    }
+}
 
 data class CalibrationIntake(
     val goalKind: GoalKind,
@@ -92,12 +103,41 @@ data class GeneratedWeek(
     val workouts: List<GeneratedWorkout>
 )
 
-sealed interface PlanSummary { val warnings: List<String> }
-data class DistanceSummary(val baselineMeters: Int, val peakMeters: Int, val requiredWeeklyIncreasePercent: Double, val defaultWeeklyIncreasePercent: Double, val longRunPeakMeters: Int, override val warnings: List<String>) : PlanSummary
-data class FoundationSummary(val programWeeks: Int = 9, val sessionsPerWeek: Int = 3, val continuousRunTargetSeconds: Int = 1800, override val warnings: List<String>) : PlanSummary
-data class CalibrationSummary(val programWeeks: Int = 2, val sessionsPerWeek: Int = 2, val sessionDurationSeconds: Int, override val warnings: List<String>) : PlanSummary
+sealed interface PlanSummary {
+    val warnings: List<String>
+}
 
-sealed interface GeneratedPlan { val phase: PlanPhase; val startDate: String; val targetDate: String; val weeks: List<GeneratedWeek>; val risk: RiskRating; val sourceRefs: List<String> }
+data class DistanceSummary(
+    val baselineMeters: Int,
+    val peakMeters: Int,
+    val requiredWeeklyIncreasePercent: Double,
+    val defaultWeeklyIncreasePercent: Double,
+    val longRunPeakMeters: Int,
+    override val warnings: List<String>,
+) : PlanSummary
+
+data class FoundationSummary(
+    val programWeeks: Int = 9,
+    val sessionsPerWeek: Int = 3,
+    val continuousRunTargetSeconds: Int = 1800,
+    override val warnings: List<String>,
+) : PlanSummary
+
+data class CalibrationSummary(
+    val programWeeks: Int = 2,
+    val sessionsPerWeek: Int = 2,
+    val sessionDurationSeconds: Int,
+    override val warnings: List<String>,
+) : PlanSummary
+
+sealed interface GeneratedPlan {
+    val phase: PlanPhase
+    val startDate: String
+    val targetDate: String
+    val weeks: List<GeneratedWeek>
+    val risk: RiskRating
+    val sourceRefs: List<String>
+}
 data class GeneratedDistancePlan(override val startDate: String, override val targetDate: String, override val weeks: List<GeneratedWeek>, override val risk: RiskRating, val summary: DistanceSummary, override val sourceRefs: List<String>) : GeneratedPlan { override val phase = PlanPhase.DISTANCE }
 data class GeneratedFoundationPlan(override val startDate: String, override val targetDate: String, override val weeks: List<GeneratedWeek>, override val risk: RiskRating, val startMode: StartMode, val summary: FoundationSummary, override val sourceRefs: List<String>) : GeneratedPlan { override val phase = PlanPhase.FOUNDATION }
 data class GeneratedCalibrationPlan(override val startDate: String, override val targetDate: String, override val weeks: List<GeneratedWeek>, override val risk: RiskRating, val summary: CalibrationSummary, override val sourceRefs: List<String>) : GeneratedPlan { override val phase = PlanPhase.CALIBRATION }

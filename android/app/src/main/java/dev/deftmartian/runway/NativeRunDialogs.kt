@@ -92,7 +92,7 @@ internal fun FeedbackDialog(
                     }
                 }
                 item {
-                    CheckRow("Pain occurred during or after this run", painDuringOrAfter) {
+                    CheckRow("Pain during or after this run", painDuringOrAfter) {
                         painDuringOrAfter = it
                     }
                 }
@@ -175,12 +175,12 @@ internal fun ManualRunDialog(
                     )
                 }
                 item {
-                    CheckRow("Felt harder than expected", harderThanExpected) {
+                    CheckRow("This run felt harder than expected", harderThanExpected) {
                         harderThanExpected = it
                     }
                 }
                 item {
-                    CheckRow("Pain occurred during or after this run", painDuringOrAfter) {
+                    CheckRow("Pain during or after this run", painDuringOrAfter) {
                         painDuringOrAfter = it
                     }
                 }
@@ -286,7 +286,8 @@ internal fun WorkoutAddDialog(
                                 scheduledDate = scheduledDate,
                                 type = type,
                                 prescriptionKind = "distance",
-                                targetDistanceMeters = (distanceNumber!! * 1_000).toInt(),
+                                targetDistanceMeters =
+                                    (requireNotNull(distanceNumber) * 1_000).toInt(),
                                 targetDurationSeconds = null,
                                 intervalStructure = null,
                                 intensity = "easy",
@@ -415,8 +416,11 @@ internal fun WorkoutEditDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val targetDurationSeconds =
-                        if (!isRest && timed) (loadNumber!! * 60).toInt() else null
+                    val targetDurationSeconds = if (!isRest && timed) {
+                        (requireNotNull(loadNumber) * 60).toInt()
+                    } else {
+                        null
+                    }
                     onSubmit(
                         PreviewWorkoutEditCommand(
                             workoutId = workout.id.orEmpty(),
@@ -426,13 +430,14 @@ internal fun WorkoutEditDialog(
                                 prescriptionKind =
                                     if (isRest) "rest" else if (timed) "timed" else "distance",
                                 targetDistanceMeters =
-                                    if (isRest || timed) 0 else (loadNumber!! * 1_000).toInt(),
+                                    if (isRest || timed) 0
+                                    else (requireNotNull(loadNumber) * 1_000).toInt(),
                                 targetDurationSeconds = targetDurationSeconds,
                                 intervalStructure =
                                     if (!isRest && timed) {
                                         resizeIntervalStructure(
                                             workout.intervalStructure,
-                                            targetDurationSeconds!!,
+                                            requireNotNull(targetDurationSeconds),
                                         )
                                     } else {
                                         null

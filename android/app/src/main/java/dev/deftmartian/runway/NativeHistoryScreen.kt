@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -290,6 +292,7 @@ private fun CurrentPlanRecord(
 ) {
     val plan = item.plan
     val summary = item.summary
+    var planOptionsOpen by rememberSaveable(plan?.id) { mutableStateOf(false) }
     var endPlanOptionOpen by rememberSaveable(plan?.id) { mutableStateOf(false) }
     SettingCard(item.goal?.title.orDash()) {
         Column(
@@ -323,55 +326,57 @@ private fun CurrentPlanRecord(
         ) {
             Text("Open calendar")
         }
-        plan?.id?.takeIf(String::isNotBlank)?.let { planId ->
-            OutlinedButton(
-                onClick = { onOpenPlan(planId) },
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text("Open plan record")
-            }
-        }
-        Text(
-            "A replacement goal archives this plan only after you confirm the new schedule.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        OutlinedButton(
+            onClick = { planOptionsOpen = !planOptionsOpen },
+            enabled = !actionPending,
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    stateDescription = if (planOptionsOpen) "Expanded" else "Collapsed"
+                },
+            shape = MaterialTheme.shapes.small,
         ) {
-            TextButton(
-                onClick = onChangeGoal,
-                enabled = !actionPending,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Change goal")
-            }
-            TextButton(
-                onClick = { endPlanOptionOpen = !endPlanOptionOpen },
-                enabled = !actionPending,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(if (endPlanOptionOpen) "Hide end option" else "End plan")
-            }
+            Text(if (planOptionsOpen) "Hide plan options" else "Plan options")
         }
-        if (endPlanOptionOpen) {
+        if (planOptionsOpen) {
+            plan?.id?.takeIf(String::isNotBlank)?.let { planId ->
+                TextButton(
+                    onClick = { onOpenPlan(planId) },
+                    enabled = !actionPending,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Open plan record") }
+            }
             Text(
-                "Stopping closes the future schedule without marking the goal complete. Recorded work stays in History.",
+                "A replacement goal archives this plan only after you confirm the new schedule.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(
-                onClick = onStop,
+                onClick = onChangeGoal,
                 enabled = !actionPending,
-            ) {
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Change goal") }
+            TextButton(
+                onClick = { endPlanOptionOpen = !endPlanOptionOpen },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (endPlanOptionOpen) "Hide end option" else "End plan") }
+            if (endPlanOptionOpen) {
                 Text(
-                    item.goal?.title
-                        ?.takeIf(String::isNotBlank)
-                        ?.let { "Stop $it" }
-                        ?: "Stop plan",
+                    "Stopping closes the future schedule without marking the goal complete. Recorded work stays in History.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                TextButton(
+                    onClick = onStop,
+                    enabled = !actionPending,
+                ) {
+                    Text(
+                        item.goal?.title
+                            ?.takeIf(String::isNotBlank)
+                            ?.let { "Stop $it" }
+                            ?: "Stop plan",
+                    )
+                }
             }
         }
     }

@@ -19,6 +19,8 @@ android {
         buildConfig = false
     }
 
+    sourceSets.getByName("androidTest").assets.srcDir("schemas")
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

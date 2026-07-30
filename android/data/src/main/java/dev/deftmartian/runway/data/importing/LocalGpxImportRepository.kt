@@ -39,6 +39,7 @@ class LocalGpxImportRepository(
                     parsed = parsed,
                     now = now,
                     retainRoute = profile.routeDataMode == ROUTE_MODE_PRIVATE,
+                    retainHeartRate = profile.heartRateDataMode == HEART_RATE_MODE_PRIVATE,
                     importDao = importDao,
                 )
                 else -> existing.asOutcome()
@@ -50,9 +51,10 @@ class LocalGpxImportRepository(
         parsed: LocalGpxActivity,
         now: Long,
         retainRoute: Boolean,
+        retainHeartRate: Boolean,
         importDao: dev.deftmartian.runway.data.ImportLedgerDao,
     ): LocalGpxImportOutcome {
-        val activity = localGpxActivityEntity(parsed, now, retainRoute)
+        val activity = localGpxActivityEntity(parsed, now, retainRoute, retainHeartRate)
         // The insert is the atomic claim. A concurrent successful transaction leaves its digest
         // intact, so re-read rather than attempting a second activity write.
         if (!importDao.recordImportedActivity(activity, GPX_SOURCE, parsed.dedupeMaterial, now)) {
@@ -67,11 +69,13 @@ class LocalGpxImportRepository(
                 LocalGpxIntake.MAX_RETAINED_POINTS,
             )
         }
-        activityDao.replaceHeartRateSamplesBounded(
-            activity.activityId,
-            localGpxHeartRateSamples(activity.activityId, parsed),
-            LocalGpxIntake.MAX_RETAINED_POINTS,
-        )
+        if (retainHeartRate) {
+            activityDao.replaceHeartRateSamplesBounded(
+                activity.activityId,
+                localGpxHeartRateSamples(activity.activityId, parsed),
+                LocalGpxIntake.MAX_RETAINED_POINTS,
+            )
+        }
         return LocalGpxImportOutcome.Imported(activity.activityId)
     }
 
@@ -85,6 +89,7 @@ class LocalGpxImportRepository(
     private companion object {
         const val GPX_SOURCE = "gpx"
         const val ROUTE_MODE_PRIVATE = "private"
+        const val HEART_RATE_MODE_PRIVATE = "private"
     }
 }
 
@@ -100,6 +105,7 @@ internal fun localGpxActivityEntity(
     parsed: LocalGpxActivity,
     nowEpochMillis: Long,
     retainRoute: Boolean,
+    retainHeartRate: Boolean = false,
 ): ActivityEntity =
     ActivityEntity(
         activityId = localGpxActivityId(parsed.dedupeMaterial),
@@ -109,23 +115,23 @@ internal fun localGpxActivityEntity(
         occurredAtEpochMillis = parsed.startedAtEpochMillis,
         durationSeconds = parsed.durationSeconds,
         distanceMeters = parsed.distanceMeters,
-        averageHeartRateBpm = parsed.averageHeartRate,
+        averageHeartRateBpm = parsed.averageHeartRate.takeIf { retainHeartRate },
         averageCadenceSpm = parsed.averageCadence,
         linkedWorkoutId = null,
         acceptedAtEpochMillis = null,
         createdAtEpochMillis = nowEpochMillis,
         updatedAtEpochMillis = nowEpochMillis,
-        maxHeartRateBpm = parsed.maxHeartRate,
+        maxHeartRateBpm = parsed.maxHeartRate.takeIf { retainHeartRate },
         // Average speed is not maximum speed. Leave this unknown until the parser has a truthful,
         // full-track maximum rather than relabeling another measurement.
         maxSpeedMetersPerSecond = null,
         elevationGainMeters = parsed.elevationGainMeters.toDouble().takeIf { it > 0 },
         routePointCount = if (retainRoute) parsed.route.size else 0,
-        heartRatePointCount = parsed.heartRate.size,
-        heartRateSourceSampleCount = parsed.heartRate.size,
+        heartRatePointCount = if (retainHeartRate) parsed.heartRate.size else 0,
+        heartRateSourceSampleCount = if (retainHeartRate) parsed.heartRate.size else 0,
         routeTraceRetained = retainRoute && parsed.route.isNotEmpty(),
         routeStartEndRedacted = !retainRoute && parsed.route.isNotEmpty(),
-        heartRateSeriesRetained = parsed.heartRate.isNotEmpty(),
+        heartRateSeriesRetained = retainHeartRate && parsed.heartRate.isNotEmpty(),
     )
 
 internal fun localGpxRouteSamples(activityId: String, parsed: LocalGpxActivity): List<RouteSampleEntity> =

@@ -390,12 +390,21 @@ internal fun LocalSettingsReadModel.toNativeSettingsState() = NativeSettingsStat
     routePrivacy =
         if (profile?.routeDataMode == "private") NativeRoutePrivacy.KeepPrivate
         else NativeRoutePrivacy.Discard,
+    heartRatePrivacy =
+        if (profile?.heartRateDataMode == "private") NativeHeartRatePrivacy.KeepPrivate
+        else NativeHeartRatePrivacy.Discard,
     heartRate = NativeHeartRateProfile(
         source = when (profile?.heartRateSettingsSource) {
             "estimated" -> NativeHeartRateSource.Estimated
             "custom" -> NativeHeartRateSource.Custom
             else -> NativeHeartRateSource.NotConfigured
         },
+        sexForEstimates = when (profile?.sexForEstimates) {
+            "female" -> NativeSexForEstimate.Female
+            "male" -> NativeSexForEstimate.Male
+            else -> NativeSexForEstimate.NotSpecified
+        },
+        ageYears = profile?.ageYears,
         maxHeartRateBpm = profile?.maxHeartRateBpm,
         zone2FloorBpm = profile?.zone2FloorBpm,
         zone3FloorBpm = profile?.zone3FloorBpm,

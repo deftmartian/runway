@@ -15,13 +15,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val runwayApplicationId = providers.gradleProperty("runwayApplicationId")
-    .orElse("dev.deftmartian.runway")
-    .get()
-    .trim()
-if (!runwayApplicationId.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
-    throw GradleException("runwayApplicationId must be a valid Android application id")
-}
 val releaseSigningPropertiesFile = rootProject.file(
     providers.gradleProperty("runwaySigningPropertiesFile")
         .orElse("signing.properties")
@@ -88,16 +81,13 @@ val releaseSigningIdentity = when {
 android {
     namespace = "dev.deftmartian.runway"
     compileSdk = 36
-    useLibrary("android.test.runner")
-    useLibrary("android.test.base")
-
     defaultConfig {
-        applicationId = runwayApplicationId
+        applicationId = "dev.deftmartian.runway"
         // Health Connect's Jetpack client supports Android 8.0.
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.8.4"
+        versionCode = 19
+        versionName = "0.8.5"
         buildConfigField("String", "SOURCE_COMMIT", "\"$runwayBuildCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

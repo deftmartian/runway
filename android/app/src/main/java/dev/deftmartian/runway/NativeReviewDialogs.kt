@@ -63,10 +63,10 @@ internal fun ActivityReviewDialog(
                     ActivityCard(activity)
                 }
                 item {
-                    CheckRow("Felt harder than expected", harderThanExpected) {
+                    CheckRow("This run felt harder than expected", harderThanExpected) {
                         harderThanExpected = it
                     }
-                    CheckRow("Pain occurred during or after this run", painDuringOrAfter) {
+                    CheckRow("Pain during or after this run", painDuringOrAfter) {
                         painDuringOrAfter = it
                     }
                     OutlinedButton(

@@ -1,7 +1,13 @@
 package dev.deftmartian.runway
 
 import android.content.Context
+import dev.deftmartian.runway.data.LocalRestoreResult
 import kotlinx.coroutines.CancellationException
+
+internal class ImportSourceBoundaryException(
+    val safeMessage: String,
+    cause: Throwable? = null,
+) : IllegalStateException(safeMessage, cause)
 
 /**
  * Owns the Android-side half of removing import access.
@@ -43,9 +49,11 @@ internal class AndroidImportSourceController(
                 }
             }
         }
-        check(failures.isEmpty()) {
-            "Could not fully disconnect ${failures.joinToString()}. No local data was erased; " +
-                "other import sources may already be disconnected."
+        if (failures.isNotEmpty()) {
+            throw ImportSourceBoundaryException(
+                "Could not fully disconnect ${failures.joinToString()}. Local data was not changed; " +
+                    "other import sources may already be disconnected.",
+            )
         }
     }
 
@@ -58,24 +66,59 @@ internal class AndroidImportSourceController(
      * operation fails, report that access was already removed instead of pretending nothing
      * changed.
      */
-    suspend fun <T> disconnectBeforeErase(erase: suspend () -> T): T {
-        return AndroidStateCoordinator.withImportDataBoundary {
-            disconnectAll()
-            try {
-                erase()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                throw IllegalStateException(
-                    "Import sources were disconnected, but local data could not be erased. " +
-                        "Existing data is still on this phone. Reconnect sources to resume imports.",
-                    error,
-                )
-            }
+    suspend fun <T> disconnectBeforeErase(erase: suspend () -> T): T =
+        disconnectBeforeDestructiveMutation("erased", erase)
+
+    /**
+     * Restore must not inherit a folder grant or Health Connect cursor from the ledger it replaces.
+     * The caller supplies only the Room replacement; this boundary owns acquisition shutdown.
+     */
+    suspend fun disconnectBeforeRestore(
+        restore: suspend () -> LocalRestoreResult,
+    ): LocalRestoreResult = AndroidStateCoordinator.withDestructiveImportBoundary(
+        closeAcquisition = ::disconnectAll,
+        keepAcquisitionClosedAfter = LocalRestoreResult::leavesRoomUnavailable,
+    ) {
+        try {
+            restore()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw disconnectedMutationFailure("restored", error)
         }
     }
+
+    private suspend fun <T> disconnectBeforeDestructiveMutation(
+        operation: String,
+        mutation: suspend () -> T,
+    ): T = AndroidStateCoordinator.withDestructiveImportBoundary(
+        closeAcquisition = ::disconnectAll,
+    ) {
+        try {
+            mutation()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw disconnectedMutationFailure(operation, error)
+        }
+    }
+
+    private fun disconnectedMutationFailure(
+        operation: String,
+        error: Exception,
+    ): ImportSourceBoundaryException = ImportSourceBoundaryException(
+        "Import sources were disconnected, but local data could not be $operation. " +
+            "Existing data is still on this phone. Reconnect sources to resume imports.",
+        error,
+    )
 
     private fun MutableList<String>.attempt(label: String, action: () -> Unit) {
         if (runCatching(action).isFailure) add(label)
     }
+}
+
+internal fun LocalRestoreResult.leavesRoomUnavailable(): Boolean = when (this) {
+    is LocalRestoreResult.Restored -> true
+    is LocalRestoreResult.Rejected -> restartRequired
+    is LocalRestoreResult.RecoveryRequired -> true
 }

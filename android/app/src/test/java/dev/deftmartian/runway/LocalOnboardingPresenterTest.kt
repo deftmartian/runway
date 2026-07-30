@@ -40,6 +40,7 @@ class LocalOnboardingPresenterTest {
             profile = LocalProfileReadModel(
                 timeZone = "America/Halifax",
                 routeDataMode = "private",
+                heartRateDataMode = "discard",
                 availabilityDays = listOf(1, 3, 6),
                 recentInjury = true,
                 currentPain = false,
@@ -47,6 +48,8 @@ class LocalOnboardingPresenterTest {
                 medicalRestriction = false,
                 privateNotes = "private",
                 heartRateSettingsSource = "none",
+                sexForEstimates = "not_specified",
+                ageYears = null,
                 maxHeartRateBpm = null,
                 zone2FloorBpm = null,
                 zone3FloorBpm = null,

@@ -210,14 +210,24 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 includeRoutes = true,
                 routeOverrides = routeOverrides.toMap(),
             )
-            val outcome = withContext(Dispatchers.IO) {
-                AndroidStateCoordinator.withImportDataBoundary {
-                    HealthConnectSyncCoordinator(
-                        gateway = gateway,
-                        cursor = HealthConnectCursorStore(this@NativeFolderSettingsActivity),
-                        reconcile = runwayServices.healthConnect::reconcile,
-                    ).sync()
+            val outcome = try {
+                withContext(Dispatchers.IO) {
+                    AndroidStateCoordinator.withImportDataBoundary {
+                        HealthConnectSyncCoordinator(
+                            gateway = gateway,
+                            cursor = HealthConnectCursorStore(this@NativeFolderSettingsActivity),
+                            reconcile = runwayServices.healthConnect::reconcile,
+                        ).sync()
+                    }
                 }
+            } catch (_: ImportAcquisitionClosedException) {
+                updateState {
+                    copy(
+                        healthSyncRunning = false,
+                        healthStatus = getString(R.string.health_connect_interrupted),
+                    )
+                }
+                return@launch
             }
             updateState {
                 copy(

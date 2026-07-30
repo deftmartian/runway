@@ -24,7 +24,7 @@ Keep `local.properties`, `signing.properties`, keystores, passwords, real GPX/FI
 
 ## Privacy
 
-Folder import retains only a selected Storage Access Framework tree grant. GPX bytes are consumed locally and discarded after parsing. Health Connect is optional, read-only, and asks for route data separately. Backup/export files are plaintext and may contain sensitive training information; handle them accordingly.
+Folder import retains only a selected Storage Access Framework tree grant. GPX bytes are consumed locally and discarded after parsing. Health Connect is optional, read-only, and asks for route data separately. Fresh profiles discard imported routes and heart-rate data unless the runner explicitly enables private on-device retention. Backup/export files are plaintext and may contain sensitive training information; handle them accordingly.
 
 ## Release
 

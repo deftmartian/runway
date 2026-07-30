@@ -15,6 +15,7 @@ internal enum class OneOffGpxImportOutcome {
     DeletedPreviously,
     ConfigurationRequired,
     FutureActivity,
+    Interrupted,
     Rejected,
     TooLarge,
 }
@@ -24,9 +25,14 @@ internal object OneOffGpxImport {
     suspend fun importUri(
         context: Context,
         uri: Uri,
-    ): OneOffGpxImportOutcome = AndroidStateCoordinator.withImportDataBoundary {
-        importUriWithinBoundary(context, uri)
-    }
+    ): OneOffGpxImportOutcome =
+        try {
+            AndroidStateCoordinator.withImportDataBoundary {
+                importUriWithinBoundary(context, uri)
+            }
+        } catch (_: ImportAcquisitionClosedException) {
+            OneOffGpxImportOutcome.Interrupted
+        }
 
     private suspend fun importUriWithinBoundary(
         context: Context,
@@ -96,6 +102,7 @@ internal fun oneOffGpxStatus(outcome: OneOffGpxImportOutcome): Int = when (outco
     OneOffGpxImportOutcome.DeletedPreviously -> R.string.share_deleted_previously
     OneOffGpxImportOutcome.ConfigurationRequired -> R.string.share_setup_required
     OneOffGpxImportOutcome.FutureActivity -> R.string.share_future_activity
+    OneOffGpxImportOutcome.Interrupted -> R.string.share_interrupted
     OneOffGpxImportOutcome.Rejected -> R.string.share_rejected
     OneOffGpxImportOutcome.TooLarge -> R.string.share_too_large
 }

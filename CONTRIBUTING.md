@@ -29,7 +29,7 @@ Use one Gradle build at a time on constrained hosts. A green compile or unit sui
 - Keep repository boundaries typed and bounded. Do not route new UI behavior through JSON payloads or network-shaped models.
 - Back new training behavior with reliable sources in `docs/TRAINING_SOURCES.md`; do not add medical claims.
 - Do not commit private GPX/FIT/TCX files, backups, route coordinates, health data, signing keys, passwords, or machine-specific paths.
-- Treat plaintext backup and export files as sensitive. Do not invent cryptography.
+- Treat plaintext backup and export files as sensitive. The default `runway-training-export*.json` name is ignored, but renamed exports are still private and must not be committed. Do not invent cryptography.
 - Update tests and documentation with behavior changes.
 
 ## Security reports

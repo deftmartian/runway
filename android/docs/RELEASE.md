@@ -40,4 +40,4 @@ Run `fdroidserver` in a dedicated operator or CI environment. Configure it with 
 
 ## Acceptance evidence
 
-Before external release, collect current-build evidence for install, upgrade, first-run onboarding, Calendar/Inbox/Stats/History/Settings navigation, GPX share, folder grant and revocation, Health Connect permission and revocation, privacy route discard, backup warning, erase, large text, TalkBack, and system light/dark themes. Do not substitute old screenshots, source review, or compilation for this evidence.
+Before external release, collect current-build evidence for install, upgrade, first-run onboarding, Calendar/Inbox/Stats/History/Settings navigation, GPX share, folder grant and revocation, Health Connect permission and revocation, route and imported-heart-rate discard, v1 ledger and backup migration, backup warning, erase, large text, TalkBack, and system light/dark themes. Do not substitute old screenshots, source review, or compilation for this evidence.

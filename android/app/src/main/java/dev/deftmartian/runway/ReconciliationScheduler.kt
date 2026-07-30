@@ -6,10 +6,17 @@ import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.WorkInfo
 import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+
+internal data class ReconciliationScheduleSnapshot(
+    val folderCheckScheduled: Boolean,
+    val folderPeriodicScheduled: Boolean,
+    val healthConnectPeriodicScheduled: Boolean,
+)
 
 object ReconciliationScheduler {
     internal const val ONE_TIME_WORK_NAME = "runway-folder-check"
@@ -75,6 +82,42 @@ object ReconciliationScheduler {
         }
     }
 
+    /**
+     * Captures user-enabled work before a short privacy mutation pauses database owners.
+     *
+     * WorkManager state is read before cancellation so the caller can restore the same work after
+     * the acquisition gate reopens. Source-disconnect and restore flows deliberately do not call
+     * this method because their schedules must remain disabled.
+     */
+    internal fun captureSchedule(context: Context): ReconciliationScheduleSnapshot {
+        val manager = WorkManager.getInstance(context)
+        return ReconciliationScheduleSnapshot(
+            folderCheckScheduled = manager.hasScheduledWork(ONE_TIME_WORK_NAME),
+            folderPeriodicScheduled = manager.hasScheduledWork(PERIODIC_WORK_NAME),
+            healthConnectPeriodicScheduled = manager.hasScheduledWork(HEALTH_CONNECT_WORK_NAME),
+        )
+    }
+
+    internal fun restoreSchedule(
+        context: Context,
+        snapshot: ReconciliationScheduleSnapshot,
+    ) {
+        val failures = buildList {
+            attemptIf(snapshot.folderPeriodicScheduled, "GPX folder schedule") {
+                enablePeriodic(context)
+            }
+            attemptIf(snapshot.healthConnectPeriodicScheduled, "Health Connect schedule") {
+                enableHealthConnectPeriodic(context)
+            }
+            attemptIf(snapshot.folderCheckScheduled, "pending GPX folder check") {
+                runOnce(context)
+            }
+        }
+        check(failures.isEmpty()) {
+            "Could not resume ${failures.joinToString()} after the local privacy change."
+        }
+    }
+
     fun enableHealthConnectPeriodic(context: Context) {
         val request = PeriodicWorkRequest.Builder(HealthConnectWorker::class.java, 6, TimeUnit.HOURS)
             .setConstraints(localStorageConstraints())
@@ -110,6 +153,28 @@ object ReconciliationScheduler {
     private fun workerInput(remainingWorkers: Int): Data = Data.Builder()
         .putInt(ReconciliationWorker.INPUT_DRAIN_WORKERS, remainingWorkers.coerceAtLeast(1))
         .build()
+
+    private fun WorkManager.hasScheduledWork(name: String): Boolean =
+        getWorkInfosForUniqueWork(name)
+            .get(WORK_CANCELLATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .any { work ->
+                work.state == WorkInfo.State.ENQUEUED ||
+                    work.state == WorkInfo.State.RUNNING ||
+                    work.state == WorkInfo.State.BLOCKED
+            }
+
+    private inline fun MutableList<String>.attemptIf(
+        required: Boolean,
+        label: String,
+        action: () -> Unit,
+    ) {
+        if (!required) return
+        try {
+            action()
+        } catch (_: Exception) {
+            add(label)
+        }
+    }
 
     private fun localStorageConstraints(): Constraints = Constraints.Builder()
         .setRequiresStorageNotLow(true)

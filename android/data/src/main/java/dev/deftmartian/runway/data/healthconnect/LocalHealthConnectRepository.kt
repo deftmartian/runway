@@ -469,12 +469,18 @@ class LocalHealthConnectRepository(
             observation.routeObserved -> activity.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES)
             else -> emptyList()
         }
-        val heartRate = activity.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
+        val retainHeartRate = profile.heartRateDataMode == HEART_RATE_MODE_PRIVATE
+        val heartRate = if (retainHeartRate) {
+            activity.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
+        } else {
+            emptyList()
+        }
         val proposedEntity = activity.toReviewEntity(
             now = now,
             route = route,
             heartRate = heartRate,
             retainRoute = retainRoute,
+            retainHeartRate = retainHeartRate,
             sourceRecordId = observation.recordId,
             createdAtEpochMillis = existingActivity?.createdAtEpochMillis ?: now,
         )
@@ -539,7 +545,12 @@ class LocalHealthConnectRepository(
         } else {
             proposed.routeSourcePointCount
         }
-        val heartRate = proposed.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
+        val retainHeartRate = profile.heartRateDataMode == HEART_RATE_MODE_PRIVATE
+        val heartRate = if (retainHeartRate) {
+            proposed.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
+        } else {
+            emptyList()
+        }
         importDao.saveHealthConnectMapping(mapping.toEntity(existing, observation, provider, now))
         importDao.savePendingHealthConnectObservation(
             HealthConnectPendingObservationEntity(
@@ -548,11 +559,11 @@ class LocalHealthConnectRepository(
                 occurredAtEpochMillis = proposed.startedAtEpochMillis,
                 durationSeconds = proposed.durationSeconds,
                 distanceMeters = proposed.distanceMeters,
-                averageHeartRateBpm = proposed.averageHeartRateBpm,
-                maxHeartRateBpm = proposed.maxHeartRateBpm,
+                averageHeartRateBpm = proposed.averageHeartRateBpm.takeIf { retainHeartRate },
+                maxHeartRateBpm = proposed.maxHeartRateBpm.takeIf { retainHeartRate },
                 averageCadenceSpm = proposed.averageCadenceSpm,
                 elevationGainMeters = proposed.elevationGainMeters,
-                heartRateSourceSampleCount = proposed.heartRateSourceSampleCount,
+                heartRateSourceSampleCount = if (retainHeartRate) proposed.heartRateSourceSampleCount else 0,
                 routeSourcePointCount = routeSourcePointCount,
                 fingerprint = mapping.fingerprint,
                 originKey = observation.originKey,
@@ -615,6 +626,7 @@ class LocalHealthConnectRepository(
     private companion object {
         const val HEALTH_CONNECT_SOURCE = "health_connect"
         const val ROUTE_MODE_PRIVATE = "private"
+        const val HEART_RATE_MODE_PRIVATE = "private"
         const val MAX_RETAINED_ROUTE_SAMPLES = 600
         const val MAX_RETAINED_HEART_RATE_SAMPLES = 600
         const val HEALTH_CONNECT_MAPPING_STATE_ACTIVE = "active"
@@ -819,6 +831,7 @@ private fun LocalHealthConnectActivity.toReviewEntity(
     route: List<LocalHealthConnectRoutePoint>,
     heartRate: List<LocalHealthConnectHeartRatePoint>,
     retainRoute: Boolean,
+    retainHeartRate: Boolean,
     sourceRecordId: String,
     createdAtEpochMillis: Long,
 ): ActivityEntity = ActivityEntity(
@@ -829,19 +842,19 @@ private fun LocalHealthConnectActivity.toReviewEntity(
     occurredAtEpochMillis = startedAtEpochMillis,
     durationSeconds = durationSeconds,
     distanceMeters = distanceMeters,
-    averageHeartRateBpm = averageHeartRateBpm,
+    averageHeartRateBpm = averageHeartRateBpm.takeIf { retainHeartRate },
     averageCadenceSpm = averageCadenceSpm,
     linkedWorkoutId = null,
     acceptedAtEpochMillis = null,
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = now,
-    maxHeartRateBpm = maxHeartRateBpm,
+    maxHeartRateBpm = maxHeartRateBpm.takeIf { retainHeartRate },
     // A provider average is not a maximum. Never promote it to max speed.
     maxSpeedMetersPerSecond = null,
     elevationGainMeters = elevationGainMeters,
     routePointCount = route.size,
     heartRatePointCount = heartRate.size,
-    heartRateSourceSampleCount = heartRateSourceSampleCount,
+    heartRateSourceSampleCount = if (retainHeartRate) heartRateSourceSampleCount else 0,
     routeTraceRetained = retainRoute && route.isNotEmpty(),
     routeStartEndRedacted = !retainRoute && routeSourcePointCount > 0,
     heartRateSeriesRetained = heartRate.isNotEmpty(),

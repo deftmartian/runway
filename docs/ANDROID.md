@@ -18,6 +18,7 @@ Use JDK 17 and Android SDK Platform 36. The second command needs an emulator or 
 - Native Compose Calendar, Inbox, Stats, History, and Settings.
 - Optional Health Connect read access for supported running records; no writes.
 - GPX share intake and selected-folder scanning through the Storage Access Framework.
+- Separate, destructive route and imported-heart-rate retention controls.
 - Material You dynamic colour on supported Android versions, with accessible fallback themes.
 - Explicit plaintext backup/export and local erase.
 

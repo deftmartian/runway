@@ -558,6 +558,21 @@ interface ActivityLedgerDao {
     @Query("DELETE FROM heart_rate_samples WHERE activityId = :activityId")
     suspend fun clearHeartRateSamplesForActivity(activityId: String)
 
+    @Query("DELETE FROM heart_rate_samples")
+    suspend fun clearAllHeartRateSamples()
+
+    @Query(
+        """
+        UPDATE activities
+        SET averageHeartRateBpm = NULL,
+            maxHeartRateBpm = NULL,
+            heartRatePointCount = 0,
+            heartRateSourceSampleCount = 0,
+            heartRateSeriesRetained = 0
+        """,
+    )
+    suspend fun markAllHeartRateDataDiscarded()
+
     @Query("DELETE FROM workout_feedback WHERE sourceActivityId = :activityId")
     suspend fun deleteWorkoutFeedbackForActivity(activityId: String): Int
 
@@ -873,6 +888,19 @@ abstract class ImportLedgerDao {
 
     @Query("DELETE FROM health_connect_pending_heart_rate_samples WHERE mappingId = :mappingId")
     protected abstract suspend fun clearPendingHealthConnectHeartRateSamples(mappingId: String)
+
+    @Query("DELETE FROM health_connect_pending_heart_rate_samples")
+    abstract suspend fun clearAllPendingHealthConnectHeartRateSamples()
+
+    @Query(
+        """
+        UPDATE health_connect_pending_observations
+        SET averageHeartRateBpm = NULL,
+            maxHeartRateBpm = NULL,
+            heartRateSourceSampleCount = 0
+        """,
+    )
+    abstract suspend fun redactAllPendingHealthConnectHeartRateData()
 
     @Transaction
     open suspend fun replacePendingHealthConnectRouteSamplesBounded(

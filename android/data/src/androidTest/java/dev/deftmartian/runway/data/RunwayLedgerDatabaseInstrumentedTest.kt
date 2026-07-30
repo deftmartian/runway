@@ -31,7 +31,7 @@ class RunwayLedgerDatabaseInstrumentedTest {
     }
 
     @Test
-    fun schemaVersionOneContainsNormalizedLedgerTablesAndForeignKeys() {
+    fun currentSchemaContainsNormalizedLedgerTablesAndForeignKeys() {
         val sqlite = database.openHelper.writableDatabase
         val tableNames = buildSet {
             sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").use { cursor ->
@@ -97,7 +97,13 @@ class RunwayLedgerDatabaseInstrumentedTest {
             }
         }
         assertTrue(mappingIndexes.isNotEmpty())
-        assertEquals(1, sqlite.version)
+        assertEquals(RunwayLedgerDatabase.SCHEMA_VERSION, sqlite.version)
+        val identity = sqlite.query(
+            "SELECT identity_hash FROM room_master_table WHERE id = 42",
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+        assertEquals(RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH, identity)
     }
 
     @Test

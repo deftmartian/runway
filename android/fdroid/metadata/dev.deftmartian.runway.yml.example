@@ -1,9 +1,9 @@
 Categories:
   - Sports & Health
 License: AGPL-3.0-only
-AuthorName: REPLACE_AUTHOR_NAME
-SourceCode: https://REPLACE_SOURCE_URL
-IssueTracker: https://REPLACE_ISSUE_URL
+AuthorName: runway contributors
+SourceCode: https://github.com/deftmartian/runway
+IssueTracker: https://github.com/deftmartian/runway/issues
 # The repository index key is separate from the APK key. This app's APK must be
 # signed with the canonical dev.deftmartian.runway release certificate so it can
 # update installations from GitHub releases. After the first controlled publish,
@@ -11,17 +11,19 @@ IssueTracker: https://REPLACE_ISSUE_URL
 # AllowedAPKSigningKeys: REPLACE_WITH_LOWERCASE_CERT_SHA256_WITHOUT_COLONS
 
 RepoType: git
-Repo: https://REPLACE_GIT_URL
+Repo: https://github.com/deftmartian/runway.git
 
+# Copy this metadata into the operator-owned personal F-Droid repository. Update
+# these three values together for every release; the tag must match the source
+# and the version code must remain monotonic.
 Builds:
-  - versionName: 0.8.0
-    versionCode: 14
-    commit: REPLACE_SOURCE_COMMIT
+  - versionName: 0.8.5
+    versionCode: 19
+    commit: v0.8.5
     subdir: android
     gradle:
       - yes
     gradleprops:
-      - runwayApplicationId=dev.deftmartian.runway
       - runwayFdroidSourceBuild=true
 
 AutoUpdateMode: None

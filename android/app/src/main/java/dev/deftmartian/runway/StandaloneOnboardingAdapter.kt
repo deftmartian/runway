@@ -73,7 +73,10 @@ internal object StandaloneOnboardingAdapter {
             errors.getOrPut(field) { linkedSetOf() }.add(value)
         }
         fun <T> enumValue(field: OnboardingField, raw: String, values: Map<String, T>): T? =
-            values[raw.trim().lowercase()] ?: run { error(field, OnboardingFieldError.INVALID_VALUE); null }
+            values[raw.trim().lowercase()] ?: run {
+                error(field, OnboardingFieldError.INVALID_VALUE)
+                null
+            }
 
         val goalKind = enumValue(OnboardingField.GOAL_KIND, command.goalKind, mapOf("race" to GoalKind.RACE, "foundation" to GoalKind.FOUNDATION))
         val startMode = enumValue(OnboardingField.START_MODE, command.startMode, mapOf(
@@ -86,7 +89,10 @@ internal object StandaloneOnboardingAdapter {
         val experience = enumValue(OnboardingField.EXPERIENCE, command.experience, mapOf("new" to Experience.NEW, "returning" to Experience.RETURNING, "comfortable" to Experience.COMFORTABLE))
         val raceDistance = command.raceDistance.trim().lowercase().takeIf(String::isNotEmpty)?.let {
             mapOf("5k" to RaceDistance.FIVE_K, "10k" to RaceDistance.TEN_K, "half" to RaceDistance.HALF, "marathon" to RaceDistance.MARATHON)[it]
-                ?: run { error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.INVALID_VALUE); null }
+                ?: run {
+                    error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.INVALID_VALUE)
+                    null
+                }
         }
         val timeZone = command.timeZone.trim()
         if (!DateUtils.isValidTimeZone(timeZone)) error(OnboardingField.TIME_ZONE, OnboardingFieldError.INVALID_VALUE)
@@ -160,14 +166,28 @@ internal object StandaloneOnboardingAdapter {
     }
 
     private fun strictDecimal(raw: String, field: OnboardingField, error: (OnboardingField, OnboardingFieldError) -> Unit): Double? {
-        val normalized = raw.trim(); if (normalized.isEmpty()) return null
-        if (!DECIMAL.matches(normalized)) { error(field, OnboardingFieldError.INVALID_NUMBER); return null }
-        return normalized.toDoubleOrNull()?.takeIf(Double::isFinite) ?: run { error(field, OnboardingFieldError.INVALID_NUMBER); null }
+        val normalized = raw.trim()
+        if (normalized.isEmpty()) return null
+        if (!DECIMAL.matches(normalized)) {
+            error(field, OnboardingFieldError.INVALID_NUMBER)
+            return null
+        }
+        return normalized.toDoubleOrNull()?.takeIf(Double::isFinite) ?: run {
+            error(field, OnboardingFieldError.INVALID_NUMBER)
+            null
+        }
     }
     private fun strictWhole(raw: String, field: OnboardingField, error: (OnboardingField, OnboardingFieldError) -> Unit): Int? {
-        val normalized = raw.trim(); if (normalized.isEmpty()) return null
-        if (!WHOLE.matches(normalized)) { error(field, OnboardingFieldError.INVALID_NUMBER); return null }
-        return normalized.toIntOrNull() ?: run { error(field, OnboardingFieldError.INVALID_NUMBER); null }
+        val normalized = raw.trim()
+        if (normalized.isEmpty()) return null
+        if (!WHOLE.matches(normalized)) {
+            error(field, OnboardingFieldError.INVALID_NUMBER)
+            return null
+        }
+        return normalized.toIntOrNull() ?: run {
+            error(field, OnboardingFieldError.INVALID_NUMBER)
+            null
+        }
     }
     private fun kilometersToMeters(value: Double): Int = kotlin.math.floor(value * 1000 + .5).toInt()
     private fun validateEstablishedBaseline(
@@ -271,7 +291,8 @@ internal object StandaloneOnboardingPersistenceMapper {
         val calibration = mode == StartMode.CALIBRATION
         return ProfileSettingsEntity(
             timeZone = command.timeZone.trim(),
-            routeDataMode = "private",
+            routeDataMode = "discard",
+            heartRateDataMode = "discard",
             heartRateSettingsSource = "none",
             maxHeartRateBpm = null,
             zone2FloorBpm = null,
@@ -301,7 +322,7 @@ internal object StandaloneOnboardingPersistenceMapper {
 
     private fun title(metadata: StandaloneGoalMetadata): String = when (metadata.goalKind) {
         GoalKind.FOUNDATION -> "Foundation"
-        GoalKind.RACE -> "${metadata.raceDistance!!.label()} ${when (metadata.startMode) {
+        GoalKind.RACE -> "${requireNotNull(metadata.raceDistance).label()} ${when (metadata.startMode) {
             StartMode.FOUNDATION_TO_GOAL -> "foundation"
             StartMode.CALIBRATION -> "calibration"
             else -> "plan"

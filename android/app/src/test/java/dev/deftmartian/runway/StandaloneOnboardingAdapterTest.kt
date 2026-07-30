@@ -155,6 +155,8 @@ class StandaloneOnboardingAdapterTest {
         assertEquals(8_000, first.profile.longestRecentRunMeters)
         assertTrue(first.profile.baselineConfirmed)
         assertEquals(6, first.profile.preferredLongRunDay)
+        assertEquals("discard", first.profile.routeDataMode)
+        assertEquals("discard", first.profile.heartRateDataMode)
         assertNotEquals(firstGraph.goal.goalId, secondGraph.goal.goalId)
         assertNotEquals(firstGraph.plan.planId, secondGraph.plan.planId)
     }

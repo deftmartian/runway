@@ -45,7 +45,7 @@ import androidx.room.RoomDatabase
         ImportDigestEntity::class,
         AppMetadataEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class RunwayLedgerDatabase : RoomDatabase() {
@@ -59,14 +59,14 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "runway-ledger.db"
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
         /** Room's schema identity for [SCHEMA_VERSION], also recorded in the exported schema JSON. */
-        const val SCHEMA_IDENTITY_HASH = "154538ddd4b50c6c924697299e447e9a"
+        const val SCHEMA_IDENTITY_HASH = "f91a86620eddb116d9e3fdea5af998bc"
 
         fun create(context: Context): RunwayLedgerDatabase = Room.databaseBuilder(
             context.applicationContext,
             RunwayLedgerDatabase::class.java,
             DATABASE_NAME,
-        ).build()
+        ).addMigrations(RunwayLedgerMigrations.V1_TO_V2).build()
     }
 }

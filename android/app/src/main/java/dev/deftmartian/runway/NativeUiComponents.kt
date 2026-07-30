@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -196,10 +198,10 @@ internal fun ActivityCard(
     ).joinToString(" · ").ifBlank { "Recorded activity" }
     val date = activity.occurredDate.orEmpty().ifBlank { activity.activityDate.orEmpty() }.ifBlank { "Activity" }
     val state = when {
-        activity.pain == true -> "! Pain noted"
-        activity.feltHard == true -> "Hard effort"
-        activity.reviewState == "review" -> "! Needs review"
-        else -> "✓ Accepted"
+        activity.pain == true -> "Pain reported"
+        activity.feltHard == true -> "Felt harder than expected"
+        activity.reviewState == "review" -> "Needs review"
+        else -> "Accepted"
     }
     val emphasis = when {
         activity.pain == true -> LedgerEmphasis.Danger
@@ -365,7 +367,11 @@ internal fun EmptyCard(message: String) {
 @Composable
 internal fun Notice(message: String, isError: Boolean = false) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = if (isError) LiveRegionMode.Assertive else LiveRegionMode.Polite
+            },
         color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
         shape = MaterialTheme.shapes.small,
     ) {

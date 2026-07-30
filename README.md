@@ -25,7 +25,7 @@ The five main surfaces are Calendar, Inbox, Stats, History, and Settings. Rest a
 - GPX input is parsed locally and the original bytes are discarded after intake.
 - A Storage Access Framework folder grant can be scanned when the app returns to the foreground; Android background scheduling is best-effort, not a filesystem watch guarantee.
 - Health Connect reading is optional and read-only. Imported activities enter review before they affect a plan.
-- Route and heart-rate retention are controlled in Settings. Removing route retention clears retained route data.
+- New profiles discard imported route and heart-rate detail unless the runner chooses private on-device retention in Settings. Switching either choice back to discard permanently clears the corresponding retained and pending import data.
 - Backup and export are explicit, user-controlled plaintext files. They may contain private training history, notes, route data, and heart-rate data; store and share them carefully.
 
 ## Build
@@ -44,7 +44,7 @@ For an emulator or connected device:
 android/gradlew -p android --no-daemon --max-workers=1 connectedDebugAndroidTest
 ```
 
-Do not commit real GPX, FIT, or TCX files, device backups, route coordinates, health data, signing material, or `local.properties`.
+Do not commit real GPX, FIT, or TCX files, device backups, readable training exports, route coordinates, health data, signing material, or `local.properties`. The default `runway-training-export*.json` name is ignored as a guardrail; renamed exports remain sensitive too.
 
 ## Releases
 

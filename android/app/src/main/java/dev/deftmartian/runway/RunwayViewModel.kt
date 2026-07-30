@@ -20,6 +20,7 @@ import dev.deftmartian.runway.data.LocalPlanSetupResult
 import dev.deftmartian.runway.data.LocalProfileUpdateResult
 import dev.deftmartian.runway.data.LocalRaceBaselineConfirmationRequest
 import dev.deftmartian.runway.data.LocalRestoreResult
+import dev.deftmartian.runway.data.LocalTrainingMutationResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackCommand
 import dev.deftmartian.runway.data.LocalPlanEndRequest
@@ -32,6 +33,8 @@ import dev.deftmartian.runway.domain.WorkoutType
 import dev.deftmartian.runway.domain.PrescriptionKind
 import dev.deftmartian.runway.data.RouteDataMode
 import dev.deftmartian.runway.data.RouteDataModeUpdate
+import dev.deftmartian.runway.data.HeartRateDataMode
+import dev.deftmartian.runway.data.HeartRateDataModeUpdate
 import dev.deftmartian.runway.data.SexForEstimate
 import dev.deftmartian.runway.data.HeartRateSettingsSource
 import dev.deftmartian.runway.data.LocalHeartRateProfile
@@ -45,10 +48,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,10 +95,6 @@ internal data class LocalPlanDecisionPreview(
     val decision: String,
     val changes: List<LocalPlanDecisionChangeDisplay>,
 )
-
-internal sealed interface RunwayUiEffect {
-    data object RestartAfterRestore : RunwayUiEffect
-}
 
 internal sealed interface NativeSurface {
     val destination: NativeDestination
@@ -181,7 +177,6 @@ internal class RunwayViewModel(
     private val services = application.runwayServices
     private val surfaceLoader = NativeSurfaceLoader(application, services)
     private val mutableState = MutableStateFlow<RunwayUiState>(RunwayUiState.Loading)
-    private val mutableEffects = MutableSharedFlow<RunwayUiEffect>(extraBufferCapacity = 1)
     private var calendarMonth: YearMonth = savedStateHandle.get<String>(SAVED_CALENDAR_MONTH)
         ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
         ?: YearMonth.now()
@@ -197,10 +192,15 @@ internal class RunwayViewModel(
     private var history: LocalHistoryReadModel? = null
 
     val state: StateFlow<RunwayUiState> = mutableState.asStateFlow()
-    val effects: SharedFlow<RunwayUiEffect> = mutableEffects.asSharedFlow()
+    val restartAfterRestore: StateFlow<Boolean> =
+        savedStateHandle.getStateFlow(SAVED_RESTART_AFTER_RESTORE, false)
 
     init {
         refresh()
+    }
+
+    fun consumeRestartAfterRestore() {
+        savedStateHandle[SAVED_RESTART_AFTER_RESTORE] = false
     }
 
     fun selectDestination(destination: NativeDestination) {
@@ -294,7 +294,7 @@ internal class RunwayViewModel(
         if (activityId in ready.activityEvidenceLoading) return
         mutableState.value = ready.copy(activityEvidenceLoading = ready.activityEvidenceLoading + activityId)
         viewModelScope.launch {
-            val result = runCatching {
+            val result = localResult {
                 withContext(Dispatchers.IO) { services.surfaces.activityEvidence(activityId) }
             }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
@@ -334,9 +334,10 @@ internal class RunwayViewModel(
 
     fun submitAction(command: MobileCommand) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) { execute(command) } }
+            val result = localResult { withContext(Dispatchers.IO) { execute(command) } }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
             result.onSuccess { message ->
                 mutableState.value = current.copy(actionPending = false, completedAction = command.action, notice = NativeNotice(message))
@@ -359,8 +360,11 @@ internal class RunwayViewModel(
                 ) {
                     refresh()
                 }
-            }.onFailure { error ->
-                mutableState.value = current.copy(actionPending = false, notice = NativeNotice(error.message ?: "That local change could not be saved.", true))
+            }.onFailure {
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(actionFailureMessage(command), true),
+                )
             }
         }
     }
@@ -377,40 +381,51 @@ internal class RunwayViewModel(
 
     fun applyWorkoutPreview() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         val pending = ready.workoutPreview ?: return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                val now = System.currentTimeMillis()
-                services.workoutChanges.apply(
-                    pending.planId,
-                    ApplyLocalWorkoutChangeCommand(
-                        adjustmentId = "workout-adjustment-${pending.actionId}",
-                        decisionId = "workout-decision-${pending.actionId}",
-                        request = pending.request,
-                        expectedPreviewToken = pending.prepared.previewToken,
-                        riskConfirmed = true,
-                        nowEpochMillis = now,
-                    ),
-                    localToday(), hasInjuryRisk(),
-                )
-            } }
+            val result = localResult {
+                withContext(Dispatchers.IO) {
+                    val now = System.currentTimeMillis()
+                    services.workoutChanges.apply(
+                        pending.planId,
+                        ApplyLocalWorkoutChangeCommand(
+                            adjustmentId = "workout-adjustment-${pending.actionId}",
+                            decisionId = "workout-decision-${pending.actionId}",
+                            request = pending.request,
+                            expectedPreviewToken = pending.prepared.previewToken,
+                            riskConfirmed = true,
+                            nowEpochMillis = now,
+                        ),
+                        localToday(),
+                        hasInjuryRisk(),
+                    )
+                }
+            }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
             result.onSuccess {
                 mutableState.value = current.copy(actionPending = false, workoutPreview = null, completedAction = "apply_workout_change", notice = NativeNotice("Workout change applied to your local plan."))
                 refresh()
             }.onFailure {
-                mutableState.value = current.copy(actionPending = false, notice = NativeNotice(it.message ?: "The workout preview is stale. Review the current plan again.", true))
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(
+                        "The workout changed before this edit could be applied. Review it again.",
+                        true,
+                    ),
+                )
             }
         }
     }
 
     fun applyPlanDecisionPreview() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         val pending = ready.planDecisionPreview ?: return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
-            val result = runCatching {
+            val result = localResult {
                 withContext(Dispatchers.IO) {
                     val preview = pending.prepared.preview
                     val identity = stableId(
@@ -453,7 +468,7 @@ internal class RunwayViewModel(
                 mutableState.value = current.copy(
                     actionPending = false,
                     notice = NativeNotice(
-                        it.message ?: "The plan changed before this choice could be applied. Review it again.",
+                        "The plan changed before this choice could be applied. Review it again.",
                         isError = true,
                     ),
                 )
@@ -462,17 +477,52 @@ internal class RunwayViewModel(
     }
 
     fun updateTimeZone(value: String) = mutateSetting { services.profile.updateTimeZone(value) }
-    fun updateRoutePrivacy(value: NativeRoutePrivacy) = mutateSetting { services.privacy.updateRouteDataMode(if (value == NativeRoutePrivacy.KeepPrivate) RouteDataMode.Private else RouteDataMode.Discard) }
+    fun updateRoutePrivacy(value: NativeRoutePrivacy) {
+        val mode = if (value == NativeRoutePrivacy.KeepPrivate) {
+            RouteDataMode.Private
+        } else {
+            RouteDataMode.Discard
+        }
+        mutatePrivacySetting(destructive = mode == RouteDataMode.Discard) {
+            requireRoutePrivacyUpdate(services.privacy.updateRouteDataMode(mode))
+        }
+    }
+
+    fun updateHeartRatePrivacy(value: NativeHeartRatePrivacy) {
+        val mode = if (value == NativeHeartRatePrivacy.KeepPrivate) {
+            HeartRateDataMode.Private
+        } else {
+            HeartRateDataMode.Discard
+        }
+        mutatePrivacySetting(destructive = mode == HeartRateDataMode.Discard) {
+            requireHeartRatePrivacyUpdate(services.privacy.updateHeartRateDataMode(mode))
+        }
+    }
+
     fun updateHeartRate(value: NativeHeartRateProfile) = mutateSetting {
         if (value.source == NativeHeartRateSource.NotConfigured) {
             services.profile.clearHeartRateProfile()
         } else {
-            services.profile.updateHeartRateProfile(LocalHeartRateProfile(
-                sexForEstimate = SexForEstimate.NotSpecified, ageYears = null,
-                source = if (value.source == NativeHeartRateSource.Custom) HeartRateSettingsSource.Custom else HeartRateSettingsSource.Estimated,
-                maxHeartRateBpm = requireNotNull(value.maxHeartRateBpm), zone2FloorBpm = requireNotNull(value.zone2FloorBpm),
-                zone3FloorBpm = requireNotNull(value.zone3FloorBpm), zone4FloorBpm = requireNotNull(value.zone4FloorBpm), zone5FloorBpm = requireNotNull(value.zone5FloorBpm),
-            ))
+            services.profile.updateHeartRateProfile(
+                LocalHeartRateProfile(
+                    sexForEstimate = when (value.sexForEstimates) {
+                        NativeSexForEstimate.Female -> SexForEstimate.Female
+                        NativeSexForEstimate.Male -> SexForEstimate.Male
+                        NativeSexForEstimate.NotSpecified -> SexForEstimate.NotSpecified
+                    },
+                    ageYears = value.ageYears,
+                    source = if (value.source == NativeHeartRateSource.Custom) {
+                        HeartRateSettingsSource.Custom
+                    } else {
+                        HeartRateSettingsSource.Estimated
+                    },
+                    maxHeartRateBpm = requireNotNull(value.maxHeartRateBpm),
+                    zone2FloorBpm = requireNotNull(value.zone2FloorBpm),
+                    zone3FloorBpm = requireNotNull(value.zone3FloorBpm),
+                    zone4FloorBpm = requireNotNull(value.zone4FloorBpm),
+                    zone5FloorBpm = requireNotNull(value.zone5FloorBpm),
+                ),
+            )
         }
     }
     fun updateHealthContext(value: NativeHealthContext) = mutateSetting {
@@ -480,9 +530,10 @@ internal class RunwayViewModel(
     }
     fun eraseAllData() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            runCatching {
+            localResult {
                 withContext(Dispatchers.IO) {
                     services.importSources.disconnectBeforeErase {
                         services.dataManagement.eraseAllTrainingData()
@@ -490,15 +541,28 @@ internal class RunwayViewModel(
                 }
             }
                 .onSuccess { mutableState.value = RunwayUiState.Loading; load(NativeDestination.Setup) }
-                .onFailure { mutableState.value = ready.copy(actionPending = false, notice = NativeNotice(it.message ?: "Local data could not be erased.", true)) }
+                .onFailure { error ->
+                    val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                    mutableState.value = current.copy(
+                        actionPending = false,
+                        notice = NativeNotice(
+                            destructiveFailureMessage(
+                                error,
+                                "Local data could not be reset. No training data was removed.",
+                            ),
+                            true,
+                        ),
+                    )
+                }
         }
     }
 
     fun eraseImportedActivityData() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
-            runCatching {
+            localResult {
                 withContext(Dispatchers.IO) {
                     services.importSources.disconnectBeforeErase {
                         services.dataManagement.eraseImportedActivityData()
@@ -521,9 +585,16 @@ internal class RunwayViewModel(
                     refresh()
                 }
             }.onFailure { error ->
-                mutableState.value = ready.copy(
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                mutableState.value = current.copy(
                     actionPending = false,
-                    notice = NativeNotice(error.message ?: "Imported activity data could not be removed.", true),
+                    notice = NativeNotice(
+                        destructiveFailureMessage(
+                            error,
+                            "Imported runs could not be removed. No training data was removed.",
+                        ),
+                        true,
+                    ),
                 )
             }
         }
@@ -531,6 +602,7 @@ internal class RunwayViewModel(
 
     fun importGpx(context: Context, uri: Uri) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { OneOffGpxImport.importUri(context, uri) }
@@ -542,30 +614,36 @@ internal class RunwayViewModel(
 
     fun backup(context: Context, uri: Uri) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
-            val result = runCatching {
+            val result = localResult {
                 withContext(Dispatchers.IO) {
                     services.dataManagement.backupToDocument(context, uri)
                 }
             }
             result.onSuccess { outcome ->
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
                 when (outcome) {
                     is LocalBackupResult.Created ->
-                        mutableState.value = ready.copy(
+                        mutableState.value = current.copy(
                             actionPending = false,
                             notice = NativeNotice("Backup created. It is not encrypted; store it somewhere you trust."),
                         )
                     is LocalBackupResult.Rejected ->
-                        mutableState.value = ready.copy(
+                        mutableState.value = current.copy(
                             actionPending = false,
                             notice = NativeNotice(outcome.reason, isError = true),
                         )
                 }
             }.onFailure {
-                mutableState.value = ready.copy(
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                mutableState.value = current.copy(
                     actionPending = false,
-                    notice = NativeNotice(it.message ?: "The backup could not be created.", true),
+                    notice = NativeNotice(
+                        "The backup could not be created. Choose another location and try again.",
+                        true,
+                    ),
                 )
             }
         }
@@ -573,79 +651,194 @@ internal class RunwayViewModel(
 
     fun restore(context: Context, uri: Uri) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
-            val result = runCatching {
+            val result = localResult {
                 withContext(Dispatchers.IO) {
-                    AndroidStateCoordinator.withImportDataBoundary {
-                        ReconciliationScheduler.cancelAllAndWait(context)
+                    services.importSources.disconnectBeforeRestore {
                         services.dataManagement.restoreFromDocument(context, uri)
                     }
                 }
             }
             result.onSuccess { outcome ->
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
                 val (message, isError, restartRequired) = when (outcome) {
                     is LocalRestoreResult.Restored ->
                         Triple("Backup restored. Restarting runway…", false, outcome.restartRequired)
                     is LocalRestoreResult.Rejected ->
-                        Triple(outcome.reason, true, outcome.restartRequired)
+                        Triple(
+                            outcome.reason +
+                                " Import sources were disconnected before restore; reconnect them in Settings.",
+                            true,
+                            outcome.restartRequired,
+                        )
                     is LocalRestoreResult.RecoveryRequired ->
                         Triple(outcome.reason, true, true)
                 }
-                mutableState.value = ready.copy(
+                mutableState.value = current.copy(
                     actionPending = restartRequired,
                     notice = NativeNotice(message, isError),
                 )
-                if (restartRequired) mutableEffects.emit(RunwayUiEffect.RestartAfterRestore)
-            }.onFailure {
-                mutableState.value = ready.copy(
+                if (restartRequired) {
+                    savedStateHandle[SAVED_RESTART_AFTER_RESTORE] = true
+                }
+            }.onFailure { error ->
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                mutableState.value = current.copy(
                     actionPending = false,
-                    notice = NativeNotice(it.message ?: "The selected backup could not be restored.", true),
+                    notice = NativeNotice(
+                        destructiveFailureMessage(
+                            error,
+                            "The selected backup could not be restored. The current local data was kept.",
+                        ),
+                        true,
+                    ),
                 )
             }
         }
     }
 
-    fun export(context: Context, uri: Uri) = documentMutation("Training data exported.") { services.dataManagement.exportTrainingJson(context, uri) }
+    fun export(context: Context, uri: Uri) = documentMutation(
+        successMessage = { result -> trainingExportMessage(result.truncatedTables) },
+    ) {
+        services.dataManagement.exportTrainingJson(context, uri)
+    }
 
-    private fun documentMutation(success: String, block: suspend () -> Any) {
+    private fun <T> documentMutation(
+        successMessage: (T) -> String,
+        block: suspend () -> T,
+    ) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { block() } }
-                .onSuccess { mutableState.value = ready.copy(actionPending = false, notice = NativeNotice(success)); refresh() }
-                .onFailure { mutableState.value = ready.copy(actionPending = false, notice = NativeNotice(it.message ?: "The local document operation failed.", true)) }
+            localResult { withContext(Dispatchers.IO) { block() } }
+                .onSuccess { result ->
+                    val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
+                    mutableState.value = current.copy(
+                        actionPending = false,
+                        notice = NativeNotice(successMessage(result)),
+                    )
+                    refresh()
+                }
+                .onFailure {
+                    val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                    mutableState.value = current.copy(
+                        actionPending = false,
+                        notice = NativeNotice(
+                            "The file could not be written. Choose another location and try again.",
+                            true,
+                        ),
+                    )
+                }
         }
     }
 
-    private fun mutateSetting(block: suspend () -> Any) {
+    private fun mutateSetting(block: suspend () -> LocalProfileUpdateResult) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            runCatching {
+            localResult {
                 withContext(Dispatchers.IO) {
-                    when (val result = block()) {
-                        LocalProfileUpdateResult.Updated,
-                        is RouteDataModeUpdate.Updated,
-                        -> Unit
-                        LocalProfileUpdateResult.ProfileNotConfigured,
-                        RouteDataModeUpdate.ProfileNotConfigured,
-                        -> error("Finish local setup before changing this setting.")
-                        is LocalProfileUpdateResult.Invalid ->
-                            error(result.issue.name.lowercase().replace('_', ' '))
-                        else -> Unit
-                    }
+                    requireProfileUpdate(block())
                 }
             }.onSuccess {
-                mutableState.value = ready.copy(actionPending = false, notice = NativeNotice("Saved.")); refresh()
-            }.onFailure { mutableState.value = ready.copy(actionPending = false, notice = NativeNotice(it.message ?: "Could not save that setting.", true)) }
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice("Saved."),
+                )
+                refresh()
+            }.onFailure {
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice("That setting could not be saved. Check the values and try again.", true),
+                )
+            }
+        }
+    }
+
+    private fun mutatePrivacySetting(
+        destructive: Boolean,
+        block: suspend () -> Unit,
+    ) {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            val result = localResult {
+                withContext(Dispatchers.IO) {
+                    if (destructive) {
+                        val application = getApplication<Application>()
+                        var schedules: ReconciliationScheduleSnapshot? = null
+                        try {
+                            AndroidStateCoordinator.withDestructiveImportBoundary(
+                                closeAcquisition = {
+                                    schedules = ReconciliationScheduler.captureSchedule(application)
+                                    ReconciliationScheduler.cancelAllAndWait(application)
+                                },
+                            ) {
+                                block()
+                            }
+                        } finally {
+                            schedules?.let {
+                                ReconciliationScheduler.restoreSchedule(application, it)
+                            }
+                        }
+                    } else {
+                        block()
+                    }
+                }
+            }
+            result.onSuccess {
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice("Privacy setting saved."),
+                )
+                refresh()
+            }.onFailure {
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(
+                        "That privacy change did not complete cleanly. Review the current setting. " +
+                            "If background imports stopped, enable them again under Imports.",
+                        true,
+                    ),
+                )
+                refresh()
+            }
         }
     }
 
     private suspend fun execute(command: MobileCommand): String = when (command) {
         is CreatePlanCommand -> createPlan(command)
-        is RecordFeedbackCommand -> services.trainingMutations.recordWorkoutFeedback(LocalWorkoutFeedbackCommand(command.workoutId, feedbackStatus(command.status), command.completedDistanceKm?.let { (it * 1000).toInt() }, command.completedDurationMinutes?.let { (it * 60).toInt() }, command.feltHard, command.pain, skipChoice = planDecision(command.choice))).message()
-        is RecordManualRunCommand -> services.trainingMutations.recordManualRun(LocalManualRunCommand(LocalDate.parse(command.occurredDate), command.distanceKm?.let { (it * 1000).toInt() }, command.durationMinutes?.let { (it * 60).toInt() }, command.feltHard, command.pain)).message()
+        is RecordFeedbackCommand -> services.trainingMutations.recordWorkoutFeedback(
+            LocalWorkoutFeedbackCommand(
+                workoutId = command.workoutId,
+                status = feedbackStatus(command.status),
+                completedDistanceMeters =
+                    command.completedDistanceKm?.let { (it * 1000).toInt() },
+                completedDurationSeconds =
+                    command.completedDurationMinutes?.let { (it * 60).toInt() },
+                feltHard = command.feltHard,
+                pain = command.pain,
+                skipChoice = planDecision(command.choice),
+            ),
+        ).message()
+        is RecordManualRunCommand -> services.trainingMutations.recordManualRun(
+            LocalManualRunCommand(
+                occurredDate = LocalDate.parse(command.occurredDate),
+                distanceMeters = command.distanceKm?.let { (it * 1000).toInt() },
+                durationSeconds = command.durationMinutes?.let { (it * 60).toInt() },
+                feltHard = command.feltHard,
+                pain = command.pain,
+            ),
+        ).message()
         is LinkActivityCommand -> services.activityReview.link(command.activityId, command.workoutId).message()
         is ConfirmActivityExtraCommand -> services.activityReview.confirmAsExtra(command.activityId).message()
         is UpdateActivityFeedbackCommand -> services.activityReview.updateFeedback(command.activityId, command.feltHard, command.pain).message()
@@ -655,16 +848,20 @@ internal class RunwayViewModel(
         is ResolveHealthConnectRecordCommand -> resolveHealthConnectRecord(command)
         is ResolveHealthConnectDuplicateCommand -> resolveHealthConnectDuplicate(command)
         is PreviewPlanDecisionCommand -> previewPlanDecision(command)
-        is PreviewWorkoutEditCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
-        is PreviewWorkoutAddCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
-        is PreviewWorkoutRemovalCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
-        is ResetWorkoutCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
+        is PreviewWorkoutEditCommand -> previewWorkoutChangeMessage(command)
+        is PreviewWorkoutAddCommand -> previewWorkoutChangeMessage(command)
+        is PreviewWorkoutRemovalCommand -> previewWorkoutChangeMessage(command)
+        is ResetWorkoutCommand -> previewWorkoutChangeMessage(command)
         is UndoWorkoutAdjustmentCommand -> undoWorkoutChange(command)
         is ConfirmPhaseBaselineCommand -> confirmPhaseBaseline(command)
         ContinueBeginnerPhaseCommand -> continueBeginnerPhase()
         CompletePlanCommand -> endActivePlan(completed = true)
         ArchivePlanCommand -> endActivePlan(completed = false)
-        else -> throw IllegalStateException("${command.action.replace('_', ' ')} is not available in this local screen yet.")
+    }
+
+    private suspend fun previewWorkoutChangeMessage(command: MobileCommand): String {
+        previewWorkoutChange(command)
+        return "Review the plan effect before applying it."
     }
 
     private suspend fun deleteWorkoutFeedback(
@@ -961,21 +1158,70 @@ internal class RunwayViewModel(
 
     private suspend fun createPlan(command: CreatePlanCommand): String {
         val outcome = StandaloneOnboardingAdapter.adapt(command)
-        if (outcome is StandaloneOnboardingOutcome.Invalid) throw IllegalArgumentException(outcome.fieldErrors.entries.joinToString("; ") { "${it.key.name.lowercase().replace('_', ' ')}: ${it.value.joinToString { error -> error.name.lowercase().replace('_', ' ') }}" })
-        val operation = "setup:${command.goalKind}:${command.targetDate}:${command.timeZone}:${command.availability.sorted()}"
-        return when (val result = services.planSetup.setUp(StandaloneOnboardingPersistenceMapper.map(command, outcome, operation, System.currentTimeMillis()))) {
+        if (outcome is StandaloneOnboardingOutcome.Invalid) {
+            val detail = outcome.fieldErrors.entries.joinToString("; ") { (field, errors) ->
+                val label = field.name.lowercase().replace('_', ' ')
+                val issues = errors.joinToString { error ->
+                    error.name.lowercase().replace('_', ' ')
+                }
+                "$label: $issues"
+            }
+            throw IllegalArgumentException(detail)
+        }
+        val operation =
+            "setup:${command.goalKind}:${command.targetDate}:${command.timeZone}:" +
+                command.availability.sorted()
+        val request = StandaloneOnboardingPersistenceMapper.map(
+            command,
+            outcome,
+            operation,
+            System.currentTimeMillis(),
+        )
+        return when (val result = services.planSetup.setUp(request)) {
             is LocalPlanSetupResult.Created -> "Your local plan is ready."
-            is LocalPlanSetupResult.ReplacementConfirmationRequired -> throw IllegalStateException("An existing local plan remains. Confirm replacing it to archive the prior plan and create this one.")
-            is LocalPlanSetupResult.Rejected -> throw IllegalStateException("Plan setup was rejected: ${result.error.name.lowercase().replace('_', ' ')}")
+            is LocalPlanSetupResult.ReplacementConfirmationRequired ->
+                throw IllegalStateException(
+                    "An existing local plan remains. Confirm replacing it to archive the prior " +
+                        "plan and create this one.",
+                )
+            is LocalPlanSetupResult.Rejected ->
+                throw IllegalStateException(
+                    "Plan setup was rejected: " +
+                        result.error.name.lowercase().replace('_', ' '),
+                )
         }
     }
 
-    private fun feedbackStatus(value: String) = when (value.lowercase()) { "skipped" -> FeedbackStatus.SKIPPED; "shortened" -> FeedbackStatus.SHORTENED; else -> FeedbackStatus.DONE }
-    private fun planDecision(value: String): PlanDecision? = runCatching { PlanDecision.valueOf(value.uppercase()) }.getOrNull()
-    private fun Any.message(): String = when (this) {
-        is LocalActivityReviewResult.Rejected -> throw IllegalStateException("Review was rejected: ${issue.name.lowercase().replace('_', ' ')}")
-        is dev.deftmartian.runway.data.LocalTrainingMutationResult.Rejected -> throw IllegalStateException("Run was rejected: ${issue.name.lowercase().replace('_', ' ')}")
-        else -> "Saved to your local training log."
+    private fun feedbackStatus(value: String) = when (value.lowercase()) {
+        "skipped" -> FeedbackStatus.SKIPPED
+        "shortened" -> FeedbackStatus.SHORTENED
+        else -> FeedbackStatus.DONE
+    }
+
+    private fun planDecision(value: String): PlanDecision? =
+        runCatching { PlanDecision.valueOf(value.uppercase()) }.getOrNull()
+
+    private fun LocalActivityReviewResult.message(): String = when (this) {
+        is LocalActivityReviewResult.Rejected ->
+            throw IllegalStateException(
+                "Review was rejected: ${issue.name.lowercase().replace('_', ' ')}",
+            )
+        is LocalActivityReviewResult.AcceptedExtra,
+        is LocalActivityReviewResult.Deleted,
+        is LocalActivityReviewResult.FeedbackUpdated,
+        is LocalActivityReviewResult.Linked,
+        is LocalActivityReviewResult.Unlinked,
+        -> "Saved to your local training log."
+    }
+
+    private fun LocalTrainingMutationResult.message(): String = when (this) {
+        is LocalTrainingMutationResult.Rejected ->
+            throw IllegalStateException(
+                "Run was rejected: ${issue.name.lowercase().replace('_', ' ')}",
+            )
+        is LocalTrainingMutationResult.ManualRunRecorded,
+        is LocalTrainingMutationResult.WorkoutFeedbackRecorded,
+        -> "Saved to your local training log."
     }
 
     private fun OneOffGpxImportOutcome.message(): String = when (this) {
@@ -984,6 +1230,7 @@ internal class RunwayViewModel(
         OneOffGpxImportOutcome.DeletedPreviously -> "That GPX activity was previously removed and was not restored."
         OneOffGpxImportOutcome.ConfigurationRequired -> "Set up a local training plan before importing GPX activity."
         OneOffGpxImportOutcome.FutureActivity -> "Future-dated activity was not imported."
+        OneOffGpxImportOutcome.Interrupted -> "The GPX import stopped while local data was changing. Choose the file again."
         OneOffGpxImportOutcome.TooLarge -> "That GPX file is too large to import on this phone."
         OneOffGpxImportOutcome.Rejected -> "That file could not be read as a GPX activity."
     }
@@ -1065,7 +1312,7 @@ internal class RunwayViewModel(
         val previous = mutableState.value as? RunwayUiState.Ready
         surfaceLoadJob?.cancel()
         surfaceLoadJob = viewModelScope.launch {
-            val result = runCatching {
+            val result = localResult {
                 surfaceLoader.load(
                     SurfaceLoadRequest(
                         destination = destination,
@@ -1079,7 +1326,6 @@ internal class RunwayViewModel(
                     ),
                 )
             }
-            if (result.exceptionOrNull() is CancellationException) return@launch
             result.onSuccess { loaded ->
                 if (generation != loadGeneration) return@onSuccess
                 calendarMonth = loaded.calendarMonth
@@ -1088,22 +1334,66 @@ internal class RunwayViewModel(
                 }
                 loaded.history?.let { history = it }
                 savedStateHandle[SAVED_DESTINATION] = loaded.surface.destination.name
-                mutableState.value = previous?.copy(
-                    surface = loaded.surface,
-                    loading = false,
-                    actionPending = false,
-                ) ?: RunwayUiState.Ready(
-                    surface = loaded.surface,
-                    loading = false,
-                )
-            }.onFailure { error ->
+                val current = mutableState.value as? RunwayUiState.Ready
+                mutableState.value = mergeLoadedSurface(current, previous, loaded.surface)
+            }.onFailure {
                 if (generation != loadGeneration) return@onFailure
-                mutableState.value = RunwayUiState.Failed(
-                    "Local training data could not be opened: ${error.message ?: "unknown error"}",
+                val current = mutableState.value as? RunwayUiState.Ready
+                mutableState.value = current?.copy(
+                    loading = false,
+                    notice = NativeNotice(
+                        "Local training data could not be refreshed. Try again.",
+                        true,
+                    ),
+                ) ?: RunwayUiState.Failed(
+                    "Local training data could not be opened. Close runway, reopen it, and try again.",
                 )
             }
         }
     }
+
+    private fun requireProfileUpdate(result: LocalProfileUpdateResult) = when (result) {
+        LocalProfileUpdateResult.Updated -> Unit
+        LocalProfileUpdateResult.ProfileNotConfigured ->
+            throw IllegalStateException("Local setup is not complete.")
+        is LocalProfileUpdateResult.Invalid ->
+            throw IllegalArgumentException("The profile values are not valid.")
+    }
+
+    private fun requireRoutePrivacyUpdate(result: RouteDataModeUpdate) = when (result) {
+        is RouteDataModeUpdate.Updated -> Unit
+        RouteDataModeUpdate.ProfileNotConfigured ->
+            throw IllegalStateException("Local setup is not complete.")
+    }
+
+    private fun requireHeartRatePrivacyUpdate(result: HeartRateDataModeUpdate) = when (result) {
+        is HeartRateDataModeUpdate.Updated -> Unit
+        HeartRateDataModeUpdate.ProfileNotConfigured ->
+            throw IllegalStateException("Local setup is not complete.")
+    }
+
+    private fun actionFailureMessage(command: MobileCommand): String = when (command) {
+        is CreatePlanCommand ->
+            "The plan could not be created. Check the setup details and try again."
+        is PreviewWorkoutEditCommand,
+        is PreviewWorkoutAddCommand,
+        is PreviewWorkoutRemovalCommand,
+        is ResetWorkoutCommand,
+        is UndoWorkoutAdjustmentCommand,
+        -> "That workout changed before the action could be saved. Review the current plan and try again."
+        is LinkActivityCommand,
+        is UnlinkActivityCommand,
+        is ConfirmActivityExtraCommand,
+        is UpdateActivityFeedbackCommand,
+        is DeleteActivityCommand,
+        is ResolveHealthConnectRecordCommand,
+        is ResolveHealthConnectDuplicateCommand,
+        -> "That activity changed before the action could be saved. Review the Inbox and try again."
+        else -> "That change could not be saved. Review the current screen and try again."
+    }
+
+    private fun destructiveFailureMessage(error: Throwable, fallback: String): String =
+        if (error is ImportSourceBoundaryException) error.safeMessage else fallback
 
     private fun restoredDestination(): NativeDestination {
         return restoredNativeDestination(
@@ -1118,9 +1408,40 @@ internal class RunwayViewModel(
         const val SAVED_CALENDAR_MONTH = "runway.calendar.month"
         const val SAVED_HISTORY_LIMIT = "runway.history.limit"
         const val SAVED_INBOX_LIMIT = "runway.inbox.limit"
+        const val SAVED_RESTART_AFTER_RESTORE = "runway.restore.restart-required"
         const val HISTORY_PAGE_SIZE = 50
         const val INBOX_PAGE_SIZE = 50
         const val MAX_HISTORY_PLANS = 400
         const val MAX_INBOX_ACTIVITIES = 1_000
     }
 }
+
+internal suspend fun <T> localResult(block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
+internal fun trainingExportMessage(truncatedTables: Set<String>): String =
+    if (truncatedTables.isEmpty()) {
+        "Readable training history exported."
+    } else {
+        "Readable export created, but some large sections were limited to 2,000 rows. " +
+            "Use Backup for a complete copy."
+    }
+
+internal fun mergeLoadedSurface(
+    current: RunwayUiState.Ready?,
+    previous: RunwayUiState.Ready?,
+    surface: NativeSurface,
+): RunwayUiState.Ready =
+    (current ?: previous)?.copy(
+        surface = surface,
+        loading = false,
+    ) ?: RunwayUiState.Ready(
+        surface = surface,
+        loading = false,
+    )

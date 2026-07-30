@@ -1,0 +1,5 @@
+Adds explicit route and heart-rate retention controls with a safe local database migration.
+
+Hardens imports, restore, and background coordination.
+
+Cleans up navigation, settings, accessibility, and backup/export feedback.

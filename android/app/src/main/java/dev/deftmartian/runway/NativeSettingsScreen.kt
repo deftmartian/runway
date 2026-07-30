@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 internal data class NativeSettingsState(
     val timeZone: String = "",
     val routePrivacy: NativeRoutePrivacy = NativeRoutePrivacy.Discard,
+    val heartRatePrivacy: NativeHeartRatePrivacy = NativeHeartRatePrivacy.Discard,
     val heartRate: NativeHeartRateProfile = NativeHeartRateProfile(),
     val healthContext: NativeHealthContext = NativeHealthContext(),
     val folderImport: NativeImportConnection = NativeImportConnection.NotConnected,
@@ -44,8 +45,15 @@ internal enum class NativeRoutePrivacy(val summary: String) {
     KeepPrivate("Route traces stay on this phone"),
 }
 
+internal enum class NativeHeartRatePrivacy(val summary: String) {
+    Discard("Imported heart-rate values are discarded"),
+    KeepPrivate("Imported heart-rate values stay on this phone"),
+}
+
 internal data class NativeHeartRateProfile(
     val source: NativeHeartRateSource = NativeHeartRateSource.NotConfigured,
+    val sexForEstimates: NativeSexForEstimate = NativeSexForEstimate.NotSpecified,
+    val ageYears: Int? = null,
     val maxHeartRateBpm: Int? = null,
     val zone2FloorBpm: Int? = null,
     val zone3FloorBpm: Int? = null,
@@ -54,6 +62,7 @@ internal data class NativeHeartRateProfile(
 )
 
 internal enum class NativeHeartRateSource { NotConfigured, Estimated, Custom }
+internal enum class NativeSexForEstimate { NotSpecified, Female, Male }
 
 internal data class NativeHealthContext(
     val recentInjury: Boolean = false,
@@ -75,6 +84,7 @@ internal sealed interface NativeImportConnection {
 internal data class NativeSettingsCallbacks(
     val onTimeZoneChanged: (String) -> Unit,
     val onRoutePrivacyChanged: (NativeRoutePrivacy) -> Unit,
+    val onHeartRatePrivacyChanged: (NativeHeartRatePrivacy) -> Unit,
     val onHeartRateChanged: (NativeHeartRateProfile) -> Unit,
     val onHealthContextChanged: (NativeHealthContext) -> Unit,
     val onImportGpx: () -> Unit,
@@ -95,6 +105,7 @@ internal fun SettingsScreen(
 ) {
     var editingTimeZone by rememberSaveable { mutableStateOf(false) }
     var editingRoutePrivacy by rememberSaveable { mutableStateOf(false) }
+    var editingHeartRatePrivacy by rememberSaveable { mutableStateOf(false) }
     var editingHeartRate by rememberSaveable { mutableStateOf(false) }
     var editingHealthContext by rememberSaveable { mutableStateOf(false) }
     var confirmingBackup by rememberSaveable { mutableStateOf(false) }
@@ -110,9 +121,6 @@ internal fun SettingsScreen(
                 SettingsActionRow("Time zone", state.timeZone.ifBlank { "Not set" }, "Change", !actionPending) {
                     editingTimeZone = true
                 }
-                SettingsActionRow("Route privacy", state.routePrivacy.summary, "Change", !actionPending) {
-                    editingRoutePrivacy = true
-                }
                 SettingsActionRow("Heart rate", heartRateSummary(state.heartRate), "Edit", !actionPending) {
                     editingHeartRate = true
                 }
@@ -126,6 +134,21 @@ internal fun SettingsScreen(
                 SettingsActionRow("GPX file", "Choose one file to review on this phone", "Choose", !actionPending, onClick = callbacks.onImportGpx)
                 SettingsActionRow("GPX folder", importConnectionSummary(state.folderImport), "Open", !actionPending, onClick = callbacks.onOpenFolderImports)
                 SettingsActionRow("Health Connect", importConnectionSummary(state.healthConnectImport), "Open", !actionPending, onClick = callbacks.onOpenHealthConnect)
+            }
+        }
+        item {
+            SettingsRail("Privacy") {
+                SettingsActionRow("Route privacy", state.routePrivacy.summary, "Change", !actionPending) {
+                    editingRoutePrivacy = true
+                }
+                SettingsActionRow(
+                    "Heart-rate privacy",
+                    state.heartRatePrivacy.summary,
+                    "Change",
+                    !actionPending,
+                ) {
+                    editingHeartRatePrivacy = true
+                }
             }
         }
         item {
@@ -188,6 +211,16 @@ internal fun SettingsScreen(
             editingRoutePrivacy = false
         }
     }
+    if (editingHeartRatePrivacy) {
+        HeartRatePrivacyDialog(
+            state.heartRatePrivacy,
+            actionPending,
+            { editingHeartRatePrivacy = false },
+        ) {
+            callbacks.onHeartRatePrivacyChanged(it)
+            editingHeartRatePrivacy = false
+        }
+    }
     if (editingHeartRate) {
         HeartRateProfileDialog(state.heartRate, actionPending, { editingHeartRate = false }) {
             callbacks.onHeartRateChanged(it)
@@ -215,7 +248,7 @@ internal fun SettingsScreen(
     if (confirmingRestore) {
         LocalDocumentDialog(
             title = "Replace local runway data?",
-            message = "Restoring a backup replaces every plan, activity, preference, and private note currently in runway. The app will restart after a successful restore.",
+            message = "Restoring a backup replaces every plan, activity, preference, and private note currently in runway. Folder and Health Connect imports are disconnected before restore and must be enabled again. The app restarts after a successful restore.",
             actionLabel = "Choose backup",
             actionPending = actionPending,
             onDismiss = { confirmingRestore = false },

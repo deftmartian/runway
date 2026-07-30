@@ -1,5 +1,6 @@
 package dev.deftmartian.runway.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -15,6 +16,9 @@ data class ProfileSettingsEntity(
     @PrimaryKey val singletonId: Int = SINGLETON_ID,
     val timeZone: String,
     val routeDataMode: String,
+    /** Whether imported heart-rate summaries and detailed samples may be retained. */
+    @ColumnInfo(defaultValue = "'private'")
+    val heartRateDataMode: String = "discard",
     val heartRateSettingsSource: String,
     val maxHeartRateBpm: Int?,
     val zone2FloorBpm: Int?,

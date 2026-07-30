@@ -15,6 +15,7 @@ class LocalGpxImportRepositoryMappingTest {
             activity(),
             nowEpochMillis = 1234,
             retainRoute = true,
+            retainHeartRate = true,
         )
 
         assertEquals("gpx", entity.source)
@@ -29,11 +30,12 @@ class LocalGpxImportRepositoryMappingTest {
     }
 
     @Test
-    fun `discard mode retains totals and heart rate but never route samples or endpoints`() {
+    fun `discard modes retain totals but omit route and heart-rate evidence`() {
         val entity = localGpxActivityEntity(
             activity(),
             nowEpochMillis = 1234,
             retainRoute = false,
+            retainHeartRate = false,
         )
 
         assertEquals(500, entity.distanceMeters)
@@ -41,8 +43,10 @@ class LocalGpxImportRepositoryMappingTest {
         assertEquals(0, entity.routePointCount)
         assertFalse(entity.routeTraceRetained)
         assertTrue(entity.routeStartEndRedacted)
-        assertEquals(1, entity.heartRatePointCount)
-        assertTrue(entity.heartRateSeriesRetained)
+        assertEquals(null, entity.averageHeartRateBpm)
+        assertEquals(null, entity.maxHeartRateBpm)
+        assertEquals(0, entity.heartRatePointCount)
+        assertFalse(entity.heartRateSeriesRetained)
     }
 
     @Test

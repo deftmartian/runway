@@ -2,39 +2,66 @@ package dev.deftmartian.runway
 
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
-import android.view.View
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.view.ViewCompat
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class ShareReceiverActivity : ComponentActivity() {
-    private lateinit var status: TextView
+    private var status by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val content = buildContent()
-        setContentView(content)
-        EdgeToEdgeLayout.applySystemBarPadding(content)
+        status = getString(R.string.share_checking)
+        setContent {
+            RunwayTheme {
+                ShareReceiverScreen(
+                    status = status,
+                    onOpenRunway = {
+                        startActivity(Intent(this, MainActivity::class.java))
+                        finish()
+                    },
+                    onClose = ::finish,
+                )
+            }
+        }
         inspectSharedFile()
     }
 
     private fun inspectSharedFile() {
         val uri = resolveSingleContentUri()
         if (intent.action != Intent.ACTION_SEND || uri == null) {
-            status.setText(R.string.share_rejected)
+            status = getString(R.string.share_rejected)
             return
         }
 
@@ -45,7 +72,7 @@ class ShareReceiverActivity : ComponentActivity() {
             Intent.FLAG_GRANT_READ_URI_PERMISSION,
         )
         if (permission != PackageManager.PERMISSION_GRANTED) {
-            status.setText(R.string.share_rejected)
+            status = getString(R.string.share_rejected)
             return
         }
 
@@ -53,7 +80,7 @@ class ShareReceiverActivity : ComponentActivity() {
             val result = withContext(Dispatchers.IO) {
                 oneOffGpxStatus(OneOffGpxImport.importUri(this@ShareReceiverActivity, uri))
             }
-            if (!isDestroyed) status.setText(result)
+            if (!isDestroyed) status = getString(result)
         }
     }
 
@@ -74,51 +101,42 @@ class ShareReceiverActivity : ComponentActivity() {
     } else {
         intent.getParcelableExtra(Intent.EXTRA_STREAM)
     }
+}
 
-    private fun buildContent(): View {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(24), dp(24), dp(32))
+@androidx.compose.runtime.Composable
+private fun ShareReceiverScreen(
+    status: String,
+    onOpenRunway: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .safeDrawingPadding()
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.share_title),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = status,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = onOpenRunway,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) { Text(stringResource(R.string.open_runway)) }
+            OutlinedButton(
+                onClick = onClose,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) { Text(stringResource(R.string.close)) }
         }
-        content.addView(TextView(this).apply {
-            setText(R.string.share_title)
-            textSize = 24f
-            setTypeface(typeface, Typeface.BOLD)
-            ViewCompat.setAccessibilityHeading(this, true)
-        })
-        status = TextView(this).apply {
-            setText(R.string.share_checking)
-            textSize = 16f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).also { it.topMargin = dp(16) }
-        }
-        content.addView(status)
-        content.addView(Button(this).apply {
-            setText(R.string.open_runway)
-            isAllCaps = false
-            setOnClickListener {
-                startActivity(Intent(this@ShareReceiverActivity, MainActivity::class.java))
-                finish()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).also { it.topMargin = dp(24) }
-        })
-        content.addView(Button(this).apply {
-            setText(R.string.close)
-            isAllCaps = false
-            setOnClickListener { finish() }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).also { it.topMargin = dp(8) }
-        })
-        return content
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
 }

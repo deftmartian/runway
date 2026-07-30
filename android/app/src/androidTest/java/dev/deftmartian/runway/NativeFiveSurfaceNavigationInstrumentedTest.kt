@@ -43,13 +43,14 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onLoadMoreInbox = {},
                     onLoadActivityTrace = {},
                     onOpenHistoryDetail = { destination = NativeDestination.HistoryDetail },
-                    onRefresh = {},
+                    onRetryOpen = {},
                     onAction = {},
                     onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
                     onApplyPlanDecisionPreview = {}, onDismissPlanDecisionPreview = {},
                     onOpenFolder = {},
                     onImportGpx = {}, onOpenHealthConnect = {}, onCreateBackup = {}, onRestoreBackup = {},
                     onExportData = {}, onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {},
                     onHeartRateChanged = {}, onHealthContextChanged = {}, onEraseImportedActivityData = {},
                     onEraseAllData = {},
                 )
@@ -63,12 +64,18 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         assertSurface("Settings", "Private training preferences and local data.")
 
         selectSurface("History")
+        compose.onNodeWithText("Plan options").performClick()
         compose.onNodeWithText("Open plan record").performClick()
         compose.onNodeWithText("Test goal").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to History").performClick()
         compose.onNodeWithText("Current and past training plans.").assertIsDisplayed()
 
         selectSurface("Settings")
+        compose.onNodeWithText("Privacy").assertIsDisplayed()
+        compose.onNodeWithText("Heart-rate privacy").performClick()
+        compose.onNodeWithText("Discard imported heart-rate values").performClick()
+        compose.onNodeWithText("Discard stored heart rate").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Build revision"))
         compose.onNodeWithText("Build revision").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("This phone only"))
@@ -139,7 +146,13 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             offset = null,
             pageSize = null,
         ))
-        NativeDestination.Settings -> NativeSurface.Settings(NativeSettingsState(appVersion = "test", sourceCommit = "test"))
+        NativeDestination.Settings -> NativeSurface.Settings(
+            NativeSettingsState(
+                heartRatePrivacy = NativeHeartRatePrivacy.KeepPrivate,
+                appVersion = "test",
+                sourceCommit = "test",
+            ),
+        )
         NativeDestination.HistoryDetail -> NativeSurface.HistoryDetail(NativeHistoryDetailPayload(
             onboardingRequired = false,
             detail = NativeHistoryDetail(

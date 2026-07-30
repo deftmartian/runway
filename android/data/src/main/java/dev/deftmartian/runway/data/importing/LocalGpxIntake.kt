@@ -142,18 +142,21 @@ object LocalGpxIntake {
 
     private fun weightedAverage(points: List<MetricPoint>): Double {
         if (points.size == 1) return points.first().value
-        var weighted = 0.0; var seconds = 0.0
+        var weighted = 0.0
+        var seconds = 0.0
         points.zipWithNext().forEach { (first, second) ->
             if (first.segment == second.segment) {
                 val delta = max(0.0, (second.epochMillis - first.epochMillis) / 1_000.0)
-                weighted += ((first.value + second.value) / 2) * delta; seconds += delta
+                weighted += ((first.value + second.value) / 2) * delta
+                seconds += delta
             }
         }
         return if (seconds > 0) weighted / seconds else points.first().value
     }
 
     private fun derivedSpeed(points: List<RoutePoint>, index: Int): Double? {
-        val current = points[index]; val next = points.getOrNull(index + 1) ?: return null
+        val current = points[index]
+        val next = points.getOrNull(index + 1) ?: return null
         if (current.segment != next.segment) return null
         val seconds = (next.epochMillis - current.epochMillis) / 1_000.0
         return if (seconds <= 0) null else round(haversine(current.latitude, current.longitude, next.latitude, next.longitude) / seconds, 2)
@@ -171,10 +174,18 @@ object LocalGpxIntake {
         .getOrElse { fail("GPX track point is missing a valid timestamp.") }
     private fun localName(value: String?): String = value.orEmpty().substringAfterLast(':').lowercase()
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it.toInt() and 0xff) }
-    private fun round(it: Double, decimals: Int): Double { val scale = Math.pow(10.0, decimals.toDouble()); return (it * scale).roundToInt() / scale }
+    private fun round(it: Double, decimals: Int): Double {
+        val scale = Math.pow(10.0, decimals.toDouble())
+        return (it * scale).roundToInt() / scale
+    }
+
     private fun haversine(aLat: Double, aLon: Double, bLat: Double, bLon: Double): Double {
-        val dLat = Math.toRadians(bLat - aLat); val dLon = Math.toRadians(bLon - aLon)
-        val h = min(1.0, max(0.0, sin(dLat / 2) * sin(dLat / 2) + cos(Math.toRadians(aLat)) * cos(Math.toRadians(bLat)) * sin(dLon / 2) * sin(dLon / 2)))
+        val dLat = Math.toRadians(bLat - aLat)
+        val dLon = Math.toRadians(bLon - aLon)
+        val latitudeTerm = sin(dLat / 2) * sin(dLat / 2)
+        val longitudeTerm =
+            cos(Math.toRadians(aLat)) * cos(Math.toRadians(bLat)) * sin(dLon / 2) * sin(dLon / 2)
+        val h = min(1.0, max(0.0, latitudeTerm + longitudeTerm))
         return 6_371_000 * 2 * atan2(sqrt(h), sqrt(1 - h))
     }
     private fun fail(message: String): Nothing = throw LocalGpxImportException(message)
@@ -240,7 +251,10 @@ object LocalGpxIntake {
             if (name != "trkpt") return
             val point = current ?: fail("GPX file contains an invalid track point.")
             val timestamp = point.time ?: fail("GPX track point is missing a valid timestamp.")
-            if (previousTime != null && timestamp < previousTime!!) fail("GPX track point timestamps must be chronological.")
+            val previousTimestamp = previousTime
+            if (previousTimestamp != null && timestamp < previousTimestamp) {
+                fail("GPX track point timestamps must be chronological.")
+            }
             previousTime = timestamp
             val snapshot = PointSnapshot(point.latitude, point.longitude, point.elevation, timestamp, point.segment)
             previousInSegment?.let { prior ->
@@ -260,20 +274,49 @@ object LocalGpxIntake {
             LocalGpxIntake.localName(localName?.takeIf { it.isNotBlank() } ?: qName)
     }
 
-    private data class PointBuilder(val latitude: Double, val longitude: Double, val segment: Int, var time: Long? = null, var elevation: Double? = null, var heartRate: Double? = null, var cadence: Double? = null, var speed: Double? = null)
+    private data class PointBuilder(
+        val latitude: Double,
+        val longitude: Double,
+        val segment: Int,
+        var time: Long? = null,
+        var elevation: Double? = null,
+        var heartRate: Double? = null,
+        var cadence: Double? = null,
+        var speed: Double? = null,
+    )
     private data class PointSnapshot(val latitude: Double, val longitude: Double, val elevation: Double?, val epochMillis: Long, val segment: Int)
     private data class RoutePoint(val latitude: Double, val longitude: Double, val epochMillis: Long, val segment: Int, val speed: Double?)
     private data class MetricPoint(val epochMillis: Long, val segment: Int, val value: Double)
 }
 
 data class LocalGpxActivity(
-    val sourceSha256: String, val dedupeMaterial: String, val startedAtEpochMillis: Long,
-    val durationSeconds: Int, val distanceMeters: Int, val elevationGainMeters: Int, val pointCount: Int,
-    val averageHeartRate: Int?, val maxHeartRate: Int?, val averageCadence: Int?, val averageSpeedMetersPerSecond: Double?,
-    val route: List<LocalRoutePoint>, val heartRate: List<LocalHeartRatePoint>,
+    val sourceSha256: String,
+    val dedupeMaterial: String,
+    val startedAtEpochMillis: Long,
+    val durationSeconds: Int,
+    val distanceMeters: Int,
+    val elevationGainMeters: Int,
+    val pointCount: Int,
+    val averageHeartRate: Int?,
+    val maxHeartRate: Int?,
+    val averageCadence: Int?,
+    val averageSpeedMetersPerSecond: Double?,
+    val route: List<LocalRoutePoint>,
+    val heartRate: List<LocalHeartRatePoint>,
 )
-data class LocalRoutePoint(val latitudeE6: Int, val longitudeE6: Int, val elapsedSeconds: Int, val segmentIndex: Int, val speedMetersPerSecond: Double?)
-data class LocalHeartRatePoint(val elapsedSeconds: Int, val bpm: Int)
+
+data class LocalRoutePoint(
+    val latitudeE6: Int,
+    val longitudeE6: Int,
+    val elapsedSeconds: Int,
+    val segmentIndex: Int,
+    val speedMetersPerSecond: Double?,
+)
+
+data class LocalHeartRatePoint(
+    val elapsedSeconds: Int,
+    val bpm: Int,
+)
 enum class LocalGpxImportFailure { INVALID_FILE, TOO_LARGE }
 
 class LocalGpxImportException(
@@ -283,9 +326,23 @@ class LocalGpxImportException(
 
 private class ByteQuotaInputStream(input: InputStream, private val limit: Long) : FilterInputStream(input) {
     private var read = 0L
-    override fun read(): Int { val value = super.read(); if (value >= 0) count(1); return value }
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int { val count = super.read(buffer, offset, length); if (count > 0) this.count(count.toLong()); return count }
-    private fun count(delta: Long) { read += delta; if (read > limit) throw ByteQuotaExceededException() }
+
+    override fun read(): Int {
+        val value = super.read()
+        if (value >= 0) count(1)
+        return value
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val count = super.read(buffer, offset, length)
+        if (count > 0) this.count(count.toLong())
+        return count
+    }
+
+    private fun count(delta: Long) {
+        read += delta
+        if (read > limit) throw ByteQuotaExceededException()
+    }
 }
 private class ByteQuotaExceededException : RuntimeException()
 
@@ -303,7 +360,10 @@ private class DoctypeRejectingInputStream(input: InputStream) : FilterInputStrea
         recent.append(value.toChar().uppercaseChar())
         if (recent.length > 9) recent.deleteCharAt(0)
         if (inComment) {
-            if (recent.endsWith("-->")) { inComment = false; recent.clear() }
+            if (recent.endsWith("-->")) {
+                inComment = false
+                recent.clear()
+            }
             return
         }
         if (inCdata) {
@@ -313,8 +373,16 @@ private class DoctypeRejectingInputStream(input: InputStream) : FilterInputStrea
             }
             return
         }
-        if (recent.endsWith("<!--")) { inComment = true; recent.clear(); return }
-        if (recent.endsWith("<![CDATA[")) { inCdata = true; recent.clear(); return }
+        if (recent.endsWith("<!--")) {
+            inComment = true
+            recent.clear()
+            return
+        }
+        if (recent.endsWith("<![CDATA[")) {
+            inCdata = true
+            recent.clear()
+            return
+        }
         if (recent.endsWith("<!DOCTYPE") || recent.endsWith("<!ENTITY")) throw DoctypeRejectedException()
     }
 }

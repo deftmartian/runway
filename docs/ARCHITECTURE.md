@@ -20,7 +20,7 @@ Room persists the profile, plans, generated/current workouts, actual activity le
 
 Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
 
-Released Room schemas require explicit migration and upgrade tests. New unreleased schema work may be corrected before release; never invent a timestamp-based migration lineage.
+Released Room schemas require explicit migration and upgrade tests. The v1-to-v2 migration preserves heart-rate data already stored by a released build under explicit private retention; fresh profiles still default to discard. Restore accepts exact released schema identities, upgrades a v1 backup through that same immutable migration, and is tested for a second no-op preparation. New unreleased schema work may be corrected before release; never invent a timestamp-based migration lineage.
 
 ## Imports
 
@@ -32,9 +32,9 @@ Folder scans, one-off GPX intake, foreground/background Health Connect sync, des
 
 ## Privacy and data management
 
-Route retention is an explicit local profile choice. Discarding routes removes retained samples and pending route samples in the same local operation. Heart-rate data is descriptive context and never changes a plan by itself.
+Route and imported-heart-rate retention are separate local profile choices. Discarding either removes its retained summaries/samples and pending import evidence in the same local operation. Heart-rate profile values are optional display context and never change a plan by themselves.
 
-Auto Backup is disabled. Backup/export is an explicit user action. The app warns that its local artifacts are plaintext and sensitive; it does not claim encryption it does not provide. Restore must validate a bounded candidate before replacing the current ledger and must leave the old state untouched on a failed validation.
+Auto Backup is disabled. Backup/export is an explicit user action. The app warns that its local artifacts are plaintext and sensitive; it does not claim encryption it does not provide. Restore validates a bounded candidate before replacing the current ledger, disconnects import sources before installation, and leaves the old ledger untouched on failed validation.
 
 ## Native delivery
 

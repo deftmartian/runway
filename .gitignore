@@ -20,6 +20,8 @@ signing.properties
 *.sqlite3
 *.db
 *.backup
+# The default readable export contains private training history and notes.
+runway-training-export*.json
 
 # Local tooling
 .env

@@ -188,3 +188,15 @@ then
     "Runner output did not contain a success marker."
   exit 1
 fi
+
+screenshot_directory="$RUNNER_TEMP/runway-native-screenshots"
+mkdir -p "$screenshot_directory"
+for screenshot in calendar-dark inbox-light stats-light settings-dark; do
+  output="$screenshot_directory/$screenshot.png"
+  run_bounded 30 adb -s "$serial" exec-out run-as dev.deftmartian.runway.debug \
+    cat "files/documentation-screenshots/$screenshot.png" >"$output"
+  test -s "$output" || {
+    echo "::error title=Native screenshot missing::$output was not captured by instrumentation."
+    exit 1
+  }
+done

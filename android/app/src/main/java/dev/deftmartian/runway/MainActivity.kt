@@ -32,9 +32,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                runwayViewModel.effects.collect { effect ->
-                    when (effect) {
-                        RunwayUiEffect.RestartAfterRestore -> restartAfterRestore()
+                runwayViewModel.restartAfterRestore.collect { restartRequired ->
+                    if (restartRequired) {
+                        runwayViewModel.consumeRestartAfterRestore()
+                        restartAfterRestore()
                     }
                 }
             }
@@ -49,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     onLoadMoreInbox = runwayViewModel::loadMoreInbox,
                     onLoadActivityTrace = runwayViewModel::loadActivityTrace,
                     onOpenHistoryDetail = runwayViewModel::openHistoryDetail,
-                    onRefresh = runwayViewModel::refresh,
+                    onRetryOpen = runwayViewModel::refresh,
                     onAction = runwayViewModel::submitAction,
                     onApplyWorkoutPreview = runwayViewModel::applyWorkoutPreview,
                     onDismissWorkoutPreview = runwayViewModel::dismissWorkoutPreview,
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
                     onExportData = { exportCreator.launch("runway-training-export.json") },
                     onTimeZoneChanged = runwayViewModel::updateTimeZone,
                     onRoutePrivacyChanged = runwayViewModel::updateRoutePrivacy,
+                    onHeartRatePrivacyChanged = runwayViewModel::updateHeartRatePrivacy,
                     onHeartRateChanged = runwayViewModel::updateHeartRate,
                     onHealthContextChanged = runwayViewModel::updateHealthContext,
                     onEraseImportedActivityData = runwayViewModel::eraseImportedActivityData,

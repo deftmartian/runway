@@ -66,27 +66,10 @@ data class LocalImportedActivityEraseResult(
 const val PLAINTEXT_BACKUP_WARNING =
     "This file is plaintext. It can contain your training history, notes, route data, and heart-rate data. Store and share it carefully."
 
-/** Presentation-independent result for callers that must never turn a rejected restore into success. */
-data class LocalDocumentUserOutcome(
-    val succeeded: Boolean,
-    val message: String,
-    val restartRequired: Boolean = false,
-)
-
-fun LocalBackupResult.toUserOutcome(): LocalDocumentUserOutcome = when (this) {
-    is LocalBackupResult.Created -> LocalDocumentUserOutcome(true, "Backup created.")
-    is LocalBackupResult.Rejected -> LocalDocumentUserOutcome(false, reason)
-}
-
-fun LocalRestoreResult.toUserOutcome(): LocalDocumentUserOutcome = when (this) {
-    is LocalRestoreResult.Restored -> LocalDocumentUserOutcome(true, "Backup restored.", restartRequired)
-    is LocalRestoreResult.Rejected -> LocalDocumentUserOutcome(false, reason, restartRequired)
-    is LocalRestoreResult.RecoveryRequired -> LocalDocumentUserOutcome(false, reason, restartRequired = true)
-}
-
 /**
  * Destructive local-ledger operations. Device grants and Health Connect permissions are owned by
- * the app layer and are revoked only after this transaction succeeds.
+ * the app layer. Callers close acquisition before erase or restore so stale source state cannot
+ * repopulate the ledger.
  *
  * Backup and restore deliberately use Android's Storage Access Framework URI supplied by the UI.
  * The selected document is local plaintext; no custom cryptography is involved. A restore closes
@@ -127,9 +110,9 @@ class LocalDataManagementRepository(
             LocalBackupResult.Created(bytes)
         } catch (error: CancellationException) {
             throw error
-        } catch (error: Exception) {
+        } catch (_: Exception) {
             LocalBackupResult.Rejected(
-                "Could not create the local SQLite backup: ${error.message ?: "unknown error"}",
+                "The backup could not be created. Choose another location and try again.",
             )
         } finally {
             snapshot.delete()
@@ -145,15 +128,19 @@ class LocalDataManagementRepository(
         val candidate = temporaryFile(context, "restore-candidate")
         try {
             val bytes = copyDocumentBounded(context.contentResolver, source, candidate)
-            val validationError = validateCandidate(candidate)
+            val validationError = LocalRestoreCandidate.prepare(candidate)
             if (validationError != null) return@withContext LocalRestoreResult.Rejected(validationError)
             replaceInstalledDatabase(context, candidate, bytes)
         } catch (error: CancellationException) {
             throw error
-        } catch (error: IllegalArgumentException) {
-            LocalRestoreResult.Rejected(error.message ?: "The backup is not valid.")
-        } catch (error: Exception) {
-            LocalRestoreResult.Rejected("Could not read or validate the selected backup: ${error.message ?: "unknown error"}")
+        } catch (_: IllegalArgumentException) {
+            LocalRestoreResult.Rejected(
+                "The backup is not valid or is outside the supported size limit.",
+            )
+        } catch (_: Exception) {
+            LocalRestoreResult.Rejected(
+                "The selected backup could not be read or validated. Choose a Runway backup and try again.",
+            )
         } finally {
             candidate.delete()
         }
@@ -232,30 +219,6 @@ class LocalDataManagementRepository(
         return total
     }
 
-    private fun validateCandidate(candidate: File): String? {
-        val header = ByteArray(LocalBackupFormat.SQLITE_HEADER_LENGTH)
-        FileInputStream(candidate).use { input ->
-            if (input.read(header) != header.size || !LocalBackupFormat.hasSqliteHeader(header)) {
-                return "The selected file is not a SQLite 3 database."
-            }
-        }
-        return try {
-            SQLiteDatabase.openDatabase(candidate.path, null, SQLiteDatabase.OPEN_READONLY).use { sqlite ->
-                val integrity = sqlite.stringQuery("PRAGMA integrity_check(1)")
-                if (integrity != "ok") return "SQLite integrity check failed: $integrity"
-                if (sqlite.version != RunwayLedgerDatabase.SCHEMA_VERSION) {
-                    return "This backup uses database version ${sqlite.version}, but this app requires version ${RunwayLedgerDatabase.SCHEMA_VERSION}."
-                }
-                val identity = sqlite.stringQuery("SELECT identity_hash FROM room_master_table WHERE id = 42")
-                    ?: return "This database does not contain Room schema identity information."
-                if (identity != RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH) return "This backup belongs to a different Runway database schema."
-                null
-            }
-        } catch (error: Exception) {
-            "The selected file could not be opened as a valid Runway backup: ${error.message ?: "unknown error"}"
-        }
-    }
-
     private fun replaceInstalledDatabase(context: Context, candidate: File, bytes: Long): LocalRestoreResult {
         val installed = context.getDatabasePath(RunwayLedgerDatabase.DATABASE_NAME)
         val directory = installed.parentFile ?: return LocalRestoreResult.Rejected("The app database directory is unavailable.")
@@ -267,7 +230,9 @@ class LocalDataManagementRepository(
         var hadInstalled = false
         return try {
             copyFile(candidate, staged)
-            check(validateCandidate(staged) == null) { "The staged restore database did not validate." }
+            check(LocalRestoreCandidate.currentSchemaError(staged) == null) {
+                "The staged restore database did not validate."
+            }
             database.close()
             databaseClosed = true
             deleteSidecars(installed)
@@ -289,7 +254,7 @@ class LocalDataManagementRepository(
             deleteSidecars(rollback)
             rollback.delete()
             LocalRestoreResult.Restored(bytes)
-        } catch (error: Exception) {
+        } catch (_: Exception) {
             if (replacementInstalled) {
                 val restored = if (hadInstalled && rollback.exists()) {
                     installed.delete() && rollback.renameTo(installed)
@@ -300,17 +265,18 @@ class LocalDataManagementRepository(
                 }
                 if (!restored) {
                     LocalRestoreResult.RecoveryRequired(
-                        "Restore failed after replacement and the previous local database could not be restored: ${error.message ?: "unknown error"}",
+                        "Runway could not restore the backup or put the previous local database back. " +
+                            "Close the app and recover from a separate backup before recording more training.",
                     )
                 } else {
                     LocalRestoreResult.Rejected(
-                        reason = "Restore failed and the previous local database was restored: ${error.message ?: "unknown error"}",
+                        reason = "Restore failed after replacement. The previous local database was put back.",
                         restartRequired = true,
                     )
                 }
             } else {
                 LocalRestoreResult.Rejected(
-                    reason = "Restore failed before replacement: ${error.message ?: "unknown error"}",
+                    reason = "Restore failed before replacement. The previous local database was kept.",
                     restartRequired = databaseClosed,
                 )
             }
@@ -363,10 +329,6 @@ class LocalDataManagementRepository(
     private fun deleteSidecars(databaseFile: File) {
         File("${databaseFile.path}-wal").delete()
         File("${databaseFile.path}-shm").delete()
-    }
-
-    private fun SQLiteDatabase.stringQuery(sql: String): String? = rawQuery(sql, emptyArray()).use { cursor ->
-        if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
     }
 
     private class CountingOutputStream(output: java.io.OutputStream) : FilterOutputStream(output) {

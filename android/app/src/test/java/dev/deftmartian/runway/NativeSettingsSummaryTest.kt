@@ -53,4 +53,84 @@ class NativeSettingsSummaryTest {
             ),
         )
     }
+
+    @Test
+    fun `heart rate discard is destructive only when changing away from retained values`() {
+        assertEquals(
+            true,
+            heartRatePrivacyChangeDeletesStoredData(
+                NativeHeartRatePrivacy.KeepPrivate,
+                NativeHeartRatePrivacy.Discard,
+            ),
+        )
+        assertEquals(
+            false,
+            heartRatePrivacyChangeDeletesStoredData(
+                NativeHeartRatePrivacy.Discard,
+                NativeHeartRatePrivacy.Discard,
+            ),
+        )
+    }
+
+    @Test
+    fun `age estimate uses the documented formulas and zone percentages`() {
+        assertEquals(
+            NativeHeartRateProfile(
+                source = NativeHeartRateSource.Estimated,
+                sexForEstimates = NativeSexForEstimate.Female,
+                ageYears = 40,
+                maxHeartRateBpm = 171,
+                zone2FloorBpm = 103,
+                zone3FloorBpm = 120,
+                zone4FloorBpm = 137,
+                zone5FloorBpm = 154,
+            ),
+            estimatedHeartRateProfile(40, NativeSexForEstimate.Female),
+        )
+        assertEquals(
+            180,
+            estimatedHeartRateProfile(
+                40,
+                NativeSexForEstimate.NotSpecified,
+            )?.maxHeartRateBpm,
+        )
+        assertEquals(
+            null,
+            estimatedHeartRateProfile(17, NativeSexForEstimate.Male),
+        )
+    }
+
+    @Test
+    fun `custom heart rate form uses the same bounds as local persistence`() {
+        assertEquals(
+            true,
+            customHeartRateValuesAreValid(
+                maxHeartRateBpm = 190,
+                zone2FloorBpm = 114,
+                zone3FloorBpm = 133,
+                zone4FloorBpm = 152,
+                zone5FloorBpm = 171,
+            ),
+        )
+        assertEquals(
+            false,
+            customHeartRateValuesAreValid(
+                maxHeartRateBpm = 230,
+                zone2FloorBpm = 225,
+                zone3FloorBpm = 226,
+                zone4FloorBpm = 227,
+                zone5FloorBpm = 228,
+            ),
+        )
+        assertEquals(
+            false,
+            customHeartRateValuesAreValid(
+                maxHeartRateBpm = 190,
+                zone2FloorBpm = 114,
+                zone3FloorBpm = 133,
+                zone4FloorBpm = 171,
+                zone5FloorBpm = 171,
+            ),
+        )
+    }
 }

@@ -3,6 +3,7 @@ package dev.deftmartian.runway
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -120,6 +121,50 @@ class AndroidStateCoordinatorTest {
         assertEquals(
             listOf("import entered", "import finished", "erase entered"),
             events,
+        )
+    }
+
+    @Test
+    fun `destructive boundary closes acquisition and requests cancellation before waiting for active import`() = runBlocking {
+        val importEntered = CompletableDeferred<Unit>()
+        val releaseImport = CompletableDeferred<Unit>()
+        val cancellationRequested = CompletableDeferred<Unit>()
+        val mutationEntered = CompletableDeferred<Unit>()
+
+        val activeImport = async(Dispatchers.Default) {
+            AndroidStateCoordinator.withImportDataBoundary {
+                importEntered.complete(Unit)
+                releaseImport.await()
+            }
+        }
+        importEntered.await()
+
+        val destructive = async(Dispatchers.Default) {
+            AndroidStateCoordinator.withDestructiveImportBoundary(
+                closeAcquisition = { cancellationRequested.complete(Unit) },
+            ) {
+                mutationEntered.complete(Unit)
+                "erased"
+            }
+        }
+
+        cancellationRequested.await()
+        assertFalse(mutationEntered.isCompleted)
+        val rejected = async(Dispatchers.Default) {
+            runCatching { AndroidStateCoordinator.withImportDataBoundary { "must not run" } }
+                .exceptionOrNull()
+        }.await()
+        assertSame(ImportAcquisitionClosedException::class.java, rejected?.javaClass)
+
+        releaseImport.complete(Unit)
+        withTimeout(2_000) {
+            assertEquals("erased", destructive.await())
+            activeImport.await()
+        }
+
+        assertEquals(
+            "open again",
+            AndroidStateCoordinator.withImportDataBoundary { "open again" },
         )
     }
 }

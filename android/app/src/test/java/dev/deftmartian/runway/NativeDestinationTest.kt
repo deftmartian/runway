@@ -6,7 +6,7 @@ import org.junit.Test
 
 class NativeDestinationTest {
     @Test
-    fun `primary mobile navigation matches the web product surfaces`() {
+    fun `primary navigation keeps the five product surfaces`() {
         assertEquals(
             listOf("Calendar", "Inbox", "Stats", "History", "Settings"),
             NativeDestination.entries

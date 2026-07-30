@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.deftmartian.runway.data.ACTIVITY_REVIEW_STATE_ACCEPTED
 import dev.deftmartian.runway.data.ActivityEntity
+import dev.deftmartian.runway.data.HeartRateDataMode
 import dev.deftmartian.runway.data.LocalPrivacyRepository
 import dev.deftmartian.runway.data.ProfileSettingsEntity
 import dev.deftmartian.runway.data.RouteDataMode
@@ -52,6 +53,41 @@ class LocalHealthConnectRepositoryInstrumentedTest {
             LocalHealthConnectOutcome.Unchanged("record-1"),
             (repository.reconcile("provider", running()) as LocalHealthConnectPersistenceResult.Applied).outcome,
         )
+    }
+
+    @Test
+    fun discardingHeartRateRemovesImportedAggregatesSeriesAndPendingCorrectionEvidence() = runBlocking {
+        database.profileSettingsDao().save(profile(routeDataMode = "private").copy(heartRateDataMode = "private"))
+        val repository = LocalHealthConnectRepository(database) { 100L }
+        val initial = (repository.reconcile("provider", running(recordId = "heart-rate")) as LocalHealthConnectPersistenceResult.Applied)
+            .outcome as LocalHealthConnectOutcome.NewReview
+        val activityId = initial.activity.activityId
+        assertEquals(145, database.activityLedgerDao().activity(activityId)?.averageHeartRateBpm)
+        assertTrue(database.activityLedgerDao().heartRateSamples(activityId, 10).isNotEmpty())
+
+        database.activityLedgerDao().saveActivity(
+            requireNotNull(database.activityLedgerDao().activity(activityId)).copy(
+                reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
+                acceptedAtEpochMillis = 101L,
+            ),
+        )
+        repository.reconcile("provider", running(recordId = "heart-rate", distanceMeters = 5_100))
+        assertTrue(database.importLedgerDao().pendingHealthConnectHeartRateSamples(initial.mapping.mappingId, 10).isNotEmpty())
+
+        LocalPrivacyRepository(database) { 102L }.updateHeartRateDataMode(HeartRateDataMode.Discard)
+
+        val redacted = requireNotNull(database.activityLedgerDao().activity(activityId))
+        assertNull(redacted.averageHeartRateBpm)
+        assertNull(redacted.maxHeartRateBpm)
+        assertEquals(0, redacted.heartRatePointCount)
+        assertEquals(0, redacted.heartRateSourceSampleCount)
+        assertFalse(redacted.heartRateSeriesRetained)
+        assertTrue(database.activityLedgerDao().heartRateSamples(activityId, 10).isEmpty())
+        val pending = requireNotNull(database.importLedgerDao().pendingHealthConnectObservation(initial.mapping.mappingId))
+        assertNull(pending.averageHeartRateBpm)
+        assertNull(pending.maxHeartRateBpm)
+        assertEquals(0, pending.heartRateSourceSampleCount)
+        assertTrue(database.importLedgerDao().pendingHealthConnectHeartRateSamples(initial.mapping.mappingId, 10).isEmpty())
     }
 
     @Test

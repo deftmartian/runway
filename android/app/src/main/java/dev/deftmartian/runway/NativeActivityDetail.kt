@@ -87,6 +87,10 @@ internal fun ImportedActivityDetailSheet(
 
             if (activity.reviewState == "review") {
                 Text("Review")
+                Text(
+                    "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (candidates.isEmpty()) {
                     Text("No open planned workout is available for this imported run.")
                 } else {
@@ -117,8 +121,8 @@ internal fun ImportedActivityDetailSheet(
             }
 
             Text("Correct recorded feedback")
-            CheckRow("Felt harder than expected", feltHard) { feltHard = it }
-            CheckRow("Pain occurred during or after this run", pain) { pain = it }
+            CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
+            CheckRow("Pain during or after this run", pain) { pain = it }
             OutlinedButton(
                 onClick = {
                     onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard, pain))
@@ -320,7 +324,10 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
     if (points.size < 2) return
     val lats = points.map { requireNotNull(it.latitudeE6).toFloat() }
     val lons = points.map { requireNotNull(it.longitudeE6).toFloat() }
-    val minLat = lats.min(); val maxLat = lats.max(); val minLon = lons.min(); val maxLon = lons.max()
+    val minLat = lats.min()
+    val maxLat = lats.max()
+    val minLon = lons.min()
+    val maxLon = lons.max()
     val meanLatitudeRadians =
         ((minLat + maxLat).toDouble() / 2.0 / 1_000_000.0) * (PI / 180.0)
     val longitudeScale = cos(meanLatitudeRadians).coerceAtLeast(0.01).toFloat()
@@ -363,8 +370,14 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
         points.zipWithNext().forEach { (left, right) ->
             drawLine(
                 color = routeColor,
-                start = project(left.latitudeE6!!.toFloat(), left.longitudeE6!!.toFloat()),
-                end = project(right.latitudeE6!!.toFloat(), right.longitudeE6!!.toFloat()),
+                start = project(
+                    requireNotNull(left.latitudeE6).toFloat(),
+                    requireNotNull(left.longitudeE6).toFloat(),
+                ),
+                end = project(
+                    requireNotNull(right.latitudeE6).toFloat(),
+                    requireNotNull(right.longitudeE6).toFloat(),
+                ),
                 strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round,
             )
         }
@@ -374,10 +387,16 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
         drawCircle(
             color = routeColor,
             radius = markerRadius,
-            center = project(start.latitudeE6!!.toFloat(), start.longitudeE6!!.toFloat()),
+            center = project(
+                requireNotNull(start.latitudeE6).toFloat(),
+                requireNotNull(start.longitudeE6).toFloat(),
+            ),
             style = Stroke(width = 2.dp.toPx()),
         )
-        val endCenter = project(end.latitudeE6!!.toFloat(), end.longitudeE6!!.toFloat())
+        val endCenter = project(
+            requireNotNull(end.latitudeE6).toFloat(),
+            requireNotNull(end.longitudeE6).toFloat(),
+        )
         drawRect(
             color = routeColor,
             topLeft = Offset(endCenter.x - markerRadius, endCenter.y - markerRadius),

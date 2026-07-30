@@ -7,9 +7,20 @@ enum class RouteDataMode(val storageValue: String) {
     Discard("discard"),
 }
 
+/** Imported heart-rate evidence is optional and remains local when retained. */
+enum class HeartRateDataMode(val storageValue: String) {
+    Private("private"),
+    Discard("discard"),
+}
+
 sealed interface RouteDataModeUpdate {
     data class Updated(val mode: RouteDataMode) : RouteDataModeUpdate
     data object ProfileNotConfigured : RouteDataModeUpdate
+}
+
+sealed interface HeartRateDataModeUpdate {
+    data class Updated(val mode: HeartRateDataMode) : HeartRateDataModeUpdate
+    data object ProfileNotConfigured : HeartRateDataModeUpdate
 }
 
 /**
@@ -40,5 +51,30 @@ class LocalPrivacyRepository(
                 ),
             )
             RouteDataModeUpdate.Updated(mode)
+        }
+
+    /**
+     * Switching to discard irreversibly removes activity-level imported heart-rate aggregates,
+     * counts, and detailed samples, including values held for a pending Health Connect correction.
+     * Zone and profile settings remain intact.
+     */
+    suspend fun updateHeartRateDataMode(mode: HeartRateDataMode): HeartRateDataModeUpdate =
+        database.withTransaction {
+            val profileDao = database.profileSettingsDao()
+            val profile = profileDao.get() ?: return@withTransaction HeartRateDataModeUpdate.ProfileNotConfigured
+
+            if (mode == HeartRateDataMode.Discard) {
+                database.activityLedgerDao().markAllHeartRateDataDiscarded()
+                database.activityLedgerDao().clearAllHeartRateSamples()
+                database.importLedgerDao().clearAllPendingHealthConnectHeartRateSamples()
+                database.importLedgerDao().redactAllPendingHealthConnectHeartRateData()
+            }
+            profileDao.save(
+                profile.copy(
+                    heartRateDataMode = mode.storageValue,
+                    updatedAtEpochMillis = nowEpochMillis(),
+                ),
+            )
+            HeartRateDataModeUpdate.Updated(mode)
         }
 }

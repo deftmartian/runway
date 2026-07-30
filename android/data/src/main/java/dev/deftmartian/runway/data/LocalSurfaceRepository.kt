@@ -376,6 +376,7 @@ data class LocalHistoryReadModel(
 data class LocalProfileReadModel(
     val timeZone: String,
     val routeDataMode: String,
+    val heartRateDataMode: String,
     val availabilityDays: List<Int>,
     val recentInjury: Boolean,
     val currentPain: Boolean,
@@ -383,6 +384,8 @@ data class LocalProfileReadModel(
     val medicalRestriction: Boolean,
     val privateNotes: String?,
     val heartRateSettingsSource: String,
+    val sexForEstimates: String,
+    val ageYears: Int?,
     val maxHeartRateBpm: Int?,
     val zone2FloorBpm: Int?,
     val zone3FloorBpm: Int?,
@@ -1064,6 +1067,7 @@ object LocalSurfaceMappers {
             LocalProfileReadModel(
                 timeZone = it.timeZone,
                 routeDataMode = it.routeDataMode,
+                heartRateDataMode = it.heartRateDataMode,
                 availabilityDays = slice.availabilityDays.map(ProfileAvailabilityDayEntity::dayOfWeek).sorted(),
                 recentInjury = it.recentInjury,
                 currentPain = it.currentPain,
@@ -1071,6 +1075,8 @@ object LocalSurfaceMappers {
                 medicalRestriction = it.medicalRestriction,
                 privateNotes = it.privateNotes,
                 heartRateSettingsSource = it.heartRateSettingsSource,
+                sexForEstimates = it.sexForEstimates,
+                ageYears = it.ageYears,
                 maxHeartRateBpm = it.maxHeartRateBpm,
                 zone2FloorBpm = it.zone2FloorBpm,
                 zone3FloorBpm = it.zone3FloorBpm,

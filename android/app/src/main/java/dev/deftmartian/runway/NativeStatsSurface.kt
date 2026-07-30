@@ -79,14 +79,14 @@ internal fun noActiveStatsSummary(
     return NativeNoActiveStatsSummary(status, recorded, acceptedHeartRate)
 }
 
-/** Mirrors the web Stats gate: plans become comparable only after recorded work exists. */
+/** Plans become comparable only after recorded work exists. */
 internal fun hasRecordedStatsHistory(history: NativeTrainingHistory?): Boolean =
     (history?.recordedSummary?.totalRuns ?: 0) > 0 ||
         history?.hasAcceptedActivities == true ||
         (history?.recentFeedbackCount ?: 0) > 0
 
 /**
- * Native equivalent of the web stats trace: generated recommendation, the runner's current
+ * Shows the generated recommendation, the runner's current
  * editable plan, and only accepted actual activity.  The table-like ledger below each chart is
  * deliberately retained for TalkBack and for runners who need exact values rather than a shape.
  */
@@ -371,7 +371,7 @@ private fun NativeAcceptedContext(summaries: List<NativeWeekSummary>) {
             val label = "Week ${week.weekNumber ?: 0}"
             week.averagePaceSecondsPerKm?.let { SettingRow("$label · average pace", formatPace(it)) }
             week.averageHeartRate?.let { SettingRow("$label · average heart rate", "$it bpm") }
-            if ((week.hardFlags ?: 0) > 0) SettingRow("$label · reported hard effort", week.hardFlags.toString())
+            if ((week.hardFlags ?: 0) > 0) SettingRow("$label · felt harder than expected", week.hardFlags.toString())
             if ((week.painFlags ?: 0) > 0) SettingRow("$label · reported pain", week.painFlags.toString())
         }
     }

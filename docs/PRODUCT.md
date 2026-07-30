@@ -47,7 +47,7 @@ Onboarding is a focused setup flow, not a sixth destination.
 
 Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Import is review-first. A candidate can be linked to planned work, counted as extra work, changed, or deleted before it affects actual totals or future decisions.
 
-GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Route and heart-rate retention choices are local and explicit.
+GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data.
 
 Backup/export is explicit and plaintext. It is a user-owned recovery and portability tool, not sync.
 

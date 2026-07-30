@@ -105,7 +105,10 @@ internal fun InboxScreen(
                         title = "Needs review",
                         actions = {
                             Button(
-                                onClick = { selectedActivity = activity; activity.id?.let(onLoadActivityTrace) },
+                                onClick = {
+                                    selectedActivity = activity
+                                    activity.id?.let(onLoadActivityTrace)
+                                },
                                 enabled = !actionPending,
                             ) {
                                 Text("Review")
@@ -124,7 +127,10 @@ internal fun InboxScreen(
                         activity = activity,
                         actions = {
                             TextButton(
-                                onClick = { selectedActivity = activity; activity.id?.let(onLoadActivityTrace) },
+                                onClick = {
+                                    selectedActivity = activity
+                                    activity.id?.let(onLoadActivityTrace)
+                                },
                                 enabled = !actionPending,
                             ) {
                                 Text("Open details")

@@ -28,8 +28,16 @@ internal class FolderImportIndex(context: Context) {
     ): FolderCandidateReadiness = synchronized(lock) {
         val key = candidate.key()
         val revision = candidate.revision()
-        if (preferences.getString("${HANDLED_PREFIX}$key", null) == revision) {
-            return@synchronized FolderCandidateReadiness.AlreadyHandled
+        val handledKey = "${HANDLED_PREFIX}$key"
+        val handled = FolderHandledRevision.decode(preferences.getString(handledKey, null))
+        if (handled?.revision == revision) {
+            if (handled.isFreshAt(observedAtEpochMillis)) {
+                return@synchronized FolderCandidateReadiness.AlreadyHandled
+            }
+            // Metadata is not a content identity. A bridge can overwrite the same document with
+            // the same size and coarse timestamp; eventually re-read it and let Room's digest be
+            // the final duplicate authority.
+            preferences.edit(commit = true) { remove(handledKey) }
         }
         val observationKey = "${OBSERVED_PREFIX}$key"
         val previous = FolderObservation.decode(preferences.getString(observationKey, null))
@@ -52,7 +60,10 @@ internal class FolderImportIndex(context: Context) {
     fun markHandled(candidate: GpxTreeCandidate) = synchronized(lock) {
         val key = candidate.key()
         preferences.edit(commit = true) {
-            putString("${HANDLED_PREFIX}$key", candidate.revision())
+            putString(
+                "${HANDLED_PREFIX}$key",
+                FolderHandledRevision(candidate.revision(), System.currentTimeMillis()).encode(),
+            )
             remove("${OBSERVED_PREFIX}$key")
         }
     }
@@ -93,10 +104,31 @@ internal class FolderImportIndex(context: Context) {
         }
     }
 
+    internal data class FolderHandledRevision(
+        val revision: String,
+        val handledAtEpochMillis: Long,
+    ) {
+        fun isFreshAt(observedAtEpochMillis: Long): Boolean =
+            observedAtEpochMillis >= handledAtEpochMillis &&
+                observedAtEpochMillis - handledAtEpochMillis < HANDLED_RECHECK_MILLIS
+
+        fun encode(): String = "$revision:$handledAtEpochMillis"
+
+        companion object {
+            fun decode(raw: String?): FolderHandledRevision? {
+                val parts = raw?.split(':') ?: return null
+                if (parts.size != 2 || !parts[0].matches(Regex("[0-9a-f]{64}"))) return null
+                val handledAt = parts[1].toLongOrNull()?.takeIf { it >= 0 } ?: return null
+                return FolderHandledRevision(parts[0], handledAt)
+            }
+        }
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "runway_folder_import_index"
         const val OBSERVED_PREFIX = "observed_"
         const val HANDLED_PREFIX = "handled_"
+        const val HANDLED_RECHECK_MILLIS = 24L * 60L * 60L * 1_000L
         val lock = Any()
     }
 }

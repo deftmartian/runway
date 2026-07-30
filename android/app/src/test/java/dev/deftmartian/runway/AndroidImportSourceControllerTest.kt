@@ -1,6 +1,8 @@
 package dev.deftmartian.runway
 
+import dev.deftmartian.runway.data.LocalRestoreResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
@@ -26,7 +28,7 @@ class AndroidImportSourceControllerTest {
 
         assertEquals(listOf("workers", "folder", "cursor", "health"), attempted)
         assertTrue(failure?.message.orEmpty().contains("GPX folder access"))
-        assertTrue(failure?.message.orEmpty().contains("No local data was erased"))
+        assertTrue(failure?.message.orEmpty().contains("Local data was not changed"))
         assertTrue(failure?.message.orEmpty().contains("may already be disconnected"))
     }
 
@@ -74,6 +76,30 @@ class AndroidImportSourceControllerTest {
     }
 
     @Test
+    fun `restore failure reports that sources were already disconnected`() = runBlocking {
+        val controller = AndroidImportSourceController({}, {}, {}, { true })
+
+        val failure = runCatching {
+            controller.disconnectBeforeRestore { error("database failure") }
+        }.exceptionOrNull()
+
+        assertTrue(failure?.message.orEmpty().contains("Import sources were disconnected"))
+        assertTrue(failure?.message.orEmpty().contains("could not be restored"))
+        assertTrue(failure?.message.orEmpty().contains("Existing data is still on this phone"))
+    }
+
+    @Test
+    fun `only restore outcomes that require a restart keep acquisition closed`() {
+        assertFalse(LocalRestoreResult.Rejected("invalid backup").leavesRoomUnavailable())
+        assertTrue(
+            LocalRestoreResult.Rejected("database closed", restartRequired = true)
+                .leavesRoomUnavailable(),
+        )
+        assertTrue(LocalRestoreResult.Restored(bytesRestored = 42).leavesRoomUnavailable())
+        assertTrue(LocalRestoreResult.RecoveryRequired("recover").leavesRoomUnavailable())
+    }
+
+    @Test
     fun `erase does not start when a source cannot be disconnected`() = runBlocking {
         var eraseStarted = false
         val controller = AndroidImportSourceController(
@@ -89,7 +115,7 @@ class AndroidImportSourceControllerTest {
             }
         }.exceptionOrNull()
 
-        assertTrue(failure?.message.orEmpty().contains("No local data was erased"))
+        assertTrue(failure?.message.orEmpty().contains("Local data was not changed"))
         assertTrue(!eraseStarted)
     }
 }

@@ -19,13 +19,14 @@ Health Connect access is optional and read-only. Permissions are scoped to the r
 - Imported activities begin in Review; no import automatically changes a plan.
 - Content markers and tombstones prevent a deleted activity from being recreated by a later folder or Health Connect pass.
 - Route discard clears retained and pending route samples together.
+- Imported-heart-rate discard clears retained summaries, counts, detailed samples, and pending correction evidence together. Heart-rate profile zones are separate and remain.
 - Backup and export are user-initiated plaintext files. The product must warn before writing them and never present them as encrypted.
 - Removing imported runs and resetting runway first stop import work, release the selected-folder grant, and revoke Health Connect access. If Android cannot confirm those changes, data deletion does not proceed. A later database failure is reported as a partial result because platform permissions and Room cannot be rolled back atomically.
 
 ## Secure engineering
 
 - Bound parser size, track points, values, and work per import. Reject document type declarations and entities; do not log raw activity content.
-- Validate restore candidates before replacement; keep operations transactional and rerun-safe.
+- Validate exact released restore lineages before replacement; run supported migrations from the same immutable source as installed-ledger upgrades, and prove reruns are no-ops.
 - Keep Room queries bounded. Do not introduce unbounded history, route, or Health Connect reads into a primary surface.
 - Do not hand-roll cryptography. Signing material stays outside the repository and is supplied only to a protected release environment.
 - Do not commit real activity files, backups, coordinates, signing keys, passwords, or `local.properties`.

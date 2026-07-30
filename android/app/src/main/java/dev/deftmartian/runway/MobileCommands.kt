@@ -176,38 +176,3 @@ internal data object ContinueBeginnerPhaseCommand : MobileCommand {
 internal data object ArchivePlanCommand : MobileCommand {
     override val action = "archive_plan"
 }
-
-internal data class UpdateTimeZoneCommand(val timeZone: String) : MobileCommand {
-    override val action = "update_time_zone"
-}
-
-internal data class UpdateRouteDataModeCommand(val routeDataMode: String) : MobileCommand {
-    override val action = "update_route_data_mode"
-}
-
-internal data class UpdateHealthContextCommand(
-    val recentInjury: Boolean,
-    val currentPain: Boolean,
-    val recurringPain: Boolean,
-    val medicalRestriction: Boolean,
-    val injuryNotes: String,
-) : MobileCommand {
-    override val action = "update_health_context"
-}
-
-internal data class UpdateTrainingProfileCommand(
-    val sexForEstimates: String,
-    val ageYears: Int?,
-    val heartRateSettingsSource: String,
-    val maxHeartRateBpm: Int,
-    val zone2FloorBpm: Int,
-    val zone3FloorBpm: Int,
-    val zone4FloorBpm: Int,
-    val zone5FloorBpm: Int,
-) : MobileCommand {
-    override val action = "update_training_profile"
-}
-
-internal data object DeleteImportedActivityDataCommand : MobileCommand {
-    override val action = "delete_imported_activity_data"
-}

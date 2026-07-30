@@ -8,8 +8,9 @@ plan. Any suggested plan change is shown before you choose whether to apply it.
 Import runs from a GPX file, a folder you approve, or Health Connect. Every imported run waits in
 Review before it can complete a planned workout or affect future training. Folder access is limited
 to the directory you choose. Health Connect access is optional, read-only, and limited to running
-sessions and their relevant metrics. Route access is requested separately for each run, and route
-points can be discarded after import.
+sessions and their relevant metrics. Route access is requested separately for each run. Fresh
+profiles discard imported route and heart-rate detail unless you choose private on-device
+retention; switching back to discard clears the corresponding stored import data.
 
 Plans, activities, private notes, heart-rate data, and preferences stay in runway's local app
 storage. There is no account and no remote service. You control complete local backups and readable

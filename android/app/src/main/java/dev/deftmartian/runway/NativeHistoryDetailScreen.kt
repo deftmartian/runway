@@ -166,7 +166,7 @@ private fun HistoryExtraActivityRecord(activity: NativeActivity) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${activity.activityDate.orDash()} · Extra run", fontWeight = FontWeight.SemiBold)
             LedgerState(
-                if (activity.pain == true) "Pain noted" else "Accepted",
+                if (activity.pain == true) "Pain reported" else "Accepted",
                 if (activity.pain == true) LedgerEmphasis.Danger else LedgerEmphasis.Actual,
             )
         }
@@ -176,7 +176,7 @@ private fun HistoryExtraActivityRecord(activity: NativeActivity) {
             if (activity.pain == true) LedgerEmphasis.Danger else LedgerEmphasis.Actual,
         )
         if (activity.feltHard == true) {
-            Text("Hard effort", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Felt harder than expected", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -220,7 +220,7 @@ private fun HistoryWorkoutRecord(
                 weekMeasurement(it.completedDistanceMeters, it.completedDurationSeconds),
                 emphasis,
             )
-            val flags = listOfNotNull(if (it.feltHard == true) "Hard effort" else null, if (it.pain == true) "Pain noted" else null)
+            val flags = listOfNotNull(if (it.feltHard == true) "Felt harder than expected" else null, if (it.pain == true) "Pain reported" else null)
             if (flags.isNotEmpty()) Text(flags.joinToString(" · "), color = if (it.pain == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             it.consequence?.let { consequence ->
                 Text(
@@ -242,7 +242,10 @@ private fun lifecycleLabel(status: String?, reason: String?): String = when {
     else -> status.orDash()
 }
 private fun goalLabel(distance: String?): String = when (distance) {
-    "5k" -> "5K"; "10k" -> "10K"; "half" -> "Half marathon"; "marathon" -> "Marathon"
+    "5k" -> "5K"
+    "10k" -> "10K"
+    "half" -> "Half marathon"
+    "marathon" -> "Marathon"
     null, "" -> "Run continuously for 30 minutes"
     else -> distance
 }
@@ -286,7 +289,10 @@ private fun workoutStateLabel(
     else -> "Planned"
 }
 private fun workoutTypeLabel(type: String?): String = when (type) {
-    "race" -> "Goal event"; "rest" -> "Rest"; null, "" -> "Run"; else -> "${type.replaceFirstChar(Char::uppercase)} run"
+    "race" -> "Goal event"
+    "rest" -> "Rest"
+    null, "" -> "Run"
+    else -> "${type.replaceFirstChar(Char::uppercase)} run"
 }
 private fun weekMeasurement(distance: Double?, duration: Double?): String = when {
     distance != null && distance > 0 -> formatDistance(distance)

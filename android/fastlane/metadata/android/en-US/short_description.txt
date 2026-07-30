@@ -1,1 +1,1 @@
-Private running plans that adapt to the training you actually complete.
+Private running plans that separate recommendations, edits, and actual work.
