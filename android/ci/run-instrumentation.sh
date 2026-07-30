@@ -2,6 +2,8 @@
 set -euo pipefail
 
 serial="emulator-${EMULATOR_PORT:-5554}"
+app_test_classes="$(python3 android/ci/discover-instrumentation-tests.py app)"
+data_test_classes="$(python3 android/ci/discover-instrumentation-tests.py data)"
 
 run_bounded() {
   python3 android/ci/run-with-timeout.py "$@"
@@ -61,6 +63,7 @@ run_bounded 120 adb -s "$serial" install -r -t \
 
 set +e
 run_bounded 300 adb -s "$serial" shell am instrument -w -r \
+  -e class "$app_test_classes" \
   dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner \
   2>&1 | tee "$RUNNER_TEMP/app-instrumentation.txt"
 app_status="${PIPESTATUS[0]}"
@@ -97,6 +100,7 @@ run_bounded 120 adb -s "$serial" install -r -t \
 
 set +e
 run_bounded 300 adb -s "$serial" shell am instrument -w -r \
+  -e class "$data_test_classes" \
   dev.deftmartian.runway.data.test/androidx.test.runner.AndroidJUnitRunner \
   2>&1 | tee "$RUNNER_TEMP/data-instrumentation.txt"
 data_status="${PIPESTATUS[0]}"
