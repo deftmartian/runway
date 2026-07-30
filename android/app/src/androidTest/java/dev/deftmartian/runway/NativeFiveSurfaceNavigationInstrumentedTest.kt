@@ -58,7 +58,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         }
 
         assertSurface("Calendar", "Your plan and completed runs by date.")
-        assertSurface("Inbox", "Link each imported run, count it as extra training, or delete it.")
+        assertSurface("Inbox", "Choose how each run counts, then decide whether its result changes the plan.")
         assertSurface("Stats", "Recorded runs and past plans.")
         assertSurface("History", "Current and past training plans.")
         assertSurface("Settings", "Private training preferences and local data.")
