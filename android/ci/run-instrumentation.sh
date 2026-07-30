@@ -41,14 +41,18 @@ if [ "$app_status" -ne 0 ]; then
   echo "::error title=App instrumentation failed::Runner exited with status $app_status."
   exit "$app_status"
 fi
-if ! grep -q '^OK (' "$RUNNER_TEMP/app-instrumentation.txt"; then
-  echo "::error title=App instrumentation failed::Runner output did not contain a success marker."
-  exit 1
-fi
-if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
+if grep -Eq \
+  'FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation' \
   "$RUNNER_TEMP/app-instrumentation.txt"
 then
   echo "::error title=App instrumentation failed::Runner output contained a failure marker."
+  exit 1
+fi
+if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' \
+  "$RUNNER_TEMP/app-instrumentation.txt"
+then
+  tail -n 40 "$RUNNER_TEMP/app-instrumentation.txt" >&2
+  echo "::error title=App instrumentation failed::Runner output did not contain a success marker."
   exit 1
 fi
 
@@ -65,13 +69,17 @@ if [ "$data_status" -ne 0 ]; then
   echo "::error title=Data instrumentation failed::Runner exited with status $data_status."
   exit "$data_status"
 fi
-if ! grep -q '^OK (' "$RUNNER_TEMP/data-instrumentation.txt"; then
-  echo "::error title=Data instrumentation failed::Runner output did not contain a success marker."
-  exit 1
-fi
-if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
+if grep -Eq \
+  'FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation' \
   "$RUNNER_TEMP/data-instrumentation.txt"
 then
   echo "::error title=Data instrumentation failed::Runner output contained a failure marker."
+  exit 1
+fi
+if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' \
+  "$RUNNER_TEMP/data-instrumentation.txt"
+then
+  tail -n 40 "$RUNNER_TEMP/data-instrumentation.txt" >&2
+  echo "::error title=Data instrumentation failed::Runner output did not contain a success marker."
   exit 1
 fi
