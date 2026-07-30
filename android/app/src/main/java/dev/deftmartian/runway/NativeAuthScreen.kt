@@ -158,7 +158,9 @@ private fun AuthCapabilitiesLoading(message: String?, onRetry: () -> Unit) {
         Text("Reading sign-in options from your server.")
         message?.let { Notice(it, isError = true) }
         if (message != null) {
-            OutlinedButton(onClick = onRetry) { Text("Try again") }
+            OutlinedButton(onClick = onRetry, shape = MaterialTheme.shapes.small) {
+                Text("Try again")
+            }
         }
     }
 }
@@ -195,11 +197,13 @@ private fun NativeAccountForm(
                         Button(
                             onClick = { mode = LocalAccountMode.SignIn },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                         ) { Text("Sign in") }
                     } else {
                         OutlinedButton(
                             onClick = { mode = LocalAccountMode.SignIn },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text("Sign in")
                         }
@@ -208,6 +212,7 @@ private fun NativeAccountForm(
                         Button(
                             onClick = { mode = LocalAccountMode.CreateAccount },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text("Create account")
                         }
@@ -215,6 +220,7 @@ private fun NativeAccountForm(
                         OutlinedButton(
                             onClick = { mode = LocalAccountMode.CreateAccount },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text("Create account")
                         }
@@ -291,6 +297,7 @@ private fun NativeAccountForm(
                     email.isNotBlank() &&
                     password.isNotBlank() &&
                     (mode != LocalAccountMode.CreateAccount || name.isNotBlank()),
+                shape = MaterialTheme.shapes.small,
             ) {
                 if (state.signingIn) {
                     CircularProgressIndicator(
@@ -326,6 +333,7 @@ private fun NativeAccountForm(
                 onClick = onStartExternal,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.starting && !state.signingIn,
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(
                     when {
@@ -411,6 +419,7 @@ private fun NativeTwoFactorForm(
             onClick = { onVerify(code) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.signingIn && code.isNotBlank(),
+            shape = MaterialTheme.shapes.small,
         ) {
             Text(if (state.signingIn) "Checking…" else "Verify")
         }
@@ -429,9 +438,17 @@ private fun FactorButton(
     onClick: () -> Unit,
 ) {
     if (selected) {
-        Button(onClick = onClick, enabled = enabled) { Text(label) }
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            shape = MaterialTheme.shapes.small,
+        ) { Text(label) }
     } else {
-        OutlinedButton(onClick = onClick, enabled = enabled) { Text(label) }
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            shape = MaterialTheme.shapes.small,
+        ) { Text(label) }
     }
 }
 
@@ -452,7 +469,11 @@ private fun ExternalAuthorizationPending(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         CircularProgressIndicator()
-        OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = onOpen,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+        ) {
             Text("Open sign-in again")
         }
         TextButton(onClick = onCancel) { Text("Cancel") }

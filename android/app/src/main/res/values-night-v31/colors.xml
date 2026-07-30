@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 12+ follows the device palette; semantic signals and launcher identity stay fixed. -->
+    <!-- Android 12+ startup and platform-only surfaces follow the device palette. -->
     <color name="runway_background">@android:color/system_neutral1_900</color>
     <color name="runway_surface">@android:color/system_neutral1_800</color>
     <color name="runway_surface_variant">@android:color/system_neutral2_700</color>
@@ -9,6 +9,8 @@
     <color name="runway_text">@android:color/system_neutral1_100</color>
     <color name="runway_muted">@android:color/system_neutral2_300</color>
     <color name="runway_outline">@android:color/system_neutral2_600</color>
+    <color name="runway_status">@android:color/system_accent3_100</color>
+    <color name="runway_attention">@android:color/system_accent2_100</color>
     <color name="runway_disabled">@android:color/system_neutral2_600</color>
     <color name="runway_disabled_surface">@android:color/system_neutral2_800</color>
 </resources>

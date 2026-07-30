@@ -1,17 +1,20 @@
 package dev.deftmartian.runway
 
+import android.os.Build
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -19,9 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /*
- * Runway deliberately does not use Android's dynamic colour scheme. A plan and its
- * recorded work keep the same semantic colours across phones: blue is planned,
- * green is accepted actual work, and amber asks for review.
+ * Android 12+ uses the device's Material You palette. Product meaning comes from
+ * Material roles plus labels and symbols, not from assuming a particular hue.
+ * These schemes remain the complete fallback for Android 8 through 11.
  */
 private val runwayLightColors = lightColorScheme(
     primary = Color(0xFF236B80),
@@ -77,16 +80,71 @@ private val runwayDarkColors = darkColorScheme(
     onErrorContainer = Color(0xFFFFD9DD),
 )
 
-@Immutable
-internal data class RunwaySemanticColors(val review: Color)
+internal enum class RunwaySemanticRole {
+    Planned,
+    Actual,
+    Review,
+    ReviewContainer,
+    OnReviewContainer,
+    Danger,
+    Neutral,
+}
 
-private val LocalRunwaySemanticColors = staticCompositionLocalOf {
-    RunwaySemanticColors(review = Color(0xFFA45F35))
+internal fun runwaySemanticColor(
+    colorScheme: ColorScheme,
+    role: RunwaySemanticRole,
+): Color = when (role) {
+    RunwaySemanticRole.Planned -> colorScheme.primary
+    RunwaySemanticRole.Actual -> colorScheme.tertiary
+    RunwaySemanticRole.Review -> colorScheme.secondary
+    RunwaySemanticRole.ReviewContainer -> colorScheme.secondaryContainer
+    RunwaySemanticRole.OnReviewContainer -> colorScheme.onSecondaryContainer
+    RunwaySemanticRole.Danger -> colorScheme.error
+    RunwaySemanticRole.Neutral -> colorScheme.onSurfaceVariant
 }
 
 internal object RunwayThemeTokens {
+    val planned: Color
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.Planned,
+        )
+
+    val actual: Color
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.Actual,
+        )
+
     val review: Color
-        @Composable get() = LocalRunwaySemanticColors.current.review
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.Review,
+        )
+
+    val reviewContainer: Color
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.ReviewContainer,
+        )
+
+    val onReviewContainer: Color
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.OnReviewContainer,
+        )
+
+    val danger: Color
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.Danger,
+        )
+
+    val neutral: Color
+        @Composable get() = runwaySemanticColor(
+            MaterialTheme.colorScheme,
+            RunwaySemanticRole.Neutral,
+        )
 }
 
 private val runwayShapes = Shapes(
@@ -160,21 +218,32 @@ private val runwayTypography = Typography(
     ),
 )
 
+@ChecksSdkIntAtLeast(api = Build.VERSION_CODES.S)
+internal fun shouldUseDynamicColor(
+    dynamicColor: Boolean,
+    sdkInt: Int,
+): Boolean = dynamicColor && sdkInt >= Build.VERSION_CODES.S
+
 @Composable
 fun RunwayTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    CompositionLocalProvider(
-        LocalRunwaySemanticColors provides RunwaySemanticColors(
-            review = if (darkTheme) Color(0xFFE1A076) else Color(0xFFA45F35),
-        ),
-    ) {
-        MaterialTheme(
-            colorScheme = if (darkTheme) runwayDarkColors else runwayLightColors,
-            shapes = runwayShapes,
-            typography = runwayTypography,
-            content = content,
-        )
+    val context = LocalContext.current
+    val useDynamicColor = shouldUseDynamicColor(dynamicColor, Build.VERSION.SDK_INT)
+    val colorScheme = when {
+        useDynamicColor && darkTheme ->
+            dynamicDarkColorScheme(context)
+        useDynamicColor ->
+            dynamicLightColorScheme(context)
+        darkTheme -> runwayDarkColors
+        else -> runwayLightColors
     }
+    MaterialTheme(
+        colorScheme = colorScheme,
+        shapes = runwayShapes,
+        typography = runwayTypography,
+        content = content,
+    )
 }

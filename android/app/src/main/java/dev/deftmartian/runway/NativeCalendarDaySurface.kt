@@ -1,14 +1,18 @@
 package dev.deftmartian.runway
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -56,46 +61,60 @@ internal fun CalendarMonthLedger(
         addAll(monthDays)
         repeat((7 - size % 7) % 7) { add(null) }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            dayLabels.forEach { day ->
-                Text(
-                    day.take(3),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-        cells.chunked(7).forEach { week ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+    val horizontalScroll = rememberScrollState()
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val minimumGridWidth = 320.dp
+        val gridWidth = if (maxWidth < minimumGridWidth) minimumGridWidth else maxWidth
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(horizontalScroll),
+        ) {
+            Column(
+                modifier = Modifier.width(gridWidth),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                week.forEach { date ->
-                    if (date == null) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    dayLabels.forEach { day ->
                         Text(
-                            "",
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 68.dp),
-                        )
-                    } else {
-                        val dateValue = date.toString()
-                        val dayWorkouts = workoutsByDate[dateValue].orEmpty()
-                        val dayActivities = activitiesByDate[dateValue].orEmpty()
-                        CalendarDayCell(
-                            date = date,
-                            isToday = dateValue == today,
-                            isSelected = dateValue == selectedDay,
-                            workouts = dayWorkouts,
-                            activities = dayActivities,
-                            feedbackByWorkout = feedbackByWorkout,
-                            onClick = { onDaySelected(dateValue) },
+                            day.take(3),
                             modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
+                    }
+                }
+                cells.chunked(7).forEach { week ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
+                        week.forEach { date ->
+                            if (date == null) {
+                                Text(
+                                    "",
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 68.dp),
+                                )
+                            } else {
+                                val dateValue = date.toString()
+                                val dayWorkouts = workoutsByDate[dateValue].orEmpty()
+                                val dayActivities = activitiesByDate[dateValue].orEmpty()
+                                CalendarDayCell(
+                                    date = date,
+                                    isToday = dateValue == today,
+                                    isSelected = dateValue == selectedDay,
+                                    workouts = dayWorkouts,
+                                    activities = dayActivities,
+                                    feedbackByWorkout = feedbackByWorkout,
+                                    onClick = { onDaySelected(dateValue) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -122,19 +141,16 @@ private fun CalendarDayCell(
         presentation.stateDescription?.let { append(", $it") }
         append(". Open day details")
     }
-    val borderColor = when {
-        isSelected || isToday -> MaterialTheme.colorScheme.primary
-        presentation.emphasis == CalendarCellEmphasis.Actual -> MaterialTheme.colorScheme.tertiary
-        presentation.emphasis == CalendarCellEmphasis.Review -> RunwayThemeTokens.review
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
     val containerColor = when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer
+        isToday -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
         presentation.emphasis == CalendarCellEmphasis.Actual ->
-            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f)
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
         presentation.emphasis == CalendarCellEmphasis.Review ->
-            RunwayThemeTokens.review.copy(alpha = 0.12f)
-        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.48f)
+            RunwayThemeTokens.reviewContainer
+        presentation.emphasis == CalendarCellEmphasis.Planned ->
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f)
+        else -> Color.Transparent
     }
     Surface(
         onClick = onClick,
@@ -146,10 +162,11 @@ private fun CalendarDayCell(
             },
         shape = MaterialTheme.shapes.small,
         color = containerColor,
-        border = BorderStroke(
-            if (isSelected || isToday) 2.dp else 1.dp,
-            borderColor,
-        ),
+        border = if (isSelected || isToday) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            null
+        },
     ) {
         Column(
             modifier = Modifier
@@ -164,10 +181,16 @@ private fun CalendarDayCell(
                 fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
             )
             if (presentation.label != null) {
+                val labelColor = when {
+                    isSelected || isToday -> MaterialTheme.colorScheme.onPrimaryContainer
+                    presentation.emphasis == CalendarCellEmphasis.Review ->
+                        RunwayThemeTokens.onReviewContainer
+                    else -> presentation.emphasis.color()
+                }
                 Text(
                     presentation.label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = presentation.emphasis.color(),
+                    color = labelColor,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -241,9 +264,9 @@ private fun calendarDayPresentation(
 
 @Composable
 private fun CalendarCellEmphasis.color() = when (this) {
-    CalendarCellEmphasis.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
-    CalendarCellEmphasis.Planned -> MaterialTheme.colorScheme.primary
-    CalendarCellEmphasis.Actual -> MaterialTheme.colorScheme.tertiary
+    CalendarCellEmphasis.Neutral -> RunwayThemeTokens.neutral
+    CalendarCellEmphasis.Planned -> RunwayThemeTokens.planned
+    CalendarCellEmphasis.Actual -> RunwayThemeTokens.actual
     CalendarCellEmphasis.Review -> RunwayThemeTokens.review
 }
 

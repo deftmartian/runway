@@ -88,7 +88,11 @@ internal fun NativeImportSetupScreen(
         item {
             ImportSetupSection("One-off GPX") {
                 Text("Choose one GPX from this phone. It goes to Review and never completes a workout automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = onPickOneOffGpx, enabled = state.oneOffImportEnabled) { Text("Choose GPX file") }
+                OutlinedButton(
+                    onClick = onPickOneOffGpx,
+                    enabled = state.oneOffImportEnabled,
+                    shape = MaterialTheme.shapes.small,
+                ) { Text("Choose GPX file") }
                 state.oneOffImportStatus.takeIf(String::isNotBlank)?.let { LiveStatus(it) }
             }
         }
@@ -118,13 +122,26 @@ internal fun NativeImportSetupScreen(
                 }
             }
         }
-        item { Button(onClick = onPrimaryAction, enabled = state.primaryActionEnabled, modifier = Modifier.fillMaxWidth()) { Text(state.primaryActionLabel) } }
+        item {
+            Button(
+                onClick = onPrimaryAction,
+                enabled = state.primaryActionEnabled,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) { Text(state.primaryActionLabel) }
+        }
         item {
             ImportSetupSection(stringResource(R.string.folder_section_title)) {
                 LiveStatus(state.folderStatus)
                 if (state.showChangeFolder || state.showDisconnectFolder) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        if (state.showChangeFolder) OutlinedButton(onClick = onChangeFolder, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.change_folder)) }
+                        if (state.showChangeFolder) {
+                            OutlinedButton(
+                                onClick = onChangeFolder,
+                                modifier = Modifier.weight(1f),
+                                shape = MaterialTheme.shapes.small,
+                            ) { Text(stringResource(R.string.change_folder)) }
+                        }
                         if (state.showDisconnectFolder) TextButton(onClick = onDisconnectFolder, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.disconnect_folder)) }
                     }
                 }
@@ -134,14 +151,29 @@ internal fun NativeImportSetupScreen(
             ImportSetupSection(stringResource(R.string.background_title)) {
                 LiveStatus(state.backgroundStatus)
                 Text(state.lastCheckStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = onBackgroundAction, enabled = state.backgroundActionEnabled) { Text(state.backgroundActionLabel) }
+                OutlinedButton(
+                    onClick = onBackgroundAction,
+                    enabled = state.backgroundActionEnabled,
+                    shape = MaterialTheme.shapes.small,
+                ) { Text(state.backgroundActionLabel) }
             }
         }
         item {
             ImportSetupSection(stringResource(R.string.health_connect_title)) {
                 LiveStatus(state.healthConnectStatus)
-                if (state.showHealthPermission) OutlinedButton(onClick = onHealthPermission) { Text(stringResource(R.string.health_connect_grant_permission)) }
-                if (state.showHealthSync) Button(onClick = onHealthSync, enabled = state.healthSyncActionEnabled) { Text(stringResource(R.string.health_connect_sync_now)) }
+                if (state.showHealthPermission) {
+                    OutlinedButton(
+                        onClick = onHealthPermission,
+                        shape = MaterialTheme.shapes.small,
+                    ) { Text(stringResource(R.string.health_connect_grant_permission)) }
+                }
+                if (state.showHealthSync) {
+                    Button(
+                        onClick = onHealthSync,
+                        enabled = state.healthSyncActionEnabled,
+                        shape = MaterialTheme.shapes.small,
+                    ) { Text(stringResource(R.string.health_connect_sync_now)) }
+                }
                 if (state.showHealthBackground) TextButton(onClick = onHealthBackground, enabled = state.healthBackgroundActionEnabled) { Text(state.healthBackgroundActionLabel) }
             }
         }

@@ -4,9 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,6 +22,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
@@ -410,62 +419,163 @@ private fun CalendarDecisionCard(
     onChangeGoal: () -> Unit,
     hasActivePlan: Boolean,
 ) {
-    SettingCard("Current decision") {
+    val reviewStatus = if (summary.reviewCount == 0) {
+        "Clear"
+    } else {
+        "${summary.reviewCount} missed run${if (summary.reviewCount == 1) "" else "s"}"
+    }
+    val nextStatus = summary.nextDate?.let { "${summary.nextStatus} · ${friendlyDate(it)}" }
+        ?: summary.nextStatus
+    val railColor = MaterialTheme.colorScheme.primary
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = railColor,
+                    start = Offset(0f, 2.dp.toPx()),
+                    end = Offset(0f, size.height - 2.dp.toPx()),
+                    strokeWidth = 3.dp.toPx(),
+                )
+            }
+            .padding(start = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Text(
-            "Today → next → review",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "Current decision",
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
         )
-        SettingRow("Today", summary.todayStatus)
         summary.todayDate?.let {
-            TextButton(
+            Button(
                 onClick = onOpenToday,
                 enabled = !actionPending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        contentDescription = "Today. ${summary.todayStatus}. Open day details."
+                    },
+                shape = MaterialTheme.shapes.small,
             ) {
-                Text("Open today")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Today", style = MaterialTheme.typography.labelLarge)
+                    Text(summary.todayStatus, style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
-        SettingRow(
-            "Next",
-            summary.nextDate?.let { "${summary.nextStatus} · ${friendlyDate(it)}" }
-                ?: summary.nextStatus,
-        )
+        if (summary.todayDate == null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Today. ${summary.todayStatus}"
+                    },
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text("Today", style = MaterialTheme.typography.labelLarge)
+                    Text(summary.todayStatus, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
         summary.nextDate?.let {
             TextButton(
                 onClick = onOpenNext,
                 enabled = !actionPending,
-            ) {
-                Text("Open next run")
-            }
-        }
-        SettingRow(
-            "Review",
-            if (summary.reviewCount == 0) {
-                "Clear"
-            } else {
-                "${summary.reviewCount} missed run${if (summary.reviewCount == 1) "" else "s"}"
-            },
-        )
-        if (summary.reviewCount > 0) {
-            OutlinedButton(
-                onClick = onOpenReview,
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics { contentDescription = "Next. $nextStatus. Open next run." },
                 shape = MaterialTheme.shapes.small,
             ) {
-                Text(if (summary.reviewCount == 1) "Review missed run" else "Review first missed run")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Next", style = MaterialTheme.typography.labelLarge)
+                    Text(nextStatus, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        if (summary.nextDate == null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Next. $nextStatus"
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Next", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    nextStatus,
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (summary.reviewCount > 0) {
+            TextButton(
+                onClick = onOpenReview,
+                enabled = !actionPending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics { contentDescription = "Review. $reviewStatus. Open first missed run." },
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Review", style = MaterialTheme.typography.labelLarge)
+                    Text(reviewStatus, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Review. Clear."
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Review", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    reviewStatus,
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TextButton(onClick = onRecordRun, enabled = !actionPending) {
+            TextButton(
+                onClick = onRecordRun,
+                enabled = !actionPending,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small,
+            ) {
                 Text("Record a run")
             }
-            TextButton(onClick = onChangeGoal, enabled = !actionPending) {
+            TextButton(
+                onClick = onChangeGoal,
+                enabled = !actionPending,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small,
+            ) {
                 Text(if (hasActivePlan) "Change goal" else "Build plan")
             }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }

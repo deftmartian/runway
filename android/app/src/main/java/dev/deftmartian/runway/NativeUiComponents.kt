@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -259,21 +261,55 @@ internal fun SettingCard(title: String, content: @Composable () -> Unit) {
 
 @Composable
 internal fun SettingRow(label: String, value: String, monospace: Boolean = false) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-        Text(
-            value,
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif,
-            textAlign = TextAlign.End,
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stacked = usesStackedSettingRow(
+            label = label,
+            value = value,
+            monospace = monospace,
+            availableWidthDp = maxWidth.value,
+            fontScale = LocalDensity.current.fontScale,
         )
+        if (stacked) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(label, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    value,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                Text(
+                    value,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif,
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
     }
 }
+
+internal fun usesStackedSettingRow(
+    label: String,
+    value: String,
+    monospace: Boolean,
+    availableWidthDp: Float,
+    fontScale: Float,
+): Boolean =
+    availableWidthDp < 300f ||
+        value.length > 24 ||
+        label.length > 28 ||
+        (monospace && value.length > 18) ||
+        (fontScale > 1.15f && label.length + value.length > 26)
 
 @Composable
 internal fun SectionLabel(text: String) {
@@ -346,11 +382,11 @@ internal enum class LedgerEmphasis { Planned, Actual, Review, Danger, Neutral }
 
 @Composable
 private fun LedgerEmphasis.color() = when (this) {
-    LedgerEmphasis.Planned -> MaterialTheme.colorScheme.primary
-    LedgerEmphasis.Actual -> MaterialTheme.colorScheme.tertiary
+    LedgerEmphasis.Planned -> RunwayThemeTokens.planned
+    LedgerEmphasis.Actual -> RunwayThemeTokens.actual
     LedgerEmphasis.Review -> RunwayThemeTokens.review
-    LedgerEmphasis.Danger -> MaterialTheme.colorScheme.error
-    LedgerEmphasis.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+    LedgerEmphasis.Danger -> RunwayThemeTokens.danger
+    LedgerEmphasis.Neutral -> RunwayThemeTokens.neutral
 }
 
 @Composable

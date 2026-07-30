@@ -4,10 +4,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -81,7 +83,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         assertSurface("Inbox", "Link each imported run, count it as extra training, or delete it.")
         assertSurface("Stats", "Recorded runs and past plans.")
         assertSurface("History", "Current and past training plans.")
-        assertSurface("Settings", "Training preferences, imports, and this phone’s connection.")
+        assertSurface("Settings", "Training preferences and app connections.")
 
         selectSurface("History")
         compose.onNodeWithText("Open plan record").performClick()
@@ -90,11 +92,15 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Current and past training plans.").assertIsDisplayed()
 
         selectSurface("Settings")
+        compose.onAllNodesWithText("Android source").assertCountEquals(0)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Technical details"))
+        compose.onNodeWithText("Show").performClick()
+        compose.onNodeWithText("Android source").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Account security"))
         compose.onNodeWithText("Account security").performClick()
         compose.onNodeWithText("A private summary of sign-in and import access.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to Settings").performClick()
-        compose.onNodeWithText("Training preferences, imports, and this phone’s connection.").assertIsDisplayed()
+        compose.onNodeWithText("Training preferences and app connections.").assertIsDisplayed()
     }
 
     private fun assertSurface(label: String, marker: String) {

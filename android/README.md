@@ -4,6 +4,11 @@ runway for Android is the primary, full native Jetpack Compose client for a self
 server. It is not a Custom Tab, WebView, or companion shell. The app owns its navigation and product
 UI, while the responsive web client remains a separate, complete way to use runway.
 
+On Android 12 and newer, the complete interface follows the phone's Material You wallpaper palette
+and system light or dark mode. Android 8 through 11 use runway's built-in light and dark fallback.
+Training states remain identified by their labels, symbols, and measurements rather than a fixed
+color; the launcher artwork keeps its own identity.
+
 Every APK uses the same selectable-server model. On first launch, the runner enters the HTTPS origin
 of their server. Android verifies `GET /api/android/instance` before saving it, follows no redirect,
 and binds all sessions, native imports, and local state to that exact normalized origin. Debug builds

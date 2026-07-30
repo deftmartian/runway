@@ -241,7 +241,12 @@ internal fun SetupScreen(
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (step > goalStep) {
-                    OutlinedButton(onClick = { step -= 1 }, modifier = Modifier.weight(1f), enabled = !actionPending) { Text("Back") }
+                    OutlinedButton(
+                        onClick = { step -= 1 },
+                        modifier = Modifier.weight(1f),
+                        enabled = !actionPending,
+                        shape = MaterialTheme.shapes.small,
+                    ) { Text("Back") }
                 }
                 val issue = when (step) {
                     goalStep -> goalIssue
@@ -268,6 +273,7 @@ internal fun SetupScreen(
                     },
                     enabled = !actionPending && issue == null,
                     modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.small,
                 ) { Text(if (actionPending) "Creating plan…" else if (step == reviewStep) "Create plan" else "Continue") }
             }
         }

@@ -7,10 +7,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -21,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -135,6 +142,7 @@ private fun NativeWeeklyTraceChart(
     points: List<NativeWeeklyTrace>,
     format: (Double) -> String,
 ) {
+    var showExactValues by rememberSaveable(title) { mutableStateOf(false) }
     val recommendationColor = MaterialTheme.colorScheme.primary
     val currentColor = MaterialTheme.colorScheme.secondary
     val actualColor = MaterialTheme.colorScheme.tertiary
@@ -153,7 +161,7 @@ private fun NativeWeeklyTraceChart(
                 .fillMaxWidth()
                 .height(176.dp)
                 .semantics {
-                    contentDescription = "$title trace. $chartDescription Exact values follow in the weekly ledger."
+                    contentDescription = "$title trace. $chartDescription Exact values are available from the Exact weekly values disclosure."
                 },
         ) {
             val left = 14.dp.toPx()
@@ -200,19 +208,33 @@ private fun NativeWeeklyTraceChart(
                 bottom,
             )
         }
-        points.forEach { point ->
-            NativeTraceValueRow(
-                "${point.label} · generated",
-                point.recommendation?.let(format).orDash(),
-            )
-            NativeTraceValueRow(
-                "${point.label} · current",
-                point.current?.let(format).orDash(),
-            )
-            NativeTraceValueRow(
-                "${point.label} · accepted actual",
-                point.acceptedActual?.let(format).orDash(),
-            )
+        TextButton(
+            onClick = { showExactValues = !showExactValues },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .semantics {
+                    stateDescription = if (showExactValues) "Expanded" else "Collapsed"
+                },
+            shape = MaterialTheme.shapes.small,
+        ) {
+            Text(if (showExactValues) "Hide exact weekly values" else "Exact weekly values")
+        }
+        if (showExactValues) {
+            points.forEach { point ->
+                NativeTraceValueRow(
+                    "${point.label} · generated",
+                    point.recommendation?.let(format).orDash(),
+                )
+                NativeTraceValueRow(
+                    "${point.label} · current",
+                    point.current?.let(format).orDash(),
+                )
+                NativeTraceValueRow(
+                    "${point.label} · accepted actual",
+                    point.acceptedActual?.let(format).orDash(),
+                )
+            }
         }
     }
 }

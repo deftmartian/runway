@@ -1,12 +1,17 @@
 package dev.deftmartian.runway
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -16,7 +21,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -34,178 +44,142 @@ internal fun SettingsScreen(
     var editingHealthContext by rememberSaveable { mutableStateOf(false) }
     var editingHeartRate by rememberSaveable { mutableStateOf(false) }
     var connectingNextcloud by rememberSaveable { mutableStateOf(false) }
+    var nextcloudManagementOpen by rememberSaveable { mutableStateOf(false) }
+    var technicalDetailsOpen by rememberSaveable { mutableStateOf(false) }
     var disconnectingSource by remember { mutableStateOf<NativeImportSource?>(null) }
     var confirmingRouteDiscard by rememberSaveable { mutableStateOf(false) }
     var timeZone by rememberSaveable(payload?.profile?.timeZone) {
         mutableStateOf(payload?.profile?.timeZone.orEmpty())
     }
     NativeList(loading) {
-        item { ScreenIntro("Settings", "Training preferences, imports, and this phone’s connection.") }
+        item { ScreenIntro("Settings", "Training preferences and app connections.") }
         if (payload == null) {
             item { EmptyCard("Loading settings…") }
         } else {
             val profile = payload.profile
             val about = payload.about
             item {
-                SettingCard("Training") {
-                    SettingRow("Time zone", profile?.timeZone.orDash())
-                    SettingRow("Route privacy", profile?.routeDataMode.orDash())
-                    SettingRow(
+                SettingsRail("Training") {
+                    val routeMode = profile?.routeDataMode
+                    SettingsActionRow("Time zone", profile?.timeZone.orDash(), "Change", !actionPending) {
+                        editingTimeZone = true
+                    }
+                    SettingsActionRow(
+                        "Route privacy",
+                        when (routeMode) {
+                            "discard" -> "Route points discarded"
+                            "private" -> "Route traces kept privately"
+                            else -> "Not configured"
+                        },
+                        if (routeMode == "private") "Discard points" else "Keep points",
+                        !actionPending,
+                    ) {
+                        val next = if (routeMode == "private") "discard" else "private"
+                        if (next == "discard") confirmingRouteDiscard = true
+                        else onAction(UpdateRouteDataModeCommand(next))
+                    }
+                    SettingsActionRow(
                         "Heart-rate zones",
                         profile?.heartRateSettingsSource
                             ?.takeUnless { it == "not_configured" }
                             ?.replaceFirstChar { it.uppercase() }
                             ?: "Not configured",
-                    )
-                    OutlinedButton(
-                        onClick = { editingTimeZone = true },
-                        enabled = !actionPending,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Change time zone")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            val next =
-                                if (profile?.routeDataMode == "discard") {
-                                    "private"
-                                } else {
-                                    "discard"
-                                }
-                            if (next == "discard") confirmingRouteDiscard = true
-                            else onAction(UpdateRouteDataModeCommand(next))
-                        },
-                        enabled = !actionPending,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            if (profile?.routeDataMode == "discard") {
-                                "Keep future route points"
-                            } else {
-                                "Discard route points"
-                            },
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { editingHeartRate = true },
-                        enabled = !actionPending,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Heart-rate profile")
-                    }
-                    OutlinedButton(
-                        onClick = { editingHealthContext = true },
-                        enabled = !actionPending,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Health context")
+                        "Edit",
+                        !actionPending,
+                    ) { editingHeartRate = true }
+                    SettingsActionRow("Health context", healthContextSummary(profile?.injuryFlags), "Edit", !actionPending) {
+                        editingHealthContext = true
                     }
                 }
             }
             item {
-                SettingCard("Imports") {
+                SettingsRail("Phone imports") {
+                    SettingsActionRow(
+                        "Android imports",
+                        phoneImportSummary(payload.healthConnect),
+                        "Open setup",
+                        !actionPending,
+                        onClick = onOpenFolder,
+                    )
+                }
+            }
+            item {
+                SettingsRail("Nextcloud folders") {
                     val sources = payload.sources
-                    if (sources.isEmpty()) {
-                        Text(
-                            "No Nextcloud GPX folders are connected.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
+                    SettingsActionRow(
+                        "GPX folders",
+                        nextcloudSourceSummary(sources),
+                        if (nextcloudManagementOpen) "Hide" else "Manage",
+                        !actionPending,
+                    ) { nextcloudManagementOpen = !nextcloudManagementOpen }
+                    if (nextcloudManagementOpen) {
                         sources.forEach { source ->
-                            SettingRow(
+                            SettingsValueRow(
                                 source.label.orEmpty().ifBlank { "Nextcloud GPX folder" },
                                 source.lastError?.takeIf(String::isNotBlank)
                                     ?: if (source.enabled == true) "Connected" else "Disabled",
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(
-                                    onClick = {
-                                        onAction(TestNextcloudCommand(source.id.orEmpty()))
-                                    },
-                                    enabled = !actionPending,
-                                ) {
-                                    Text("Test")
-                                }
-                                TextButton(
-                                    onClick = {
-                                        onAction(SyncNextcloudCommand(source.id.orEmpty()))
-                                    },
-                                    enabled = !actionPending,
-                                ) {
-                                    Text("Sync")
-                                }
-                                TextButton(
-                                    onClick = { disconnectingSource = source },
-                                    enabled = !actionPending,
-                                ) {
-                                    Text("Disconnect")
-                                }
-                            }
+                            SettingsInlineActions(
+                                actionPending = actionPending,
+                                onTest = { onAction(TestNextcloudCommand(source.id.orEmpty())) },
+                                onSync = { onAction(SyncNextcloudCommand(source.id.orEmpty())) },
+                                onDisconnect = { disconnectingSource = source },
+                            )
                         }
+                        SettingsActionRow(
+                            "Connect a folder",
+                            "GPX files stay in Review until you confirm them",
+                            "Connect",
+                            !actionPending,
+                        ) { connectingNextcloud = true }
                     }
-                    OutlinedButton(
-                        onClick = { connectingNextcloud = true },
-                        enabled = !actionPending,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Connect Nextcloud folder")
-                    }
-                    val health = payload.healthConnect
-                    SettingRow(
-                        "Health Connect",
-                        when (health?.state) {
-                            "connected" -> "Connected"
-                            "needs_attention" -> "Needs attention"
-                            "unavailable" -> "Unavailable"
-                            else -> "Not connected"
-                        },
-                    )
-                    OutlinedButton(
-                        onClick = onOpenFolder,
-                        shape = MaterialTheme.shapes.small,
-                    ) { Text("Imports and Health Connect") }
                 }
             }
             item {
-                SettingCard("Server") {
-                    SettingRow("Connected to", about?.serverOrigin.orDash(), monospace = true)
-                    OutlinedButton(
+                SettingsRail("Server") {
+                    SettingsActionRow(
+                        "runway server",
+                        about?.serverOrigin.orDash(),
+                        "Change",
+                        !actionPending,
+                        monospaceValue = true,
                         onClick = onOpenServer,
-                        shape = MaterialTheme.shapes.small,
-                    ) { Text("Change server") }
-                }
-            }
-            item {
-                SettingCard("About") {
-                    SettingRow("Android app", BuildConfig.VERSION_NAME, monospace = true)
-                    SettingRow("Android source", BuildConfig.SOURCE_COMMIT, monospace = true)
-                    SettingRow("Server release", about?.release.orDash(), monospace = true)
-                    SettingRow("Server build", about?.commit.orDash(), monospace = true)
-                    SettingRow("Native API", "v2 · connected")
-                }
-            }
-            item {
-                SettingCard("Account") {
-                    Text(
-                        "Review sign-in methods, active sessions, and import devices from this phone.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(
-                        onClick = onOpenAccountSecurity,
-                        enabled = payload.accountSecurityAvailable == true && !actionPending,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Account security")
-                    }
                 }
             }
             item {
-                OutlinedButton(
-                    onClick = onSignOut,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text("Sign out from this phone")
+                SettingsRail("Account") {
+                    SettingsActionRow(
+                        "Account security",
+                        "Sign-in methods, sessions, and import devices",
+                        "Open",
+                        payload.accountSecurityAvailable == true && !actionPending,
+                        onClick = onOpenAccountSecurity,
+                    )
+                    SettingsActionRow(
+                        "This phone",
+                        "Remove its runway session",
+                        "Sign out",
+                        !actionPending,
+                        onClick = onSignOut,
+                    )
+                }
+            }
+            item {
+                SettingsRail("About") {
+                    SettingsValueRow("Android app", BuildConfig.VERSION_NAME, monospace = true)
+                    SettingsValueRow("Server release", about?.release.orDash(), monospace = true)
+                    SettingsActionRow(
+                        "Technical details",
+                        "Version and build identifiers",
+                        if (technicalDetailsOpen) "Hide" else "Show",
+                        true,
+                    ) { technicalDetailsOpen = !technicalDetailsOpen }
+                    if (technicalDetailsOpen) {
+                        TechnicalValueRow("Android source", BuildConfig.SOURCE_COMMIT)
+                        TechnicalValueRow("Server build", about?.commit.orDash())
+                        TechnicalValueRow("App protocol", "v2")
+                    }
                 }
             }
         }
@@ -310,4 +284,158 @@ internal fun SettingsScreen(
             },
         )
     }
+}
+
+@Composable
+private fun SettingsRail(title: String, content: @Composable () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            title,
+            modifier = Modifier
+                .padding(top = 12.dp, bottom = 6.dp)
+                .semantics { heading() },
+            style = MaterialTheme.typography.titleMedium,
+        )
+        HorizontalDivider()
+        content()
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun SettingsActionRow(
+    label: String,
+    value: String,
+    actionLabel: String,
+    enabled: Boolean,
+    monospaceValue: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(
+                value,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = if (monospaceValue) FontFamily.Monospace else FontFamily.SansSerif,
+            )
+        }
+        Text(
+            actionLabel,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            color = if (enabled) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            },
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
+@Composable
+private fun SettingsValueRow(label: String, value: String, monospace: Boolean = false) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.width(16.dp))
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif,
+        )
+    }
+}
+
+@Composable
+private fun TechnicalValueRow(label: String, value: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Text(
+            value,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+@Composable
+private fun SettingsInlineActions(
+    actionPending: Boolean,
+    onTest: () -> Unit,
+    onSync: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = onTest, enabled = !actionPending, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Test")
+        }
+        TextButton(onClick = onSync, enabled = !actionPending, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Sync")
+        }
+        TextButton(onClick = onDisconnect, enabled = !actionPending, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Disconnect")
+        }
+    }
+}
+
+internal fun healthContextSummary(injuryFlags: NativeInjuryFlags?): String {
+    if (injuryFlags == null) return "Nothing saved"
+    return when {
+        injuryFlags.currentPain == true -> "Current pain reported"
+        injuryFlags.medicalRestriction == true -> "Medical restriction saved"
+        injuryFlags.recentInjury == true && injuryFlags.recurringPain == true ->
+            "Recent and recurring issue history saved"
+        injuryFlags.recentInjury == true -> "Recent injury history saved"
+        injuryFlags.recurringPain == true -> "Recurring issue history saved"
+        !injuryFlags.notes.isNullOrBlank() -> "Private note saved"
+        else -> "Nothing saved"
+    }
+}
+
+internal fun phoneImportSummary(health: NativeHealthConnectStatus?): String =
+    when (health?.state) {
+        "connected" -> "Health Connect connected · GPX file and folder options"
+        "needs_attention" -> health.message?.takeIf(String::isNotBlank)
+            ?: "Health Connect needs attention"
+        "unavailable" -> health.message?.takeIf(String::isNotBlank)
+            ?: "Health Connect unavailable"
+        else -> "Health Connect not connected · GPX options available"
+    }
+
+internal fun nextcloudSourceSummary(sources: List<NativeImportSource>): String {
+    if (sources.isEmpty()) return "None configured"
+    val needsAttention = sources.count { !it.lastError.isNullOrBlank() }
+    val active = sources.count { it.enabled == true && it.lastError.isNullOrBlank() }
+    val paused = sources.size - active - needsAttention
+    return buildList {
+        if (needsAttention > 0) add("$needsAttention need attention")
+        if (active > 0) add("$active active")
+        if (paused > 0) add("$paused paused")
+    }.joinToString(" · ")
 }

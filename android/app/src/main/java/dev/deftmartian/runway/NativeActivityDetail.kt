@@ -14,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -28,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -295,7 +297,10 @@ private fun ImportedActivityRouteDisclosure(
             }
             failed && (route?.traceRetained == true || disclosure?.routeTraceRetained == true) -> {
                 Text("The private route trace could not be loaded.")
-                OutlinedButton(onClick = onRetry) { Text("Try again") }
+                OutlinedButton(
+                    onClick = onRetry,
+                    shape = MaterialTheme.shapes.small,
+                ) { Text("Try again") }
             }
         }
         (disclosure?.routePointCount ?: route?.pointCount)?.let {
@@ -332,7 +337,18 @@ private fun HeartRateTrace(series: NativeHeartRateSeries) {
         "$sourceCount retained"
     }
     SettingRow("Heart-rate samples", "$countLabel · $low–$high bpm", monospace = true)
-    Canvas(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(120.dp)) {
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .height(120.dp)
+            .semantics {
+                contentDescription =
+                    "Heart-rate trace. $countLabel, ranging from $low to $high beats per minute. " +
+                        "Latest ${latest.bpm} beats per minute at " +
+                        formatDuration(latest.elapsedSeconds?.toDouble() ?: 0.0) + "."
+            },
+    ) {
         val maxElapsed = points.maxOf { requireNotNull(it.elapsedSeconds) }.coerceAtLeast(1)
         val range = (high - low).coerceAtLeast(10)
         val inset = 8.dp.toPx()
@@ -374,7 +390,17 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
         "$sourceCount retained points"
     }
     SettingRow("Private route", countLabel)
-    Canvas(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(160.dp)) {
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .height(160.dp)
+            .semantics {
+                contentDescription =
+                    "Private route trace. $countLabel. Start and finish markers are shown; " +
+                        "location details are not announced."
+            },
+    ) {
         val inset = 10.dp.toPx()
         val availableWidth = (size.width - inset * 2).coerceAtLeast(1f)
         val availableHeight = (size.height - inset * 2).coerceAtLeast(1f)

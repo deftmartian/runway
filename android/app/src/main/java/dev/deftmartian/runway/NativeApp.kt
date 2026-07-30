@@ -2,6 +2,7 @@ package dev.deftmartian.runway
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -145,7 +148,9 @@ private fun FailureScreen(message: String, onRetry: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
-        Button(onClick = onRetry) { Text("Try again") }
+        Button(onClick = onRetry, shape = MaterialTheme.shapes.small) {
+            Text("Try again")
+        }
     }
 }
 
@@ -260,15 +265,33 @@ private fun NativeProductShell(
                             enabled = !state.actionPending,
                             onClick = { onDestinationSelected(destination) },
                             icon = {
-                                Icon(
-                                    painter = painterResource(destination.iconRes),
-                                    contentDescription = null,
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        painter = painterResource(destination.iconRes),
+                                        contentDescription = null,
+                                    )
+                                    Spacer(Modifier.height(3.dp))
+                                    Box(
+                                        Modifier
+                                            .width(24.dp)
+                                            .height(3.dp)
+                                            .background(
+                                                color = if (selectedDestination == destination) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    Color.Transparent
+                                                },
+                                                shape = MaterialTheme.shapes.extraSmall,
+                                            ),
+                                    )
+                                }
                             },
                             label = { Text(destination.label) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                indicatorColor = Color.Transparent,
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,

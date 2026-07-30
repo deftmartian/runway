@@ -26,10 +26,12 @@ Avoid floating navigation shells, boxes inside boxes, repeated card borders, ove
 
 ## Palette And Semantic Tokens
 
-Use the canonical palette below. Action/planned/current is lake blue; accepted recorded work alone
-is green; unresolved/review is amber; destructive or blocked states are red; rest and passive
-structure are neutral slate. A neutral or blue boundary represents "within default"; completed
-green never implies medical safety.
+The responsive web client and Android 8–11 use the canonical fallback palette below.
+Android 12+ follows the phone's Material You wallpaper palette and system light/dark mode. On
+Android, action/planned/current maps to Material `primary`, accepted recorded work to `tertiary`,
+unresolved/review to `secondary`, destructive or blocked states to `error`, and rest/passive
+structure to neutral surface roles. The label, symbol, structure, and exact value carry the meaning;
+no state depends on a particular hue. A completed treatment never implies medical safety.
 
 | Role             | Light     | Dark      | Use                                             |
 | ---------------- | --------- | --------- | ----------------------------------------------- |
@@ -215,7 +217,9 @@ Use the same control geometry, SVG mark, and trace identity. Do not wrap every p
 Android is the primary interaction surface. Check Compose changes on an emulator or device, not from
 source or desktop screenshots alone. Exercise Calendar and its current decision/day detail, Inbox,
 Stats, History, Settings/account security, onboarding, sign-in, and server selection in both system
-themes. At minimum, also check Android font scale `1.3`, system Back from nested screens,
+themes. On Android 12+, also check at least two materially different wallpaper palettes; on an
+Android 8–11 target, check the canonical fallback palette. At minimum, also check Android font scale
+`1.3`, system Back from nested screens,
 relaunch/session restoration, and content descriptions for dense calendar cells. TalkBack and a
 physical device remain separate release evidence; an emulator screenshot does not prove either.
 

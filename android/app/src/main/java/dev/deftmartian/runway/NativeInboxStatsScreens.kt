@@ -240,10 +240,12 @@ internal fun StatsScreen(
                         OutlinedButton(
                             onClick = { onDestinationSelected(NativeDestination.History) },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                         ) { Text("History") }
                         Button(
                             onClick = { onDestinationSelected(NativeDestination.Setup) },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                         ) { Text("Build plan") }
                     }
                 }
@@ -289,7 +291,11 @@ private fun LazyListScope.FirstRunStats(
         SettingCard("Nothing to compare yet") {
             Text(title, style = MaterialTheme.typography.titleLarge)
             Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = onOpenCalendar, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onOpenCalendar,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) {
                 Text("Open calendar")
             }
         }

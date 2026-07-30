@@ -324,7 +324,12 @@ private fun ServerConnectionScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Button(onClick = onConnect, modifier = Modifier.fillMaxWidth(), enabled = !pending) {
+                Button(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !pending,
+                    shape = MaterialTheme.shapes.small,
+                ) {
                     Text(if (pending) "Checking server…" else "Connect")
                 }
                 if (canCancel) {
