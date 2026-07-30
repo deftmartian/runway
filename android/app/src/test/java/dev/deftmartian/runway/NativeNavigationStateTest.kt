@@ -31,7 +31,7 @@ class NativeNavigationStateTest {
                 minimumCalibrationTargetDate = null,
                 minimumFoundationTargetDate = null,
                 maximumTargetDate = null,
-                activeGoal = null,
+                currentGoal = null,
             ),
         )
 
@@ -47,7 +47,7 @@ class NativeNavigationStateTest {
                 minimumCalibrationTargetDate = null,
                 minimumFoundationTargetDate = null,
                 maximumTargetDate = null,
-                activeGoal = NativeGoalSummary(
+                currentGoal = NativeGoalSummary(
                     title = "10 km",
                     targetDate = "2026-10-01",
                     state = "active",
@@ -57,5 +57,26 @@ class NativeNavigationStateTest {
         )
 
         assertEquals(NativeDestination.History, surface.navigationParent())
+    }
+
+    @Test
+    fun `pending goal setup stays in the required setup flow`() {
+        val surface = NativeSurface.Setup(
+            NativeOnboardingPayload(
+                initialValues = null,
+                minimumTargetDate = null,
+                minimumCalibrationTargetDate = null,
+                minimumFoundationTargetDate = null,
+                maximumTargetDate = null,
+                currentGoal = NativeGoalSummary(
+                    title = "5 km later",
+                    targetDate = "2026-10-01",
+                    state = "pending",
+                    risk = null,
+                ),
+            ),
+        )
+
+        assertEquals(null, surface.navigationParent())
     }
 }

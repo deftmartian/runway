@@ -18,14 +18,14 @@ class LocalPlanSetupRepository(
 
         return database.withTransaction {
             val plans = database.goalPlanDao()
-            val activeGoalCount = plans.activeGoalIds(ACTIVE_STATE_QUERY_LIMIT).size
+            val currentGoalCount = plans.currentGoalIds(CURRENT_STATE_QUERY_LIMIT).size
             val activePlanCount = plans.activePlanIds(ACTIVE_STATE_QUERY_LIMIT).size
-            if (activeGoalCount > 1 || activePlanCount > 1) {
-                return@withTransaction LocalPlanSetupResult.Rejected(LocalPlanSetupError.ACTIVE_STATE_LIMIT_EXCEEDED)
+            if (currentGoalCount > 1 || activePlanCount > 1) {
+                return@withTransaction LocalPlanSetupResult.Rejected(LocalPlanSetupError.CURRENT_STATE_LIMIT_EXCEEDED)
             }
-            if ((activeGoalCount > 0 || activePlanCount > 0) && !request.confirmReplaceActive) {
+            if ((currentGoalCount > 0 || activePlanCount > 0) && !request.confirmReplaceCurrent) {
                 return@withTransaction LocalPlanSetupResult.ReplacementConfirmationRequired(
-                    activeGoalCount = activeGoalCount,
+                    currentGoalCount = currentGoalCount,
                     activePlanCount = activePlanCount,
                 )
             }
@@ -38,10 +38,10 @@ class LocalPlanSetupRepository(
                 return@withTransaction LocalPlanSetupResult.Rejected(LocalPlanSetupError.IDENTITY_ALREADY_EXISTS)
             }
 
-            if (request.confirmReplaceActive) {
+            if (request.confirmReplaceCurrent) {
                 // Archive, never delete: prior workouts, reviews, decisions, and history remain.
                 plans.archiveActivePlans(request.archiveAtEpochMillis)
-                plans.archiveActiveGoals(request.archiveAtEpochMillis)
+                plans.archiveCurrentGoals(request.archiveAtEpochMillis)
             }
 
             database.profileSettingsDao().replaceOnboardingInputs(request.profile, request.availabilityDays)
@@ -62,6 +62,7 @@ class LocalPlanSetupRepository(
 
     private companion object {
         /** Two rows are enough to prove the single-runner ledger has become ambiguous. */
+        const val CURRENT_STATE_QUERY_LIMIT = 2
         const val ACTIVE_STATE_QUERY_LIMIT = 2
     }
 }
@@ -70,9 +71,9 @@ data class LocalPlanSetupRequest(
     val profile: ProfileSettingsEntity,
     val availabilityDays: List<Int>,
     val candidate: LocalPlanCandidate,
-    /** The caller must set this after showing the existing-plan consequence. */
-    val confirmReplaceActive: Boolean,
-    /** Caller supplied, deterministic audit time used if an existing active graph is archived. */
+    /** The caller must set this after showing the existing active or pending goal consequence. */
+    val confirmReplaceCurrent: Boolean,
+    /** Caller supplied, deterministic audit time used if an existing current graph is archived. */
     val archiveAtEpochMillis: Long,
 )
 
@@ -90,7 +91,7 @@ sealed interface LocalPlanCandidate {
 sealed interface LocalPlanSetupResult {
     data class Created(val goalId: String, val planId: String?) : LocalPlanSetupResult
     data class ReplacementConfirmationRequired(
-        val activeGoalCount: Int,
+        val currentGoalCount: Int,
         val activePlanCount: Int,
     ) : LocalPlanSetupResult
 
@@ -104,7 +105,7 @@ enum class LocalPlanSetupError {
     PENDING_GOAL_MUST_USE_PENDING_STATE,
     GENERATED_GRAPH_MUST_USE_ACTIVE_STATE,
     IDENTITY_ALREADY_EXISTS,
-    ACTIVE_STATE_LIMIT_EXCEEDED,
+    CURRENT_STATE_LIMIT_EXCEEDED,
 }
 
 /** Pure, side-effect-free gate used before opening a Room transaction. */

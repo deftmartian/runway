@@ -28,7 +28,7 @@ class RoomLocalSurfaceLedgerReader(
         val zone = ZoneId.of(timeZone)
         val todayEpochDay = todayEpochDay(timeZone)
         val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
-        val review = reviewWindow(limits.inboxActivities)
+        val inboxDecisionCount = database.activityLedgerDao().actionableInboxDecisionCount()
         val activePlans = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
         val plans = planSlices(
             activePlans,
@@ -49,8 +49,8 @@ class RoomLocalSurfaceLedgerReader(
             fromEpochDay = fromEpochDay,
             throughEpochDay = throughEpochDay,
             timeZone = timeZone,
-            pendingReviewCount = review.visibleCount,
-            pendingReviewCountIsExact = review.isExact,
+            pendingDecisionCount = inboxDecisionCount,
+            pendingDecisionCountIsExact = true,
             hasMoreActivities = activityWindow.size > limits.calendarActivities,
             plans = plans,
             activities = activitySlices(activityWindow.take(limits.calendarActivities)),
@@ -105,6 +105,7 @@ class RoomLocalSurfaceLedgerReader(
             val pendingWorkoutFeedbackWindow = activePlan
                 ?.let { pendingDirectWorkoutFeedback(it, limits.inboxActivities + 1) }
                 .orEmpty()
+            val pendingHealthConnectWindow = pendingHealthConnect(limits.inboxActivities + 1)
             LocalInboxLedgerSlice(
                 reviewCount = review.visibleCount,
                 reviewCountIsExact = review.isExact,
@@ -112,7 +113,8 @@ class RoomLocalSurfaceLedgerReader(
                     review.visibleCount > review.items.size ||
                         pendingExtras.size > limits.inboxActivities ||
                         pendingLinkedActivities.size > limits.inboxActivities ||
-                        pendingWorkoutFeedbackWindow.size > limits.inboxActivities,
+                        pendingWorkoutFeedbackWindow.size > limits.inboxActivities ||
+                        pendingHealthConnectWindow.size > limits.inboxActivities,
                 activities = enrichLinkedInboxConsequences(
                     activitySlices(
                         (
@@ -133,7 +135,7 @@ class RoomLocalSurfaceLedgerReader(
                 linkCandidateBlocks = linkCandidateBlocks,
                 linkCandidateSegments = activePlan?.workoutSegments.orEmpty()
                     .filter { it.blockId in linkCandidateBlockIds },
-                pendingHealthConnect = pendingHealthConnect(MAX_PENDING_HEALTH_CONNECT),
+                pendingHealthConnect = pendingHealthConnectWindow.take(limits.inboxActivities),
                 timeZone = timeZone,
                 todayEpochDay = todayEpochDay,
                 phaseReview = phaseReview(activePlan, profile, availability, todayEpochDay),
@@ -276,12 +278,14 @@ class RoomLocalSurfaceLedgerReader(
             val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS)
                 .take(1)
                 .let { planSlices(it, limits, limits.calendarWorkouts).firstOrNull() }
+            val pendingGoal = database.goalPlanDao().pendingGoals(MAX_CURRENT_GOALS).singleOrNull()
             LocalSettingsLedgerSlice(
                 profile = profile,
                 availabilityDays = availability,
                 activePlan = activePlan,
                 versionName = versionName,
                 buildRevision = buildRevision,
+                pendingGoal = pendingGoal,
                 phaseReview = phaseReview(
                     activePlan,
                     profile,
@@ -601,6 +605,7 @@ class RoomLocalSurfaceLedgerReader(
 
     private companion object {
         const val MAX_ACTIVE_PLANS = 2
+        const val MAX_CURRENT_GOALS = 2
         const val MAX_AVAILABILITY_DAYS = 7
         const val MAX_WORKOUTS_PER_WEEK = 14
         const val MAX_LIFECYCLE_EVENTS = 50

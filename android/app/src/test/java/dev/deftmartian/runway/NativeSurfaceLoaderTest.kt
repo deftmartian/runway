@@ -85,8 +85,8 @@ class NativeSurfaceLoaderTest {
         fromEpochDay = 0,
         throughEpochDay = 30,
         activePlanId = activePlanId,
-        pendingReviewCount = 0,
-        pendingReviewCountIsExact = true,
+        pendingDecisionCount = 0,
+        pendingDecisionCountIsExact = true,
         hasMoreActivities = false,
         days = emptyList(),
     )

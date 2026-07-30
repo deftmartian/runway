@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -22,8 +21,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -40,15 +37,15 @@ internal data class NativeCalendarDecisionSummary(
     val nextMeasurement: String?,
     val reviewCount: Int,
     val reviewDate: String?,
-    val pendingRunReviewCount: Int,
-    val pendingRunReviewCountIsExact: Boolean,
+    val inboxDecisionCount: Int,
+    val inboxDecisionCountIsExact: Boolean,
 )
 
 internal fun nativeCalendarDecisionSummary(
     calendar: NativeCalendar?,
     nextWorkout: NativeWorkout?,
-    pendingRunReviewCount: Int = 0,
-    pendingRunReviewCountIsExact: Boolean = true,
+    inboxDecisionCount: Int = 0,
+    inboxDecisionCountIsExact: Boolean = true,
 ): NativeCalendarDecisionSummary {
     val today = calendar?.today?.takeIf(String::isNotBlank)
     val workouts = calendar?.workouts.orEmpty().filter { it.isRemoved != true }
@@ -116,8 +113,8 @@ internal fun nativeCalendarDecisionSummary(
         nextMeasurement = nextWorkout?.let(::calendarWorkoutMeasurement),
         reviewCount = missedWorkouts.size,
         reviewDate = missedWorkouts.firstOrNull()?.scheduledDate,
-        pendingRunReviewCount = pendingRunReviewCount.coerceAtLeast(0),
-        pendingRunReviewCountIsExact = pendingRunReviewCountIsExact,
+        inboxDecisionCount = inboxDecisionCount.coerceAtLeast(0),
+        inboxDecisionCountIsExact = inboxDecisionCountIsExact,
     )
 }
 
@@ -196,8 +193,8 @@ internal fun CalendarScreen(
     val decision = nativeCalendarDecisionSummary(
         calendar = calendar,
         nextWorkout = payload?.nextWorkout,
-        pendingRunReviewCount = payload?.pendingReviewCount ?: 0,
-        pendingRunReviewCountIsExact = payload?.pendingReviewCountIsExact ?: true,
+        inboxDecisionCount = payload?.pendingDecisionCount ?: 0,
+        inboxDecisionCountIsExact = payload?.pendingDecisionCountIsExact ?: true,
     )
     fun openDay(date: String?) {
         val validDate = date?.takeIf { it.length >= 10 } ?: return
@@ -230,7 +227,7 @@ internal fun CalendarScreen(
         submittedDialogAction = null
     }
     NativeList(loading) {
-        item { ScreenIntro("Calendar", "Your plan and completed runs by date.") }
+        item { ScreenContext("Your plan and completed runs by date.") }
         if (payload != null && payload.onboardingRequired != true) {
             item {
                 CalendarDecisionCard(
@@ -288,7 +285,7 @@ internal fun CalendarScreen(
                             calendar != null,
                     shape = MaterialTheme.shapes.small,
                 ) {
-                    Text("Add a future run")
+                    Text("Schedule run")
                 }
             }
         }
@@ -461,202 +458,190 @@ private fun CalendarDecisionCard(
     onChangeGoal: () -> Unit,
     hasActivePlan: Boolean,
 ) {
-    val reviewStatus = if (summary.reviewCount == 0) {
-        "Clear"
-    } else {
+    val missedRunStatus =
         "${summary.reviewCount} missed run${if (summary.reviewCount == 1) "" else "s"}"
-    }
     val nextStatus = summary.nextDate?.let { "${summary.nextStatus} · ${friendlyDate(it)}" }
         ?: summary.nextStatus
-    val railColor = MaterialTheme.colorScheme.primary
-    Column(
+    Surface(
         modifier = Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                drawLine(
-                    color = railColor,
-                    start = Offset(0f, 2.dp.toPx()),
-                    end = Offset(0f, size.height - 2.dp.toPx()),
-                    strokeWidth = 3.dp.toPx(),
-                )
-            }
-            .padding(start = 13.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
     ) {
-        Text(
-            "Current decision",
-            modifier = Modifier.semantics { heading() },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        summary.todayDate?.let {
-            Button(
-                onClick = onOpenToday,
-                enabled = !actionPending,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        contentDescription = listOfNotNull(
-                            "Today",
-                            summary.todayStatus,
-                            summary.todayPlan?.let { "Plan · $it" },
-                            "Open day details",
-                        ).joinToString(". ")
-                    },
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Today", style = MaterialTheme.typography.labelLarge)
-                    Text(summary.todayStatus, style = MaterialTheme.typography.bodyMedium)
-                    summary.todayPlan?.let {
-                        Text("Plan · $it", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-        if (summary.todayDate == null) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = "Today. ${summary.todayStatus}"
-                    },
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text("Today", style = MaterialTheme.typography.labelLarge)
-                    Text(summary.todayStatus, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-        summary.nextDate?.let {
-            TextButton(
-                onClick = onOpenNext,
-                enabled = !actionPending,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        contentDescription = listOfNotNull(
-                            "Next",
-                            nextStatus,
-                            summary.nextMeasurement,
-                            "Open next run",
-                        ).joinToString(". ")
-                    },
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Next", style = MaterialTheme.typography.labelLarge)
-                    Text(nextStatus, style = MaterialTheme.typography.bodyMedium)
-                    summary.nextMeasurement?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-        if (summary.pendingRunReviewCount > 0) {
-            val count = summary.pendingRunReviewCount
-            val countLabel = "${if (summary.pendingRunReviewCountIsExact) count else "$count+"} " +
-                "run${if (count == 1 && summary.pendingRunReviewCountIsExact) "" else "s"} need review"
-            TextButton(
-                onClick = onOpenInbox,
-                enabled = !actionPending,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        contentDescription = "$countLabel. Open Inbox."
-                    },
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Run review", style = MaterialTheme.typography.labelLarge)
-                    Text(countLabel, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-        if (summary.nextDate == null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = "Next. $nextStatus"
-                    },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Next", style = MaterialTheme.typography.labelLarge)
-                Text(
-                    nextStatus,
-                    modifier = Modifier.padding(start = 12.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (summary.reviewCount > 0) {
-            TextButton(
-                onClick = onOpenReview,
-                enabled = !actionPending,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Review. $reviewStatus. Open first missed run." },
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Review", style = MaterialTheme.typography.labelLarge)
-                    Text(reviewStatus, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = "Review. Clear."
-                    },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Review", style = MaterialTheme.typography.labelLarge)
-                Text(
-                    reviewStatus,
-                    modifier = Modifier.padding(start = 12.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            TextButton(
-                onClick = onRecordRun,
-                enabled = !actionPending,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text("Add run manually")
+            Text(
+                "Current decision",
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            summary.todayDate?.let {
+                Surface(
+                    onClick = onOpenToday,
+                    enabled = !actionPending,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .semantics {
+                            contentDescription = listOfNotNull(
+                                "Today",
+                                summary.todayStatus,
+                                summary.todayPlan?.let { "Plan · $it" },
+                                "Open day details",
+                            ).joinToString(". ")
+                        },
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text("Today", style = MaterialTheme.typography.labelLarge)
+                        Text(summary.todayStatus, style = MaterialTheme.typography.titleMedium)
+                        summary.todayPlan?.let {
+                            Text("Plan · $it", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
-            TextButton(
-                onClick = onChangeGoal,
-                enabled = !actionPending,
+            if (summary.todayDate == null) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "Today. ${summary.todayStatus}"
+                        },
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text("Today", style = MaterialTheme.typography.labelLarge)
+                        Text(summary.todayStatus, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+            summary.nextDate?.let {
+                TextButton(
+                    onClick = onOpenNext,
+                    enabled = !actionPending,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .semantics {
+                            contentDescription = listOfNotNull(
+                                "Next",
+                                nextStatus,
+                                summary.nextMeasurement,
+                                "Open next run",
+                            ).joinToString(". ")
+                        },
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Next", style = MaterialTheme.typography.labelLarge)
+                        Text(nextStatus, style = MaterialTheme.typography.bodyMedium)
+                        summary.nextMeasurement?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+            if (summary.nextDate == null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 12.dp)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "Next. $nextStatus"
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Next", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        nextStatus,
+                        modifier = Modifier.padding(start = 12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (summary.inboxDecisionCount > 0) {
+                val count = summary.inboxDecisionCount
+                val countLabel =
+                    "${if (summary.inboxDecisionCountIsExact) count else "$count+"} " +
+                        "decision${if (count == 1 && summary.inboxDecisionCountIsExact) "" else "s"} waiting"
+                TextButton(
+                    onClick = onOpenInbox,
+                    enabled = !actionPending,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            contentDescription = "$countLabel. Open Inbox."
+                        },
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Inbox", style = MaterialTheme.typography.labelLarge)
+                        Text(countLabel, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            if (summary.reviewCount > 0) {
+                TextButton(
+                    onClick = onOpenReview,
+                    enabled = !actionPending,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            contentDescription = "$missedRunStatus. Open the first missed run."
+                        },
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Missed runs", style = MaterialTheme.typography.labelLarge)
+                        Text(missedRunStatus, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp),
-                shape = MaterialTheme.shapes.small,
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(if (hasActivePlan) "Change goal" else "Build plan")
+                TextButton(
+                    onClick = onRecordRun,
+                    enabled = !actionPending,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text("Add run manually")
+                }
+                TextButton(
+                    onClick = onChangeGoal,
+                    enabled = !actionPending,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(if (hasActivePlan) "Change goal" else "Build plan")
+                }
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }

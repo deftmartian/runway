@@ -1,16 +1,15 @@
 package dev.deftmartian.runway
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -20,6 +19,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -27,10 +28,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -152,173 +153,207 @@ private fun NativeProductShell(
 ) {
     val parent = state.surface.navigationParent()
     BackHandler(enabled = parent != null) { parent?.let(onDestinationSelected) }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    parent?.let {
-                        IconButton(onClick = { onDestinationSelected(it) }) {
-                            Icon(
-                                painterResource(R.drawable.ic_arrow_back),
-                                "Back to ${it.label}",
-                            )
-                        }
-                    }
-                },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RunwayMark()
-                        Spacer(Modifier.size(10.dp))
-                        Text("runway", fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
-        },
-        bottomBar = {
-            if (state.destination != NativeDestination.Setup) {
-                NavigationBar {
-                    val selected = state.destination.primaryNavigationDestination()
-                    NativeDestination.entries
-                        .filter(NativeDestination::primaryNavigation)
-                        .forEach { destination ->
-                            NavigationBarItem(
-                                modifier = Modifier.testTag("primary-destination-${destination.view}"),
-                                selected = selected == destination,
-                                onClick = { onDestinationSelected(destination) },
-                                icon = { Icon(painterResource(destination.iconRes), null) },
-                                label = {
-                                    Text(
-                                        text = destination.label,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.labelSmall,
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val navigationLayout = nativeNavigationLayoutForWidth(maxWidth.value)
+        val showPrimaryNavigation = state.destination != NativeDestination.Setup
+        Row(Modifier.fillMaxSize()) {
+            if (showPrimaryNavigation && navigationLayout == NativeNavigationLayout.Rail) {
+                NativePrimaryNavigationRail(state.destination, onDestinationSelected)
+            }
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                topBar = {
+                    TopAppBar(
+                        navigationIcon = {
+                            parent?.let {
+                                IconButton(onClick = { onDestinationSelected(it) }) {
+                                    Icon(
+                                        painterResource(R.drawable.ic_arrow_back),
+                                        "Back to ${it.label}",
                                     )
-                                },
-                                alwaysShowLabel = true,
+                                }
+                            }
+                        },
+                        title = {
+                            Text(
+                                state.destination.label,
+                                modifier = Modifier.semantics { heading() },
+                                fontWeight = FontWeight.SemiBold,
                             )
-                        }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                    )
+                },
+                bottomBar = {
+                    if (showPrimaryNavigation && navigationLayout == NativeNavigationLayout.BottomBar) {
+                        NativePrimaryNavigationBar(state.destination, onDestinationSelected)
+                    }
+                },
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding)) {
+                    state.notice?.let { Notice(it.message, it.isError) }
+                    when (val surface = state.surface) {
+                        is NativeSurface.Setup ->
+                            SetupScreen(surface.payload, state.actionPending, onAction)
+                        is NativeSurface.Calendar -> CalendarScreen(
+                            payload = surface.payload,
+                            loading = state.loading,
+                            actionPending = state.actionPending,
+                            actionNotice = state.notice,
+                            completedAction = state.completedAction,
+                            workoutPreview = state.workoutPreview,
+                            onCalendarMonthSelected = onCalendarMonthSelected,
+                            activityEvidence = state.activityEvidence,
+                            activityEvidenceLoading = state.activityEvidenceLoading,
+                            activityEvidenceFailures = state.activityEvidenceFailures,
+                            onLoadActivityTrace = onLoadActivityTrace,
+                            onDestinationSelected = onDestinationSelected,
+                            onAction = onAction,
+                            onApplyWorkoutPreview = onApplyWorkoutPreview,
+                            onDismissWorkoutPreview = onDismissWorkoutPreview,
+                        )
+                        is NativeSurface.Inbox -> InboxScreen(
+                            payload = surface.payload,
+                            loading = state.loading,
+                            actionPending = state.actionPending,
+                            actionNotice = state.notice,
+                            completedAction = state.completedAction,
+                            onAction = onAction,
+                            activityEvidence = state.activityEvidence,
+                            activityEvidenceLoading = state.activityEvidenceLoading,
+                            activityEvidenceFailures = state.activityEvidenceFailures,
+                            onLoadActivityTrace = onLoadActivityTrace,
+                            onLoadMore = onLoadMoreInbox,
+                            onImportGpx = onImportGpx,
+                            onOpenImportSettings = {
+                                onDestinationSelected(NativeDestination.Settings)
+                            },
+                        )
+                        is NativeSurface.Stats -> StatsScreen(
+                            payload = surface.payload,
+                            loading = state.loading,
+                            onDestinationSelected = onDestinationSelected,
+                        )
+                        is NativeSurface.History -> HistoryScreen(
+                            payload = surface.payload,
+                            loading = state.loading,
+                            onLoadMore = onLoadMoreHistory,
+                            onOpenPlan = onOpenHistoryDetail,
+                            actionPending = state.actionPending,
+                            onDestinationSelected = onDestinationSelected,
+                            onAction = onAction,
+                        )
+                        is NativeSurface.Settings -> SettingsScreen(
+                            state = surface.payload ?: NativeSettingsState(),
+                            actionPending = state.actionPending,
+                            callbacks = NativeSettingsCallbacks(
+                                onTimeZoneChanged = onTimeZoneChanged,
+                                onRoutePrivacyChanged = onRoutePrivacyChanged,
+                                onHeartRatePrivacyChanged = onHeartRatePrivacyChanged,
+                                onHeartRateChanged = onHeartRateChanged,
+                                onHealthContextChanged = onHealthContextChanged,
+                                onImportGpx = onImportGpx,
+                                onOpenFolderImports = onOpenFolder,
+                                onOpenHealthConnect = onOpenHealthConnect,
+                                onCreateBackup = onCreateBackup,
+                                onRestoreBackup = onRestoreBackup,
+                                onExportData = onExportData,
+                                onEraseImportedActivityData = onEraseImportedActivityData,
+                                onEraseAllData = onEraseAllData,
+                            ),
+                        )
+                        is NativeSurface.HistoryDetail ->
+                            HistoryDetailScreen(surface.payload, state.loading)
+                    }
+                    state.planDecisionPreview?.let { preview ->
+                        PlanDecisionPreviewDialog(
+                            preview = preview,
+                            actionPending = state.actionPending,
+                            errorMessage = state.notice?.takeIf(NativeNotice::isError)?.message,
+                            onDismiss = onDismissPlanDecisionPreview,
+                            onConfirm = onApplyPlanDecisionPreview,
+                        )
+                    }
                 }
-            }
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            state.notice?.let { Notice(it.message, it.isError) }
-            when (val surface = state.surface) {
-                is NativeSurface.Setup ->
-                    SetupScreen(surface.payload, state.actionPending, onAction)
-                is NativeSurface.Calendar -> CalendarScreen(
-                    payload = surface.payload,
-                    loading = state.loading,
-                    actionPending = state.actionPending,
-                    actionNotice = state.notice,
-                    completedAction = state.completedAction,
-                    workoutPreview = state.workoutPreview,
-                    onCalendarMonthSelected = onCalendarMonthSelected,
-                    activityEvidence = state.activityEvidence,
-                    activityEvidenceLoading = state.activityEvidenceLoading,
-                    activityEvidenceFailures = state.activityEvidenceFailures,
-                    onLoadActivityTrace = onLoadActivityTrace,
-                    onDestinationSelected = onDestinationSelected,
-                    onAction = onAction,
-                    onApplyWorkoutPreview = onApplyWorkoutPreview,
-                    onDismissWorkoutPreview = onDismissWorkoutPreview,
-                )
-                is NativeSurface.Inbox -> InboxScreen(
-                    payload = surface.payload,
-                    loading = state.loading,
-                    actionPending = state.actionPending,
-                    actionNotice = state.notice,
-                    completedAction = state.completedAction,
-                    onAction = onAction,
-                    activityEvidence = state.activityEvidence,
-                    activityEvidenceLoading = state.activityEvidenceLoading,
-                    activityEvidenceFailures = state.activityEvidenceFailures,
-                    onLoadActivityTrace = onLoadActivityTrace,
-                    onLoadMore = onLoadMoreInbox,
-                    onImportGpx = onImportGpx,
-                    onOpenImportSettings = {
-                        onDestinationSelected(NativeDestination.Settings)
-                    },
-                )
-                is NativeSurface.Stats -> StatsScreen(
-                    payload = surface.payload,
-                    loading = state.loading,
-                    onDestinationSelected = onDestinationSelected,
-                )
-                is NativeSurface.History -> HistoryScreen(
-                    payload = surface.payload,
-                    loading = state.loading,
-                    onLoadMore = onLoadMoreHistory,
-                    onOpenPlan = onOpenHistoryDetail,
-                    actionPending = state.actionPending,
-                    onDestinationSelected = onDestinationSelected,
-                    onAction = onAction,
-                )
-                is NativeSurface.Settings -> SettingsScreen(
-                    state = surface.payload ?: NativeSettingsState(),
-                    actionPending = state.actionPending,
-                    callbacks = NativeSettingsCallbacks(
-                        onTimeZoneChanged = onTimeZoneChanged,
-                        onRoutePrivacyChanged = onRoutePrivacyChanged,
-                        onHeartRatePrivacyChanged = onHeartRatePrivacyChanged,
-                        onHeartRateChanged = onHeartRateChanged,
-                        onHealthContextChanged = onHealthContextChanged,
-                        onImportGpx = onImportGpx,
-                        onOpenFolderImports = onOpenFolder,
-                        onOpenHealthConnect = onOpenHealthConnect,
-                        onCreateBackup = onCreateBackup,
-                        onRestoreBackup = onRestoreBackup,
-                        onExportData = onExportData,
-                        onEraseImportedActivityData = onEraseImportedActivityData,
-                        onEraseAllData = onEraseAllData,
-                    ),
-                )
-                is NativeSurface.HistoryDetail ->
-                    HistoryDetailScreen(surface.payload, state.loading)
-            }
-            state.planDecisionPreview?.let { preview ->
-                PlanDecisionPreviewDialog(
-                    preview = preview,
-                    actionPending = state.actionPending,
-                    errorMessage = state.notice?.takeIf(NativeNotice::isError)?.message,
-                    onDismiss = onDismissPlanDecisionPreview,
-                    onConfirm = onApplyPlanDecisionPreview,
-                )
             }
         }
     }
+}
+
+internal enum class NativeNavigationLayout {
+    BottomBar,
+    Rail,
+}
+
+internal fun nativeNavigationLayoutForWidth(widthDp: Float): NativeNavigationLayout =
+    if (widthDp >= NATIVE_NAVIGATION_RAIL_MIN_WIDTH_DP) {
+        NativeNavigationLayout.Rail
+    } else {
+        NativeNavigationLayout.BottomBar
+    }
+
+private const val NATIVE_NAVIGATION_RAIL_MIN_WIDTH_DP = 600f
+
+@Composable
+private fun NativePrimaryNavigationBar(
+    destination: NativeDestination,
+    onDestinationSelected: (NativeDestination) -> Unit,
+) {
+    NavigationBar(modifier = Modifier.testTag("primary-navigation-bar")) {
+        NativeDestination.entries
+            .filter(NativeDestination::primaryNavigation)
+            .forEach { item ->
+                NavigationBarItem(
+                    modifier = Modifier.testTag("primary-destination-${item.view}"),
+                    selected = destination.primaryNavigationDestination() == item,
+                    onClick = { onDestinationSelected(item) },
+                    icon = { Icon(painterResource(item.iconRes), null) },
+                    label = { NativeNavigationLabel(item) },
+                    alwaysShowLabel = true,
+                )
+            }
+    }
+}
+
+@Composable
+private fun NativePrimaryNavigationRail(
+    destination: NativeDestination,
+    onDestinationSelected: (NativeDestination) -> Unit,
+) {
+    NavigationRail(
+        modifier = Modifier
+            .fillMaxHeight()
+            .testTag("primary-navigation-rail"),
+    ) {
+        NativeDestination.entries
+            .filter(NativeDestination::primaryNavigation)
+            .forEach { item ->
+                NavigationRailItem(
+                    modifier = Modifier.testTag("primary-destination-${item.view}"),
+                    selected = destination.primaryNavigationDestination() == item,
+                    onClick = { onDestinationSelected(item) },
+                    icon = { Icon(painterResource(item.iconRes), null) },
+                    label = { NativeNavigationLabel(item) },
+                    alwaysShowLabel = true,
+                )
+            }
+    }
+}
+
+@Composable
+private fun NativeNavigationLabel(destination: NativeDestination) {
+    Text(
+        text = destination.label,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.labelSmall,
+    )
 }
 
 internal fun NativeSurface.navigationParent(): NativeDestination? = when (this) {
     is NativeSurface.Setup ->
-        if (payload?.activeGoal != null) NativeDestination.History else null
+        if (payload?.currentGoal?.state == "active") NativeDestination.History else null
     else -> destination.navigationParent
-}
-
-@Composable
-internal fun RunwayMark() {
-    val rail = MaterialTheme.colorScheme.primary
-    val center = MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(Modifier.size(30.dp, 22.dp)) {
-        val left = size.width * .22f
-        val right = size.width * .78f
-        drawLine(rail, Offset(left, 0f), Offset(left, size.height), 4f, cap = StrokeCap.Round)
-        drawLine(rail, Offset(right, 0f), Offset(right, size.height), 4f, cap = StrokeCap.Round)
-        val dash = size.height / 5f
-        repeat(3) { index ->
-            drawLine(
-                center,
-                Offset(size.width / 2f, index * dash * 2f),
-                Offset(
-                    size.width / 2f,
-                    ((index * dash * 2f) + dash).coerceAtMost(size.height),
-                ),
-                2f,
-                cap = StrokeCap.Round,
-            )
-        }
-    }
 }

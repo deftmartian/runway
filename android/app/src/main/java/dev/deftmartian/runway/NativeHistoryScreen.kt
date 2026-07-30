@@ -95,10 +95,7 @@ internal fun HistoryScreen(
     }
     NativeList(loading) {
         item {
-            ScreenIntro(
-                "History",
-                "Current and past training plans.",
-            )
+            ScreenContext("Current and past training plans.")
         }
         if (payload == null) {
             item { EmptyCard("Loading history…") }

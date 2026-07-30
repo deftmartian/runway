@@ -1,10 +1,19 @@
 package dev.deftmartian.runway
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -28,8 +37,43 @@ class NativeDocumentationScreenshotsInstrumentedTest {
         capture("calendar-dark", darkTheme = true, calendarState())
 
     @Test
+    fun capturesCalendarAtLargeFontScale() =
+        capture(
+            name = "calendar-large-text",
+            darkTheme = false,
+            state = calendarState(),
+            fontScale = 1.3f,
+        ) {
+            NativeDestination.entries
+                .filter(NativeDestination::primaryNavigation)
+                .forEach { destination ->
+                    compose.onNodeWithTag("primary-destination-${destination.view}")
+                        .assertIsDisplayed()
+                }
+        }
+
+    @Test
+    fun capturesCalendarWithExpandedNavigation() =
+        capture(
+            name = "calendar-expanded-light",
+            darkTheme = false,
+            state = calendarState(),
+            densityScale = 0.6f,
+        ) {
+            compose.onNodeWithTag("primary-navigation-rail").assertIsDisplayed()
+            compose.onNodeWithTag("primary-navigation-bar").assertDoesNotExist()
+        }
+
+    @Test
     fun capturesInboxInLightTheme() =
-        capture("inbox-light", darkTheme = false, inboxState())
+        capture("inbox-light", darkTheme = false, inboxState()) {
+            compose.onNodeWithText("Needs review").assertIsDisplayed()
+            compose.onNodeWithText("Plan decisions").assertIsDisplayed()
+        }
+
+    @Test
+    fun capturesHistoryInLightTheme() =
+        capture("history-light", darkTheme = false, historyState())
 
     @Test
     fun capturesStatsInLightTheme() =
@@ -39,39 +83,60 @@ class NativeDocumentationScreenshotsInstrumentedTest {
     fun capturesSettingsInDarkTheme() =
         capture("settings-dark", darkTheme = true, settingsState())
 
-    private fun capture(name: String, darkTheme: Boolean, state: RunwayUiState.Ready) {
+    @Test
+    fun capturesSettingsAboutInDarkTheme() =
+        capture("settings-about-dark", darkTheme = true, settingsState()) {
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText("Build revision"))
+            compose.onNodeWithText("Build revision").assertIsDisplayed()
+        }
+
+    private fun capture(
+        name: String,
+        darkTheme: Boolean,
+        state: RunwayUiState.Ready,
+        fontScale: Float = 1f,
+        densityScale: Float = 1f,
+        prepareCapture: (() -> Unit)? = null,
+    ) {
         compose.setContent {
-            RunwayTheme(darkTheme = darkTheme, dynamicColor = false) {
-                RunwayNativeApp(
-                    state = state,
-                    onDestinationSelected = {},
-                    onCalendarMonthSelected = {},
-                    onLoadMoreHistory = {},
-                    onLoadMoreInbox = {},
-                    onLoadActivityTrace = {},
-                    onOpenHistoryDetail = {},
-                    onRetryOpen = {},
-                    onAction = {},
-                    onApplyWorkoutPreview = {},
-                    onDismissWorkoutPreview = {},
-                    onApplyPlanDecisionPreview = {},
-                    onDismissPlanDecisionPreview = {},
-                    onOpenFolder = {},
-                    onImportGpx = {},
-                    onOpenHealthConnect = {},
-                    onCreateBackup = {},
-                    onRestoreBackup = {},
-                    onExportData = {},
-                    onTimeZoneChanged = {},
-                    onRoutePrivacyChanged = {},
-                    onHeartRatePrivacyChanged = {},
-                    onHeartRateChanged = {},
-                    onHealthContextChanged = {},
-                    onEraseImportedActivityData = {},
-                    onEraseAllData = {},
-                )
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density * densityScale, fontScale),
+            ) {
+                RunwayTheme(darkTheme = darkTheme, dynamicColor = false) {
+                    RunwayNativeApp(
+                        state = state,
+                        onDestinationSelected = {},
+                        onCalendarMonthSelected = {},
+                        onLoadMoreHistory = {},
+                        onLoadMoreInbox = {},
+                        onLoadActivityTrace = {},
+                        onOpenHistoryDetail = {},
+                        onRetryOpen = {},
+                        onAction = {},
+                        onApplyWorkoutPreview = {},
+                        onDismissWorkoutPreview = {},
+                        onApplyPlanDecisionPreview = {},
+                        onDismissPlanDecisionPreview = {},
+                        onOpenFolder = {},
+                        onImportGpx = {},
+                        onOpenHealthConnect = {},
+                        onCreateBackup = {},
+                        onRestoreBackup = {},
+                        onExportData = {},
+                        onTimeZoneChanged = {},
+                        onRoutePrivacyChanged = {},
+                        onHeartRatePrivacyChanged = {},
+                        onHeartRateChanged = {},
+                        onHealthContextChanged = {},
+                        onEraseImportedActivityData = {},
+                        onEraseAllData = {},
+                    )
+                }
             }
         }
+        compose.waitForIdle()
+        prepareCapture?.invoke()
         compose.waitForIdle()
 
         val directory = File(
@@ -112,7 +177,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                 ),
                 nextWorkout = workout("w-2", "2026-08-15", "Long easy run", 6_000.0),
                 activityCandidates = emptyList(),
-                pendingReviewCount = 2,
+                pendingDecisionCount = 2,
             ),
         ),
         loading = false,
@@ -144,11 +209,105 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                         matchedWorkoutPurpose = null,
                         matchedWorkoutDate = null,
                     ),
+                    NativeActivity(
+                        id = "activity-extra",
+                        workoutId = null,
+                        source = "GPX import",
+                        reviewState = "accepted",
+                        occurredDate = "2026-08-11",
+                        activityDate = "2026-08-11",
+                        distanceMeters = 5_400.0,
+                        durationSeconds = 2_100.0,
+                        averagePaceSecondsPerKm = 389.0,
+                        averageHeartRate = null,
+                        maxHeartRate = null,
+                        heartRateSummary = null,
+                        feltHard = false,
+                        pain = false,
+                        extraPlanImpactConfirmed = true,
+                        consequence = NativeConsequence(
+                            kind = "extra_activity",
+                            appliedDecision = null,
+                            recommendedDecision = "keep_plan",
+                            deviation = "unplanned",
+                            risk = "conservative",
+                            planChangeAvailable = true,
+                            options = listOf("keep_plan", "reduce_next"),
+                            comparisonStatus = "ready",
+                            sourceKind = "Activity",
+                            sourceId = "activity-extra",
+                        ),
+                        routeSummary = null,
+                        matchedWorkoutPurpose = null,
+                        matchedWorkoutDate = null,
+                    ),
                 ),
             ),
         ),
         loading = false,
     )
+
+    private fun historyState(): RunwayUiState.Ready {
+        val active = NativePlanHistoryItem(
+            plan = NativePlan(
+                id = "plan-current",
+                status = "active",
+                startDate = "2026-08-03",
+                targetDate = "2026-10-18",
+                weeks = 11,
+                risk = "conservative",
+                summaryKind = "distance",
+                completedAt = null,
+                archivedAt = null,
+                lifecycleReason = null,
+            ),
+            goal = NativeGoalSummary(
+                title = "10K",
+                targetDate = "2026-10-18",
+                state = "active",
+                risk = "conservative",
+            ),
+            summary = NativePlanSummary(3, 2, 1, 0, 0, 9_200.0),
+        )
+        val prior = NativePlanHistoryItem(
+            plan = NativePlan(
+                id = "plan-spring",
+                status = "completed",
+                startDate = "2026-03-02",
+                targetDate = "2026-05-10",
+                weeks = 10,
+                risk = "conservative",
+                summaryKind = "foundation",
+                completedAt = "2026-05-10",
+                archivedAt = null,
+                lifecycleReason = "goal_complete",
+            ),
+            goal = NativeGoalSummary(
+                title = "5K foundation",
+                targetDate = "2026-05-10",
+                state = "completed",
+                risk = "conservative",
+            ),
+            summary = NativePlanSummary(24, 23, 1, 0, 0, 68_400.0),
+        )
+        return RunwayUiState.Ready(
+            surface = NativeSurface.History(
+                NativeHistoryPayload(
+                    onboardingRequired = false,
+                    history = NativePlanHistoryPage(
+                        items = listOf(active, prior),
+                        nextOffset = null,
+                        today = "2026-08-12",
+                    ),
+                    activeItem = active,
+                    phaseReview = null,
+                    offset = null,
+                    pageSize = null,
+                ),
+            ),
+            loading = false,
+        )
+    }
 
     private fun statsState(): RunwayUiState.Ready {
         val plan = NativePlan(

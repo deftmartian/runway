@@ -58,8 +58,7 @@ internal fun InboxScreen(
     }
     NativeList(loading) {
         item {
-            ScreenIntro(
-                "Inbox",
+            ScreenContext(
                 "Choose how each run counts, then decide whether its result changes the plan.",
             )
         }
@@ -168,7 +167,7 @@ internal fun InboxScreen(
                     enabled = !loading && !actionPending,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (loading) "Loading…" else "Load earlier runs")
+                    Text(if (loading) "Loading…" else "Load more decisions")
                 }
             }
         }
@@ -387,8 +386,7 @@ internal fun StatsScreen(
     val hasRecordedHistory = hasRecordedStatsHistory(payload?.history)
     NativeList(loading) {
         item {
-            ScreenIntro(
-                "Stats",
+            ScreenContext(
                 if (payload?.active == null) {
                     "Recorded runs and past plans."
                 } else {

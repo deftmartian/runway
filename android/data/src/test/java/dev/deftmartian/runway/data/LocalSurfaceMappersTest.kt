@@ -28,7 +28,7 @@ class LocalSurfaceMappersTest {
                 fromEpochDay = day,
                 throughEpochDay = day + 1,
                 timeZone = "UTC",
-                pendingReviewCount = 1,
+                pendingDecisionCount = 1,
                 plans = listOf(plan),
                 activities = listOf(accepted, review),
             ),
@@ -40,7 +40,7 @@ class LocalSurfaceMappersTest {
         assertEquals(3_900, mappedRun.actual?.load?.distanceMeters)
         assertTrue(mappedRun.isEdited)
         assertTrue(mapped.days.last().workouts.single().isRest)
-        assertEquals(1, mapped.pendingReviewCount)
+        assertEquals(1, mapped.pendingDecisionCount)
     }
 
     @Test
@@ -56,7 +56,7 @@ class LocalSurfaceMappersTest {
                 fromEpochDay = LocalDate.parse("2026-07-01").toEpochDay(),
                 throughEpochDay = julyEnd,
                 timeZone = "UTC",
-                pendingReviewCount = 0,
+                pendingDecisionCount = 0,
                 plans = listOf(planSlice(workouts = listOf(nextRun))),
                 activities = emptyList(),
                 todayEpochDay = LocalDate.parse("2026-07-30").toEpochDay(),
@@ -91,7 +91,7 @@ class LocalSurfaceMappersTest {
                 fromEpochDay = day,
                 throughEpochDay = day,
                 timeZone = "UTC",
-                pendingReviewCount = 0,
+                pendingDecisionCount = 0,
                 plans = listOf(
                     planSlice(workouts = listOf(timed)).copy(
                         workoutBlocks = listOf(generatedBlock, currentBlock),
@@ -124,7 +124,7 @@ class LocalSurfaceMappersTest {
                 fromEpochDay = day,
                 throughEpochDay = day,
                 timeZone = "UTC",
-                pendingReviewCount = 0,
+                pendingDecisionCount = 0,
                 plans = listOf(
                     planSlice(workouts = listOf(run)).copy(
                         undoableWorkoutAdjustments = listOf(
@@ -601,7 +601,7 @@ class LocalSurfaceMappersTest {
                 fromEpochDay = day,
                 throughEpochDay = day,
                 timeZone = "America/Halifax",
-                pendingReviewCount = 0,
+                pendingDecisionCount = 0,
                 plans = listOf(plan),
                 activities = emptyList(),
                 todayEpochDay = day,

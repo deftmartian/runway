@@ -61,7 +61,7 @@ class LocalPlanSetupRepositoryInstrumentedTest {
                 profile = profile(),
                 availabilityDays = listOf(1, 3, 6),
                 candidate = LocalPlanCandidate.Generated(graph),
-                confirmReplaceActive = false,
+                confirmReplaceCurrent = false,
                 archiveAtEpochMillis = 100,
             ),
         )
@@ -81,12 +81,33 @@ class LocalPlanSetupRepositoryInstrumentedTest {
     }
 
     @Test
-    fun replacingAnActiveGoalRequiresConfirmationAndArchivesRatherThanDeletes() = runBlocking {
+    fun replacingPendingGoalAfterPainClearsRequiresConfirmationAndArchivesRatherThanDeletes() = runBlocking {
+        val generated = TrainingPlanner.generatePlan(
+            FoundationIntake(
+                startMode = StartMode.FOUNDATION_ONLY,
+                goalKind = GoalKind.FOUNDATION,
+                raceDistance = null,
+                availability = listOf(1, 3, 6),
+                injuryFlags = InjuryFlags(),
+                startDate = "2026-06-01",
+            ),
+        ) as GeneratedFoundationPlan
+        val replacement = GeneratedPlanPersistenceMapper.map(
+            generated,
+            GeneratedPlanGoalMetadata(
+                goalId = "replacement-goal",
+                planId = "replacement-plan",
+                title = "Foundation",
+                goalKind = GoalKind.FOUNDATION,
+                startMode = StartMode.FOUNDATION_ONLY,
+                createdAtEpochMillis = 100,
+            ),
+        )
         val existing = GoalEntity(
             goalId = "existing-goal",
             title = "Existing",
             targetDateEpochDay = null,
-            state = "active",
+            state = "pending",
             createdAtEpochMillis = 1,
             updatedAtEpochMillis = 1,
             kind = "foundation",
@@ -98,27 +119,53 @@ class LocalPlanSetupRepositoryInstrumentedTest {
         val request = LocalPlanSetupRequest(
             profile = profile(),
             availabilityDays = listOf(1, 3, 6),
-            candidate = LocalPlanCandidate.Pending(
-                GoalEntity("pending-goal", "Later", null, "pending", 100, 100, "race", "foundation_to_goal", 5_000, "finish_healthy"),
-            ),
-            confirmReplaceActive = false,
+            candidate = LocalPlanCandidate.Generated(replacement),
+            confirmReplaceCurrent = false,
             archiveAtEpochMillis = 100,
         )
         val repository = LocalPlanSetupRepository(database)
 
         assertEquals(LocalPlanSetupResult.ReplacementConfirmationRequired(1, 0), repository.setUp(request))
-        assertEquals(listOf("existing-goal"), database.goalPlanDao().activeGoalIds(10))
+        assertEquals(listOf("existing-goal"), database.goalPlanDao().currentGoalIds(10))
 
         assertEquals(
-            LocalPlanSetupResult.Created("pending-goal", null),
-            repository.setUp(request.copy(confirmReplaceActive = true)),
+            LocalPlanSetupResult.Created("replacement-goal", "replacement-plan"),
+            repository.setUp(request.copy(confirmReplaceCurrent = true)),
         )
         val sqlite = database.openHelper.writableDatabase
         assertEquals(2, count(sqlite, "goals"))
+        assertEquals(1, count(sqlite, "plans"))
         sqlite.query("SELECT state FROM goals WHERE goalId = 'existing-goal'").use { cursor ->
             cursor.moveToFirst()
             assertEquals("archived", cursor.getString(0))
         }
+        assertEquals(listOf("replacement-goal"), database.goalPlanDao().currentGoalIds(10))
+    }
+
+    @Test
+    fun ambiguousCurrentGoalsFailClosedWithoutChangingTheLedger() = runBlocking {
+        database.goalPlanDao().saveGoal(
+            GoalEntity("pending-one", "One", null, "pending", 1, 1, "race", "foundation_to_goal", 5_000, "finish_healthy"),
+        )
+        database.goalPlanDao().saveGoal(
+            GoalEntity("pending-two", "Two", null, "pending", 2, 2, "race", "foundation_to_goal", 5_000, "finish_healthy"),
+        )
+        val request = LocalPlanSetupRequest(
+            profile = profile(),
+            availabilityDays = listOf(1, 3, 6),
+            candidate = LocalPlanCandidate.Pending(
+                GoalEntity("new-pending", "Later", null, "pending", 100, 100, "race", "foundation_to_goal", 5_000, "finish_healthy"),
+            ),
+            confirmReplaceCurrent = true,
+            archiveAtEpochMillis = 100,
+        )
+
+        assertEquals(
+            LocalPlanSetupResult.Rejected(LocalPlanSetupError.CURRENT_STATE_LIMIT_EXCEEDED),
+            LocalPlanSetupRepository(database).setUp(request),
+        )
+        assertEquals(listOf("pending-two", "pending-one"), database.goalPlanDao().currentGoalIds(10))
+        assertEquals(2, count(database.openHelper.writableDatabase, "goals"))
     }
 
     private fun count(sqlite: androidx.sqlite.db.SupportSQLiteDatabase, table: String): Int =

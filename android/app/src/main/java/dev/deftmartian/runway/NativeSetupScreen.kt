@@ -122,8 +122,10 @@ internal fun SetupScreen(
         raceDistance = raceDistance,
         healthBlocked = currentPain || medicalRestriction,
     )
+    val currentGoalLabel = currentGoalStateLabel(payload?.currentGoal?.state)
     val reviewIssue = when {
-        payload?.activeGoal != null && !confirmReplace -> "Confirm that the current goal will be archived."
+        payload?.currentGoal != null && !confirmReplace ->
+            "Confirm that the $currentGoalLabel will be archived."
         concentratedSchedule && !confirmConcentrated -> "Confirm the two-day schedule before creating this plan."
         else -> null
     }
@@ -157,9 +159,14 @@ internal fun SetupScreen(
             bottomContentPadding = 92.dp,
         ) {
         item { SetupProgress(step) }
-        payload?.activeGoal?.let {
+        payload?.currentGoal?.let {
             item {
-                Notice("A new plan archives ${it.title.orEmpty().ifBlank { "the current goal" }} after you confirm it in Review.")
+                val title = it.title.orEmpty().ifBlank { currentGoalLabel }
+                Notice(if (it.state == "pending") {
+                    "$title is saved as a pending goal. Replacing it keeps its record and archives it after confirmation."
+                } else {
+                    "Replacing $title keeps its history and archives the current plan after confirmation."
+                })
             }
         }
         when (step) {
@@ -332,8 +339,13 @@ internal fun SetupScreen(
                         }
                     }
                 }
-                if (payload?.activeGoal != null) {
-                    item { CheckRow("Archive the current goal and replace it", confirmReplace) { confirmReplace = it } }
+                if (payload?.currentGoal != null) {
+                    item {
+                        CheckRow(
+                            "Archive the $currentGoalLabel and replace it",
+                            confirmReplace,
+                        ) { confirmReplace = it }
+                    }
                 }
                 if (concentratedSchedule) {
                     item {
@@ -413,6 +425,9 @@ internal fun SetupScreen(
         )
     }
 }
+
+internal fun currentGoalStateLabel(state: String?): String =
+    if (state == "pending") "pending goal" else "current goal"
 
 @Composable
 private fun SetupProgress(currentStep: Int) {

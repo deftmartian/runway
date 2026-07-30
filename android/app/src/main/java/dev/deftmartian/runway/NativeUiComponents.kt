@@ -104,6 +104,23 @@ internal fun ScreenIntro(title: String, body: String) {
     }
 }
 
+/**
+ * Main destinations already own their title in the Android app bar. Keep only the sentence that
+ * explains what the surface contains so the first decision is not pushed below duplicate chrome.
+ */
+@Composable
+internal fun ScreenContext(body: String) {
+    Text(
+        body,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp)
+            .padding(bottom = 6.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 @Composable
 internal fun WorkoutCard(
     workout: NativeWorkout,

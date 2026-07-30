@@ -96,7 +96,7 @@ class LocalPlanSetupPreparationTest {
         profile = profile(),
         availabilityDays = availabilityDays,
         candidate = candidate,
-        confirmReplaceActive = false,
+        confirmReplaceCurrent = false,
         archiveAtEpochMillis = 10,
     )
 

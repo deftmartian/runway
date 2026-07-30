@@ -89,15 +89,15 @@ class NativeCalendarDecisionTest {
                 purpose = "Long easy run",
                 distanceMeters = 6_000.0,
             ),
-            pendingRunReviewCount = 2,
-            pendingRunReviewCountIsExact = false,
+            inboxDecisionCount = 2,
+            inboxDecisionCountIsExact = false,
         )
 
         assertEquals("Planned", summary.todayStatus)
         assertEquals("Easy run · 4 km", summary.todayPlan)
         assertEquals("6 km", summary.nextMeasurement)
-        assertEquals(2, summary.pendingRunReviewCount)
-        assertEquals(false, summary.pendingRunReviewCountIsExact)
+        assertEquals(2, summary.inboxDecisionCount)
+        assertEquals(false, summary.inboxDecisionCountIsExact)
     }
 
     @Test

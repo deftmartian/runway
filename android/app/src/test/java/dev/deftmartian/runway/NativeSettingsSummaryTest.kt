@@ -57,6 +57,24 @@ class NativeSettingsSummaryTest {
     }
 
     @Test
+    fun `health connect action labels reflect the local connection state`() {
+        assertEquals("Set up", healthConnectActionLabel(NativeImportConnection.NotConnected))
+        assertEquals("Grant access", healthConnectActionLabel(NativeImportConnection.PermissionRequired))
+        assertEquals("Manage", healthConnectActionLabel(NativeImportConnection.Connected))
+        assertEquals("Review", healthConnectActionLabel(NativeImportConnection.Attention("Access changed")))
+        assertEquals("Unavailable", healthConnectActionLabel(NativeImportConnection.Unavailable))
+    }
+
+    @Test
+    fun `about uses a stable short revision and handles missing build metadata`() {
+        val revision = "36899686c3bb4d8016b09bfa1def9c9584f8053c"
+
+        assertEquals("36899686c3bb", shortBuildRevision(revision))
+        assertEquals("Not available", normalizedBuildRevision("  "))
+        assertEquals("Not available", shortBuildRevision("  "))
+    }
+
+    @Test
     fun `route discard is destructive only when changing away from retained routes`() {
         assertEquals(
             true,

@@ -150,9 +150,6 @@ private fun NativeWeeklyTraceChart(
     val currentColor = MaterialTheme.colorScheme.secondary
     val actualColor = MaterialTheme.colorScheme.tertiary
     val railColor = MaterialTheme.colorScheme.outlineVariant
-    val chartDescription = points.joinToString(separator = "; ") { point ->
-        "${point.label}: generated recommendation ${point.recommendation?.let(format).orDash()}, current edited plan ${point.current?.let(format).orDash()}, accepted actual ${point.acceptedActual?.let(format).orDash()}"
-    }
     SettingCard(title) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             NativeTraceLegend("Generated · dashed", recommendationColor, NativeTraceStyle.Generated)
@@ -164,7 +161,7 @@ private fun NativeWeeklyTraceChart(
                 .fillMaxWidth()
                 .height(176.dp)
                 .semantics {
-                    contentDescription = "$title trace. $chartDescription Exact values are available from the Exact weekly values disclosure."
+                    contentDescription = nativeTraceChartDescription(title)
                 },
         ) {
             val left = 14.dp.toPx()
@@ -241,6 +238,9 @@ private fun NativeWeeklyTraceChart(
         }
     }
 }
+
+internal fun nativeTraceChartDescription(title: String): String =
+    "$title chart. Generated recommendation, current plan, and accepted actual are shown. Open Exact weekly values for each week."
 
 internal fun usesStackedNativeTraceRow(availableWidthDp: Float, fontScale: Float): Boolean =
     availableWidthDp < 480f || fontScale > 1f

@@ -68,8 +68,8 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
         ),
         nextWorkout = nextWorkout?.toNativeWorkout(),
         activityCandidates = emptyList(),
-        pendingReviewCount = pendingReviewCount,
-        pendingReviewCountIsExact = pendingReviewCountIsExact,
+        pendingDecisionCount = pendingDecisionCount,
+        pendingDecisionCountIsExact = pendingDecisionCountIsExact,
     )
 }
 

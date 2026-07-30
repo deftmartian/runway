@@ -25,6 +25,8 @@ The entry paths are:
 
 Defaults are recommendations, not constraints. The runner can change available days, timing, distance, duration, and individual future workouts within explicit guardrails.
 
+If health context blocks plan generation, runway keeps the pending goal visible so the runner can return to it or explicitly replace it. A pending or active goal is never archived as a side effect of merely opening setup.
+
 ## Generated, current, actual
 
 - **Generated** is the original conservative recommendation.
@@ -35,7 +37,7 @@ This distinction must remain visible in Calendar, Inbox, Stats, and History. Res
 
 ## Surfaces
 
-1. **Calendar** — today, next workout, month/day detail, edits, feedback, and results.
+1. **Calendar** — today, next workout, unresolved Inbox decisions, month/day detail, edits, feedback, and results.
 2. **Inbox** — activity review, links, extra work, corrections, and unresolved plan decisions.
 3. **Stats** — generated/current/actual traces and plain-language training context.
 4. **History** — plan lifecycle, archived plans, and auditable decisions.

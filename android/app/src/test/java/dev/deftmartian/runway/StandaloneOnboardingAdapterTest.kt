@@ -114,7 +114,7 @@ class StandaloneOnboardingAdapterTest {
 
             assertEquals(phase, generated.graph.plan.phaseType)
             assertEquals("active", generated.graph.goal.state)
-            assertEquals(command.confirmReplace, request.confirmReplaceActive)
+            assertEquals(command.confirmReplace, request.confirmReplaceCurrent)
             assertEquals(command.availability, request.availabilityDays)
             assertEquals(1234, request.archiveAtEpochMillis)
             assertEquals(request, StandaloneOnboardingPersistenceMapper.map(command, outcome, "setup-$index", 1234))
@@ -139,7 +139,7 @@ class StandaloneOnboardingAdapterTest {
         assertTrue(request.profile.currentPain)
         assertNull(request.profile.baselineDistanceMeters)
         assertFalse(request.profile.baselineConfirmed)
-        assertTrue(request.confirmReplaceActive)
+        assertTrue(request.confirmReplaceCurrent)
     }
 
     @Test fun `persistence profile keeps established baseline and operation ids differ`() {

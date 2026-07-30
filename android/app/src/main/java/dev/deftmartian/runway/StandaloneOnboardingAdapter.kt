@@ -277,7 +277,7 @@ internal object StandaloneOnboardingPersistenceMapper {
             profile = profile,
             availabilityDays = command.availability,
             candidate = candidate,
-            confirmReplaceActive = command.confirmReplace,
+            confirmReplaceCurrent = command.confirmReplace,
             archiveAtEpochMillis = occurredAtEpochMillis,
         )
     }

@@ -21,6 +21,15 @@ class NativeStatsLayoutTest {
     }
 
     @Test
+    fun `trace accessibility description is concise and points to exact values`() {
+        assertTrue(
+            nativeTraceChartDescription("Weekly distance").contains(
+                "Open Exact weekly values for each week.",
+            ),
+        )
+    }
+
+    @Test
     fun `long setting values stack instead of squeezing into half a phone`() {
         assertTrue(
             usesStackedSettingRow(

@@ -8,7 +8,7 @@ internal data class NativeOnboardingPayload(
     val minimumCalibrationTargetDate: String?,
     val minimumFoundationTargetDate: String?,
     val maximumTargetDate: String?,
-    val activeGoal: NativeGoalSummary?,
+    val currentGoal: NativeGoalSummary?,
 )
 
 internal data class NativeCalendarPayload(
@@ -17,8 +17,8 @@ internal data class NativeCalendarPayload(
     val calendar: NativeCalendar?,
     val nextWorkout: NativeWorkout?,
     val activityCandidates: List<NativeWorkout>,
-    val pendingReviewCount: Int = 0,
-    val pendingReviewCountIsExact: Boolean = true,
+    val pendingDecisionCount: Int = 0,
+    val pendingDecisionCountIsExact: Boolean = true,
 )
 
 internal data class NativeReviewPayload(

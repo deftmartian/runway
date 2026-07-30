@@ -67,6 +67,35 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
     }
 
     @Test
+    fun inboxPaginatesPendingHealthConnectDecisionsWithoutHidingOverflow() = runBlocking {
+        val activityDao = database.activityLedgerDao()
+        val importDao = database.importLedgerDao()
+        listOf("health-1", "health-2").forEachIndexed { index, activityId ->
+            activityDao.saveActivity(activity(activityId, occurredAt = (index + 1).toLong()))
+            importDao.saveHealthConnectMapping(
+                HealthConnectMappingEntity(
+                    mappingId = "mapping-$activityId",
+                    provider = "health_connect",
+                    externalRecordId = "record-$activityId",
+                    activityId = activityId,
+                    importedAtEpochMillis = (index + 1).toLong(),
+                    lastObservedAtEpochMillis = (index + 1).toLong(),
+                    correctionPending = true,
+                ),
+            )
+        }
+
+        val reader = RoomLocalSurfaceLedgerReader(database)
+        val firstPage = reader.inbox(LocalSurfaceReadLimits(inboxActivities = 1))
+        val completePage = reader.inbox(LocalSurfaceReadLimits(inboxActivities = 2))
+
+        assertEquals(1, firstPage.pendingHealthConnect.size)
+        assertTrue(firstPage.hasMore)
+        assertEquals(2, completePage.pendingHealthConnect.size)
+        assertFalse(completePage.hasMore)
+    }
+
+    @Test
     fun inboxKeepsUnresolvedLinkedWorkoutConsequencesVisibleUntilApplied() = runBlocking {
         database.profileSettingsDao().save(profile())
         val goal = GoalEntity(
@@ -130,6 +159,11 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
         val reader = RoomLocalSurfaceLedgerReader(database)
         val firstPage = reader.inbox(LocalSurfaceReadLimits(inboxActivities = 1))
         val inbox = reader.inbox(LocalSurfaceReadLimits(inboxActivities = 4))
+        val calendar = reader.calendar(
+            fromEpochDay = 0,
+            throughEpochDay = 30,
+            limits = LocalSurfaceReadLimits(),
+        )
 
         assertEquals(listOf("linked-pending"), inbox.activities.map { it.activity.activityId })
         assertEquals(pendingFeedback.feedbackId, inbox.activities.single().linkedWorkoutFeedback?.feedbackId)
@@ -149,6 +183,11 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
                 it.feedback.feedbackId == directAppliedFeedback.feedbackId
             },
         )
+        assertEquals(
+            3,
+            calendar.pendingDecisionCount,
+        )
+        assertTrue(calendar.pendingDecisionCountIsExact)
     }
 
     @Test
@@ -214,6 +253,31 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
         )
 
         assertEquals("future-run", calendar.nextWorkout?.workoutId)
+    }
+
+    @Test
+    fun settingsExposeOnePendingGoalForAnExplicitReplacementJourney() = runBlocking {
+        database.profileSettingsDao().save(profile())
+        database.goalPlanDao().saveGoal(
+            GoalEntity(
+                "pending-goal",
+                "5K later",
+                LocalDate.parse("2026-11-01").toEpochDay(),
+                "pending",
+                1,
+                1,
+                "race",
+                "foundation_to_goal",
+                5_000,
+                "finish_healthy",
+            ),
+        )
+
+        val settings = RoomLocalSurfaceLedgerReader(database).settings(LocalSurfaceReadLimits())
+
+        assertEquals("pending-goal", settings.pendingGoal?.goalId)
+        assertEquals("foundation_to_goal", settings.pendingGoal?.startMode)
+        assertEquals(5_000, settings.pendingGoal?.raceDistanceMeters)
     }
 
     private fun activity(

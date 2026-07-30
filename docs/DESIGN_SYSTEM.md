@@ -8,14 +8,16 @@ runway should feel like a private training instrument: calm, legible, and warm e
 
 Use native Jetpack Compose and Material 3. On Android 12+ use the device's dynamic Material You scheme and system light/dark mode. On Android 8–11 use the app fallback scheme. Never make meaning depend on a particular wallpaper color: labels, icons, measurements, and accessible contrast carry state.
 
+Use the Android app bar for the current destination title. Keep the five primary destinations in a bottom navigation bar on compact phones and an adaptive navigation rail at 600 dp and wider. Setup remains a focused flow without primary navigation.
+
 ## Hierarchy
 
 - One primary decision per surface before secondary detail.
-- Keep Calendar focused on today/next work and the selected day. Collapse secondary metrics behind a deliberate expansion.
-- Keep Inbox focused on unresolved review work; an imported activity must show what it will and will not change.
+- Keep Calendar focused on today, next work, missed runs, and the exact count of unresolved Inbox decisions. Collapse secondary metrics behind a deliberate expansion.
+- Keep Inbox focused on unresolved review work; an imported activity must show what it will and will not change, and every decision counted from Calendar must remain reachable.
 - In Stats, lead with the comparison and plain meaning; charts support the decision rather than becoming the page.
 - In History, preserve the difference between generated, current, actual, and archived state.
-- In Settings, group Training, Imports, Privacy, Data, and About. About shows local app/build information, never network or account controls.
+- In Settings, group Training, Imports, Privacy, Data, Reset and removal, and About. About shows concise local app/build information, never network or account controls.
 
 ## Components and interaction
 

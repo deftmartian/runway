@@ -55,8 +55,12 @@ abstract class GoalPlanDao {
     @Upsert
     abstract suspend fun saveGoal(goal: GoalEntity)
 
-    @Query("SELECT goalId FROM goals WHERE state = 'active' ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
-    abstract suspend fun activeGoalIds(limit: Int): List<String>
+    /** A runner may have one active or health-blocked pending goal, never an implicit replacement. */
+    @Query("SELECT goalId FROM goals WHERE state IN ('active', 'pending') ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
+    abstract suspend fun currentGoalIds(limit: Int): List<String>
+
+    @Query("SELECT * FROM goals WHERE state = 'pending' ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
+    abstract suspend fun pendingGoals(limit: Int): List<GoalEntity>
 
     @Query("SELECT planId FROM plans WHERE state = 'active' ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
     abstract suspend fun activePlanIds(limit: Int): List<String>
@@ -114,8 +118,8 @@ abstract class GoalPlanDao {
         limit: Int,
     ): List<LocalAcceptedLinkedActivity>
 
-    @Query("UPDATE goals SET state = 'archived', updatedAtEpochMillis = :archivedAtEpochMillis WHERE state = 'active'")
-    abstract suspend fun archiveActiveGoals(archivedAtEpochMillis: Long): Int
+    @Query("UPDATE goals SET state = 'archived', updatedAtEpochMillis = :archivedAtEpochMillis WHERE state IN ('active', 'pending')")
+    abstract suspend fun archiveCurrentGoals(archivedAtEpochMillis: Long): Int
 
     @Query("UPDATE plans SET state = 'archived', archivedAtEpochMillis = :archivedAtEpochMillis, updatedAtEpochMillis = :archivedAtEpochMillis WHERE state = 'active'")
     abstract suspend fun archiveActivePlans(archivedAtEpochMillis: Long): Int
@@ -343,6 +347,82 @@ interface ActivityLedgerDao {
 
     @Query("SELECT COUNT(*) FROM activities WHERE reviewState = :reviewState")
     suspend fun activityCountByReviewState(reviewState: String): Int
+
+    /**
+     * Exact count of cards the Inbox can require the runner to resolve. A possible Health Connect
+     * duplicate replaces its raw review row, so it is counted once rather than as two decisions.
+     */
+    @Query(
+        """
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM activities AS review_activity
+                WHERE review_activity.reviewState = 'review'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM health_connect_mappings AS duplicate_mapping
+                      WHERE duplicate_mapping.activityId = review_activity.activityId
+                        AND duplicate_mapping.duplicateCandidateActivityId IS NOT NULL
+                  )
+            )
+            +
+            (
+                SELECT COUNT(*)
+                FROM activities AS extra_activity
+                INNER JOIN activity_consequences AS extra_consequence
+                    ON extra_consequence.activityId = extra_activity.activityId
+                WHERE extra_activity.reviewState = 'accepted'
+                  AND extra_activity.linkedWorkoutId IS NULL
+                  AND extra_activity.extraPlanImpactConfirmed = 1
+                  AND extra_consequence.planChangeAvailable = 1
+                  AND extra_consequence.appliedDecision IS NULL
+                  AND extra_consequence.resolvedAtEpochMillis IS NULL
+            )
+            +
+            (
+                SELECT COUNT(DISTINCT linked_activity.activityId)
+                FROM activities AS linked_activity
+                INNER JOIN workout_feedback AS linked_feedback
+                    ON linked_feedback.sourceActivityId = linked_activity.activityId
+                INNER JOIN workout_feedback_consequences AS linked_consequence
+                    ON linked_consequence.feedbackId = linked_feedback.feedbackId
+                INNER JOIN workouts AS linked_workout
+                    ON linked_workout.workoutId = linked_feedback.workoutId
+                INNER JOIN plans AS linked_plan
+                    ON linked_plan.planId = linked_workout.planId
+                WHERE linked_activity.reviewState = 'accepted'
+                  AND linked_activity.linkedWorkoutId IS NOT NULL
+                  AND linked_plan.state = 'active'
+                  AND linked_consequence.planChangeAvailable = 1
+                  AND linked_consequence.appliedDecision IS NULL
+            )
+            +
+            (
+                SELECT COUNT(*)
+                FROM workout_feedback AS direct_feedback
+                INNER JOIN workout_feedback_consequences AS direct_consequence
+                    ON direct_consequence.feedbackId = direct_feedback.feedbackId
+                INNER JOIN workouts AS direct_workout
+                    ON direct_workout.workoutId = direct_feedback.workoutId
+                INNER JOIN plans AS direct_plan
+                    ON direct_plan.planId = direct_workout.planId
+                WHERE direct_feedback.sourceActivityId IS NULL
+                  AND direct_plan.state = 'active'
+                  AND direct_consequence.planChangeAvailable = 1
+                  AND direct_consequence.appliedDecision IS NULL
+            )
+            +
+            (
+                SELECT COUNT(*)
+                FROM health_connect_mappings AS health_change
+                WHERE health_change.correctionPending = 1
+                   OR health_change.deletePending = 1
+                   OR health_change.duplicateCandidateActivityId IS NOT NULL
+            )
+        """,
+    )
+    suspend fun actionableInboxDecisionCount(): Int
 
     /**
      * Accepted extras keep their plan-choice card in Inbox until the runner applies a choice.

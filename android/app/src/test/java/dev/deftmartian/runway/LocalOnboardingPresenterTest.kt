@@ -4,6 +4,7 @@ import dev.deftmartian.runway.data.LocalAboutReadModel
 import dev.deftmartian.runway.data.LocalActivePlanReadModel
 import dev.deftmartian.runway.data.LocalPlanPhase
 import dev.deftmartian.runway.data.LocalPlanState
+import dev.deftmartian.runway.data.LocalPendingGoalReadModel
 import dev.deftmartian.runway.data.LocalProfileReadModel
 import dev.deftmartian.runway.data.LocalSettingsReadModel
 import org.junit.Assert.assertEquals
@@ -26,7 +27,7 @@ class LocalOnboardingPresenterTest {
         )
 
         assertNull(payload.initialValues)
-        assertNull(payload.activeGoal)
+        assertNull(payload.currentGoal)
         assertEquals("2026-09-24", payload.minimumTargetDate)
         assertEquals("2026-10-08", payload.minimumCalibrationTargetDate)
         assertEquals("2026-11-26", payload.minimumFoundationTargetDate)
@@ -84,8 +85,58 @@ class LocalOnboardingPresenterTest {
         assertEquals("12.5", payload.initialValues?.currentWeeklyDistanceKm)
         assertEquals("3", payload.initialValues?.currentRunsPerWeek)
         assertEquals("10k", payload.initialValues?.raceDistance)
-        assertEquals("goal", payload.activeGoal?.id)
-        assertEquals("Autumn 10K", payload.activeGoal?.title)
-        assertEquals("2026-11-01", payload.activeGoal?.targetDate)
+        assertEquals("goal", payload.currentGoal?.id)
+        assertEquals("Autumn 10K", payload.currentGoal?.title)
+        assertEquals("2026-11-01", payload.currentGoal?.targetDate)
     }
+
+    @Test
+    fun `pending health-blocked goal remains visible and prepopulates explicit replacement`() {
+        val payload = LocalSettingsReadModel(
+            profile = profile(currentPain = false),
+            activePlan = null,
+            pendingGoal = LocalPendingGoalReadModel(
+                goalId = "pending-goal",
+                title = "5K later",
+                goalKind = "race",
+                startMode = "foundation_to_goal",
+                raceDistanceMeters = 5_000,
+                targetEpochDay = LocalDate.parse("2026-11-01").toEpochDay(),
+                priority = "finish_healthy",
+            ),
+            about = LocalAboutReadModel(versionName = null, buildRevision = null),
+        ).toNativeOnboardingPayload(Instant.parse("2026-07-30T12:00:00Z"))
+
+        assertEquals("pending", payload.currentGoal?.state)
+        assertEquals("pending-goal", payload.currentGoal?.id)
+        assertEquals("foundation_to_goal", payload.initialValues?.startMode)
+        assertEquals("5k", payload.initialValues?.raceDistance)
+        assertEquals("2026-11-01", payload.initialValues?.targetDate)
+    }
+
+    private fun profile(currentPain: Boolean) = LocalProfileReadModel(
+        timeZone = "America/Halifax",
+        routeDataMode = "discard",
+        heartRateDataMode = "discard",
+        availabilityDays = listOf(1, 3, 6),
+        recentInjury = false,
+        currentPain = currentPain,
+        recurringPain = false,
+        medicalRestriction = false,
+        privateNotes = null,
+        heartRateSettingsSource = "none",
+        sexForEstimates = "not_specified",
+        ageYears = null,
+        maxHeartRateBpm = null,
+        zone2FloorBpm = null,
+        zone3FloorBpm = null,
+        zone4FloorBpm = null,
+        zone5FloorBpm = null,
+        baselineDistanceMeters = null,
+        baselineDurationSeconds = null,
+        currentRunsPerWeek = null,
+        longestRecentRunMeters = null,
+        calibrationDurationSeconds = null,
+        preferredLongRunDay = null,
+    )
 }

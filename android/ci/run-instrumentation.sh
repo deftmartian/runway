@@ -191,7 +191,7 @@ fi
 
 screenshot_directory="$RUNNER_TEMP/runway-native-screenshots"
 mkdir -p "$screenshot_directory"
-for screenshot in calendar-dark inbox-light stats-light settings-dark; do
+for screenshot in calendar-dark calendar-large-text calendar-expanded-light inbox-light history-light stats-light settings-dark settings-about-dark; do
   output="$screenshot_directory/$screenshot.png"
   run_bounded 30 adb -s "$serial" exec-out run-as dev.deftmartian.runway.debug \
     cat "files/documentation-screenshots/$screenshot.png" >"$output"

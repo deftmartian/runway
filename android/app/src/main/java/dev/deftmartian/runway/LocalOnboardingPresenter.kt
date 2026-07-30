@@ -15,6 +15,27 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
     now: Instant = Instant.now(),
     fallbackZone: ZoneId = ZoneId.systemDefault(),
 ): NativeOnboardingPayload {
+    val currentGoal = activePlan?.let {
+        NativeGoalSummary(
+            id = it.goalId,
+            title = it.goalTitle,
+            distance = it.raceDistanceMeters.toRaceDistanceLabel(),
+            targetDate = it.goalTargetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
+            priority = it.goalPriority,
+            state = "active",
+            risk = it.riskAssessment,
+        )
+    } ?: pendingGoal?.let {
+        NativeGoalSummary(
+            id = it.goalId,
+            title = it.title,
+            distance = it.raceDistanceMeters.toRaceDistanceLabel(),
+            targetDate = it.targetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
+            priority = it.priority,
+            state = "pending",
+            risk = null,
+        )
+    }
     val zone = profile?.timeZone
         ?.let { runCatching { ZoneId.of(it) }.getOrNull() }
         ?: fallbackZone
@@ -22,14 +43,14 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
     val established = OnboardingValidation.targetDateBounds(today, StartMode.ESTABLISHED)
     val calibration = OnboardingValidation.targetDateBounds(today, StartMode.CALIBRATION)
     val foundation = OnboardingValidation.targetDateBounds(today, StartMode.FOUNDATION_TO_GOAL)
-    val initial = if (profile == null && activePlan == null) {
+    val initial = if (profile == null && currentGoal == null) {
         null
     } else {
         NativePlanInitialValues(
-            startMode = activePlan?.startMode,
-            raceDistance = activePlan?.raceDistanceMeters.toRaceDistanceWireValue(),
-            targetDate = activePlan?.goalTargetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
-            priority = activePlan?.goalPriority,
+            startMode = activePlan?.startMode ?: pendingGoal?.startMode,
+            raceDistance = (activePlan?.raceDistanceMeters ?: pendingGoal?.raceDistanceMeters).toRaceDistanceWireValue(),
+            targetDate = (activePlan?.goalTargetEpochDay ?: pendingGoal?.targetEpochDay)?.let(LocalDate::ofEpochDay)?.toString(),
+            priority = activePlan?.goalPriority ?: pendingGoal?.priority,
             currentWeeklyDistanceKm = profile?.baselineDistanceMeters.toKilometreInput(),
             currentRunsPerWeek = profile?.currentRunsPerWeek?.toString(),
             longestRecentRunKm = profile?.longestRecentRunMeters.toKilometreInput(),
@@ -51,17 +72,7 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
         minimumCalibrationTargetDate = calibration.minimum,
         minimumFoundationTargetDate = foundation.minimum,
         maximumTargetDate = established.maximum,
-        activeGoal = activePlan?.let {
-            NativeGoalSummary(
-                id = it.goalId,
-                title = it.goalTitle,
-                distance = it.raceDistanceMeters.toRaceDistanceLabel(),
-                targetDate = it.goalTargetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
-                priority = it.goalPriority,
-                state = "active",
-                risk = it.riskAssessment,
-            )
-        },
+        currentGoal = currentGoal,
     )
 }
 

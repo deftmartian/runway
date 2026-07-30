@@ -210,8 +210,8 @@ data class LocalCalendarReadModel(
     val fromEpochDay: Long,
     val throughEpochDay: Long,
     val activePlanId: String?,
-    val pendingReviewCount: Int,
-    val pendingReviewCountIsExact: Boolean,
+    val pendingDecisionCount: Int,
+    val pendingDecisionCountIsExact: Boolean,
     val hasMoreActivities: Boolean,
     val days: List<LocalCalendarDayReadModel>,
     val feedback: List<LocalWorkoutFeedbackReadModel> = emptyList(),
@@ -431,6 +431,17 @@ data class LocalActivePlanReadModel(
     val latestLifecycleEvent: LocalLifecycleReadModel?,
 )
 
+/** A health-blocked goal remains a visible local decision even before it has a plan graph. */
+data class LocalPendingGoalReadModel(
+    val goalId: String,
+    val title: String,
+    val goalKind: String?,
+    val startMode: String?,
+    val raceDistanceMeters: Int?,
+    val targetEpochDay: Long?,
+    val priority: String?,
+)
+
 data class LocalAboutReadModel(
     val mode: String = "Standalone",
     val dataLocation: String = "Stored on this device",
@@ -444,6 +455,7 @@ data class LocalSettingsReadModel(
     val profile: LocalProfileReadModel?,
     val activePlan: LocalActivePlanReadModel?,
     val about: LocalAboutReadModel,
+    val pendingGoal: LocalPendingGoalReadModel? = null,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val pendingHealthConnect: List<LocalHealthConnectPendingReadModel> = emptyList(),
 )
@@ -492,8 +504,8 @@ data class LocalCalendarLedgerSlice(
     val fromEpochDay: Long,
     val throughEpochDay: Long,
     val timeZone: String,
-    val pendingReviewCount: Int,
-    val pendingReviewCountIsExact: Boolean = true,
+    val pendingDecisionCount: Int,
+    val pendingDecisionCountIsExact: Boolean = true,
     val hasMoreActivities: Boolean = false,
     val plans: List<LocalPlanLedgerSlice>,
     val activities: List<LocalActivityLedgerSlice>,
@@ -544,6 +556,7 @@ data class LocalSettingsLedgerSlice(
     val activePlan: LocalPlanLedgerSlice?,
     val versionName: String?,
     val buildRevision: String?,
+    val pendingGoal: GoalEntity? = null,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val pendingHealthConnect: List<LocalHealthConnectPendingReadModel> = emptyList(),
 )
@@ -682,8 +695,8 @@ object LocalSurfaceMappers {
             fromEpochDay = slice.fromEpochDay,
             throughEpochDay = slice.throughEpochDay,
             activePlanId = activePlans.singleOrNull()?.plan?.planId,
-            pendingReviewCount = slice.pendingReviewCount,
-            pendingReviewCountIsExact = slice.pendingReviewCountIsExact,
+            pendingDecisionCount = slice.pendingDecisionCount,
+            pendingDecisionCountIsExact = slice.pendingDecisionCountIsExact,
             hasMoreActivities = slice.hasMoreActivities,
             days = days,
             feedback = feedback,
@@ -1198,6 +1211,17 @@ object LocalSurfaceMappers {
                 latestLifecycleEvent = it.lifecycle.maxByOrNull(PlanLifecycleEventEntity::occurredAtEpochMillis)?.let(::lifecycle),
             )
         }
+        val pendingGoal = slice.pendingGoal?.let {
+            LocalPendingGoalReadModel(
+                goalId = it.goalId,
+                title = it.title,
+                goalKind = it.kind,
+                startMode = it.startMode,
+                raceDistanceMeters = it.raceDistanceMeters,
+                targetEpochDay = it.targetDateEpochDay,
+                priority = it.priority,
+            )
+        }
         return LocalSettingsReadModel(
             profile = profile,
             activePlan = activePlan,
@@ -1205,6 +1229,7 @@ object LocalSurfaceMappers {
                 versionName = slice.versionName,
                 buildRevision = slice.buildRevision,
             ),
+            pendingGoal = pendingGoal,
             phaseReview = slice.phaseReview,
             pendingHealthConnect = slice.pendingHealthConnect,
         )

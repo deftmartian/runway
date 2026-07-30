@@ -115,7 +115,7 @@ internal fun SettingsScreen(
     var confirmingErase by rememberSaveable { mutableStateOf(false) }
 
     NativeList(loading = false) {
-        item { ScreenIntro("Settings", "Private training preferences and local data.") }
+        item { ScreenContext("Private training preferences and local data.") }
         item {
             SettingsRail("Training") {
                 SettingsActionRow("Time zone", state.timeZone.ifBlank { "Not set" }, "Change", !actionPending) {
@@ -139,7 +139,13 @@ internal fun SettingsScreen(
                     !actionPending,
                     onClick = callbacks.onOpenFolderImports,
                 )
-                SettingsActionRow("Health Connect", importConnectionSummary(state.healthConnectImport), "Open", !actionPending, onClick = callbacks.onOpenHealthConnect)
+                SettingsActionRow(
+                    "Health Connect",
+                    importConnectionSummary(state.healthConnectImport),
+                    healthConnectActionLabel(state.healthConnectImport),
+                    !actionPending,
+                    onClick = callbacks.onOpenHealthConnect,
+                )
             }
         }
         item {
@@ -195,7 +201,8 @@ internal fun SettingsScreen(
         item {
             SettingsRail("About") {
                 SettingsValueRow("Version", state.appVersion, monospace = true)
-                SettingsValueRow("Build revision", state.sourceCommit, monospace = true)
+                val buildRevision = normalizedBuildRevision(state.sourceCommit)
+                SettingsValueRow("Build revision", shortBuildRevision(buildRevision), monospace = true)
                 SettingsValueRow("Data location", "This phone only")
             }
         }
@@ -350,7 +357,6 @@ private fun LocalDocumentDialog(
 
 @Composable private fun SettingsRail(title: String, content: @Composable () -> Unit) = Column(Modifier.fillMaxWidth()) {
     Text(title, Modifier.padding(top = 12.dp, bottom = 6.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-    HorizontalDivider()
     content()
     HorizontalDivider()
 }
@@ -426,4 +432,22 @@ internal fun folderImportActionLabel(connection: NativeImportConnection): String
     NativeImportConnection.Connected -> "Manage"
     is NativeImportConnection.Attention -> "Review"
     NativeImportConnection.Unavailable -> "Unavailable"
+}
+
+internal fun healthConnectActionLabel(connection: NativeImportConnection): String = when (connection) {
+    NativeImportConnection.NotConnected -> "Set up"
+    NativeImportConnection.PermissionRequired -> "Grant access"
+    NativeImportConnection.Connected -> "Manage"
+    is NativeImportConnection.Attention -> "Review"
+    NativeImportConnection.Unavailable -> "Unavailable"
+}
+
+private const val BUILD_REVISION_SHORT_LENGTH = 12
+
+internal fun normalizedBuildRevision(sourceCommit: String): String =
+    sourceCommit.trim().ifBlank { "Not available" }
+
+internal fun shortBuildRevision(sourceCommit: String): String {
+    val revision = normalizedBuildRevision(sourceCommit)
+    return if (revision == "Not available") revision else revision.take(BUILD_REVISION_SHORT_LENGTH)
 }
