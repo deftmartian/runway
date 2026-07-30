@@ -1,6 +1,7 @@
 package dev.deftmartian.runway
 
 import android.app.Application
+import androidx.work.Configuration
 import dev.deftmartian.runway.data.LocalActivityReviewRepository
 import dev.deftmartian.runway.data.LocalConsequenceDecisionRepository
 import dev.deftmartian.runway.data.LocalDataManagementRepository
@@ -18,7 +19,10 @@ import dev.deftmartian.runway.data.RunwayLedgerDatabase
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectRepository
 import dev.deftmartian.runway.data.importing.LocalGpxImportRepository
 
-class RunwayApplication : Application() {
+class RunwayApplication : Application(), Configuration.Provider {
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder().build()
+
     val services: RunwayServices by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         RunwayServices(this)
     }
