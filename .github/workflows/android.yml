@@ -106,16 +106,7 @@ jobs:
           packages: >-
             platforms;android-36 build-tools;36.0.0 platform-tools emulator
             system-images;android-35;google_apis;x86_64
-      - name: Restore Android Virtual Device
-        id: avd-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: |
-            ~/.android/avd
-            ~/.android/adb*
-          key: runway-avd-api35-google-apis-x86-64-v1
-      - name: Create Android Virtual Device
-        if: steps.avd-cache.outputs.cache-hit != 'true'
+      - name: Create fresh Android Virtual Device
         run: |
           echo 'no' | avdmanager create avd --force --name runway-ci \
             --package 'system-images;android-35;google_apis;x86_64' --device pixel_2
@@ -127,35 +118,71 @@ jobs:
       - name: Run instrumentation tests on a serial emulator
         run: |
           set -euo pipefail
+          serial='emulator-5554'
+          emulator_log="$RUNNER_TEMP/runway-emulator.log"
+          acceleration='off'
+          if [ -c /dev/kvm ]; then
+            sudo chmod a+rw /dev/kvm
+            acceleration='on'
+          fi
+          adb start-server
           "$ANDROID_HOME/emulator/emulator" -avd runway-ci -no-window -no-audio -no-boot-anim \
-            -gpu swiftshader_indirect -no-snapshot -no-metrics >"$RUNNER_TEMP/runway-emulator.log" 2>&1 &
+            -port 5554 -accel "$acceleration" -gpu swiftshader_indirect -no-snapshot -no-metrics \
+            -memory 2048 -cores 2 >"$emulator_log" 2>&1 &
           emulator_pid="$!"
-          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 60); do
-            if [ "$(adb get-state 2>/dev/null || true)" = 'device' ]; then
+          collect_diagnostics() {
+            status="$?"
+            if [ "$status" -ne 0 ]; then
+              adb devices -l >"$RUNNER_TEMP/adb-devices.txt" 2>&1 || true
+              adb -s "$serial" logcat -d >"$RUNNER_TEMP/emulator-logcat.txt" 2>&1 || true
+              adb -s "$serial" shell pm list packages \
+                >"$RUNNER_TEMP/emulator-packages.txt" 2>&1 || true
+            fi
+            kill "$emulator_pid" 2>/dev/null || true
+            exit "$status"
+          }
+          trap collect_diagnostics EXIT
+          for _ in $(seq 1 150); do
+            if [ "$(adb -s "$serial" get-state 2>/dev/null || true)" = 'device' ]; then
               break
+            fi
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              cat "$emulator_log"
+              exit 1
             fi
             sleep 2
           done
-          [ "$(adb get-state 2>/dev/null || true)" = 'device' ] || {
-            cat "$RUNNER_TEMP/runway-emulator.log"
+          [ "$(adb -s "$serial" get-state 2>/dev/null || true)" = 'device' ] || {
+            cat "$emulator_log"
             exit 1
           }
-          for _ in $(seq 1 90); do
-            if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = '1' ]; then
+          for _ in $(seq 1 180); do
+            if [ "$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')" = '1' ]; then
               break
+            fi
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              cat "$emulator_log"
+              exit 1
             fi
             sleep 2
           done
-          [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = '1' ] || {
-            cat "$RUNNER_TEMP/runway-emulator.log"
+          [ "$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')" = '1' ] || {
+            cat "$emulator_log"
             exit 1
           }
-          adb shell input keyevent 82
-          adb install -r -t android/app/build/outputs/apk/debug/app-debug.apk
-          adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          adb -s "$serial" shell input keyevent 82
+          for package_name in \
+            dev.deftmartian.runway.debug \
+            dev.deftmartian.runway.debug.test \
+            dev.deftmartian.runway.data.test
+          do
+            adb -s "$serial" uninstall "$package_name" >/dev/null 2>&1 || true
+          done
+          adb -s "$serial" install -r -t android/app/build/outputs/apk/debug/app-debug.apk
+          adb -s "$serial" install -r -t \
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           set +e
-          adb shell am instrument -w -r \
+          adb -s "$serial" shell am instrument -w -r \
             dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner \
             2>&1 | tee "$RUNNER_TEMP/app-instrumentation.txt"
           app_status="${PIPESTATUS[0]}"
@@ -164,9 +191,10 @@ jobs:
           grep -q '^OK (' "$RUNNER_TEMP/app-instrumentation.txt"
           ! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
             "$RUNNER_TEMP/app-instrumentation.txt"
-          adb install -r -t android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
+          adb -s "$serial" install -r -t \
+            android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
           set +e
-          adb shell am instrument -w -r \
+          adb -s "$serial" shell am instrument -w -r \
             dev.deftmartian.runway.data.test/androidx.test.runner.AndroidJUnitRunner \
             2>&1 | tee "$RUNNER_TEMP/data-instrumentation.txt"
           data_status="${PIPESTATUS[0]}"
@@ -182,6 +210,9 @@ jobs:
           name: android-instrumentation-diagnostics
           path: |
             ${{ runner.temp }}/runway-emulator.log
+            ${{ runner.temp }}/adb-devices.txt
+            ${{ runner.temp }}/emulator-logcat.txt
+            ${{ runner.temp }}/emulator-packages.txt
             ${{ runner.temp }}/app-instrumentation.txt
             ${{ runner.temp }}/data-instrumentation.txt
             android/**/build/reports/androidTests/
