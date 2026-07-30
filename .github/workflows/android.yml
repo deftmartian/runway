@@ -105,7 +105,7 @@ jobs:
         with:
           packages: >-
             platforms;android-36 build-tools;36.0.0 platform-tools emulator
-            system-images;android-35;aosp_atd;x86_64
+            system-images;android-35;default;x86_64
       - name: Package instrumentation APKs before starting the emulator
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
@@ -115,7 +115,7 @@ jobs:
         uses: ReactiveCircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         with:
           api-level: 35
-          target: aosp_atd
+          target: default
           arch: x86_64
           profile: pixel_2
           cores: 2
