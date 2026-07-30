@@ -226,11 +226,26 @@ data class LocalInboxReadModel(
     val reviewCountIsExact: Boolean,
     val hasMore: Boolean,
     val activities: List<LocalActivityReadModel>,
+    val pendingWorkoutFeedback: List<LocalPendingWorkoutFeedbackReadModel> = emptyList(),
     val linkCandidates: List<LocalWorkoutLinkCandidateReadModel> = emptyList(),
     val pendingHealthConnect: List<LocalHealthConnectPendingReadModel> = emptyList(),
     val timeZone: String = ZoneId.systemDefault().id,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
+)
+
+data class LocalPendingWorkoutFeedbackReadModel(
+    val feedbackId: String,
+    val workoutId: String,
+    val scheduledEpochDay: Long,
+    val workoutPurpose: String?,
+    val recordedAtEpochMillis: Long,
+    val completedDistanceMeters: Int?,
+    val completedDurationSeconds: Int?,
+    val feltHard: Boolean,
+    val pain: Boolean,
+    val completionState: String,
+    val consequence: LocalConsequenceReadModel,
 )
 
 data class LocalWeekStatsReadModel(
@@ -397,7 +412,6 @@ data class LocalProfileReadModel(
     val longestRecentRunMeters: Int?,
     val calibrationDurationSeconds: Int?,
     val preferredLongRunDay: Int?,
-    val experienceLevel: String,
 )
 
 data class LocalActivePlanReadModel(
@@ -462,6 +476,16 @@ data class LocalActivityLedgerSlice(
     val heartRate: List<HeartRateSampleEntity> = emptyList(),
     val consequence: ActivityConsequenceEntity? = null,
     val consequenceOptions: List<ActivityConsequenceOptionEntity> = emptyList(),
+    val linkedWorkoutFeedback: WorkoutFeedbackEntity? = null,
+    val linkedWorkoutConsequence: WorkoutFeedbackConsequenceEntity? = null,
+    val linkedWorkoutConsequenceOptions: List<WorkoutFeedbackConsequenceOptionEntity> = emptyList(),
+)
+
+data class LocalPendingWorkoutFeedbackLedgerSlice(
+    val feedback: WorkoutFeedbackEntity,
+    val workout: WorkoutEntity,
+    val consequence: WorkoutFeedbackConsequenceEntity,
+    val consequenceOptions: List<WorkoutFeedbackConsequenceOptionEntity> = emptyList(),
 )
 
 data class LocalCalendarLedgerSlice(
@@ -483,6 +507,7 @@ data class LocalInboxLedgerSlice(
     val reviewCountIsExact: Boolean = true,
     val hasMore: Boolean,
     val activities: List<LocalActivityLedgerSlice>,
+    val pendingWorkoutFeedback: List<LocalPendingWorkoutFeedbackLedgerSlice> = emptyList(),
     val linkCandidates: List<WorkoutEntity> = emptyList(),
     val linkCandidateBlocks: List<WorkoutBlockEntity> = emptyList(),
     val linkCandidateSegments: List<WorkoutSegmentEntity> = emptyList(),
@@ -675,14 +700,50 @@ object LocalSurfaceMappers {
         hasMore = slice.hasMore,
         activities = slice.activities
             .filter { row ->
-                row.activity.reviewState == "review" &&
-                    slice.pendingHealthConnect.none { pending ->
-                        pending.state == "possible_duplicate" &&
-                            pending.current?.activityId == row.activity.activityId
-                    }
+                val reviewActivity =
+                    row.activity.reviewState == "review" &&
+                        slice.pendingHealthConnect.none { pending ->
+                            pending.state == "possible_duplicate" &&
+                                pending.current?.activityId == row.activity.activityId
+                        }
+                val actionableAcceptedExtra =
+                    row.activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED &&
+                        row.activity.linkedWorkoutId == null &&
+                        row.activity.extraPlanImpactConfirmed &&
+                        row.consequence?.let { consequence ->
+                            consequence.planChangeAvailable &&
+                                consequence.appliedDecision == null &&
+                                consequence.resolvedAtEpochMillis == null
+                        } == true
+                val actionableLinkedActivity =
+                    row.activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED &&
+                        row.activity.linkedWorkoutId != null &&
+                        row.linkedWorkoutConsequence?.let { consequence ->
+                            consequence.planChangeAvailable && consequence.appliedDecision == null
+                        } == true
+                reviewActivity || actionableAcceptedExtra || actionableLinkedActivity
             }
             .sortedByDescending { it.activity.occurredAtEpochMillis }
             .map(::activity),
+        pendingWorkoutFeedback = slice.pendingWorkoutFeedback.map { row ->
+            LocalPendingWorkoutFeedbackReadModel(
+                feedbackId = row.feedback.feedbackId,
+                workoutId = row.feedback.workoutId,
+                scheduledEpochDay = row.workout.currentScheduledEpochDay,
+                workoutPurpose = row.workout.currentPurpose,
+                recordedAtEpochMillis = row.feedback.recordedAtEpochMillis,
+                completedDistanceMeters = row.feedback.completedDistanceMeters,
+                completedDurationSeconds = row.feedback.completedDurationSeconds,
+                feltHard = row.feedback.feltHard,
+                pain = row.feedback.pain,
+                completionState = row.feedback.completionState,
+                consequence = workoutConsequence(
+                    row.feedback,
+                    row.consequence,
+                    row.consequenceOptions,
+                ),
+            )
+        },
         linkCandidates = slice.linkCandidates.map {
             LocalWorkoutLinkCandidateReadModel(
                 it.planId,
@@ -794,35 +855,58 @@ object LocalSurfaceMappers {
         val planByWorkout = slice.plans.flatMap { plan ->
             plan.workouts.map { it.workoutId to planState(plan.plan.state) }
         }.toMap()
-        val totals = accepted
-            .groupBy {
-                val workoutId = it.activity.linkedWorkoutId
-                if (workoutId == null) {
-                    LocalPlanProvenance.UNLINKED
-                } else {
-                    planByWorkout[workoutId]?.let(::provenance) ?: LocalPlanProvenance.OTHER
+        // A direct feedback result has no ActivityEntity, while linked activity feedback points
+        // back to its ActivityEntity. Combine the former here and exclude the latter so Stats
+        // reflects every completed fact exactly once.
+        val acceptedEvidence = accepted.map { row ->
+            RecordedStatsEvidence(
+                provenance = row.activity.linkedWorkoutId
+                    ?.let { workoutId -> planByWorkout[workoutId]?.let(::provenance) }
+                    ?: if (row.activity.linkedWorkoutId == null) {
+                        LocalPlanProvenance.UNLINKED
+                    } else {
+                        LocalPlanProvenance.OTHER
+                    },
+                distanceMeters = row.activity.distanceMeters,
+                durationSeconds = row.activity.durationSeconds,
+            )
+        }
+        val directFeedbackEvidence = slice.plans.flatMap { plan ->
+            plan.feedback
+                .asSequence()
+                .filter { it.sourceActivityId == null && it.completionState in COMPLETED_FEEDBACK_STATES }
+                .map { feedback ->
+                    RecordedStatsEvidence(
+                        provenance = provenance(planState(plan.plan.state)),
+                        distanceMeters = feedback.completedDistanceMeters,
+                        durationSeconds = feedback.completedDurationSeconds,
+                    )
                 }
-            }
+                .toList()
+        }
+        val recordedEvidence = acceptedEvidence + directFeedbackEvidence
+        val totals = recordedEvidence
+            .groupBy(RecordedStatsEvidence::provenance)
             .map { (origin, rows) ->
                 LocalRecordedTotalsReadModel(
                     provenance = origin,
                     runs = rows.size,
-                    distanceMeters = rows.sumOf { it.activity.distanceMeters ?: 0 },
-                    durationSeconds = rows.sumOf { it.activity.durationSeconds ?: 0 },
+                    distanceMeters = rows.sumOf { it.distanceMeters ?: 0 },
+                    durationSeconds = rows.sumOf { it.durationSeconds ?: 0 },
                 )
             }
             .sortedBy { it.provenance.ordinal }
-        val paired = accepted.map { it.activity }
+        val paired = recordedEvidence
             .filter { (it.distanceMeters ?: 0) > 0 && (it.durationSeconds ?: 0) > 0 }
         val heartRate = accepted.map { it.activity }
             .filter { it.averageHeartRateBpm != null && (it.durationSeconds ?: 0) > 0 }
         return LocalStatsReadModel(
             weeks = weeks.sortedWith(compareBy(LocalWeekStatsReadModel::startEpochDay, LocalWeekStatsReadModel::weekOrdinal)),
             recordedTotals = totals,
-            totalRuns = accepted.size,
-            totalDistanceMeters = accepted.sumOf { it.activity.distanceMeters ?: 0 },
-            totalDurationSeconds = accepted.sumOf { it.activity.durationSeconds ?: 0 },
-            longestRunMeters = accepted.mapNotNull { it.activity.distanceMeters }.maxOrNull(),
+            totalRuns = recordedEvidence.size,
+            totalDistanceMeters = recordedEvidence.sumOf { it.distanceMeters ?: 0 },
+            totalDurationSeconds = recordedEvidence.sumOf { it.durationSeconds ?: 0 },
+            longestRunMeters = recordedEvidence.mapNotNull(RecordedStatsEvidence::distanceMeters).maxOrNull(),
             weightedPaceSecondsPerKilometre = paired
                 .takeIf { it.isNotEmpty() }
                 ?.let { rows -> rows.sumOf { requireNotNull(it.durationSeconds) }.toDouble() * 1_000 / rows.sumOf { requireNotNull(it.distanceMeters) } },
@@ -849,6 +933,12 @@ object LocalSurfaceMappers {
             phaseReview = slice.phaseReview,
         )
     }
+
+    private data class RecordedStatsEvidence(
+        val provenance: LocalPlanProvenance,
+        val distanceMeters: Int?,
+        val durationSeconds: Int?,
+    )
 
     fun history(slice: LocalHistoryLedgerSlice): LocalHistoryReadModel {
         val accepted = slice.activities.filter { it.activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED }
@@ -1088,7 +1178,6 @@ object LocalSurfaceMappers {
                 longestRecentRunMeters = it.longestRecentRunMeters,
                 calibrationDurationSeconds = it.calibrationDurationSeconds,
                 preferredLongRunDay = it.preferredLongRunDay,
-                experienceLevel = it.experienceLevel,
             )
         }
         val activePlan = slice.activePlan?.let {
@@ -1231,7 +1320,19 @@ object LocalSurfaceMappers {
             reviewState = entity.reviewState,
             extraPlanImpactConfirmed = entity.extraPlanImpactConfirmed,
             consequence = entity.takeIf { it.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED }
-                ?.let { accepted -> row.consequence?.let { stored -> activityConsequence(accepted, row.feedback, stored, row.consequenceOptions) } },
+                ?.let { accepted ->
+                    row.consequence?.let { stored ->
+                        activityConsequence(accepted, row.feedback, stored, row.consequenceOptions)
+                    } ?: row.linkedWorkoutFeedback?.let { feedback ->
+                        row.linkedWorkoutConsequence?.let { stored ->
+                            workoutConsequence(
+                                feedback,
+                                stored,
+                                row.linkedWorkoutConsequenceOptions,
+                            )
+                        }
+                    }
+                },
             evidence = LocalActivityEvidenceReadModel(
                 routeRetained = entity.routeTraceRetained,
                 routeStartEndRedacted = entity.routeStartEndRedacted,
@@ -1529,6 +1630,8 @@ object LocalSurfaceMappers {
         LocalPlanState.ARCHIVED -> LocalPlanProvenance.ARCHIVED
         LocalPlanState.OTHER -> LocalPlanProvenance.OTHER
     }
+
+    private val COMPLETED_FEEDBACK_STATES = setOf("done", "shortened", "completed", "overrun")
 
     private fun localEpochDay(epochMillis: Long, timeZone: String): Long =
         Instant.ofEpochMilli(epochMillis).atZone(ZoneId.of(timeZone)).toLocalDate().toEpochDay()

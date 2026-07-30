@@ -33,7 +33,6 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
             currentWeeklyDistanceKm = profile?.baselineDistanceMeters.toKilometreInput(),
             currentRunsPerWeek = profile?.currentRunsPerWeek?.toString(),
             longestRecentRunKm = profile?.longestRecentRunMeters.toKilometreInput(),
-            experience = profile?.experienceLevel,
             calibrationDurationMinutes = profile?.calibrationDurationSeconds
                 ?.let { (it / 60).toString() },
             preferredLongRunDay = profile?.preferredLongRunDay?.toString(),

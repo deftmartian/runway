@@ -9,7 +9,6 @@ import dev.deftmartian.runway.data.ProfileSettingsEntity
 import dev.deftmartian.runway.domain.CalibrationIntake
 import dev.deftmartian.runway.domain.DateUtils
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
-import dev.deftmartian.runway.domain.Experience
 import dev.deftmartian.runway.domain.FoundationIntake
 import dev.deftmartian.runway.domain.GeneratedPlan
 import dev.deftmartian.runway.domain.GoalKind
@@ -30,7 +29,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 internal enum class OnboardingField {
-    GOAL_KIND, START_MODE, RACE_DISTANCE, TARGET_DATE, PRIORITY, EXPERIENCE,
+    GOAL_KIND, START_MODE, RACE_DISTANCE, TARGET_DATE, PRIORITY,
     AVAILABILITY, TIME_ZONE, WEEKLY_DISTANCE, RUNS_PER_WEEK, LONGEST_RUN,
     LONG_RUN_DAY, CALIBRATION_DURATION, HEALTH_NOTES, CONCENTRATED_SCHEDULE,
 }
@@ -86,7 +85,6 @@ internal object StandaloneOnboardingAdapter {
             "calibration" to StartMode.CALIBRATION,
         ))
         val priority = enumValue(OnboardingField.PRIORITY, command.priority, mapOf("finish_healthy" to GoalPriority.FINISH_HEALTHY, "consistency" to GoalPriority.CONSISTENCY))
-        val experience = enumValue(OnboardingField.EXPERIENCE, command.experience, mapOf("new" to Experience.NEW, "returning" to Experience.RETURNING, "comfortable" to Experience.COMFORTABLE))
         val raceDistance = command.raceDistance.trim().lowercase().takeIf(String::isNotEmpty)?.let {
             mapOf("5k" to RaceDistance.FIVE_K, "10k" to RaceDistance.TEN_K, "half" to RaceDistance.HALF, "marathon" to RaceDistance.MARATHON)[it]
                 ?: run {
@@ -105,7 +103,7 @@ internal object StandaloneOnboardingAdapter {
         if (command.injuryNotes.trim().length > 240) error(OnboardingField.HEALTH_NOTES, OnboardingFieldError.OUT_OF_RANGE)
         if (command.availability.distinct().size != command.availability.size) error(OnboardingField.AVAILABILITY, OnboardingFieldError.DUPLICATE_DAY)
 
-        if (goalKind == null || startMode == null || priority == null || experience == null || zone == null || today == null) {
+        if (goalKind == null || startMode == null || priority == null || zone == null || today == null) {
             return StandaloneOnboardingOutcome.Invalid(errors, null)
         }
         // These inputs only exist for their respective start paths. Parsing every hidden form
@@ -124,7 +122,7 @@ internal object StandaloneOnboardingAdapter {
         val longRunDay = if (needsEstablishedBaseline) strictWhole(command.preferredLongRunDay, OnboardingField.LONG_RUN_DAY, ::error) else null
         val bounds = if (startMode == StartMode.FOUNDATION_ONLY) null else OnboardingValidation.targetDateBounds(today, startMode)
         val selection = OnboardingSelection(
-            goalKind, startMode, raceDistance, targetDate, experience, command.availability, timeZone, flags,
+            goalKind, startMode, raceDistance, targetDate, command.availability, timeZone, flags,
             weeklyKm, runs, longestKm, longRunDay,
             calibrationMinutes ?: if (calibration && (flags.currentPain || flags.medicalRestriction)) 10 else null,
             command.confirmConcentratedSchedule,
@@ -142,7 +140,7 @@ internal object StandaloneOnboardingAdapter {
         if (blocked) return StandaloneOnboardingOutcome.PendingGoal(metadata)
         val startDate = nextPlanStartDate(today)
         val intake = when (startMode) {
-            StartMode.ESTABLISHED -> EstablishedTrainingIntake(priority, experience, command.availability, flags, requireNotNull(raceDistance), requireNotNull(targetDate), kilometersToMeters(requireNotNull(weeklyKm)), requireNotNull(runs), kilometersToMeters(requireNotNull(longestKm)), requireNotNull(longRunDay), startDate)
+            StartMode.ESTABLISHED -> EstablishedTrainingIntake(priority, command.availability, flags, requireNotNull(raceDistance), requireNotNull(targetDate), kilometersToMeters(requireNotNull(weeklyKm)), requireNotNull(runs), kilometersToMeters(requireNotNull(longestKm)), requireNotNull(longRunDay), startDate)
             StartMode.FOUNDATION_TO_GOAL, StartMode.FOUNDATION_ONLY -> FoundationIntake(startMode, goalKind, raceDistance, command.availability, flags, startDate)
             StartMode.CALIBRATION -> CalibrationIntake(goalKind, raceDistance, command.availability, flags, requireNotNull(calibrationMinutes) * 60, startDate)
         }
@@ -151,7 +149,6 @@ internal object StandaloneOnboardingAdapter {
 
     private fun mapIssue(issue: OnboardingIssue, error: (OnboardingField, OnboardingFieldError) -> Unit) = when (issue) {
         OnboardingIssue.INVALID_TIME_ZONE -> error(OnboardingField.TIME_ZONE, OnboardingFieldError.INVALID_VALUE)
-        OnboardingIssue.MISSING_EXPERIENCE -> error(OnboardingField.EXPERIENCE, OnboardingFieldError.REQUIRED)
         OnboardingIssue.MISSING_START_MODE, OnboardingIssue.INVALID_GOAL_MODE -> error(OnboardingField.START_MODE, OnboardingFieldError.INVALID_VALUE)
         OnboardingIssue.MISSING_RACE_DISTANCE -> error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.REQUIRED)
         OnboardingIssue.MISSING_TARGET_DATE -> error(OnboardingField.TARGET_DATE, OnboardingFieldError.REQUIRED)
@@ -316,7 +313,7 @@ internal object StandaloneOnboardingPersistenceMapper {
                 ?.takeIf { calibration }?.times(60),
             confirmConcentratedSchedule = hasEstablishedBaseline && command.confirmConcentratedSchedule,
             preferredLongRunDay = command.preferredLongRunDay.trim().toIntOrNull()?.takeIf { hasEstablishedBaseline },
-            experienceLevel = command.experience.trim().lowercase(),
+            experienceLevel = "not_specified",
         )
     }
 

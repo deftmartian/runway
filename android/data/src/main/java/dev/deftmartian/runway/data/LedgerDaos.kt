@@ -344,6 +344,52 @@ interface ActivityLedgerDao {
     @Query("SELECT COUNT(*) FROM activities WHERE reviewState = :reviewState")
     suspend fun activityCountByReviewState(reviewState: String): Int
 
+    /**
+     * Accepted extras keep their plan-choice card in Inbox until the runner applies a choice.
+     * This deliberately excludes linked work and historical/non-actionable consequences.
+     */
+    @Query(
+        """
+        SELECT activity.*
+        FROM activities AS activity
+        INNER JOIN activity_consequences AS consequence
+            ON consequence.activityId = activity.activityId
+        WHERE activity.reviewState = 'accepted'
+          AND activity.linkedWorkoutId IS NULL
+          AND activity.extraPlanImpactConfirmed = 1
+          AND consequence.planChangeAvailable = 1
+          AND consequence.appliedDecision IS NULL
+          AND consequence.resolvedAtEpochMillis IS NULL
+        ORDER BY activity.occurredAtEpochMillis DESC, activity.activityId DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun acceptedUnlinkedExtrasWithPendingPlanChange(limit: Int): List<ActivityEntity>
+
+    /** Linked activity outcomes use workout-feedback consequences rather than activity consequences. */
+    @Query(
+        """
+        SELECT activity.*
+        FROM activities AS activity
+        INNER JOIN workout_feedback AS feedback
+            ON feedback.sourceActivityId = activity.activityId
+        INNER JOIN workout_feedback_consequences AS consequence
+            ON consequence.feedbackId = feedback.feedbackId
+        INNER JOIN workouts AS workout
+            ON workout.workoutId = feedback.workoutId
+        INNER JOIN plans AS active_plan
+            ON active_plan.planId = workout.planId
+        WHERE activity.reviewState = 'accepted'
+          AND activity.linkedWorkoutId IS NOT NULL
+          AND active_plan.state = 'active'
+          AND consequence.planChangeAvailable = 1
+          AND consequence.appliedDecision IS NULL
+        ORDER BY activity.occurredAtEpochMillis DESC, activity.activityId DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun acceptedLinkedActivitiesWithPendingPlanChange(limit: Int): List<ActivityEntity>
+
     @Query("SELECT * FROM activities WHERE occurredAtEpochMillis >= :fromInclusive AND occurredAtEpochMillis < :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     suspend fun activitiesInRange(
         fromInclusive: Long,

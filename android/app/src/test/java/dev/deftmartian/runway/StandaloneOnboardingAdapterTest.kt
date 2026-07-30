@@ -157,6 +157,7 @@ class StandaloneOnboardingAdapterTest {
         assertEquals(6, first.profile.preferredLongRunDay)
         assertEquals("discard", first.profile.routeDataMode)
         assertEquals("discard", first.profile.heartRateDataMode)
+        assertEquals("not_specified", first.profile.experienceLevel)
         assertNotEquals(firstGraph.goal.goalId, secondGraph.goal.goalId)
         assertNotEquals(firstGraph.plan.planId, secondGraph.plan.planId)
     }
@@ -172,5 +173,5 @@ class StandaloneOnboardingAdapterTest {
         longestRecentRunKm: String = "8",
         timeZone: String = "UTC",
         currentPain: Boolean = false,
-    ) = CreatePlanCommand(goalKind, startMode, raceDistance, targetDate, "finish_healthy", currentWeeklyDistanceKm, currentRunsPerWeek, longestRecentRunKm, "returning", "20", availability, "6", timeZone, false, currentPain, false, false, "", false, false)
+    ) = CreatePlanCommand(goalKind, startMode, raceDistance, targetDate, "finish_healthy", currentWeeklyDistanceKm, currentRunsPerWeek, longestRecentRunKm, "20", availability, "6", timeZone, false, currentPain, false, false, "", false, false)
 }

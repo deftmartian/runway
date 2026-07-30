@@ -65,7 +65,6 @@ internal fun SetupScreen(
     var weeklyKm by rememberSaveable { mutableStateOf(initial?.currentWeeklyDistanceKm.orEmpty()) }
     var runsPerWeek by rememberSaveable { mutableStateOf(initial?.currentRunsPerWeek.orEmpty()) }
     var longestKm by rememberSaveable { mutableStateOf(initial?.longestRecentRunKm.orEmpty()) }
-    var experience by rememberSaveable { mutableStateOf(initial?.experience.orEmpty().ifBlank { "new" }) }
     var calibrationMinutes by rememberSaveable { mutableStateOf(initial?.calibrationDurationMinutes.orEmpty().ifBlank { "20" }) }
     var preferredDay by rememberSaveable { mutableStateOf(initial?.preferredLongRunDay.orEmpty().ifBlank { "6" }) }
     var timeZone by rememberSaveable { mutableStateOf(initial?.timeZone.orEmpty().ifBlank { ZoneId.systemDefault().id }) }
@@ -142,7 +141,7 @@ internal fun SetupScreen(
                 goalKind = if (isRaceGoal) "race" else "foundation", startMode = startMode,
                 raceDistance = if (isRaceGoal) raceDistance else "", targetDate = if (isRaceGoal) targetDate else "",
                 priority = priority, currentWeeklyDistanceKm = weeklyKm, currentRunsPerWeek = runsPerWeek,
-                longestRecentRunKm = longestKm, experience = experience, calibrationDurationMinutes = calibrationMinutes,
+                longestRecentRunKm = longestKm, calibrationDurationMinutes = calibrationMinutes,
                 availability = availability.sorted(), preferredLongRunDay = preferredDay, timeZone = timeZone,
                 recentInjury = recentInjury, currentPain = currentPain, recurringPain = recurringPain,
                 medicalRestriction = medicalRestriction, injuryNotes = injuryNotes,
@@ -212,20 +211,19 @@ internal fun SetupScreen(
                         }
                     }
                 }
-                item {
-                    SetupSection("Current running", "Choose the description that fits best.") {
-                        listOf("new" to "New runner", "returning" to "Returning after time away", "comfortable" to "Running comfortably").forEach { (value, label) ->
-                            ChoiceRow(label, experience == value) { experience = value }
+                if (startMode == "established" || startMode == "calibration") {
+                    item {
+                        SetupSection("Current running", "Use the work you could repeat now.") {
+                            if (startMode == "established") {
+                                NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
+                                NumberField("Current runs per week", runsPerWeek) { runsPerWeek = it }
+                                NumberField("Longest recent run (km)", longestKm) { longestKm = it }
+                            }
+                            if (startMode == "calibration") {
+                                NumberField("Timed run duration (10–30 min)", calibrationMinutes) { calibrationMinutes = it }
+                            }
+                            startingPointIssue?.let { ValidationText(it) }
                         }
-                        if (startMode == "established") {
-                            NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
-                            NumberField("Current runs per week", runsPerWeek) { runsPerWeek = it }
-                            NumberField("Longest recent run (km)", longestKm) { longestKm = it }
-                        }
-                        if (startMode == "calibration") {
-                            NumberField("Timed run duration (10–30 min)", calibrationMinutes) { calibrationMinutes = it }
-                        }
-                        startingPointIssue?.let { ValidationText(it) }
                     }
                 }
                 item {

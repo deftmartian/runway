@@ -8,7 +8,7 @@ import java.time.LocalDate
 class TrainingPlannerTest {
     private val flags = InjuryFlags(recentInjury = true)
     private val established = EstablishedTrainingIntake(
-        priority = GoalPriority.FINISH_HEALTHY, experience = Experience.RETURNING,
+        priority = GoalPriority.FINISH_HEALTHY,
         availability = listOf(1, 3, 6), injuryFlags = flags, raceDistance = RaceDistance.HALF,
         targetDate = "2026-09-01", currentWeeklyDistanceMeters = 12000, currentRunsPerWeek = 3,
         longestRecentRunMeters = 8000, preferredLongRunDay = 6, startDate = "2026-05-11"

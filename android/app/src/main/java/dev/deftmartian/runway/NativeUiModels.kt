@@ -17,11 +17,14 @@ internal data class NativeCalendarPayload(
     val calendar: NativeCalendar?,
     val nextWorkout: NativeWorkout?,
     val activityCandidates: List<NativeWorkout>,
+    val pendingReviewCount: Int = 0,
+    val pendingReviewCountIsExact: Boolean = true,
 )
 
 internal data class NativeReviewPayload(
     val candidates: List<NativeWorkout>,
     val activities: List<NativeActivity>,
+    val workoutDecisions: List<NativeWorkoutFeedback> = emptyList(),
     val healthConnectChanges: List<NativeHealthConnectChange> = emptyList(),
     val hasMore: Boolean = false,
 )
@@ -118,7 +121,6 @@ internal data class NativePlanInitialValues(
     val currentWeeklyDistanceKm: String?,
     val currentRunsPerWeek: String?,
     val longestRecentRunKm: String?,
-    val experience: String?,
     val calibrationDurationMinutes: String?,
     val preferredLongRunDay: String?,
     val timeZone: String?,
@@ -188,6 +190,9 @@ internal data class NativeWorkoutFeedback(
     val pain: Boolean?,
     val consequence: NativeConsequence?,
     val canDelete: Boolean?,
+    val completionState: String? = null,
+    val scheduledDate: String? = null,
+    val workoutPurpose: String? = null,
 )
 
 internal data class NativeActivity(
@@ -253,6 +258,8 @@ internal data class NativeConsequence(
     val planChangeAvailable: Boolean?,
     val options: List<String>,
     val comparisonStatus: String?,
+    val sourceKind: String? = null,
+    val sourceId: String? = null,
 )
 
 internal data class NativePlanDetail(val weeks: List<NativeWeek>)

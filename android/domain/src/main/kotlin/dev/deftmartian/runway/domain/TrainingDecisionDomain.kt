@@ -274,6 +274,8 @@ object Consequences {
 
 data class MatchActivity(val activityDate: LocalDate, val distanceMeters: Int, val durationSeconds: Int? = null)
 data class MatchWorkout(val id: String, val scheduledDate: LocalDate, val targetDistanceMeters: Int, val targetDurationSeconds: Int? = null)
+const val ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS = 3L
+
 fun selectAutoWorkoutMatch(activity: MatchActivity, candidates: Iterable<MatchWorkout>): String? {
     val ranked = candidates.mapNotNull { candidate ->
         val ratio = if (candidate.targetDistanceMeters > 0) {

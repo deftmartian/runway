@@ -68,6 +68,114 @@ class NativeCalendarDecisionTest {
         assertEquals("Shortened to 2 km", shortened.todayStatus)
     }
 
+    @Test
+    fun `current decision carries plan detail and pending run review`() {
+        val summary = nativeCalendarDecisionSummary(
+            calendar = calendar(
+                workouts = listOf(
+                    workout(
+                        id = "today",
+                        date = "2026-07-29",
+                        type = "easy",
+                        purpose = "Easy run",
+                        distanceMeters = 4_000.0,
+                    ),
+                ),
+            ),
+            nextWorkout = workout(
+                id = "next",
+                date = "2026-07-31",
+                type = "long",
+                purpose = "Long easy run",
+                distanceMeters = 6_000.0,
+            ),
+            pendingRunReviewCount = 2,
+            pendingRunReviewCountIsExact = false,
+        )
+
+        assertEquals("Planned", summary.todayStatus)
+        assertEquals("Easy run · 4 km", summary.todayPlan)
+        assertEquals("6 km", summary.nextMeasurement)
+        assertEquals(2, summary.pendingRunReviewCount)
+        assertEquals(false, summary.pendingRunReviewCountIsExact)
+    }
+
+    @Test
+    fun `activity link candidates are limited to the persisted three day window and sorted nearby first`() {
+        val candidates = activityLinkCandidates(
+            activity("import", "2026-07-29", reviewState = "review"),
+            listOf(
+                workout("after-window", "2026-08-02", "easy"),
+                workout("three-days-before", "2026-07-26", "easy"),
+                workout("same-date-b", "2026-07-28", "easy"),
+                workout("same-date-a", "2026-07-28", "easy"),
+                workout("one-day-before", "2026-07-28", "easy"),
+                workout("three-days-after", "2026-08-01", "easy"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                "one-day-before",
+                "same-date-a",
+                "same-date-b",
+                "three-days-before",
+                "three-days-after",
+            ),
+            candidates.map(NativeWorkout::id),
+        )
+    }
+
+    @Test
+    fun `accepted activity pain does not keep a resolved day in review`() {
+        val presentation = calendarDayPresentation(
+            workouts = emptyList(),
+            activities = listOf(activity("accepted", "2026-07-29").copy(pain = true)),
+            feedbackByWorkout = emptyMap(),
+        )
+
+        assertEquals(CalendarCellEmphasis.Actual, presentation.emphasis)
+        assertEquals("recorded", presentation.stateDescription)
+    }
+
+    @Test
+    fun `calendar feedback states remain distinct`() {
+        val workout = workout("workout", "2026-07-29", "easy")
+        fun presentation(state: String) = calendarDayPresentation(
+            workouts = listOf(workout),
+            activities = emptyList(),
+            feedbackByWorkout = mapOf("workout" to feedback("workout", completionState = state)),
+        )
+
+        assertEquals("✓ Done", presentation("done").label)
+        assertEquals("↘ Short", presentation("shortened").label)
+        assertEquals("— Skipped", presentation("skipped").label)
+    }
+
+    @Test
+    fun `unapplied consequence keeps a resolved activity actionable`() {
+        val presentation = calendarDayPresentation(
+            workouts = emptyList(),
+            activities = listOf(
+                activity("accepted", "2026-07-29").copy(
+                    consequence = NativeConsequence(
+                        kind = null,
+                        appliedDecision = null,
+                        recommendedDecision = "reduce_next",
+                        deviation = "short",
+                        risk = null,
+                        planChangeAvailable = true,
+                        options = emptyList(),
+                        comparisonStatus = null,
+                    ),
+                ),
+            ),
+            feedbackByWorkout = emptyMap(),
+        )
+
+        assertEquals(CalendarCellEmphasis.Review, presentation.emphasis)
+    }
+
     private fun calendar(
         workouts: List<NativeWorkout>,
         activities: List<NativeActivity> = emptyList(),
@@ -89,6 +197,7 @@ class NativeCalendarDecisionTest {
         purpose: String? = null,
         removed: Boolean = false,
         status: String = "planned",
+        distanceMeters: Double? = null,
     ) = NativeWorkout(
         id = id,
         weekId = null,
@@ -96,7 +205,7 @@ class NativeCalendarDecisionTest {
         scheduledDate = date,
         type = type,
         status = status,
-        targetDistanceMeters = null,
+        targetDistanceMeters = distanceMeters,
         targetDurationSeconds = null,
         prescriptionKind = if (type == "rest") "rest" else "distance",
         intervalStructure = null,
@@ -138,6 +247,7 @@ class NativeCalendarDecisionTest {
     private fun feedback(
         workoutId: String,
         completedDistanceMeters: Double? = null,
+        completionState: String = "done",
     ) = NativeWorkoutFeedback(
         id = "feedback-$workoutId",
         workoutId = workoutId,
@@ -147,5 +257,6 @@ class NativeCalendarDecisionTest {
         pain = false,
         consequence = null,
         canDelete = true,
+        completionState = completionState,
     )
 }

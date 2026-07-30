@@ -63,7 +63,7 @@ internal fun CalendarMonthLedger(
     }
     val horizontalScroll = rememberScrollState()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val minimumGridWidth = 320.dp
+        val minimumGridWidth = 344.dp
         val gridWidth = if (maxWidth < minimumGridWidth) minimumGridWidth else maxWidth
         Box(
             modifier = Modifier
@@ -207,24 +207,36 @@ private fun CalendarDayCell(
     }
 }
 
-private enum class CalendarCellEmphasis { Neutral, Planned, Actual, Review }
+internal enum class CalendarCellEmphasis { Neutral, Planned, Actual, Review }
 
-private data class CalendarDayPresentation(
+internal data class CalendarDayPresentation(
     val label: String?,
     val stateDescription: String?,
     val emphasis: CalendarCellEmphasis,
 )
 
-private fun calendarDayPresentation(
+internal fun calendarDayPresentation(
     workouts: List<NativeWorkout>,
     activities: List<NativeActivity>,
     feedbackByWorkout: Map<String, NativeWorkoutFeedback>,
 ): CalendarDayPresentation {
     val activeWorkouts = workouts.filter { it.isRemoved != true }
     val runWorkouts = activeWorkouts.filter { it.type != "rest" }
-    val reviewNeeded = activities.any { it.pain == true || it.reviewState == "review" }
+    val feedback = runWorkouts.mapNotNull { feedbackByWorkout[it.id.orEmpty()] }
+    val reviewNeeded =
+        activities.any { it.reviewState == "review" || it.consequence.hasUnappliedPlanDecision() } ||
+            feedback.any { it.consequence.hasUnappliedPlanDecision() }
     if (reviewNeeded) {
         return CalendarDayPresentation("! Review", "needs review", CalendarCellEmphasis.Review)
+    }
+    if (feedback.isNotEmpty()) {
+        return when {
+            feedback.any { it.completionState == "skipped" } ->
+                CalendarDayPresentation("— Skipped", "skipped", CalendarCellEmphasis.Neutral)
+            feedback.any { it.completionState == "shortened" } ->
+                CalendarDayPresentation("↘ Short", "shortened", CalendarCellEmphasis.Actual)
+            else -> CalendarDayPresentation("✓ Done", "completed", CalendarCellEmphasis.Actual)
+        }
     }
     if (activities.isNotEmpty()) {
         val label = if (activities.size > 1) {
@@ -239,11 +251,8 @@ private fun calendarDayPresentation(
         }
         return CalendarDayPresentation(label, "recorded", CalendarCellEmphasis.Actual)
     }
-    if (runWorkouts.any { feedbackByWorkout.containsKey(it.id.orEmpty()) }) {
-        return CalendarDayPresentation("✓ Done", "feedback recorded", CalendarCellEmphasis.Actual)
-    }
     if (runWorkouts.any { it.isEdited == true }) {
-        return CalendarDayPresentation("↺ Edited", "edited plan", CalendarCellEmphasis.Review)
+        return CalendarDayPresentation("↺ Edited", "edited plan", CalendarCellEmphasis.Planned)
     }
     if (activeWorkouts.isNotEmpty() && runWorkouts.isEmpty()) {
         return CalendarDayPresentation("— Rest", "rest", CalendarCellEmphasis.Neutral)
@@ -261,6 +270,9 @@ private fun calendarDayPresentation(
     }
     return CalendarDayPresentation(null, null, CalendarCellEmphasis.Neutral)
 }
+
+private fun NativeConsequence?.hasUnappliedPlanDecision(): Boolean =
+    this?.planChangeAvailable == true && appliedDecision == null
 
 @Composable
 private fun CalendarCellEmphasis.color() = when (this) {
@@ -363,16 +375,7 @@ internal fun CalendarDayDetailSheet(
                             actionPending = actionPending,
                             onOpenDetails = { onOpenActivity(activity) },
                             onDecision = { decision ->
-                                activity.consequence?.let { consequence ->
-                                    onPlanDecision(
-                                        PendingPlanDecision(
-                                            source = "activity",
-                                            sourceId = activity.id.orEmpty(),
-                                            decision = decision,
-                                            consequence = consequence,
-                                        ),
-                                    )
-                                }
+                                pendingActivityPlanDecision(activity, decision)?.let(onPlanDecision)
                             },
                         )
                     }
@@ -385,16 +388,7 @@ internal fun CalendarDayDetailSheet(
                         actionPending = actionPending,
                         onOpenDetails = { onOpenActivity(activity) },
                         onDecision = { decision ->
-                            activity.consequence?.let { consequence ->
-                                onPlanDecision(
-                                    PendingPlanDecision(
-                                        source = "activity",
-                                        sourceId = activity.id.orEmpty(),
-                                        decision = decision,
-                                        consequence = consequence,
-                                    ),
-                                )
-                            }
+                            pendingActivityPlanDecision(activity, decision)?.let(onPlanDecision)
                         },
                     )
                 }

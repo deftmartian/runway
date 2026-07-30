@@ -132,7 +132,13 @@ internal fun SettingsScreen(
         item {
             SettingsRail("Imports") {
                 SettingsActionRow("GPX file", "Choose one file to review on this phone", "Choose", !actionPending, onClick = callbacks.onImportGpx)
-                SettingsActionRow("GPX folder", importConnectionSummary(state.folderImport), "Open", !actionPending, onClick = callbacks.onOpenFolderImports)
+                SettingsActionRow(
+                    "GPX folder",
+                    importConnectionSummary(state.folderImport),
+                    folderImportActionLabel(state.folderImport),
+                    !actionPending,
+                    onClick = callbacks.onOpenFolderImports,
+                )
                 SettingsActionRow("Health Connect", importConnectionSummary(state.healthConnectImport), "Open", !actionPending, onClick = callbacks.onOpenHealthConnect)
             }
         }
@@ -412,4 +418,12 @@ internal fun importConnectionSummary(connection: NativeImportConnection): String
     NativeImportConnection.PermissionRequired -> "Permission needed"
     is NativeImportConnection.Attention -> connection.detail.ifBlank { "Needs attention" }
     NativeImportConnection.Unavailable -> "Unavailable on this phone"
+}
+
+internal fun folderImportActionLabel(connection: NativeImportConnection): String = when (connection) {
+    NativeImportConnection.NotConnected -> "Choose"
+    NativeImportConnection.PermissionRequired -> "Grant access"
+    NativeImportConnection.Connected -> "Manage"
+    is NativeImportConnection.Attention -> "Review"
+    NativeImportConnection.Unavailable -> "Unavailable"
 }

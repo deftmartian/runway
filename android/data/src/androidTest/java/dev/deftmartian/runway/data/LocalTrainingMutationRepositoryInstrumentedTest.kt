@@ -8,7 +8,9 @@ import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -84,7 +86,77 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
         )
     }
 
-    private suspend fun insertPlanGraph(workoutId: String) {
+    @Test
+    fun manualRunStaysInReviewAndDoesNotAlterThePlanUntilExplicitlyAcceptedAsExtra() = runBlocking {
+        insertPlanGraph("manual-review", status = "planned")
+        val mutations = LocalTrainingMutationRepository(
+            database,
+            nowEpochMillis = { now },
+            newId = { "manual-review-activity" },
+        )
+
+        val recorded = mutations.recordManualRun(
+            LocalManualRunCommand(
+                occurredDate = today,
+                distanceMeters = 5_000,
+                durationSeconds = 1_800,
+                feltHard = true,
+                pain = true,
+            ),
+        )
+        check(recorded is LocalTrainingMutationResult.ManualRunRecorded)
+
+        val candidate = requireNotNull(database.activityLedgerDao().activity("manual-review-activity"))
+        assertEquals("review", candidate.reviewState)
+        assertNull(candidate.acceptedAtEpochMillis)
+        assertFalse(candidate.extraPlanImpactConfirmed)
+        assertEquals("planned", database.goalPlanDao().workout("manual-review")?.currentStatus)
+        assertNull(database.activityLedgerDao().activityConsequence(candidate.activityId))
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertEquals(true, database.activityLedgerDao().activityFeedback(candidate.activityId)?.pain)
+
+        val accepted = LocalActivityReviewRepository(database, nowEpochMillis = { now })
+            .confirmAsExtra(candidate.activityId)
+        assertTrue(accepted is LocalActivityReviewResult.AcceptedExtra)
+        val extra = requireNotNull(database.activityLedgerDao().activity(candidate.activityId))
+        assertEquals(ACTIVITY_REVIEW_STATE_ACCEPTED, extra.reviewState)
+        assertEquals(now, extra.acceptedAtEpochMillis)
+        assertTrue(extra.extraPlanImpactConfirmed)
+        assertNotNullConsequence(candidate.activityId)
+        assertTrue(requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertEquals("planned", database.goalPlanDao().workout("manual-review")?.currentStatus)
+    }
+
+    @Test
+    fun unlinkingALinkedManualCandidateReturnsItToReviewAndItCanBeLinkedAgain() = runBlocking {
+        insertPlanGraph("manual-relink", status = "planned")
+        val mutations = LocalTrainingMutationRepository(
+            database,
+            nowEpochMillis = { now },
+            newId = { "manual-relink-activity" },
+        )
+        check(
+            mutations.recordManualRun(
+                LocalManualRunCommand(today, distanceMeters = 5_000, durationSeconds = 1_800),
+            ) is LocalTrainingMutationResult.ManualRunRecorded,
+        )
+        val review = LocalActivityReviewRepository(database, nowEpochMillis = { now })
+
+        assertTrue(review.link("manual-relink-activity", "manual-relink") is LocalActivityReviewResult.Linked)
+        assertEquals(
+            LocalActivityReviewResult.Unlinked("manual-relink-activity", returnedToReview = true),
+            review.unlink("manual-relink-activity"),
+        )
+        val returned = requireNotNull(database.activityLedgerDao().activity("manual-relink-activity"))
+        assertEquals("review", returned.reviewState)
+        assertNull(returned.acceptedAtEpochMillis)
+        assertFalse(returned.extraPlanImpactConfirmed)
+        assertEquals("planned", database.goalPlanDao().workout("manual-relink")?.currentStatus)
+
+        assertTrue(review.link("manual-relink-activity", "manual-relink") is LocalActivityReviewResult.Linked)
+    }
+
+    private suspend fun insertPlanGraph(workoutId: String, status: String = "done") {
         val goalId = "goal-$workoutId"
         val planId = "plan-$workoutId"
         val weekId = "week-$workoutId"
@@ -98,10 +170,14 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
                 WorkoutEntity(
                     workoutId, planId, weekId, 0, "Easy", 5_000, null, "Easy", 5_000, null,
                     null, now, today.toEpochDay(), today.toEpochDay(), "easy", "easy", "distance", "distance",
-                    currentStatus = "done",
+                    currentStatus = status,
                 ),
             ),
         )
+    }
+
+    private suspend fun assertNotNullConsequence(activityId: String) {
+        check(database.activityLedgerDao().activityConsequence(activityId) != null)
     }
 
     private suspend fun insertDirectFeedback(workoutId: String, appliedDecision: String?) {

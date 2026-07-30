@@ -13,7 +13,6 @@ internal data class CreatePlanCommand(
     val currentWeeklyDistanceKm: String,
     val currentRunsPerWeek: String,
     val longestRecentRunKm: String,
-    val experience: String,
     val calibrationDurationMinutes: String,
     val availability: List<Int>,
     val preferredLongRunDay: String,

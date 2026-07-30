@@ -7,7 +7,6 @@ data class TargetDateBounds(val minimum: String, val maximum: String)
 
 enum class OnboardingIssue {
     INVALID_TIME_ZONE,
-    MISSING_EXPERIENCE,
     MISSING_START_MODE,
     INVALID_GOAL_MODE,
     MISSING_RACE_DISTANCE,
@@ -26,7 +25,6 @@ data class OnboardingSelection(
     val startMode: StartMode?,
     val raceDistance: RaceDistance?,
     val targetDate: String?,
-    val experience: Experience?,
     val availability: List<Int>,
     val timeZone: String,
     val injuryFlags: InjuryFlags,
@@ -56,7 +54,6 @@ object OnboardingValidation {
     fun validate(selection: OnboardingSelection, today: LocalDate): Set<OnboardingIssue> = buildSet {
         val mode = selection.startMode
         if (!DateUtils.isValidTimeZone(selection.timeZone)) add(OnboardingIssue.INVALID_TIME_ZONE)
-        if (selection.experience == null) add(OnboardingIssue.MISSING_EXPERIENCE)
         if (hasInvalidAvailability(selection)) add(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS)
         if (selection.injuryFlags.currentPain || selection.injuryFlags.medicalRestriction) {
             add(OnboardingIssue.HEALTH_BLOCKS_SCHEDULING)

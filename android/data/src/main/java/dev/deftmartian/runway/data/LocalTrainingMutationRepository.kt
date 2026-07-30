@@ -4,23 +4,16 @@ import androidx.room.withTransaction
 import dev.deftmartian.runway.domain.Consequence
 import dev.deftmartian.runway.domain.Consequences
 import dev.deftmartian.runway.domain.Deviation
-import dev.deftmartian.runway.domain.ExtraActivityInput
-import dev.deftmartian.runway.domain.ExtraActivityTargets
 import dev.deftmartian.runway.domain.FeedbackInput
 import dev.deftmartian.runway.domain.FeedbackStatus
 import dev.deftmartian.runway.domain.LoadMetric
 import dev.deftmartian.runway.domain.PlanDecision
-import dev.deftmartian.runway.domain.calculateExtraActivityConsequence
-import dev.deftmartian.runway.domain.historicalExtraActivityReview
-import dev.deftmartian.runway.domain.isHistoricalExtraActivity
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
-/** Atomic persistence for factual workout feedback and manual, unplanned runs. */
+/** Atomic persistence for factual workout feedback and manual activity candidates. */
 class LocalTrainingMutationRepository(
     private val database: RunwayLedgerDatabase,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
@@ -200,17 +193,19 @@ class LocalTrainingMutationRepository(
                 activityId = activityId,
                 source = MANUAL_SOURCE,
                 sourceRecordId = null,
-                reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
+                // Manual entry is evidence, not an implicit claim that it was extra work. The
+                // runner must still choose its role (link or extra) before it affects actuals.
+                reviewState = REVIEW_STATE,
                 occurredAtEpochMillis = command.occurredDate.atTime(12, 0).atZone(zone).toInstant().toEpochMilli(),
                 durationSeconds = command.durationSeconds,
                 distanceMeters = command.distanceMeters,
                 averageHeartRateBpm = null,
                 averageCadenceSpm = null,
                 linkedWorkoutId = null,
-                acceptedAtEpochMillis = now,
+                acceptedAtEpochMillis = null,
                 createdAtEpochMillis = now,
                 updatedAtEpochMillis = now,
-                extraPlanImpactConfirmed = true,
+                extraPlanImpactConfirmed = false,
             )
             val activityDao = database.activityLedgerDao()
             activityDao.saveActivity(activity)
@@ -224,58 +219,8 @@ class LocalTrainingMutationRepository(
                     recordedAtEpochMillis = now,
                 ),
             )
-            val consequence = calculateAndPersistManualConsequence(activity, command, today)
-            if (command.pain && command.occurredDate >= today.minusDays(7)) markCurrentPain(now)
-            LocalTrainingMutationResult.ManualRunRecorded(activity, consequence)
+            LocalTrainingMutationResult.ManualRunRecorded(activity)
         }
-
-    private suspend fun calculateAndPersistManualConsequence(
-        activity: ActivityEntity,
-        command: LocalManualRunCommand,
-        today: LocalDate,
-    ): Consequence? {
-        val planDao = database.goalPlanDao()
-        val activePlan = planDao.activePlans(limit = 2).singleOrNull() ?: return null
-        val visible = planDao.visibleWorkoutsForPlan(activePlan.planId, limit = MAX_PLAN_WORKOUTS)
-        val next = visible.firstOrNull { workout ->
-            workout.currentScheduledEpochDay > command.occurredDate.toEpochDay() &&
-                workout.currentScheduledEpochDay >= today.toEpochDay() &&
-                workout.currentStatus == PLANNED_STATE &&
-                workout.tombstonedAtEpochMillis == null &&
-                workout.currentWorkoutType !in setOf(REST_TYPE, RACE_TYPE)
-        } ?: return null
-        val weekStart = command.occurredDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        val weekEnd = weekStart.plusDays(6)
-        val week = visible.filter { it.currentScheduledEpochDay in weekStart.toEpochDay()..weekEnd.toEpochDay() }
-        val raw = calculateExtraActivityConsequence(
-            ExtraActivityInput(
-                distanceMeters = command.distanceMeters ?: 0,
-                durationSeconds = command.durationSeconds,
-                feltHard = command.feltHard,
-                pain = command.pain,
-            ),
-            ExtraActivityTargets(
-                nextRunTargetDistanceMeters = next.currentDistanceMeters ?: 0,
-                nextRunTargetDurationSeconds = next.currentDurationSeconds,
-                weekTargetDistanceMeters = week.sumOfCurrentDistance(),
-                weekTargetDurationSeconds = week.sumOfCurrentDuration(),
-            ),
-        )
-        val consequence = if (isHistoricalExtraActivity(command.occurredDate, today)) {
-            historicalExtraActivityReview(raw)
-        } else {
-            raw
-        }
-        val dao = database.activityLedgerDao()
-        dao.saveActivityConsequence(consequence.toActivityConsequence(activity))
-        dao.clearActivityConsequenceOptions(activity.activityId)
-        consequence.options.forEach { decision ->
-            dao.saveActivityConsequenceOption(
-                ActivityConsequenceOptionEntity(activity.activityId, decision.storageValue),
-            )
-        }
-        return consequence
-    }
 
     private suspend fun persistWorkoutConsequence(
         dao: ActivityLedgerDao,
@@ -319,12 +264,11 @@ class LocalTrainingMutationRepository(
         const val SHORTENED_STATE = "shortened"
         const val SKIPPED_STATE = "skipped"
         const val REST_TYPE = "rest"
-        const val RACE_TYPE = "race"
         const val MANUAL_SOURCE = "manual"
+        const val REVIEW_STATE = "review"
         const val RECENT_HISTORY_DAYS = 28L
         const val MAX_RECENT_FEEDBACK = 128
         const val MAX_WEEK_WORKOUTS = 32
-        const val MAX_PLAN_WORKOUTS = 1_024
         const val MAX_NOTES_LENGTH = 240
     }
 }
@@ -351,7 +295,7 @@ data class LocalManualRunCommand(
 
 sealed interface LocalTrainingMutationResult {
     data class WorkoutFeedbackRecorded(val feedbackId: String, val consequence: Consequence) : LocalTrainingMutationResult
-    data class ManualRunRecorded(val activity: ActivityEntity, val consequence: Consequence?) : LocalTrainingMutationResult
+    data class ManualRunRecorded(val activity: ActivityEntity) : LocalTrainingMutationResult
     data class Rejected(val issue: LocalTrainingMutationIssue) : LocalTrainingMutationResult
 }
 

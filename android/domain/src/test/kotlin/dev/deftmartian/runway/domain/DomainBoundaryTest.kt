@@ -36,7 +36,7 @@ class DomainBoundaryTest {
         val today = LocalDate.parse("2026-01-01")
         assertEquals(TargetDateBounds("2026-02-26", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.ESTABLISHED))
         assertEquals(TargetDateBounds("2026-04-30", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.FOUNDATION_TO_GOAL))
-        val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-03-11", Experience.NEW, listOf(2, 6), "America/Halifax", InjuryFlags(), calibrationDurationMinutes = 20)
+        val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-03-11", listOf(2, 6), "America/Halifax", InjuryFlags(), calibrationDurationMinutes = 20)
         assertTrue(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection, today))
         assertFalse(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection.copy(targetDate = "2026-03-12"), today))
     }

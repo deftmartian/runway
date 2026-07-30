@@ -5,7 +5,6 @@ enum class GoalKind { RACE, FOUNDATION }
 enum class PlanPhase { DISTANCE, FOUNDATION, CALIBRATION }
 enum class StartMode { ESTABLISHED, FOUNDATION_TO_GOAL, FOUNDATION_ONLY, CALIBRATION }
 enum class GoalPriority { FINISH_HEALTHY, CONSISTENCY }
-enum class Experience { NEW, RETURNING, COMFORTABLE }
 enum class RiskRating { CONSERVATIVE, MODERATE, AGGRESSIVE, UNSAFE }
 enum class WorkoutType { EASY, LONG, RECOVERY, REST, RACE }
 enum class SegmentKind { RUN, WALK }
@@ -43,7 +42,6 @@ sealed interface PlannerIntake
 
 data class EstablishedTrainingIntake(
     val priority: GoalPriority,
-    val experience: Experience,
     val availability: List<Int>,
     val injuryFlags: InjuryFlags,
     val raceDistance: RaceDistance,

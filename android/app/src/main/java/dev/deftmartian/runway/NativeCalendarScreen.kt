@@ -34,15 +34,21 @@ import java.time.LocalDate
 internal data class NativeCalendarDecisionSummary(
     val todayStatus: String,
     val todayDate: String?,
+    val todayPlan: String?,
     val nextStatus: String,
     val nextDate: String?,
+    val nextMeasurement: String?,
     val reviewCount: Int,
     val reviewDate: String?,
+    val pendingRunReviewCount: Int,
+    val pendingRunReviewCountIsExact: Boolean,
 )
 
 internal fun nativeCalendarDecisionSummary(
     calendar: NativeCalendar?,
     nextWorkout: NativeWorkout?,
+    pendingRunReviewCount: Int = 0,
+    pendingRunReviewCountIsExact: Boolean = true,
 ): NativeCalendarDecisionSummary {
     val today = calendar?.today?.takeIf(String::isNotBlank)
     val workouts = calendar?.workouts.orEmpty().filter { it.isRemoved != true }
@@ -79,11 +85,7 @@ internal fun nativeCalendarDecisionSummary(
                 ?: "Completed"
         todaysFeedback != null -> "Recorded"
         todaysWorkout?.type == "rest" -> "Recovery day"
-        todaysWorkout != null ->
-            formatPrescriptionMeasurement(
-                todaysWorkout.targetDistanceMeters,
-                todaysWorkout.targetDurationSeconds,
-            ).takeUnless { it == "Plan details" } ?: "Planned"
+        todaysWorkout != null -> "Planned"
         else -> "Open day"
     }
     val linkedWorkoutIds = activities.mapNotNullTo(mutableSetOf(), NativeActivity::workoutId)
@@ -106,12 +108,32 @@ internal fun nativeCalendarDecisionSummary(
     return NativeCalendarDecisionSummary(
         todayStatus = todayStatus,
         todayDate = today,
+        todayPlan = todaysWorkout
+            ?.let(::calendarWorkoutPlanSummary)
+            ?.takeUnless { it == todayStatus || it.startsWith("$todayStatus ·") },
         nextStatus = nextStatus,
         nextDate = nextWorkout?.scheduledDate?.takeIf(String::isNotBlank),
+        nextMeasurement = nextWorkout?.let(::calendarWorkoutMeasurement),
         reviewCount = missedWorkouts.size,
         reviewDate = missedWorkouts.firstOrNull()?.scheduledDate,
+        pendingRunReviewCount = pendingRunReviewCount.coerceAtLeast(0),
+        pendingRunReviewCountIsExact = pendingRunReviewCountIsExact,
     )
 }
+
+internal fun calendarWorkoutPlanSummary(workout: NativeWorkout): String {
+    val purpose = workout.purpose.orEmpty().ifBlank {
+        workout.type.orEmpty().replaceFirstChar(Char::uppercase)
+    }.ifBlank { "Planned run" }
+    return "$purpose · ${calendarWorkoutMeasurement(workout)}"
+}
+
+internal fun calendarWorkoutMeasurement(workout: NativeWorkout): String =
+    formatPrescriptionMeasurement(
+        distanceMeters = workout.targetDistanceMeters,
+        durationSeconds = workout.targetDurationSeconds,
+        rest = workout.type == "rest",
+    )
 
 @Composable
 internal fun CalendarActivityRecord(
@@ -171,7 +193,12 @@ internal fun CalendarScreen(
     var pendingOpenDay by rememberSaveable { mutableStateOf<String?>(null) }
     var showManualRun by rememberSaveable { mutableStateOf(false) }
     var submittedDialogAction by remember { mutableStateOf<String?>(null) }
-    val decision = nativeCalendarDecisionSummary(calendar, payload?.nextWorkout)
+    val decision = nativeCalendarDecisionSummary(
+        calendar = calendar,
+        nextWorkout = payload?.nextWorkout,
+        pendingRunReviewCount = payload?.pendingReviewCount ?: 0,
+        pendingRunReviewCountIsExact = payload?.pendingReviewCountIsExact ?: true,
+    )
     fun openDay(date: String?) {
         val validDate = date?.takeIf { it.length >= 10 } ?: return
         if (validDate.take(7) == month) {
@@ -212,6 +239,7 @@ internal fun CalendarScreen(
                     onOpenToday = { openDay(decision.todayDate) },
                     onOpenNext = { openDay(decision.nextDate) },
                     onOpenReview = { openDay(decision.reviewDate) },
+                    onOpenInbox = { onDestinationSelected(NativeDestination.Inbox) },
                     onRecordRun = { showManualRun = true },
                     onChangeGoal = { onDestinationSelected(NativeDestination.Setup) },
                     hasActivePlan = payload.hasActivePlan,
@@ -248,9 +276,10 @@ internal fun CalendarScreen(
             ) {
                 OutlinedButton(
                     onClick = {
-                        addWorkoutDate = runCatching {
-                            LocalDate.parse(today).plusDays(1).toString()
-                        }.getOrDefault(LocalDate.now().plusDays(1).toString())
+                        addWorkoutDate = selectedDay?.takeIf { it > today }
+                            ?: runCatching {
+                                LocalDate.parse(today).plusDays(1).toString()
+                            }.getOrDefault(LocalDate.now().plusDays(1).toString())
                     },
                     enabled =
                         !actionPending &&
@@ -376,7 +405,7 @@ internal fun CalendarScreen(
         )
     }
     selectedActivity?.let { activity ->
-        ImportedActivityDetailSheet(
+        ActivityDetailSheet(
             activity = activity,
             candidates = payload?.activityCandidates.orEmpty(),
             evidence = activity.id?.let { activityEvidence[it] },
@@ -427,6 +456,7 @@ private fun CalendarDecisionCard(
     onOpenToday: () -> Unit,
     onOpenNext: () -> Unit,
     onOpenReview: () -> Unit,
+    onOpenInbox: () -> Unit,
     onRecordRun: () -> Unit,
     onChangeGoal: () -> Unit,
     hasActivePlan: Boolean,
@@ -467,13 +497,21 @@ private fun CalendarDecisionCard(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .semantics {
-                        contentDescription = "Today. ${summary.todayStatus}. Open day details."
+                        contentDescription = listOfNotNull(
+                            "Today",
+                            summary.todayStatus,
+                            summary.todayPlan?.let { "Plan · $it" },
+                            "Open day details",
+                        ).joinToString(". ")
                     },
                 shape = MaterialTheme.shapes.small,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text("Today", style = MaterialTheme.typography.labelLarge)
                     Text(summary.todayStatus, style = MaterialTheme.typography.bodyMedium)
+                    summary.todayPlan?.let {
+                        Text("Plan · $it", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
@@ -501,12 +539,43 @@ private fun CalendarDecisionCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Next. $nextStatus. Open next run." },
+                    .semantics {
+                        contentDescription = listOfNotNull(
+                            "Next",
+                            nextStatus,
+                            summary.nextMeasurement,
+                            "Open next run",
+                        ).joinToString(". ")
+                    },
                 shape = MaterialTheme.shapes.small,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text("Next", style = MaterialTheme.typography.labelLarge)
                     Text(nextStatus, style = MaterialTheme.typography.bodyMedium)
+                    summary.nextMeasurement?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        if (summary.pendingRunReviewCount > 0) {
+            val count = summary.pendingRunReviewCount
+            val countLabel = "${if (summary.pendingRunReviewCountIsExact) count else "$count+"} " +
+                "run${if (count == 1 && summary.pendingRunReviewCountIsExact) "" else "s"} need review"
+            TextButton(
+                onClick = onOpenInbox,
+                enabled = !actionPending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        contentDescription = "$countLabel. Open Inbox."
+                    },
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Run review", style = MaterialTheme.typography.labelLarge)
+                    Text(countLabel, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -575,7 +644,7 @@ private fun CalendarDecisionCard(
                     .heightIn(min = 48.dp),
                 shape = MaterialTheme.shapes.small,
             ) {
-                Text("Record a run")
+                Text("Add run manually")
             }
             TextButton(
                 onClick = onChangeGoal,

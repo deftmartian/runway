@@ -61,7 +61,6 @@ class LocalOnboardingPresenterTest {
                 longestRecentRunMeters = 6_000,
                 calibrationDurationSeconds = 1_200,
                 preferredLongRunDay = 6,
-                experienceLevel = "returning",
             ),
             activePlan = LocalActivePlanReadModel(
                 planId = "plan",

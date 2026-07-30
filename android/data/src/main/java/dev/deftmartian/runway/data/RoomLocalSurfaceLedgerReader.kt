@@ -1,6 +1,7 @@
 package dev.deftmartian.runway.data
 
 import androidx.room.withTransaction
+import dev.deftmartian.runway.domain.ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -36,7 +37,8 @@ class RoomLocalSurfaceLedgerReader(
             undoTodayEpochDay = todayEpochDay,
         )
         val nextWorkout = activePlans.singleOrNull()?.let { plan ->
-            database.goalPlanDao().nextPlannedWorkout(plan.planId, todayEpochDay)
+            // Today has its own decision row. "Next" must not repeat the same workout.
+            database.goalPlanDao().nextPlannedWorkout(plan.planId, todayEpochDay + 1)
         }
         val activityWindow = database.activityLedgerDao().acceptedActivitiesInRange(
             fromInclusive = LocalDate.ofEpochDay(fromEpochDay).atStartOfDay(zone).toInstant().toEpochMilli(),
@@ -65,25 +67,137 @@ class RoomLocalSurfaceLedgerReader(
             val todayEpochDay = todayEpochDay(timeZone)
             val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
             val review = reviewWindow(limits.inboxActivities)
+            val pendingExtras = database.activityLedgerDao()
+                .acceptedUnlinkedExtrasWithPendingPlanChange(limits.inboxActivities + 1)
+            val pendingLinkedActivities = database.activityLedgerDao()
+                .acceptedLinkedActivitiesWithPendingPlanChange(limits.inboxActivities + 1)
             val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
-                .let { planSlices(it, limits, MAX_LINK_CANDIDATES).firstOrNull() }
+                .let { planSlices(it, limits, MAX_INBOX_PLAN_WORKOUTS).firstOrNull() }
+            val reviewEpochDays = review.items.map { activity ->
+                Instant.ofEpochMilli(activity.occurredAtEpochMillis)
+                    .atZone(ZoneId.of(timeZone))
+                    .toLocalDate()
+                    .toEpochDay()
+            }
+            val linkCandidates = activePlan?.workouts.orEmpty()
+                .asSequence()
+                .filter {
+                    it.currentStatus == "planned" && it.tombstonedAtEpochMillis == null &&
+                        it.currentWorkoutType !in setOf("rest", "race")
+                }
+                .filter { workout ->
+                    reviewEpochDays.any { reviewDay ->
+                        workout.currentScheduledEpochDay in
+                            (reviewDay - ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS)..
+                            (reviewDay + ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS)
+                    }
+                }
+                .sortedWith(
+                    compareBy(WorkoutEntity::currentScheduledEpochDay)
+                        .thenBy(WorkoutEntity::workoutId),
+                )
+                .take(MAX_LINK_CANDIDATES)
+                .toList()
+            val linkCandidateIds = linkCandidates.mapTo(mutableSetOf(), WorkoutEntity::workoutId)
+            val linkCandidateBlocks = activePlan?.workoutBlocks.orEmpty()
+                .filter { it.workoutId in linkCandidateIds }
+            val linkCandidateBlockIds = linkCandidateBlocks.mapTo(mutableSetOf(), WorkoutBlockEntity::blockId)
+            val pendingWorkoutFeedbackWindow = activePlan
+                ?.let { pendingDirectWorkoutFeedback(it, limits.inboxActivities + 1) }
+                .orEmpty()
             LocalInboxLedgerSlice(
                 reviewCount = review.visibleCount,
                 reviewCountIsExact = review.isExact,
-                hasMore = review.visibleCount > review.items.size,
-                activities = activitySlices(review.items),
-                linkCandidates = activePlan?.workouts.orEmpty().filter {
-                    it.currentStatus == "planned" && it.tombstonedAtEpochMillis == null &&
-                        it.currentWorkoutType !in setOf("rest", "race")
-                }.take(MAX_LINK_CANDIDATES),
-                linkCandidateBlocks = activePlan?.workoutBlocks.orEmpty(),
-                linkCandidateSegments = activePlan?.workoutSegments.orEmpty(),
+                hasMore =
+                    review.visibleCount > review.items.size ||
+                        pendingExtras.size > limits.inboxActivities ||
+                        pendingLinkedActivities.size > limits.inboxActivities ||
+                        pendingWorkoutFeedbackWindow.size > limits.inboxActivities,
+                activities = enrichLinkedInboxConsequences(
+                    activitySlices(
+                        (
+                            review.items +
+                                pendingExtras.take(limits.inboxActivities) +
+                                pendingLinkedActivities.take(limits.inboxActivities)
+                            )
+                        .distinctBy(ActivityEntity::activityId)
+                        .sortedWith(
+                            compareByDescending(ActivityEntity::occurredAtEpochMillis)
+                                .thenByDescending(ActivityEntity::activityId),
+                        ),
+                    ),
+                    activePlan,
+                ),
+                pendingWorkoutFeedback = pendingWorkoutFeedbackWindow.take(limits.inboxActivities),
+                linkCandidates = linkCandidates,
+                linkCandidateBlocks = linkCandidateBlocks,
+                linkCandidateSegments = activePlan?.workoutSegments.orEmpty()
+                    .filter { it.blockId in linkCandidateBlockIds },
                 pendingHealthConnect = pendingHealthConnect(MAX_PENDING_HEALTH_CONNECT),
                 timeZone = timeZone,
                 todayEpochDay = todayEpochDay,
                 phaseReview = phaseReview(activePlan, profile, availability, todayEpochDay),
             )
         }
+
+    private fun enrichLinkedInboxConsequences(
+        activities: List<LocalActivityLedgerSlice>,
+        activePlan: LocalPlanLedgerSlice?,
+    ): List<LocalActivityLedgerSlice> {
+        val feedbackByActivity = activePlan?.feedback
+            ?.filter { it.sourceActivityId != null }
+            ?.associateBy { requireNotNull(it.sourceActivityId) }
+            .orEmpty()
+        val consequencesByFeedback = activePlan?.workoutConsequences
+            ?.associateBy(WorkoutFeedbackConsequenceEntity::feedbackId)
+            .orEmpty()
+        val optionsByFeedback = activePlan?.workoutConsequenceOptions
+            ?.groupBy(WorkoutFeedbackConsequenceOptionEntity::feedbackId)
+            .orEmpty()
+        return activities.map { row ->
+            val feedback = feedbackByActivity[row.activity.activityId] ?: return@map row
+            val consequence = consequencesByFeedback[feedback.feedbackId] ?: return@map row
+            row.copy(
+                linkedWorkoutFeedback = feedback,
+                linkedWorkoutConsequence = consequence,
+                linkedWorkoutConsequenceOptions = optionsByFeedback[feedback.feedbackId].orEmpty(),
+            )
+        }
+    }
+
+    private fun pendingDirectWorkoutFeedback(
+        activePlan: LocalPlanLedgerSlice,
+        limit: Int,
+    ): List<LocalPendingWorkoutFeedbackLedgerSlice> {
+        val workouts = activePlan.workouts.associateBy(WorkoutEntity::workoutId)
+        val consequences = activePlan.workoutConsequences
+            .associateBy(WorkoutFeedbackConsequenceEntity::feedbackId)
+        val options = activePlan.workoutConsequenceOptions
+            .groupBy(WorkoutFeedbackConsequenceOptionEntity::feedbackId)
+        return activePlan.feedback
+            .asSequence()
+            .filter { it.sourceActivityId == null }
+            .mapNotNull { feedback ->
+                val workout = workouts[feedback.workoutId] ?: return@mapNotNull null
+                val consequence = consequences[feedback.feedbackId] ?: return@mapNotNull null
+                if (!consequence.planChangeAvailable || consequence.appliedDecision != null) {
+                    return@mapNotNull null
+                }
+                LocalPendingWorkoutFeedbackLedgerSlice(
+                    feedback = feedback,
+                    workout = workout,
+                    consequence = consequence,
+                    consequenceOptions = options[feedback.feedbackId].orEmpty(),
+                )
+            }
+            .sortedWith(
+                compareByDescending<LocalPendingWorkoutFeedbackLedgerSlice> {
+                    it.feedback.recordedAtEpochMillis
+                }.thenByDescending { it.feedback.feedbackId },
+            )
+            .take(limit)
+            .toList()
+    }
 
     override suspend fun stats(limits: LocalSurfaceReadLimits): LocalStatsLedgerSlice =
         database.withTransaction {
@@ -492,6 +606,7 @@ class RoomLocalSurfaceLedgerReader(
         const val MAX_LIFECYCLE_EVENTS = 50
         const val MAX_SUMMARY_WARNINGS_PER_PLAN = 16
         const val MAX_HISTORY_ADJUSTMENT_ROWS_PER_PLAN = 128
+        const val MAX_INBOX_PLAN_WORKOUTS = 1_024
         const val MAX_LINK_CANDIDATES = 128
         const val MAX_PENDING_HEALTH_CONNECT = 50
         const val MAX_CONSEQUENCE_OPTIONS = 8

@@ -34,18 +34,21 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.deftmartian.runway.domain.ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Reusable, deliberately un-routed detail surface for an imported activity.  It receives a
+ * Reusable, deliberately un-routed detail surface for a local activity candidate. It receives a
  * selected record from a native view and only emits existing, idempotent mobile commands.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ImportedActivityDetailSheet(
+internal fun ActivityDetailSheet(
     activity: NativeActivity,
     candidates: List<NativeWorkout>,
     evidence: NativeActivityEvidence?,
@@ -59,6 +62,7 @@ internal fun ImportedActivityDetailSheet(
     var feltHard by rememberSaveable(activity.id, activity.feltHard) { mutableStateOf(activity.feltHard == true) }
     var pain by rememberSaveable(activity.id, activity.pain) { mutableStateOf(activity.pain == true) }
     var confirmDelete by rememberSaveable(activity.id) { mutableStateOf(false) }
+    val linkCandidates = activityLinkCandidates(activity, candidates)
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -69,15 +73,15 @@ internal fun ImportedActivityDetailSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Activity detail",
+                "Run detail",
                 modifier = Modifier.semantics { heading() },
                 style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
             )
-            ImportedActivitySummary(activity)
-            ImportedActivityProvenance(activity)
-            ImportedActivityHeartRate(activity, evidence)
-            ImportedActivityRouteDisclosure(
+            ActivitySummary(activity)
+            ActivityProvenance(activity)
+            ActivityHeartRate(activity, evidence)
+            ActivityRouteDisclosure(
                 activity = activity,
                 evidence = evidence,
                 loading = evidenceLoading,
@@ -91,10 +95,10 @@ internal fun ImportedActivityDetailSheet(
                     "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (candidates.isEmpty()) {
-                    Text("No open planned workout is available for this imported run.")
+                if (linkCandidates.isEmpty()) {
+                    Text("No planned workout within three days is available for this run.")
                 } else {
-                    candidates.forEach { workout ->
+                    linkCandidates.forEach { workout ->
                         OutlinedButton(
                             onClick = {
                                 onAction(LinkActivityCommand(activity.id.orEmpty(), workout.id.orEmpty()))
@@ -117,7 +121,7 @@ internal fun ImportedActivityDetailSheet(
                     enabled = !actionPending && activity.id != null,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Unlink from planned run") }
-                Text("Unlinking returns this imported activity to Review. It stops counting until you accept a new role.")
+                Text("Unlinking returns this run to Inbox review. It stops counting until you accept a new role.")
             }
 
             Text("Correct recorded feedback")
@@ -134,14 +138,14 @@ internal fun ImportedActivityDetailSheet(
             TextButton(
                 onClick = { confirmDelete = true },
                 enabled = !actionPending && activity.id != null,
-            ) { Text("Delete imported activity") }
+            ) { Text("Delete this run") }
         }
     }
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete imported activity?") },
-            text = { Text("This removes the imported activity and cannot be undone.") },
+            title = { Text("Delete this run?") },
+            text = { Text("This removes the run from runway and cannot be undone.") },
             confirmButton = {
                 Button(onClick = {
                     confirmDelete = false
@@ -153,8 +157,35 @@ internal fun ImportedActivityDetailSheet(
     }
 }
 
+/**
+ * Mirrors the persisted activity-link guard so the sheet never offers a link the ledger rejects.
+ */
+internal fun activityLinkCandidates(
+    activity: NativeActivity,
+    candidates: List<NativeWorkout>,
+): List<NativeWorkout> {
+    val activityDate = (activity.occurredDate ?: activity.activityDate)
+        ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        ?: return emptyList()
+    return candidates.mapNotNull { workout ->
+        val workoutDate = workout.scheduledDate
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: return@mapNotNull null
+        val offsetDays = ChronoUnit.DAYS.between(activityDate, workoutDate)
+        workout.takeIf { kotlin.math.abs(offsetDays) <= ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS }
+    }.sortedWith(
+        compareBy<NativeWorkout> { workout ->
+            val workoutDate = requireNotNull(workout.scheduledDate)
+            kotlin.math.abs(
+                ChronoUnit.DAYS.between(activityDate, LocalDate.parse(workoutDate)),
+            )
+        }.thenBy(NativeWorkout::scheduledDate)
+            .thenBy { it.id.orEmpty() },
+    )
+}
+
 @Composable
-private fun ImportedActivitySummary(activity: NativeActivity) {
+private fun ActivitySummary(activity: NativeActivity) {
     SettingCard("Exact summary") {
         SettingRow("Date", activity.occurredDate.orDash(), monospace = true)
         SettingRow(
@@ -173,7 +204,7 @@ private fun ImportedActivitySummary(activity: NativeActivity) {
 }
 
 @Composable
-private fun ImportedActivityProvenance(activity: NativeActivity) {
+private fun ActivityProvenance(activity: NativeActivity) {
     SettingCard("Source and plan state") {
         SettingRow("Source", activitySourceLabel(activity))
         SettingRow("Review", activityReviewLabel(activity))
@@ -187,7 +218,7 @@ private fun ImportedActivityProvenance(activity: NativeActivity) {
 }
 
 @Composable
-private fun ImportedActivityHeartRate(activity: NativeActivity, evidence: NativeActivityEvidence?) {
+private fun ActivityHeartRate(activity: NativeActivity, evidence: NativeActivityEvidence?) {
     val summary = activity.heartRateSummary
     if (
         activity.averageHeartRate == null &&
@@ -218,7 +249,7 @@ private fun ImportedActivityHeartRate(activity: NativeActivity, evidence: Native
 }
 
 @Composable
-private fun ImportedActivityRouteDisclosure(
+private fun ActivityRouteDisclosure(
     activity: NativeActivity,
     evidence: NativeActivityEvidence?,
     loading: Boolean,

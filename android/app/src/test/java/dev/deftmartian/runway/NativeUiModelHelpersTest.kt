@@ -86,6 +86,29 @@ class NativeUiModelHelpersTest {
     }
 
     @Test
+    fun `linked activity consequence routes its choice to workout feedback`() {
+        val activity = activity(id = "activity-1", date = "2026-07-29").copy(
+            consequence = NativeConsequence(
+                kind = "short",
+                appliedDecision = null,
+                recommendedDecision = "reduce_next",
+                deviation = "short",
+                risk = "conservative",
+                planChangeAvailable = true,
+                options = listOf("reduce_next"),
+                comparisonStatus = "ready",
+                sourceKind = "WorkoutFeedback",
+                sourceId = "workout-feedback-activity-1",
+            ),
+        )
+
+        val pending = requireNotNull(pendingActivityPlanDecision(activity, "reduce_next"))
+
+        assertEquals("feedback", pending.source)
+        assertEquals("workout-feedback-activity-1", pending.sourceId)
+    }
+
+    @Test
     fun `plan-free stats preserves recorded facts without inventing a recommendation`() {
         val recorded = NativeRecordedHistorySummary(
             totalRuns = 7,
@@ -133,7 +156,7 @@ class NativeUiModelHelpersTest {
         val summary = noActiveStatsSummary(history = null)
 
         assertEquals(
-            "There is no active plan or recommendation. Record a run or build a plan to see comparisons here.",
+            "There is no active plan or recommendation. Add and review a run, or build a plan, to see comparisons here.",
             summary.statusMessage,
         )
         assertEquals(null, summary.recordedHistory)
@@ -156,6 +179,29 @@ class NativeUiModelHelpersTest {
         assertTrue(hasRecordedStatsHistory(empty.copy(recentFeedbackCount = 1)))
         assertTrue(hasRecordedStatsHistory(empty.copy(hasAcceptedActivities = true)))
         assertTrue(hasRecordedStatsHistory(empty.copy(recordedSummary = empty.recordedSummary?.copy(totalRuns = 1))))
+        assertTrue(
+            hasRecordedStatsHistory(
+                empty.copy(
+                    weeklySummaries = listOf(
+                        NativeWeekSummary(
+                            weekNumber = 1,
+                            startDate = "2026-07-27",
+                            targetDistanceMeters = 5_000.0,
+                            completedDistanceMeters = 0.0,
+                            completedDurationSeconds = 0.0,
+                            plannedRuns = 1,
+                            completedRuns = 0,
+                            missedRuns = 0,
+                            skippedRuns = 1,
+                            painFlags = 0,
+                            hardFlags = 0,
+                            averagePaceSecondsPerKm = null,
+                            averageHeartRate = null,
+                        ),
+                    ),
+                ),
+            ),
+        )
     }
 
     private fun workout(id: String, date: String, type: String) = NativeWorkout(

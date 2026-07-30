@@ -3,7 +3,6 @@ package dev.deftmartian.runway.data
 import androidx.room.withTransaction
 import dev.deftmartian.runway.domain.BaselineObservation
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
-import dev.deftmartian.runway.domain.Experience
 import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.GoalKind
 import dev.deftmartian.runway.domain.GoalPriority
@@ -714,11 +713,6 @@ object LocalPlanLifecyclePreparation {
                         } else {
                             GoalPriority.FINISH_HEALTHY
                         },
-                    experience = when (profile.experienceLevel) {
-                        "new" -> Experience.NEW
-                        "comfortable" -> Experience.COMFORTABLE
-                        else -> Experience.RETURNING
-                    },
                     availability = availabilityDays,
                     injuryFlags = InjuryFlags(
                         recentInjury = profile.recentInjury,

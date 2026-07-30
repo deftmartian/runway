@@ -135,6 +135,20 @@ internal fun pendingPlanDecision(
     )
 }
 
+/** Uses the consequence's durable source rather than assuming every activity owns it. */
+internal fun pendingActivityPlanDecision(
+    activity: NativeActivity,
+    decision: String,
+): PendingPlanDecision? = activity.consequence?.let { consequence ->
+    val isWorkoutFeedback = consequence.sourceKind == "WorkoutFeedback"
+    PendingPlanDecision(
+        source = if (isWorkoutFeedback) "feedback" else "activity",
+        sourceId = consequence.sourceId ?: activity.id.orEmpty(),
+        decision = decision,
+        consequence = consequence,
+    )
+}
+
 internal fun planDecisionCommand(pending: PendingPlanDecision) = PreviewPlanDecisionCommand(
     source = pending.source,
     sourceId = pending.sourceId,

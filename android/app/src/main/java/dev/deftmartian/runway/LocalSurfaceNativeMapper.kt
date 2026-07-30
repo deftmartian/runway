@@ -62,11 +62,14 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
                             workout.scheduledEpochDay <= todayEpochDay &&
                             workout.actual == null &&
                             workout.consequence?.appliedDecision == null,
+                    completionState = record.completionState,
                 )
             },
         ),
         nextWorkout = nextWorkout?.toNativeWorkout(),
         activityCandidates = emptyList(),
+        pendingReviewCount = pendingReviewCount,
+        pendingReviewCountIsExact = pendingReviewCountIsExact,
     )
 }
 
@@ -75,6 +78,21 @@ internal fun LocalInboxReadModel.toNativeInbox(): NativeReviewPayload {
     return NativeReviewPayload(
         candidates = linkCandidates.map(LocalWorkoutLinkCandidateReadModel::toNativeWorkout),
         activities = activities.map { it.toNativeActivity(zone) },
+        workoutDecisions = pendingWorkoutFeedback.map { feedback ->
+            NativeWorkoutFeedback(
+                id = feedback.feedbackId,
+                workoutId = feedback.workoutId,
+                completedDistanceMeters = feedback.completedDistanceMeters?.toDouble(),
+                completedDurationSeconds = feedback.completedDurationSeconds?.toDouble(),
+                feltHard = feedback.feltHard,
+                pain = feedback.pain,
+                consequence = feedback.consequence.toNativeConsequence(),
+                canDelete = false,
+                completionState = feedback.completionState,
+                scheduledDate = LocalDate.ofEpochDay(feedback.scheduledEpochDay).toString(),
+                workoutPurpose = feedback.workoutPurpose,
+            )
+        },
         healthConnectChanges = pendingHealthConnect.map { pending ->
             NativeHealthConnectChange(
                 mappingId = pending.mappingId,
@@ -547,6 +565,8 @@ private fun LocalConsequenceReadModel.toNativeConsequence() = NativeConsequence(
     planChangeAvailable = planChangeAvailable,
     options = options,
     comparisonStatus = comparisonStatus,
+    sourceKind = sourceKind,
+    sourceId = sourceId,
 )
 
 private fun LocalTimedIntervalStructureReadModel.toNativeIntervalStructure() = TimedIntervalStructureDto(

@@ -184,8 +184,8 @@ class LocalSurfaceMappersTest {
     fun `stats use accepted paired evidence and retain active archived and unlinked provenance`() {
         val activeWorkout = workout("active-run", 10, generatedDistance = 6_000, currentDistance = 5_000)
         val archivedWorkout = workout("archived-run", 3, planId = "archived-plan", weekId = "archived-week", generatedDistance = 10_000, currentDistance = 10_000)
-        val directFeedback = WorkoutFeedbackEntity(
-            feedbackId = "direct-feedback",
+        val linkedFeedback = WorkoutFeedbackEntity(
+            feedbackId = "linked-feedback",
             workoutId = activeWorkout.workoutId,
             completionState = "done",
             feltHard = false,
@@ -194,8 +194,9 @@ class LocalSurfaceMappersTest {
             recordedAtEpochMillis = 3,
             completedDistanceMeters = 1_000,
             completedDurationSeconds = 300,
+            sourceActivityId = "a",
         )
-        val active = planSlice(workouts = listOf(activeWorkout)).copy(feedback = listOf(directFeedback))
+        val active = planSlice(workouts = listOf(activeWorkout)).copy(feedback = listOf(linkedFeedback))
         val archived = planSlice(
             planId = "archived-plan",
             weekId = "archived-week",
@@ -212,6 +213,7 @@ class LocalSurfaceMappersTest {
                 "2026-07-10T12:00:00Z",
                 averageHeartRate = 150,
                 feltHard = true,
+                pain = true,
             ),
             activity("b", "accepted", "archived-run", 10_000, 4_000, "2026-07-11T12:00:00Z", averageHeartRate = 160),
             activity("c", "accepted", null, 2_000, 1_000, "2026-07-12T12:00:00Z", averageHeartRate = 140),
@@ -233,8 +235,102 @@ class LocalSurfaceMappersTest {
         assertEquals(5_000, mapped.weeks.first { it.planId == "plan" }.current.distanceMeters)
         assertEquals(1, mapped.weeks.first { it.planId == "plan" }.painFlags)
         assertEquals(1, mapped.weeks.first { it.planId == "plan" }.hardFlags)
-        assertEquals(350.0, mapped.weeks.first { it.planId == "plan" }.weightedPaceSecondsPerKilometre!!, 0.001)
+        assertEquals(360.0, mapped.weeks.first { it.planId == "plan" }.weightedPaceSecondsPerKilometre!!, 0.001)
         assertEquals(150, mapped.weeks.first { it.planId == "plan" }.durationWeightedHeartRateBpm)
+    }
+
+    @Test
+    fun `stats aggregate direct completed feedback once and retain plan provenance`() {
+        val activeDirect = workout("active-direct", 10)
+        val activeLinked = workout("active-linked", 11)
+        val activeSkipped = workout("active-skipped", 12)
+        val archivedDirect = workout(
+            id = "archived-direct",
+            day = 13,
+            planId = "archived-plan",
+            weekId = "archived-week",
+        )
+        val active = planSlice(workouts = listOf(activeDirect, activeLinked, activeSkipped)).copy(
+            feedback = listOf(
+                WorkoutFeedbackEntity(
+                    feedbackId = "direct-done",
+                    workoutId = activeDirect.workoutId,
+                    completionState = "done",
+                    feltHard = false,
+                    pain = false,
+                    notes = null,
+                    recordedAtEpochMillis = 1,
+                    completedDistanceMeters = 5_000,
+                    completedDurationSeconds = 1_500,
+                ),
+                WorkoutFeedbackEntity(
+                    feedbackId = "linked-result",
+                    workoutId = activeLinked.workoutId,
+                    completionState = "done",
+                    feltHard = false,
+                    pain = false,
+                    notes = null,
+                    recordedAtEpochMillis = 2,
+                    completedDistanceMeters = 4_000,
+                    completedDurationSeconds = 1_200,
+                    sourceActivityId = "linked-activity",
+                ),
+                WorkoutFeedbackEntity(
+                    feedbackId = "skipped-result",
+                    workoutId = activeSkipped.workoutId,
+                    completionState = "skipped",
+                    feltHard = false,
+                    pain = false,
+                    notes = null,
+                    recordedAtEpochMillis = 3,
+                    completedDistanceMeters = 9_000,
+                    completedDurationSeconds = 2_700,
+                ),
+            ),
+        )
+        val archived = planSlice(
+            planId = "archived-plan",
+            weekId = "archived-week",
+            state = "archived",
+            workouts = listOf(archivedDirect),
+        ).copy(
+            feedback = listOf(
+                WorkoutFeedbackEntity(
+                    feedbackId = "archived-direct-result",
+                    workoutId = archivedDirect.workoutId,
+                    completionState = "shortened",
+                    feltHard = false,
+                    pain = false,
+                    notes = null,
+                    recordedAtEpochMillis = 4,
+                    completedDistanceMeters = 3_000,
+                    completedDurationSeconds = 900,
+                ),
+            ),
+        )
+        val linkedActivity = activity(
+            "linked-activity",
+            "accepted",
+            activeLinked.workoutId,
+            4_000,
+            1_200,
+            "2026-07-11T12:00:00Z",
+        )
+
+        val mapped = LocalSurfaceMappers.stats(
+            LocalStatsLedgerSlice(listOf(active, archived), listOf(linkedActivity)),
+        )
+
+        assertEquals(3, mapped.totalRuns)
+        assertEquals(12_000, mapped.totalDistanceMeters)
+        assertEquals(3_600, mapped.totalDurationSeconds)
+        assertEquals(5_000, mapped.longestRunMeters)
+        assertEquals(300.0, mapped.weightedPaceSecondsPerKilometre!!, 0.001)
+        val provenance = mapped.recordedTotals.associateBy(LocalRecordedTotalsReadModel::provenance)
+        assertEquals(2, provenance[LocalPlanProvenance.ACTIVE]?.runs)
+        assertEquals(9_000, provenance[LocalPlanProvenance.ACTIVE]?.distanceMeters)
+        assertEquals(1, provenance[LocalPlanProvenance.ARCHIVED]?.runs)
+        assertEquals(3_000, provenance[LocalPlanProvenance.ARCHIVED]?.distanceMeters)
     }
 
     @Test
@@ -617,6 +713,49 @@ class LocalSurfaceMappersTest {
         assertTrue(mapped.activities.isEmpty())
         assertEquals("possible_duplicate", mapped.pendingHealthConnect.single().state)
         assertEquals("existing-run", mapped.pendingHealthConnect.single().proposed?.activityId)
+    }
+
+    @Test
+    fun `inbox retains only actionable accepted extras alongside review activity`() {
+        fun acceptedExtra(
+            id: String,
+            occurredAt: String,
+            appliedDecision: String? = null,
+            resolvedAtEpochMillis: Long? = null,
+        ): LocalActivityLedgerSlice {
+            val base = activity(id, "accepted", null, 2_000, 900, occurredAt)
+            return base.copy(
+                activity = base.activity.copy(extraPlanImpactConfirmed = true),
+                consequence = ActivityConsequenceEntity(
+                    activityId = id,
+                    classification = "extra_activity",
+                    distanceDifferenceMeters = 1_000,
+                    durationDifferenceSeconds = null,
+                    actualLoadMeters = 2_000,
+                    assessment = "conservative",
+                    recommendedDecision = "keep_plan",
+                    resolvedAtEpochMillis = resolvedAtEpochMillis,
+                    appliedDecision = appliedDecision,
+                    planChangeAvailable = true,
+                ),
+            )
+        }
+
+        val mapped = LocalSurfaceMappers.inbox(
+            LocalInboxLedgerSlice(
+                reviewCount = 1,
+                hasMore = false,
+                activities = listOf(
+                    activity("review", "review", null, 2_000, 900, "2026-07-30T09:00:00Z"),
+                    acceptedExtra("pending-extra", "2026-07-30T11:00:00Z"),
+                    acceptedExtra("applied-extra", "2026-07-30T12:00:00Z", appliedDecision = "keep_plan"),
+                    acceptedExtra("resolved-extra", "2026-07-30T13:00:00Z", resolvedAtEpochMillis = 1),
+                ),
+            ),
+        )
+
+        assertEquals(1, mapped.reviewCount)
+        assertEquals(listOf("pending-extra", "review"), mapped.activities.map { it.activityId })
     }
 
     private fun planSlice(

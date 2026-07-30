@@ -112,6 +112,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                 ),
                 nextWorkout = workout("w-2", "2026-08-15", "Long easy run", 6_000.0),
                 activityCandidates = emptyList(),
+                pendingReviewCount = 2,
             ),
         ),
         loading = false,

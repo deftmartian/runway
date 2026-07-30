@@ -151,7 +151,7 @@ internal fun ManualRunDialog(
             (distanceNumber != null || durationNumber != null)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Record an unplanned run") },
+        title = { Text("Add a run manually") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 errorMessage?.let { message ->
@@ -170,6 +170,13 @@ internal fun ManualRunDialog(
                 item {
                     Text(
                         "Enter the distance, duration, or both.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                item {
+                    Text(
+                        "After saving, link this run to planned work or count it as extra in Inbox. It does not affect totals or future workouts until you choose.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -201,7 +208,7 @@ internal fun ManualRunDialog(
                 },
                 enabled = !actionPending && valid,
             ) {
-                Text("Record run")
+                Text("Save for review")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

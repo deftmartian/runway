@@ -262,7 +262,7 @@ internal class RunwayViewModel(
         if (inboxActivityLimit >= MAX_INBOX_ACTIVITIES) {
             mutableState.value = ready.copy(
                 notice = NativeNotice(
-                    "The oldest review items are outside this on-device Inbox window.",
+                    "The oldest Inbox items are outside this on-device window.",
                     isError = true,
                 ),
             )
@@ -1219,9 +1219,8 @@ internal class RunwayViewModel(
             throw IllegalStateException(
                 "Run was rejected: ${issue.name.lowercase().replace('_', ' ')}",
             )
-        is LocalTrainingMutationResult.ManualRunRecorded,
-        is LocalTrainingMutationResult.WorkoutFeedbackRecorded,
-        -> "Saved to your local training log."
+        is LocalTrainingMutationResult.ManualRunRecorded -> "Manual run saved for review."
+        is LocalTrainingMutationResult.WorkoutFeedbackRecorded -> "Saved to your local training log."
     }
 
     private fun OneOffGpxImportOutcome.message(): String = when (this) {

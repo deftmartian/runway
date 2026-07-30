@@ -1,6 +1,7 @@
 package dev.deftmartian.runway.data
 
 import androidx.room.withTransaction
+import dev.deftmartian.runway.domain.ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS
 import dev.deftmartian.runway.domain.Consequence
 import dev.deftmartian.runway.domain.Consequences
 import dev.deftmartian.runway.domain.Deviation
@@ -21,7 +22,7 @@ import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
 /**
- * The explicit Review boundary for imported activities.
+ * The explicit Review boundary for activity candidates.
  *
  * Factual activity data can be inspected while it is in Review, but only [link] or
  * [confirmAsExtra] moves it into calendar actuals and statistics. Future plan changes remain a
@@ -70,7 +71,10 @@ class LocalActivityReviewRepository(
                 ?: return@withTransaction rejected(LocalActivityReviewIssue.PROFILE_NOT_CONFIGURED)
             val activityDate = activity.localDate(zone)
             val workoutDate = LocalDate.ofEpochDay(workout.currentScheduledEpochDay)
-            if (kotlin.math.abs(ChronoUnit.DAYS.between(activityDate, workoutDate)) > MATCH_WINDOW_DAYS) {
+            if (
+                kotlin.math.abs(ChronoUnit.DAYS.between(activityDate, workoutDate)) >
+                ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS
+            ) {
                 return@withTransaction rejected(LocalActivityReviewIssue.OUTSIDE_MATCH_WINDOW)
             }
 
@@ -155,7 +159,7 @@ class LocalActivityReviewRepository(
         dao.saveFeedback(feedback)
         // Review is a factual-data boundary: its health feedback remains attached to the record
         // until the runner explicitly accepts a plan role for that activity.
-        if (accepted && pain) markCurrentPain(now)
+        if (accepted && pain) markCurrentPainIfRecent(activity, now)
         // Preserve an already applied consequence as immutable decision history. Recalculating it
         // would clear its claim and make a second future-plan mutation possible from one activity.
         if (alreadyApplied) {
@@ -194,7 +198,9 @@ class LocalActivityReviewRepository(
             ?: return@withTransaction rejected(LocalActivityReviewIssue.AMBIGUOUS_LEDGER_STATE)
         dao.deleteWorkoutFeedbackForActivity(activityId)
         database.goalPlanDao().saveWorkout(workout.copy(currentStatus = PLANNED_STATE))
-        val remainsAccepted = activity.source == MANUAL_SOURCE || activity.extraPlanImpactConfirmed
+        // A linked manual record is a candidate until the runner explicitly accepts it as extra.
+        // Older accepted manual rows are left untouched unless the runner actively unlinks one.
+        val remainsAccepted = activity.extraPlanImpactConfirmed
         dao.saveActivity(
             activity.copy(
                 reviewState = if (remainsAccepted) ACTIVITY_REVIEW_STATE_ACCEPTED else REVIEW_STATE,
@@ -298,7 +304,7 @@ class LocalActivityReviewRepository(
             )
         }
         planDao.saveWorkout(workout.copy(currentStatus = completionState, updatedAtEpochMillis = now))
-        if (feedback?.pain == true) markCurrentPain(now)
+        if (feedback?.pain == true) markCurrentPainIfRecent(activity, now)
         return consequence
     }
 
@@ -315,11 +321,11 @@ class LocalActivityReviewRepository(
         val visible = activePlan?.let {
             planDao.visibleWorkoutsForPlan(it.planId, limit = MAX_PLAN_WORKOUTS_READ)
         }.orEmpty()
-        val next = visible.firstOrNull {
-            it.currentScheduledEpochDay > activityDate.toEpochDay() &&
-                it.currentStatus == PLANNED_STATE &&
-                it.currentWorkoutType != REST_TYPE
-        }
+        val next = eligibleFutureDecisionWorkouts(
+            candidates = visible,
+            originEpochDay = activityDate.toEpochDay(),
+            todayEpochDay = today.toEpochDay(),
+        ).firstOrNull()
         val weekStart = activityDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val weekEnd = weekStart.plusDays(6)
         val activityWeek = visible.filter {
@@ -353,8 +359,17 @@ class LocalActivityReviewRepository(
                 ActivityConsequenceOptionEntity(activity.activityId, decision.storageValue),
             )
         }
-        if (feedback?.pain == true) markCurrentPain(nowEpochMillis())
+        if (feedback?.pain == true) markCurrentPainIfRecent(activity, nowEpochMillis())
         return consequence
+    }
+
+    private suspend fun markCurrentPainIfRecent(activity: ActivityEntity, now: Long) {
+        val profile = database.profileSettingsDao().get() ?: return
+        val zone = profile.timeZone.asZone() ?: return
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        if (!isHistoricalExtraActivity(activity.localDate(zone), today)) {
+            markCurrentPain(now)
+        }
     }
 
     private suspend fun markCurrentPain(now: Long) {
@@ -374,7 +389,6 @@ class LocalActivityReviewRepository(
         const val PLANNED_STATE = "planned"
         const val REST_TYPE = "rest"
         const val MANUAL_SOURCE = "manual"
-        const val MATCH_WINDOW_DAYS = 3L
         const val RECENT_DEVIATION_DAYS = 28L
         const val MAX_PRIVATE_NOTES_LENGTH = 240
         const val MAX_RECENT_FEEDBACK_READ = 128

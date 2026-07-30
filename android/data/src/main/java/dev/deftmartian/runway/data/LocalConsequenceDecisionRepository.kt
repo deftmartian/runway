@@ -196,12 +196,11 @@ class LocalConsequenceDecisionRepository(
                 val plan = planDao.activePlans(limit = 2).singleOrNull() ?: return null
                 val candidates = planDao.visibleWorkoutsForPlan(plan.planId, limit = MAX_PLAN_WORKOUTS)
                 val activityDate = Instant.ofEpochMilli(activity.occurredAtEpochMillis).atZone(zone).toLocalDate()
-                val next = candidates.firstOrNull {
-                    it.currentScheduledEpochDay > activityDate.toEpochDay() &&
-                        it.currentStatus == "planned" &&
-                        it.tombstonedAtEpochMillis == null &&
-                        it.currentWorkoutType !in setOf("rest", "race")
-                }
+                val next = eligibleFutureDecisionWorkouts(
+                    candidates = candidates,
+                    originEpochDay = activityDate.toEpochDay(),
+                    todayEpochDay = today.toEpochDay(),
+                ).firstOrNull()
                 val weekStart = activityDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                 val week = candidates.filter {
                     it.currentScheduledEpochDay in weekStart.toEpochDay()..weekStart.plusDays(6).toEpochDay()

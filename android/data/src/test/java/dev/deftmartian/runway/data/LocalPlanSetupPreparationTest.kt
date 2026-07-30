@@ -1,7 +1,6 @@
 package dev.deftmartian.runway.data
 
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
-import dev.deftmartian.runway.domain.Experience
 import dev.deftmartian.runway.domain.GoalKind
 import dev.deftmartian.runway.domain.GoalPriority
 import dev.deftmartian.runway.domain.InjuryFlags
@@ -58,7 +57,6 @@ class LocalPlanSetupPreparationTest {
         val generated = TrainingPlanner.generatePlan(
             EstablishedTrainingIntake(
                 priority = GoalPriority.FINISH_HEALTHY,
-                experience = Experience.RETURNING,
                 availability = listOf(1, 3, 6),
                 injuryFlags = InjuryFlags(),
                 raceDistance = RaceDistance.FIVE_K,

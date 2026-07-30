@@ -140,6 +140,44 @@ class LocalTrainingMutationRulesTest {
         )
     }
 
+    @Test
+    fun `backfilled extra consequences preview and apply the same future workout target`() {
+        val originDay = 10L
+        val todayDay = 13L
+        val past = workout("past-after-extra", day = 11, distance = 15_000)
+        val future = workout("future-target", day = todayDay, distance = 5_000)
+        val eligible = eligibleFutureDecisionWorkouts(
+            candidates = listOf(past, future),
+            originEpochDay = originDay,
+            todayEpochDay = todayDay,
+        )
+        assertEquals(listOf("future-target"), eligible.map { it.workoutId })
+
+        val consequence = dev.deftmartian.runway.domain.calculateExtraActivityConsequence(
+            ExtraActivityInput(distanceMeters = 3_000),
+            ExtraActivityTargets(
+                nextRunTargetDistanceMeters = requireNotNull(eligible.single().currentDistanceMeters),
+                weekTargetDistanceMeters = 20_000,
+                weekTargetDurationSeconds = 0,
+            ),
+        )
+        val input = LocalDecisionInput(
+            source = LocalDecisionSource(LocalDecisionSourceKind.Activity, "backfilled-extra", "v1"),
+            decision = PlanDecision.REDUCE_NEXT,
+            consequence = consequence,
+            originEpochDay = originDay,
+            todayEpochDay = todayDay,
+            originWorkout = null,
+            candidates = listOf(past, future),
+        )
+        val preview = LocalConsequenceDecisionEngine.preview(input) as LocalDecisionResult.Preview
+        assertEquals("future-target", preview.changes.single().after.workoutId)
+        assertTrue(
+            LocalConsequenceDecisionEngine.apply(preview, input, alreadyApplied = false) is
+                LocalDecisionApplyResult.Ready,
+        )
+    }
+
     private fun preview(
         decision: PlanDecision,
         origin: WorkoutEntity,

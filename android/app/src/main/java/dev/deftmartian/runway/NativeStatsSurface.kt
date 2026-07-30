@@ -74,7 +74,7 @@ internal fun noActiveStatsSummary(
         recorded != null || acceptedHeartRate != null ->
             "There is no active plan or recommendation. Recorded work remains available below."
         else ->
-            "There is no active plan or recommendation. Record a run or build a plan to see comparisons here."
+            "There is no active plan or recommendation. Add and review a run, or build a plan, to see comparisons here."
     }
     return NativeNoActiveStatsSummary(status, recorded, acceptedHeartRate)
 }
@@ -83,7 +83,10 @@ internal fun noActiveStatsSummary(
 internal fun hasRecordedStatsHistory(history: NativeTrainingHistory?): Boolean =
     (history?.recordedSummary?.totalRuns ?: 0) > 0 ||
         history?.hasAcceptedActivities == true ||
-        (history?.recentFeedbackCount ?: 0) > 0
+        (history?.recentFeedbackCount ?: 0) > 0 ||
+        history?.weeklySummaries.orEmpty().any {
+            (it.completedRuns ?: 0) > 0 || (it.skippedRuns ?: 0) > 0
+        }
 
 /**
  * Shows the generated recommendation, the runner's current

@@ -98,6 +98,78 @@ class LocalPlanLifecyclePreparationTest {
         assertFalse(LocalPlanLifecyclePreparation.validOperationId(""))
     }
 
+    @Test
+    fun `legacy experience values do not change a phase to race preview`() {
+        val activities = listOf(
+            activity("a", 4_000, 1_800),
+            activity("b", 4_000, 1_800),
+            activity("c", 4_000, 1_800),
+            activity("d", 4_000, 1_800),
+        )
+        val availability = listOf(1, 3, 6)
+        val review = LocalPlanLifecyclePreparation.prepareReview(
+            phaseType = "calibration",
+            goalKind = "race",
+            acceptedLinkedActivities = activities,
+            observedWeekCount = 2,
+            availabilityDays = availability,
+        )
+        val phasePlan = PlanEntity(
+            planId = "phase-plan",
+            goalId = "goal",
+            phaseType = "calibration",
+            state = "active",
+            startEpochDay = 0,
+            endEpochDay = null,
+            createdAtEpochMillis = 1,
+            updatedAtEpochMillis = 2,
+        )
+        val goal = GoalEntity(
+            goalId = "goal",
+            title = "5K",
+            targetDateEpochDay = java.time.LocalDate.parse("2026-05-01").toEpochDay(),
+            state = "active",
+            createdAtEpochMillis = 1,
+            updatedAtEpochMillis = 2,
+            kind = "race",
+            startMode = "calibration",
+            raceDistanceMeters = 5_000,
+            priority = "finish_healthy",
+        )
+        fun preview(experienceLevel: String) = requireNotNull(
+            LocalPlanLifecyclePreparation.prepareRacePlan(
+                phasePlan = phasePlan,
+                goal = goal,
+                profile = profile(experienceLevel),
+                review = review,
+                acceptedLinkedActivities = activities,
+                availabilityDays = availability,
+                todayEpochDay = java.time.LocalDate.parse("2026-01-01").toEpochDay(),
+            ),
+        ).preview
+
+        assertEquals(preview("new"), preview("comfortable"))
+        assertEquals(preview("new"), preview("not_specified"))
+    }
+
     private fun activity(id: String, distanceMeters: Int, durationSeconds: Int) =
         LocalAcceptedLinkedActivity(id, distanceMeters, durationSeconds)
+
+    private fun profile(experienceLevel: String) = ProfileSettingsEntity(
+        timeZone = "America/Halifax",
+        routeDataMode = "discard",
+        heartRateSettingsSource = "none",
+        maxHeartRateBpm = null,
+        zone2FloorBpm = null,
+        zone3FloorBpm = null,
+        zone4FloorBpm = null,
+        zone5FloorBpm = null,
+        recentInjury = false,
+        currentPain = false,
+        recurringPain = false,
+        medicalRestriction = false,
+        privateNotes = null,
+        updatedAtEpochMillis = 3,
+        experienceLevel = experienceLevel,
+    )
 }

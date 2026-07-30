@@ -29,14 +29,14 @@ Defaults are recommendations, not constraints. The runner can change available d
 
 - **Generated** is the original conservative recommendation.
 - **Current** is generated work plus deliberate future edits and applied decisions.
-- **Actual** is accepted completed work; review-only imports do not count.
+- **Actual** is accepted completed work; review-only candidates do not count.
 
 This distinction must remain visible in Calendar, Inbox, Stats, and History. Rest is a planned state, not the absence of data.
 
 ## Surfaces
 
 1. **Calendar** — today, next workout, month/day detail, edits, feedback, and results.
-2. **Inbox** — imported activity review, links, extra work, corrections, and deletions.
+2. **Inbox** — activity review, links, extra work, corrections, and unresolved plan decisions.
 3. **Stats** — generated/current/actual traces and plain-language training context.
 4. **History** — plan lifecycle, archived plans, and auditable decisions.
 5. **Settings** — training profile, privacy, imports, backup/export, erase, and local build information.
@@ -45,7 +45,7 @@ Onboarding is a focused setup flow, not a sixth destination.
 
 ## Imports and privacy
 
-Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Import is review-first. A candidate can be linked to planned work, counted as extra work, changed, or deleted before it affects actual totals or future decisions.
+Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Intake is review-first. A candidate can be linked to a planned workout within three calendar days, counted as extra work, have its feedback corrected, or be deleted before it affects actual totals or future decisions.
 
 GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data.
 

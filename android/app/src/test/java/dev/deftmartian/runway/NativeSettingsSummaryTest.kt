@@ -26,6 +26,26 @@ class NativeSettingsSummaryTest {
             "Permission needed",
             importConnectionSummary(NativeImportConnection.PermissionRequired),
         )
+        assertEquals(
+            "Grant access",
+            folderImportActionLabel(NativeImportConnection.PermissionRequired),
+        )
+    }
+
+    @Test
+    fun `folder action labels distinguish setup from an existing connection`() {
+        assertEquals(
+            "Choose",
+            folderImportActionLabel(NativeImportConnection.NotConnected),
+        )
+        assertEquals(
+            "Manage",
+            folderImportActionLabel(NativeImportConnection.Connected),
+        )
+        assertEquals(
+            "Review",
+            folderImportActionLabel(NativeImportConnection.Attention("Folder access changed")),
+        )
     }
 
     @Test

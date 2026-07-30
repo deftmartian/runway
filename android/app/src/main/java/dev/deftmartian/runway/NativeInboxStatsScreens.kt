@@ -39,6 +39,9 @@ internal fun InboxScreen(
 ) {
     val candidates = payload?.candidates.orEmpty()
     val activities = payload?.activities.orEmpty()
+    val workoutDecisions = payload?.workoutDecisions.orEmpty()
+    val reviewActivities = activities.filter { it.reviewState == "review" }
+    val acceptedActivities = activities.filter { it.reviewState != "review" }
     val healthConnectChanges = payload?.healthConnectChanges.orEmpty()
     var selectedActivity by remember { mutableStateOf<NativeActivity?>(null) }
     var pendingDecision by remember { mutableStateOf<PendingPlanDecision?>(null) }
@@ -57,12 +60,13 @@ internal fun InboxScreen(
         item {
             ScreenIntro(
                 "Inbox",
-                "Link each imported run, count it as extra training, or delete it.",
+                "Choose how each run counts, then decide whether its result changes the plan.",
             )
         }
         when {
             payload == null -> item { EmptyCard("Loading activity review…") }
-            activities.none { it.reviewState == "review" } && healthConnectChanges.isEmpty() -> {
+            reviewActivities.isEmpty() && acceptedActivities.isEmpty() &&
+                workoutDecisions.isEmpty() && healthConnectChanges.isEmpty() -> {
                 item { EmptyCard("Nothing needs a decision right now.") }
                 item {
                     Row(
@@ -97,7 +101,7 @@ internal fun InboxScreen(
                     }
                 }
                 items(
-                    activities.filter { it.reviewState == "review" },
+                    reviewActivities,
                     key = { it.id.orEmpty() },
                 ) { activity ->
                     ActivityCard(
@@ -118,9 +122,15 @@ internal fun InboxScreen(
                 }
             }
         }
-        val acceptedActivities = activities.filter { it.reviewState != "review" }
-        if (acceptedActivities.isNotEmpty()) {
-            item { SectionLabel("Recent activity") }
+        if (workoutDecisions.isNotEmpty() || acceptedActivities.isNotEmpty()) {
+            item { SectionLabel("Plan decisions") }
+            items(workoutDecisions, key = { "feedback-${it.id.orEmpty()}" }) { feedback ->
+                WorkoutDecisionCard(feedback, actionPending) { decision ->
+                    pendingPlanDecision("feedback", feedback, decision)?.let {
+                        pendingDecision = it
+                    }
+                }
+            }
             items(acceptedActivities, key = { "activity-${it.id.orEmpty()}" }) { activity ->
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActivityCard(
@@ -142,12 +152,9 @@ internal fun InboxScreen(
                             consequence = consequence,
                             actionPending = actionPending,
                             onDecision = { decision ->
-                                pendingDecision = PendingPlanDecision(
-                                    source = "activity",
-                                    sourceId = activity.id.orEmpty(),
-                                    decision = decision,
-                                    consequence = consequence,
-                                )
+                                pendingActivityPlanDecision(activity, decision)?.let {
+                                    pendingDecision = it
+                                }
                             },
                         )
                     }
@@ -161,13 +168,13 @@ internal fun InboxScreen(
                     enabled = !loading && !actionPending,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (loading) "Loading…" else "Load earlier imports")
+                    Text(if (loading) "Loading…" else "Load earlier runs")
                 }
             }
         }
     }
     selectedActivity?.let { activity ->
-        ImportedActivityDetailSheet(
+        ActivityDetailSheet(
             activity = activity,
             candidates = candidates,
             evidence = activity.id?.let { activityEvidence[it] },
@@ -193,6 +200,35 @@ internal fun InboxScreen(
                 onAction(planDecisionCommand(decision))
             },
         )
+    }
+}
+
+@Composable
+private fun WorkoutDecisionCard(
+    feedback: NativeWorkoutFeedback,
+    actionPending: Boolean,
+    onDecision: (String) -> Unit,
+) {
+    SettingCard("Recorded workout") {
+        val planContext = listOfNotNull(
+            feedback.scheduledDate?.let(::friendlyDate),
+            feedback.workoutPurpose?.takeIf(String::isNotBlank),
+        ).joinToString(" · ")
+        if (planContext.isNotBlank()) {
+            Text(planContext)
+        }
+        val measurement = listOfNotNull(
+            feedback.completedDistanceMeters?.takeIf { it > 0 }?.let(::formatDistance),
+            feedback.completedDurationSeconds?.takeIf { it > 0 }?.let(::formatDuration),
+        ).joinToString(" · ").ifBlank { "Recorded result" }
+        Text(measurement, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        feedback.consequence?.let { consequence ->
+            ConsequenceChoices(
+                consequence = consequence,
+                actionPending = actionPending,
+                onDecision = onDecision,
+            )
+        }
     }
 }
 
@@ -462,6 +498,20 @@ private fun StatsAssessment(history: NativeTrainingHistory?) {
             Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    if (weeks.isNotEmpty()) {
+        val plannedRuns = weeks.sumOf { it.plannedRuns ?: 0 }
+        val completedRuns = weeks.sumOf { it.completedRuns ?: 0 }
+        val missedRuns = weeks.sumOf { it.missedRuns ?: 0 }
+        val skippedRuns = weeks.sumOf { it.skippedRuns ?: 0 }
+        val plannedDistance = weeks.sumOf { it.targetDistanceMeters ?: 0.0 }
+        val completedDistance = weeks.sumOf { it.completedDistanceMeters ?: 0.0 }
+        SettingCard("Plan versus actual") {
+            SettingRow("Recorded / scheduled", "$completedRuns / $plannedRuns")
+            SettingRow("Recorded distance", formatDistance(completedDistance))
+            if (plannedDistance > 0) SettingRow("Planned distance", formatDistance(plannedDistance))
+            SettingRow("Missed / skipped", "$missedRuns / $skippedRuns")
+        }
+    }
     if (signal != null && history.hasAcceptedActivities == true) {
         val assessment = if (signal.source == "plan") {
             nativeRampAssessment(signal.risk)
@@ -477,20 +527,6 @@ private fun StatsAssessment(history: NativeTrainingHistory?) {
                     Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-    }
-    if (weeks.isNotEmpty()) {
-        val plannedRuns = weeks.sumOf { it.plannedRuns ?: 0 }
-        val completedRuns = weeks.sumOf { it.completedRuns ?: 0 }
-        val missedRuns = weeks.sumOf { it.missedRuns ?: 0 }
-        val skippedRuns = weeks.sumOf { it.skippedRuns ?: 0 }
-        val plannedDistance = weeks.sumOf { it.targetDistanceMeters ?: 0.0 }
-        val completedDistance = weeks.sumOf { it.completedDistanceMeters ?: 0.0 }
-        SettingCard("Plan versus actual") {
-            SettingRow("Recorded / scheduled", "$completedRuns / $plannedRuns")
-            SettingRow("Recorded distance", formatDistance(completedDistance))
-            if (plannedDistance > 0) SettingRow("Planned distance", formatDistance(plannedDistance))
-            SettingRow("Missed / skipped", "$missedRuns / $skippedRuns")
         }
     }
 }

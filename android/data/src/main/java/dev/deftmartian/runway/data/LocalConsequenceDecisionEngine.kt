@@ -17,13 +17,11 @@ object LocalConsequenceDecisionEngine {
             return rejected(LocalDecisionIssue.PROPOSAL_NOT_AVAILABLE)
         }
         if (input.decision !in input.consequence.options) return rejected(LocalDecisionIssue.DECISION_NOT_OFFERED)
-        val eligible = input.candidates.filter {
-            it.currentStatus == "planned" &&
-                it.tombstonedAtEpochMillis == null &&
-                it.currentWorkoutType !in setOf("rest", "race") &&
-                it.currentScheduledEpochDay > input.originEpochDay &&
-                it.currentScheduledEpochDay >= input.todayEpochDay
-        }.sortedWith(compareBy(WorkoutEntity::currentScheduledEpochDay, WorkoutEntity::workoutId)).take(52)
+        val eligible = eligibleFutureDecisionWorkouts(
+            input.candidates,
+            input.originEpochDay,
+            input.todayEpochDay,
+        )
         val changes = try {
             when (input.decision) {
                 PlanDecision.KEEP_PLAN -> emptyList()
@@ -154,6 +152,25 @@ object LocalConsequenceDecisionEngine {
 
     private fun rejected(issue: LocalDecisionIssue) = LocalDecisionResult.Rejected(issue)
 }
+
+/**
+ * Shared target boundary for previewing and applying an explicit consequence decision.
+ * An activity's consequence must be calculated from this same ordered future-workout set.
+ */
+internal fun eligibleFutureDecisionWorkouts(
+    candidates: List<WorkoutEntity>,
+    originEpochDay: Long,
+    todayEpochDay: Long,
+): List<WorkoutEntity> = candidates
+    .filter {
+        it.currentStatus == "planned" &&
+            it.tombstonedAtEpochMillis == null &&
+            it.currentWorkoutType !in setOf("rest", "race") &&
+            it.currentScheduledEpochDay > originEpochDay &&
+            it.currentScheduledEpochDay >= todayEpochDay
+    }
+    .sortedWith(compareBy(WorkoutEntity::currentScheduledEpochDay, WorkoutEntity::workoutId))
+    .take(52)
 
 data class LocalDecisionSource(val kind: LocalDecisionSourceKind, val sourceId: String, val version: String)
 enum class LocalDecisionSourceKind { WorkoutFeedback, Activity }
