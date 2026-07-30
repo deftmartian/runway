@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "RunwayAndroid"
 include(":app")
+include(":data")
+include(":domain")

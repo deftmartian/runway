@@ -162,6 +162,8 @@ kotlin {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
 
+    implementation(project(":data"))
+    implementation(project(":domain"))
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.browser:browser:1.9.0")
@@ -178,7 +180,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-
     testImplementation("junit:junit:4.13.2")
     // The Android platform supplies a mocked org.json on the JVM unit-test classpath. Keep the
     // real parser test-only so native HTTP contract tests exercise encoded server responses.
