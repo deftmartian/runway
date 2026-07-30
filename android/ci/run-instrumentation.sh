@@ -12,13 +12,27 @@ report_instrumentation_failure() {
   local output_file="$2"
   local reason="$3"
   local output_tail
+  local device_tail
   output_tail="$(
     tail -n 24 "$output_file" |
       tr '\r\n' '  ' |
-      cut -c 1-1800 |
+      cut -c 1-1400 |
       sed 's/%/%25/g'
   )"
-  echo "::error title=$title::$reason Output: $output_tail"
+  device_tail="$(
+    run_bounded 20 adb -s "$serial" logcat -d -t 500 2>/dev/null |
+      grep -E \
+        'AndroidRuntime|FATAL EXCEPTION|Fatal signal|crash_dump|TestRunner|dev\.deftmartian\.runway' |
+      tail -n 24 |
+      tr '\r\n' '  ' |
+      cut -c 1-1800 |
+      sed 's/%/%25/g'
+  )" || true
+  if [ -n "$device_tail" ]; then
+    echo "::error title=$title::$reason Output: $output_tail Device log: $device_tail"
+  else
+    echo "::error title=$title::$reason Output: $output_tail Device log: no matching lines."
+  fi
 }
 
 collect_diagnostics() {
