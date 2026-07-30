@@ -256,6 +256,8 @@ data class WorkoutEntity(
     val generatedCooldownSeconds: Int? = null,
     val currentWarmupSeconds: Int? = null,
     val currentCooldownSeconds: Int? = null,
+    /** Set once for runner-added workouts; generated-plan ownership is otherwise immutable. */
+    val addedByAdjustmentId: String? = null,
 )
 
 @Entity(
@@ -590,7 +592,12 @@ data class ActivityConsequenceOptionEntity(
             onDelete = ForeignKey.SET_NULL,
         ),
     ],
-    indices = [Index(value = ["planId", "createdAtEpochMillis"]), Index(value = ["workoutId"]), Index(value = ["sourceActivityId"])],
+    indices = [
+        Index(value = ["planId", "createdAtEpochMillis"]),
+        Index(value = ["workoutId"]),
+        Index(value = ["sourceActivityId"]),
+        Index(value = ["triggerKind", "triggerId", "triggerVersion"], unique = true),
+    ],
 )
 data class PlanAdjustmentEntity(
     @PrimaryKey val adjustmentId: String,
@@ -603,6 +610,10 @@ data class PlanAdjustmentEntity(
     val projectedRampPercent: Double?,
     val affectedWorkoutCount: Int,
     val createdAtEpochMillis: Long,
+    /** Immutable source ownership; it is never inferred from mutable consequence rows. */
+    val triggerKind: String? = null,
+    val triggerId: String? = null,
+    val triggerVersion: String? = null,
 )
 
 @Entity(
@@ -676,6 +687,9 @@ data class AdjustmentWorkoutEffectEntity(
     val newCooldownSeconds: Int? = null,
     val previousPrescriptionKind: String? = null,
     val newPrescriptionKind: String? = null,
+    /** Week ownership is captured with the effect rather than inferred from mutable workouts. */
+    val previousWeekId: String? = null,
+    val newWeekId: String? = null,
 )
 
 @Entity(

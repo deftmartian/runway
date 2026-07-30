@@ -15,11 +15,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-if (providers.gradleProperty("runwayOrigin").isPresent) {
-    throw GradleException(
-        "runwayOrigin is no longer supported; every runway APK uses in-app server selection",
-    )
-}
 val runwayApplicationId = providers.gradleProperty("runwayApplicationId")
     .orElse("dev.deftmartian.runway")
     .get()
@@ -106,7 +101,6 @@ android {
         buildConfigField("String", "SOURCE_COMMIT", "\"$runwayBuildCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     signingConfigs {
@@ -129,7 +123,6 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
             isMinifyEnabled = false
@@ -138,7 +131,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            manifestPlaceholders["usesCleartextTraffic"] = "false"
         }
     }
 
@@ -166,7 +158,6 @@ dependencies {
     implementation(project(":domain"))
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.browser:browser:1.9.0")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
@@ -181,20 +172,12 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     testImplementation("junit:junit:4.13.2")
-    // The Android platform supplies a mocked org.json on the JVM unit-test classpath. Keep the
-    // real parser test-only so native HTTP contract tests exercise encoded server responses.
-    testImplementation("org.json:json:20240303")
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.test:runner:1.5.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     debugImplementation("androidx.compose.ui:ui-tooling")
-}
-
-val verifyServerSelectionRelease by tasks.registering {
-    group = "verification"
-    description = "Verifies that releases use the in-app server-selection model."
 }
 
 val verifyReleaseSigning by tasks.registering {
@@ -217,7 +200,6 @@ val verifyReleaseSigning by tasks.registering {
 val verifyReleasePackaging by tasks.registering {
     group = "verification"
     description = "Requires direct signing or the explicit unsigned F-Droid source-build path."
-    dependsOn(verifyServerSelectionRelease)
     if (fdroidSourceBuild) {
         doLast {
             if (releaseSigningIdentity != null) {

@@ -1,5 +1,11 @@
 package dev.deftmartian.runway
 
+import dev.deftmartian.runway.data.GeneratedPlanGoalMetadata
+import dev.deftmartian.runway.data.GeneratedPlanPersistenceMapper
+import dev.deftmartian.runway.data.GoalEntity
+import dev.deftmartian.runway.data.LocalPlanCandidate
+import dev.deftmartian.runway.data.LocalPlanSetupRequest
+import dev.deftmartian.runway.data.ProfileSettingsEntity
 import dev.deftmartian.runway.domain.CalibrationIntake
 import dev.deftmartian.runway.domain.DateUtils
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
@@ -20,6 +26,8 @@ import dev.deftmartian.runway.domain.TrainingPlanner
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 internal enum class OnboardingField {
     GOAL_KIND, START_MODE, RACE_DISTANCE, TARGET_DATE, PRIORITY, EXPERIENCE,
@@ -91,22 +99,34 @@ internal object StandaloneOnboardingAdapter {
         if (command.injuryNotes.trim().length > 240) error(OnboardingField.HEALTH_NOTES, OnboardingFieldError.OUT_OF_RANGE)
         if (command.availability.distinct().size != command.availability.size) error(OnboardingField.AVAILABILITY, OnboardingFieldError.DUPLICATE_DAY)
 
-        val weeklyKm = strictDecimal(command.currentWeeklyDistanceKm, OnboardingField.WEEKLY_DISTANCE, ::error)
-        val runs = strictWhole(command.currentRunsPerWeek, OnboardingField.RUNS_PER_WEEK, ::error)
-        val longestKm = strictDecimal(command.longestRecentRunKm, OnboardingField.LONGEST_RUN, ::error)
-        val calibrationMinutes = strictWhole(command.calibrationDurationMinutes, OnboardingField.CALIBRATION_DURATION, ::error)
-        val longRunDay = strictWhole(command.preferredLongRunDay, OnboardingField.LONG_RUN_DAY, ::error)
-
         if (goalKind == null || startMode == null || priority == null || experience == null || zone == null || today == null) {
             return StandaloneOnboardingOutcome.Invalid(errors, null)
         }
-        val bounds = if (startMode == StartMode.FOUNDATION_ONLY) null else OnboardingValidation.targetDateBounds(today, startMode)
+        // These inputs only exist for their respective start paths. Parsing every hidden form
+        // value made a new/foundation runner fail validation because an unrelated stale value was
+        // malformed. Established runners still receive precise errors for every baseline field.
+        val established = startMode == StartMode.ESTABLISHED
+        val calibration = startMode == StartMode.CALIBRATION
         val flags = InjuryFlags(command.recentInjury, command.currentPain, command.recurringPain, command.medicalRestriction, command.injuryNotes.trim())
+        val needsEstablishedBaseline = established && !flags.currentPain && !flags.medicalRestriction
+        val weeklyKm = if (needsEstablishedBaseline) strictDecimal(command.currentWeeklyDistanceKm, OnboardingField.WEEKLY_DISTANCE, ::error) else null
+        val runs = if (needsEstablishedBaseline) strictWhole(command.currentRunsPerWeek, OnboardingField.RUNS_PER_WEEK, ::error) else null
+        val longestKm = if (needsEstablishedBaseline) strictDecimal(command.longestRecentRunKm, OnboardingField.LONGEST_RUN, ::error) else null
+        val calibrationMinutes = if (calibration && !flags.currentPain && !flags.medicalRestriction) {
+            strictWhole(command.calibrationDurationMinutes, OnboardingField.CALIBRATION_DURATION, ::error)
+        } else null
+        val longRunDay = if (needsEstablishedBaseline) strictWhole(command.preferredLongRunDay, OnboardingField.LONG_RUN_DAY, ::error) else null
+        val bounds = if (startMode == StartMode.FOUNDATION_ONLY) null else OnboardingValidation.targetDateBounds(today, startMode)
         val selection = OnboardingSelection(
             goalKind, startMode, raceDistance, targetDate, experience, command.availability, timeZone, flags,
-            weeklyKm, runs, longestKm, longRunDay, calibrationMinutes, command.confirmConcentratedSchedule,
+            weeklyKm, runs, longestKm, longRunDay,
+            calibrationMinutes ?: if (calibration && (flags.currentPain || flags.medicalRestriction)) 10 else null,
+            command.confirmConcentratedSchedule,
         )
         OnboardingValidation.validate(selection, today).forEach { issue -> mapIssue(issue, ::error) }
+        if (needsEstablishedBaseline) {
+            validateEstablishedBaseline(command, weeklyKm, runs, longestKm, longRunDay, ::error)
+        }
         if (goalKind == GoalKind.RACE && raceDistance == null) error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.REQUIRED)
         if (goalKind == GoalKind.RACE && targetDate == null) error(OnboardingField.TARGET_DATE, OnboardingFieldError.REQUIRED)
         val blocked = flags.currentPain || flags.medicalRestriction
@@ -131,7 +151,8 @@ internal object StandaloneOnboardingAdapter {
         OnboardingIssue.MISSING_TARGET_DATE -> error(OnboardingField.TARGET_DATE, OnboardingFieldError.REQUIRED)
         OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS -> error(OnboardingField.TARGET_DATE, OnboardingFieldError.OUT_OF_RANGE)
         OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS -> error(OnboardingField.AVAILABILITY, OnboardingFieldError.OUT_OF_RANGE)
-        OnboardingIssue.INVALID_ESTABLISHED_BASELINE -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.OUT_OF_RANGE)
+        // The domain reports this aggregate invariant; this adapter reports the actionable field.
+        OnboardingIssue.INVALID_ESTABLISHED_BASELINE -> Unit
         OnboardingIssue.INVALID_CALIBRATION_DURATION -> error(OnboardingField.CALIBRATION_DURATION, OnboardingFieldError.OUT_OF_RANGE)
         OnboardingIssue.INVALID_LONG_RUN_DAY -> error(OnboardingField.LONG_RUN_DAY, OnboardingFieldError.INVALID_VALUE)
         OnboardingIssue.CONCENTRATED_SCHEDULE_NOT_CONFIRMED -> error(OnboardingField.CONCENTRATED_SCHEDULE, OnboardingFieldError.CONCENTRATED_SCHEDULE_CONFIRMATION)
@@ -149,7 +170,165 @@ internal object StandaloneOnboardingAdapter {
         return normalized.toIntOrNull() ?: run { error(field, OnboardingFieldError.INVALID_NUMBER); null }
     }
     private fun kilometersToMeters(value: Double): Int = kotlin.math.floor(value * 1000 + .5).toInt()
+    private fun validateEstablishedBaseline(
+        command: CreatePlanCommand,
+        weeklyKm: Double?,
+        runs: Int?,
+        longestKm: Double?,
+        longRunDay: Int?,
+        error: (OnboardingField, OnboardingFieldError) -> Unit,
+    ) {
+        when {
+            weeklyKm == null && command.currentWeeklyDistanceKm.isBlank() -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.REQUIRED)
+            weeklyKm != null && weeklyKm !in 3.0..250.0 -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.OUT_OF_RANGE)
+        }
+        when {
+            runs == null && command.currentRunsPerWeek.isBlank() -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.REQUIRED)
+            runs != null && runs !in 2..5 -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.OUT_OF_RANGE)
+        }
+        when {
+            longestKm == null && command.longestRecentRunKm.isBlank() -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.REQUIRED)
+            longestKm != null && (longestKm <= 0.0 || longestKm > 80.0) -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.OUT_OF_RANGE)
+        }
+        if (longRunDay == null && command.preferredLongRunDay.isBlank()) {
+            error(OnboardingField.LONG_RUN_DAY, OnboardingFieldError.REQUIRED)
+        }
+    }
     private fun nextPlanStartDate(today: LocalDate): String = today.plusDays(((8 - today.dayOfWeek.value) % 7).toLong()).toString()
     private val DECIMAL = Regex("(?:0|[1-9]\\d*)(?:\\.\\d+)?")
     private val WHOLE = Regex("(?:0|[1-9]\\d*)")
+}
+
+/**
+ * Pure bridge from a validated onboarding result to the one local persistence boundary. The
+ * operation ID is supplied by the action coordinator and is deliberately the only identity seed:
+ * replaying the same action maps to the same goal and plan instead of silently creating another.
+ */
+internal object StandaloneOnboardingPersistenceMapper {
+    fun map(
+        command: CreatePlanCommand,
+        outcome: StandaloneOnboardingOutcome,
+        operationId: String,
+        occurredAtEpochMillis: Long,
+    ): LocalPlanSetupRequest {
+        require(operationId.isNotBlank()) { "operationId must not be blank" }
+        require(occurredAtEpochMillis >= 0) { "occurredAtEpochMillis must not be negative" }
+        require(outcome !is StandaloneOnboardingOutcome.Invalid) { "Cannot persist invalid onboarding" }
+
+        val metadata = when (outcome) {
+            is StandaloneOnboardingOutcome.Planned -> outcome.metadata
+            is StandaloneOnboardingOutcome.PendingGoal -> outcome.metadata
+            is StandaloneOnboardingOutcome.Invalid -> error("unreachable")
+        }
+        val goalId = stableId("goal", operationId)
+        val planId = stableId("plan", operationId)
+        val profile = profile(command, metadata.startMode, occurredAtEpochMillis)
+        val candidate = when (outcome) {
+            is StandaloneOnboardingOutcome.Planned -> LocalPlanCandidate.Generated(
+                GeneratedPlanPersistenceMapper.map(
+                    outcome.plan,
+                    GeneratedPlanGoalMetadata(
+                        goalId = goalId,
+                        planId = planId,
+                        title = title(metadata),
+                        goalKind = metadata.goalKind,
+                        startMode = metadata.startMode,
+                        goalTargetDate = metadata.targetDate,
+                        targetDistanceMeters = metadata.raceDistance?.meters(),
+                        priority = metadata.priority,
+                        createdAtEpochMillis = occurredAtEpochMillis,
+                    ),
+                ),
+            )
+            is StandaloneOnboardingOutcome.PendingGoal -> LocalPlanCandidate.Pending(
+                GoalEntity(
+                    goalId = goalId,
+                    title = title(metadata),
+                    targetDateEpochDay = metadata.targetDate?.let { LocalDate.parse(it).toEpochDay() },
+                    state = "pending",
+                    createdAtEpochMillis = occurredAtEpochMillis,
+                    updatedAtEpochMillis = occurredAtEpochMillis,
+                    kind = metadata.goalKind.name.lowercase(),
+                    startMode = metadata.startMode.name.lowercase(),
+                    raceDistanceMeters = metadata.raceDistance?.meters(),
+                    priority = metadata.priority.storageValue(),
+                ),
+            )
+            is StandaloneOnboardingOutcome.Invalid -> error("unreachable")
+        }
+        return LocalPlanSetupRequest(
+            profile = profile,
+            availabilityDays = command.availability,
+            candidate = candidate,
+            confirmReplaceActive = command.confirmReplace,
+            archiveAtEpochMillis = occurredAtEpochMillis,
+        )
+    }
+
+    private fun profile(command: CreatePlanCommand, mode: StartMode, now: Long): ProfileSettingsEntity {
+        val established = mode == StartMode.ESTABLISHED
+        val hasEstablishedBaseline = established && !command.currentPain && !command.medicalRestriction
+        val calibration = mode == StartMode.CALIBRATION
+        return ProfileSettingsEntity(
+            timeZone = command.timeZone.trim(),
+            routeDataMode = "private",
+            heartRateSettingsSource = "none",
+            maxHeartRateBpm = null,
+            zone2FloorBpm = null,
+            zone3FloorBpm = null,
+            zone4FloorBpm = null,
+            zone5FloorBpm = null,
+            recentInjury = command.recentInjury,
+            currentPain = command.currentPain,
+            recurringPain = command.recurringPain,
+            medicalRestriction = command.medicalRestriction,
+            privateNotes = command.injuryNotes.trim().takeIf(String::isNotEmpty),
+            updatedAtEpochMillis = now,
+            baselineDistanceMeters = command.currentWeeklyDistanceKm.trim().toDoubleOrNull()
+                ?.takeIf { hasEstablishedBaseline }?.let(::kilometersToMeters),
+            baselineDurationSeconds = null,
+            baselineConfirmed = hasEstablishedBaseline,
+            currentRunsPerWeek = command.currentRunsPerWeek.trim().toIntOrNull()?.takeIf { hasEstablishedBaseline },
+            longestRecentRunMeters = command.longestRecentRunKm.trim().toDoubleOrNull()
+                ?.takeIf { hasEstablishedBaseline }?.let(::kilometersToMeters),
+            calibrationDurationSeconds = command.calibrationDurationMinutes.trim().toIntOrNull()
+                ?.takeIf { calibration }?.times(60),
+            confirmConcentratedSchedule = hasEstablishedBaseline && command.confirmConcentratedSchedule,
+            preferredLongRunDay = command.preferredLongRunDay.trim().toIntOrNull()?.takeIf { hasEstablishedBaseline },
+            experienceLevel = command.experience.trim().lowercase(),
+        )
+    }
+
+    private fun title(metadata: StandaloneGoalMetadata): String = when (metadata.goalKind) {
+        GoalKind.FOUNDATION -> "Foundation"
+        GoalKind.RACE -> "${metadata.raceDistance!!.label()} ${when (metadata.startMode) {
+            StartMode.FOUNDATION_TO_GOAL -> "foundation"
+            StartMode.CALIBRATION -> "calibration"
+            else -> "plan"
+        }}"
+    }
+
+    private fun RaceDistance.meters(): Int = when (this) {
+        RaceDistance.FIVE_K -> 5_000
+        RaceDistance.TEN_K -> 10_000
+        RaceDistance.HALF -> 21_097
+        RaceDistance.MARATHON -> 42_195
+    }
+    private fun RaceDistance.label(): String = when (this) {
+        RaceDistance.FIVE_K -> "5K"
+        RaceDistance.TEN_K -> "10K"
+        RaceDistance.HALF -> "Half marathon"
+        RaceDistance.MARATHON -> "Marathon"
+    }
+    private fun GoalPriority.storageValue(): String = when (this) {
+        GoalPriority.FINISH_HEALTHY -> "finish_healthy"
+        GoalPriority.CONSISTENCY -> "consistency"
+    }
+    private fun kilometersToMeters(value: Double): Int = kotlin.math.floor(value * 1000 + .5).toInt()
+    private fun stableId(prefix: String, operationId: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(operationId.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return "$prefix-$digest"
+    }
 }

@@ -137,13 +137,13 @@ internal fun ActivityReviewDialog(
 
 @Composable
 internal fun WorkoutPreviewDialog(
-    preview: NativeActionPreviewDto,
+    preview: LocalWorkoutChangeDisplay,
     actionPending: Boolean,
     errorMessage: String?,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val assessment = nativeLoadAssessment(preview.risk)
+    val assessment = nativeLoadAssessment(preview.risk.name.lowercase())
     val weeklyChange = preview.weeklyLoadChangePercent
     val spacingConflicts = preview.spacingConflicts.size
     AlertDialog(
@@ -157,48 +157,25 @@ internal fun WorkoutPreviewDialog(
                 errorMessage?.let { Notice(it, isError = true) }
                 SettingRow("Load assessment", assessment.label)
                 preview.recommended?.let { PreviewPrescriptionRow("Generated", it) }
-                preview.current?.let { PreviewPrescriptionRow("Current", it) }
-                preview.proposed?.let { PreviewPrescriptionRow("Proposed", it) }
-                weeklyChange?.let {
-                    SettingRow("Largest weekly load change", "${String.format(Locale.US, "%.1f", it)}%")
-                }
-                preview.projectedRampPercent?.let {
-                    val ramp = nativeRampAssessment(preview.projectedRampRisk)
-                    SettingRow("Projected ramp", "${String.format(Locale.US, "%.1f", it)}% · ${ramp.label}")
-                }
-                preview.weekChanges.forEach { week ->
-                    val distance = if (week.distanceBeforeMeters != null && week.distanceAfterMeters != null) {
-                        "${formatDistance(week.distanceBeforeMeters)} → ${formatDistance(week.distanceAfterMeters)}"
-                    } else null
-                    val duration = if (week.durationBeforeSeconds != null && week.durationAfterSeconds != null) {
-                        "${formatDuration(week.durationBeforeSeconds)} → ${formatDuration(week.durationAfterSeconds)}"
-                    } else null
+                PreviewPrescriptionRow("Current", preview.current)
+                PreviewPrescriptionRow("Proposed", preview.proposed)
+                SettingRow("Largest weekly load change", "${String.format(Locale.US, "%.1f", weeklyChange)}%")
+                val ramp = nativeRampAssessment(preview.projectedRampRisk.name.lowercase())
+                SettingRow("Projected ramp", "${String.format(Locale.US, "%.1f", preview.projectedRampPercent)}% · ${ramp.label}")
+                preview.weeks.forEach { week ->
+                    val distance = "${formatDistance(week.distanceBefore.toDouble())} → ${formatDistance(week.distanceAfter.toDouble())}"
+                    val duration = "${formatDuration(week.durationBefore.toDouble())} → ${formatDuration(week.durationAfter.toDouble())}"
                     SettingRow(
-                        "Week ${week.weekNumber ?: ""}".trim(),
-                        listOfNotNull(distance, duration).joinToString(" · ").ifBlank { "No comparable load" },
+                        week.label,
+                        "$distance · $duration",
                     )
                 }
-                preview.workoutChanges.forEach { change ->
-                    val before = change.before?.let(::previewPrescriptionMeasurement).orEmpty()
-                    val after = change.after?.let(::previewPrescriptionMeasurement).orEmpty()
+                preview.changes.forEach { change ->
+                    val before = previewPrescriptionMeasurement(change.before)
+                    val after = previewPrescriptionMeasurement(change.after)
                     SettingRow("Affected workout", "$before → $after")
                 }
-                preview.guardrails.forEach { guardrail ->
-                    Notice(guardrail.description ?: guardrail.label ?: "Review this prescription-basis change.")
-                }
-                preview.consequenceDecision?.let { consequence ->
-                    consequence.changes.forEach { change ->
-                        val before = change.before?.let(::previewPrescriptionMeasurement).orEmpty()
-                        val after = change.after?.let(::previewPrescriptionMeasurement).orEmpty()
-                        SettingRow(
-                            change.purpose?.takeIf { it.isNotBlank() } ?: "Future workout",
-                            "$before → $after",
-                        )
-                    }
-                    if (consequence.changes.isEmpty()) {
-                        SettingRow("Future plan", "No future workout changes")
-                    }
-                }
+                if (preview.requiresConfirmation) Notice("This change needs your explicit confirmation because it affects load, spacing, or prescription basis.")
                 if (spacingConflicts > 0) {
                     Notice(
                         "$spacingConflicts nearby run${if (spacingConflicts == 1) "" else "s"} may leave little recovery time.",
@@ -219,17 +196,17 @@ internal fun WorkoutPreviewDialog(
 }
 
 @Composable
-private fun PreviewPrescriptionRow(label: String, prescription: NativeWorkoutPreviewPrescription) {
+private fun PreviewPrescriptionRow(label: String, prescription: dev.deftmartian.runway.domain.WorkoutProposal) {
     SettingRow(label, previewPrescriptionMeasurement(prescription))
 }
 
-private fun previewPrescriptionMeasurement(prescription: NativeWorkoutPreviewPrescription): String =
+private fun previewPrescriptionMeasurement(prescription: dev.deftmartian.runway.domain.WorkoutProposal): String =
     formatPrescriptionMeasurement(
-        prescription.targetDistanceMeters,
-        prescription.targetDurationSeconds,
-        prescription.prescriptionKind == "rest" || prescription.type == "rest",
+        prescription.targetDistanceMeters.toDouble(),
+        prescription.targetDurationSeconds?.toDouble(),
+        prescription.prescriptionKind == dev.deftmartian.runway.domain.PrescriptionKind.REST || prescription.type == dev.deftmartian.runway.domain.WorkoutType.REST,
     ).let { amount ->
-        listOfNotNull(prescription.scheduledDate, prescription.purpose?.takeIf { it.isNotBlank() }, amount)
+        listOf(prescription.scheduledDate.toString(), prescription.purpose.takeIf { it.isNotBlank() }, amount)
             .joinToString(" · ")
     }
 

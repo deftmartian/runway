@@ -6,7 +6,6 @@ import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
@@ -17,12 +16,12 @@ object ReconciliationScheduler {
     internal const val PERIODIC_WORK_NAME = "runway-folder-reconciliation"
     internal const val HEALTH_CONNECT_WORK_NAME = "runway-health-connect-sync"
 
+    /** Called on app focus as well as from the import settings screen. */
     fun runOnce(context: Context) {
-        val request = oneTimeRequest(MAX_DRAIN_WORKERS)
         WorkManager.getInstance(context).enqueueUniqueWork(
             ONE_TIME_WORK_NAME,
             ExistingWorkPolicy.KEEP,
-            request,
+            oneTimeRequest(MAX_DRAIN_WORKERS),
         )
     }
 
@@ -32,11 +31,10 @@ object ReconciliationScheduler {
             15,
             TimeUnit.MINUTES,
         )
-            .setConstraints(reconciliationConstraints())
+            .setConstraints(localStorageConstraints())
             .setBackoffCriteria(BackoffPolicy.LINEAR, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
             .setInputData(workerInput(MAX_DRAIN_WORKERS))
             .build()
-
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -48,17 +46,21 @@ object ReconciliationScheduler {
         WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
     }
 
-    fun cancelAll(context: Context) {
+    fun cancelFolderWork(context: Context) {
         WorkManager.getInstance(context).run {
             cancelUniqueWork(ONE_TIME_WORK_NAME)
             cancelUniqueWork(PERIODIC_WORK_NAME)
-            cancelUniqueWork(HEALTH_CONNECT_WORK_NAME)
         }
+    }
+
+    fun cancelAll(context: Context) {
+        cancelFolderWork(context)
+        WorkManager.getInstance(context).cancelUniqueWork(HEALTH_CONNECT_WORK_NAME)
     }
 
     fun enableHealthConnectPeriodic(context: Context) {
         val request = PeriodicWorkRequest.Builder(HealthConnectWorker::class.java, 6, TimeUnit.HOURS)
-            .setConstraints(reconciliationConstraints())
+            .setConstraints(localStorageConstraints())
             .setBackoffCriteria(BackoffPolicy.LINEAR, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -83,7 +85,7 @@ object ReconciliationScheduler {
 
     private fun oneTimeRequest(remainingWorkers: Int): OneTimeWorkRequest =
         OneTimeWorkRequest.Builder(ReconciliationWorker::class.java)
-            .setConstraints(reconciliationConstraints())
+            .setConstraints(localStorageConstraints())
             .setBackoffCriteria(BackoffPolicy.LINEAR, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
             .setInputData(workerInput(remainingWorkers))
             .build()
@@ -92,8 +94,7 @@ object ReconciliationScheduler {
         .putInt(ReconciliationWorker.INPUT_DRAIN_WORKERS, remainingWorkers.coerceAtLeast(1))
         .build()
 
-    private fun reconciliationConstraints(): Constraints = Constraints.Builder()
-        .setRequiredNetworkType(NetworkType.CONNECTED)
+    private fun localStorageConstraints(): Constraints = Constraints.Builder()
         .setRequiresStorageNotLow(true)
         .build()
 

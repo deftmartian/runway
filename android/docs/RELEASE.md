@@ -1,151 +1,43 @@
-# Android Release And Source-built Personal F-Droid Repository
+# Android release and personal F-Droid repository
 
-This is release guidance, not evidence that the Android app is production-ready. Complete the gates
-in [docs/ANDROID.md](../../docs/ANDROID.md) before distributing it outside a test group.
+## Stable identity
 
-## Distribution identity
+The application id is `dev.deftmartian.runway`. Android updates require the same application id and APK signing certificate. Keep the release key outside this repository, encrypted and access-controlled, with a tested independent backup. Losing it prevents in-place updates.
 
-The canonical source namespace and application id are `dev.deftmartian.runway`. Record:
+The personal F-Droid repository index key is separate from the APK signing key. Keep and test both independently.
 
-- app name, icons, source URL, minimum Android version, and update-support period;
-- the APK signing owner, protected key location, backup, and tested recovery procedure.
+## Build a candidate
 
-An independently owned distribution may set `-PrunwayApplicationId=com.example.runway`, but that id
-must remain stable. Android update identity is the application id plus signing key. Losing the key or
-changing the id breaks in-place upgrades.
-
-Every release uses in-app server selection. The runner chooses a compatible HTTPS runway server on
-first launch, then signs in and uses runway through the app's native Jetpack Compose interface.
-There is no instance-bound, WebView, Custom Tab, or TWA product shell. Passing `-PrunwayOrigin` is an
-intentional build error. Local account creation, password/TOTP sign-in, planning, review, and account
-management are native. OIDC or passkey sign-in, password reset, and new passkey registration
-deliberately hand off to the selected server in the system browser, then return to the native app
-without transferring browser cookies or bearer tokens.
-
-Keep the APK signing key outside this repository, encrypted, access-controlled, and backed up. The
-personal F-Droid repository index key is separate from the APK signing key; restrict and test both.
-
-## Produce a release candidate
-
-Before using signing material, run the repository gates:
+Use JDK 17 and Android SDK Platform 36. First run the normal Android checks without signing material:
 
 ```sh
-corepack pnpm verify:android
-corepack pnpm verify:android:build
-corepack pnpm verify:android:release
-corepack pnpm verify:android:version
+android/gradlew -p android --no-daemon --max-workers=1 lint test assembleDebug
 ```
 
-These check Kotlin, resources, lint, unit tests, dependency locks, the merged operational and Health
-Connect permission/exported-component allowlists, disabled backups, release cleartext/debuggable
-flags, the server-selection contract, and the unsigned F-Droid path. They do not replace device
-testing.
-
-Copy `android/signing.properties.example` to the ignored `android/signing.properties` and point it
-at the operator-owned PKCS12 keystore. Keep passwords and aliases in that ignored file or materialize
-it from protected CI secrets; do not put them in committed Gradle properties or shell history.
-
-Build a signed candidate:
+For a locally signed release, copy the ignored template and provide the operator-owned key path and credentials:
 
 ```sh
-cd android
-APP_ID=dev.deftmartian.runway
-
-./gradlew --no-daemon --dependency-verification strict \
-  -PrunwayApplicationId="$APP_ID" \
-  :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
-./gradlew --no-daemon --dependency-verification strict \
-  -PrunwayApplicationId="$APP_ID" \
-  :app:dependencies
+cp android/signing.properties.example android/signing.properties
+android/gradlew -p android --no-daemon --max-workers=1 assembleRelease
+apksigner verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Verify the APK with `apksigner verify --verbose --print-certs`. Record its SHA-256, source commit,
-version code/name, application id, signing certificate fingerprint, Android Gradle Plugin, AndroidX
-Compose, Gradle, JDK, SDK, and build-tools versions.
+Do not put a keystore, password, or `signing.properties` in Git, CI logs, shell history, or an artifact. Record the source commit, version name/code, APK SHA-256, application id, and signer certificate fingerprint with the release.
 
-There are no Play Services dependencies. Review the dependency report before every release and reject
-trackers, undeclared network behavior, or a WebView fallback.
+## GitHub release
 
-## Publish an installable GitHub APK
+Version tags are expected to use `v<semver>`. The protected Android release environment supplies the signing identity. If it is unavailable, publication must fail rather than create an unsigned normal release. Verify the GitHub artifact's SHA-256 and certificate against the recorded release identity before distributing it.
 
-Version tags do not create a container-only release. The `Container` workflow builds and verifies an
-unsigned Android release without access to signing secrets. A separate protected job, which never
-checks out or executes repository code, downloads that candidate and exposes the signing secrets only
-to its `apksigner` step. It then verifies and attaches the installable APK, SHA-256 record, and signer
-fingerprint to the GitHub release. Release publication waits for both the image and Android jobs.
+## Personal F-Droid repository
 
-Create a protected GitHub environment named `android-release`, restrict its deployment branches to
-version tags, and add these environment secrets:
-
-- `RUNWAY_ANDROID_KEYSTORE_BASE64`: the complete PKCS12 release keystore encoded as one base64 value;
-- `RUNWAY_ANDROID_KEYSTORE_PASSWORD`;
-- `RUNWAY_ANDROID_KEY_ALIAS`;
-- `RUNWAY_ANDROID_KEY_PASSWORD`.
-
-The signing step materializes the keystore only in the ephemeral runner and removes it with a shell
-exit trap. No checkout, package script, Gradle task, or third-party build action receives those
-secrets, and the keystore is never uploaded. Missing or partial signing secrets fail the tag job; the
-GitHub release is not created without an installable APK. `verify:android:version` requires the tag,
-web version, Android `versionName`/`versionCode`, and the committed personal-repository F-Droid
-template to agree. The operator must still verify the copied metadata in the actual F-Droid
-repository before publishing it.
-
-## Publish through a personal F-Droid repository
-
-The supported personal-repository flow builds the pinned source commit. It does not copy an APK built
-elsewhere into `repo/`. Copy
-`android/fdroid/metadata/dev.deftmartian.runway.yml.example` to the personal repository's
-`metadata/dev.deftmartian.runway.yml`. Fill every remaining placeholder and keep
-`runwayFdroidSourceBuild=true`; this mode refuses `android/signing.properties` and emits an unsigned
-release for fdroidserver to sign.
-
-Run fdroidserver in a dedicated operator or CI environment. Keep index and APK signing keys outside
-the web root, build the exact metadata commit, then sign and publish it:
+The source-build path intentionally remains unsigned so `fdroidserver` can sign it:
 
 ```sh
-mkdir runway-fdroid && cd runway-fdroid
-fdroid init
-fdroid lint dev.deftmartian.runway
-fdroid build --latest dev.deftmartian.runway
-fdroid publish dev.deftmartian.runway
-fdroid update
-fdroid deploy
+android/gradlew -p android --no-daemon --max-workers=1 -PrunwayFdroidSourceBuild=true assembleRelease
 ```
 
-Use the source-controlled Fastlane metadata under `android/fastlane/metadata/android/en-US/`. Serve
-the repository index, archive, APKs, and signatures over HTTPS. Add it to a clean F-Droid client with
-the exact URL and repository fingerprint or QR code, install the app, select a server, link a folder,
-and test an upgrade from the previous signed APK without losing the selected server or persisted
-folder grant.
+Run `fdroidserver` in a dedicated operator or CI environment. Keep index and APK signing keys outside its web root. Publish the index, APKs, and signatures over HTTPS, add the repository using its exact URL and fingerprint, then test a clean install and upgrade from the preceding signed APK without losing the local ledger.
 
-After the first controlled publish, record and pin the fdroidserver-managed APK certificate in
-`AllowedAPKSigningKeys`. The repository fingerprint proves the F-Droid index; the APK certificate
-proves Android updates. They are separate identities.
+## Acceptance evidence
 
-Useful upstream references:
-
-- <https://developer.android.com/develop/ui/compose>
-- <https://developer.android.com/training/sign-in/passkeys>
-- <https://f-droid.org/en/docs/Setup_an_F-Droid_App_Repo/>
-- <https://f-droid.org/docs/Build_Metadata_Reference/>
-- <https://f-droid.org/docs/All_About_Descriptions_Graphics_and_Screenshots/>
-
-## Release evidence
-
-Attach to each internal release record:
-
-- signed APK, APK SHA-256, signer fingerprint, application id, source commit, and clean-tree evidence;
-- unit, lint, emulator, physical-device, native navigation, local signup/sign-in/TOTP,
-  device-authorization, share, server-switch, and folder results;
-- system-browser OIDC/passkey/password-reset handoff and return-to-app results;
-- first-run, invalid-server, incompatible-version, TLS-failure, and cross-origin isolation results;
-- Health Connect provider-status, running/treadmill filtering, permission revocation, optional
-  background-read, per-route foreground-consent, and route-privacy-mode results;
-- dependency, SBOM, license, permission, and manifest review;
-- server/mobile API compatibility range;
-- install, upgrade, rollback, signing-key recovery, and F-Droid index verification;
-- accessibility, large-text, dark-theme, and supported-device evidence;
-- privacy policy, support window, release notes, and incident-response review.
-
-Do not publish a debug APK. Debug builds permit cleartext private and local origins; releases require
-HTTPS.
+Before external release, collect current-build evidence for install, upgrade, first-run onboarding, Calendar/Inbox/Stats/History/Settings navigation, GPX share, folder grant and revocation, Health Connect permission and revocation, privacy route discard, backup warning, erase, large text, TalkBack, and system light/dark themes. Do not substitute old screenshots, source review, or compilation for this evidence.

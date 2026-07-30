@@ -26,6 +26,85 @@ class LocalHealthConnectRepository(
     private val database: RunwayLedgerDatabase,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
+    /**
+     * Applies the exact correction currently waiting for this provider record.
+     *
+     * The mapping, pending observation, samples, and target activity are reloaded inside the same
+     * transaction. A stale UI action therefore cannot apply an older correction after a newer
+     * provider observation, a source deletion, or an activity-state change.
+     */
+    suspend fun acceptPendingCorrection(
+        provider: String,
+        recordId: String,
+    ): LocalHealthConnectPendingResolutionResult = database.withTransaction {
+        resolvePendingCorrection(provider, recordId, accept = true)
+    }
+
+    /** Records that the runner intentionally keeps the accepted local activity unchanged. */
+    suspend fun rejectPendingCorrection(
+        provider: String,
+        recordId: String,
+    ): LocalHealthConnectPendingResolutionResult = database.withTransaction {
+        resolvePendingCorrection(provider, recordId, accept = false)
+    }
+
+    /** Removes an accepted activity after its provider record was deleted and tombstones the mapping. */
+    suspend fun deleteFromRunwayAfterProviderDeletion(
+        provider: String,
+        recordId: String,
+    ): LocalHealthConnectPendingResolutionResult = database.withTransaction {
+        val resolved = pendingProviderDeletion(provider, recordId)
+            ?: return@withTransaction pendingResolutionFailure(provider, recordId)
+        when (resolved) {
+            is PendingProviderDeletion.Failure -> resolved.result
+            is PendingProviderDeletion.Ready -> {
+                database.importLedgerDao().deleteImportedActivityToTombstone(
+                    activityId = resolved.activity.activityId,
+                    source = HEALTH_CONNECT_SOURCE,
+                    digest = resolved.mapping.externalRecordId,
+                    tombstonedAtEpochMillis = resolved.mapping.deletedAtEpochMillis ?: nowEpochMillis(),
+                )
+                LocalHealthConnectPendingResolutionResult.ProviderDeletionDeleted(
+                    resolved.activity.activityId,
+                )
+            }
+        }
+    }
+
+    /**
+     * Keeps the accepted local activity after its provider record was deleted.
+     *
+     * The mapping becomes terminal while retaining the local activity link. This prevents a stale
+     * provider replay from turning a deliberately retained local record back into a correction.
+     */
+    suspend fun retainLocallyAfterProviderDeletion(
+        provider: String,
+        recordId: String,
+    ): LocalHealthConnectPendingResolutionResult = database.withTransaction {
+        val resolved = pendingProviderDeletion(provider, recordId)
+            ?: return@withTransaction pendingResolutionFailure(provider, recordId)
+        when (resolved) {
+            is PendingProviderDeletion.Failure -> resolved.result
+            is PendingProviderDeletion.Ready -> {
+                val deletedAt = resolved.mapping.deletedAtEpochMillis ?: nowEpochMillis()
+                database.importLedgerDao().clearPendingHealthConnectObservation(resolved.mapping.mappingId)
+                database.importLedgerDao().saveHealthConnectMapping(
+                    resolved.mapping.copy(
+                        lifecycleState = HEALTH_CONNECT_MAPPING_STATE_DETACHED,
+                        correctionPending = false,
+                        deletePending = false,
+                        tombstonedAtEpochMillis = deletedAt,
+                        deletedAtEpochMillis = deletedAt,
+                        lastObservedAtEpochMillis = nowEpochMillis(),
+                    ),
+                )
+                LocalHealthConnectPendingResolutionResult.ProviderDeletionRetained(
+                    resolved.activity.activityId,
+                )
+            }
+        }
+    }
+
     suspend fun reconcile(
         provider: String,
         observation: HealthConnectObservation,
@@ -66,6 +145,169 @@ class LocalHealthConnectRepository(
             now = now,
         )
         LocalHealthConnectPersistenceResult.Applied(outcome)
+    }
+
+    private suspend fun resolvePendingCorrection(
+        provider: String,
+        recordId: String,
+        accept: Boolean,
+    ): LocalHealthConnectPendingResolutionResult {
+        require(provider.isNotBlank()) { "Health Connect provider must not be blank." }
+        require(recordId.isNotBlank()) { "Health Connect record id must not be blank." }
+        val importDao = database.importLedgerDao()
+        val mapping = importDao.healthConnectMapping(provider, recordId)
+            ?: return LocalHealthConnectPendingResolutionResult.MappingMissing(provider, recordId)
+        val pendingAction = mapping.pendingAction()
+        if (pendingAction != LocalHealthConnectPendingAction.Correction) {
+            return pendingActionResult(mapping, pendingAction, LocalHealthConnectPendingAction.Correction)
+        }
+        val activity = mapping.activityId?.let { activityId ->
+            database.activityLedgerDao().activity(activityId)
+        }
+            ?: return LocalHealthConnectPendingResolutionResult.ActivityMissing(mapping.mappingId)
+        if (activity.reviewState != ACTIVITY_REVIEW_STATE_ACCEPTED) {
+            return LocalHealthConnectPendingResolutionResult.UnexpectedActivityState(
+                mapping.mappingId,
+                activity.reviewState,
+            )
+        }
+        if (activity.source != HEALTH_CONNECT_SOURCE) {
+            return LocalHealthConnectPendingResolutionResult.UnexpectedActivitySource(
+                mapping.mappingId,
+                activity.source,
+            )
+        }
+        val pending = importDao.pendingHealthConnectObservation(mapping.mappingId)
+            ?: return LocalHealthConnectPendingResolutionResult.IncompletePendingState(mapping.mappingId)
+        val route = importDao.pendingHealthConnectRouteSamples(mapping.mappingId, MAX_RETAINED_ROUTE_SAMPLES)
+        val heartRate = importDao.pendingHealthConnectHeartRateSamples(mapping.mappingId, MAX_RETAINED_HEART_RATE_SAMPLES)
+        if (accept) {
+            val now = nowEpochMillis()
+            database.activityLedgerDao().saveActivity(
+                activity.copy(
+                    occurredAtEpochMillis = pending.occurredAtEpochMillis,
+                    durationSeconds = pending.durationSeconds,
+                    distanceMeters = pending.distanceMeters,
+                    averageHeartRateBpm = pending.averageHeartRateBpm,
+                    maxHeartRateBpm = pending.maxHeartRateBpm,
+                    averageCadenceSpm = pending.averageCadenceSpm,
+                    elevationGainMeters = pending.elevationGainMeters,
+                    routePointCount = route.size,
+                    heartRatePointCount = heartRate.size,
+                    heartRateSourceSampleCount = pending.heartRateSourceSampleCount,
+                    routeTraceRetained = route.isNotEmpty(),
+                    routeStartEndRedacted = route.isEmpty() && pending.routeSourcePointCount > 0,
+                    heartRateSeriesRetained = heartRate.isNotEmpty(),
+                    updatedAtEpochMillis = now,
+                ),
+            )
+            database.activityLedgerDao().replaceRouteSamplesBounded(
+                activity.activityId,
+                route.mapIndexed { ordinal, sample ->
+                    RouteSampleEntity(
+                        activityId = activity.activityId,
+                        ordinal = ordinal,
+                        latitudeE6 = sample.latitudeE6,
+                        longitudeE6 = sample.longitudeE6,
+                        elapsedSeconds = sample.elapsedSeconds,
+                        elevationMeters = sample.elevationMeters,
+                        segmentOrdinal = sample.segmentOrdinal,
+                        speedMetersPerSecond = sample.speedMetersPerSecond,
+                    )
+                },
+                MAX_RETAINED_ROUTE_SAMPLES,
+            )
+            database.activityLedgerDao().replaceHeartRateSamplesBounded(
+                activity.activityId,
+                heartRate.mapIndexed { ordinal, sample ->
+                    HeartRateSampleEntity(
+                        activityId = activity.activityId,
+                        ordinal = ordinal,
+                        elapsedSeconds = sample.elapsedSeconds,
+                        beatsPerMinute = sample.beatsPerMinute,
+                        sourceSampleCount = pending.heartRateSourceSampleCount,
+                    )
+                },
+                MAX_RETAINED_HEART_RATE_SAMPLES,
+            )
+        }
+        // A rejected correction intentionally keeps the observed fingerprint. Replaying the same
+        // provider observation is then a no-op; only a genuinely newer observation can reopen it.
+        importDao.clearPendingHealthConnectObservation(mapping.mappingId)
+        importDao.saveHealthConnectMapping(
+            mapping.copy(
+                correctionPending = false,
+                deletePending = false,
+                lifecycleState = HEALTH_CONNECT_MAPPING_STATE_ACTIVE,
+                deletedAtEpochMillis = null,
+            ),
+        )
+        return if (accept) {
+            LocalHealthConnectPendingResolutionResult.CorrectionAccepted(activity.activityId)
+        } else {
+            LocalHealthConnectPendingResolutionResult.CorrectionRejected(activity.activityId)
+        }
+    }
+
+    private suspend fun pendingProviderDeletion(
+        provider: String,
+        recordId: String,
+    ): PendingProviderDeletion? {
+        require(provider.isNotBlank()) { "Health Connect provider must not be blank." }
+        require(recordId.isNotBlank()) { "Health Connect record id must not be blank." }
+        val mapping = database.importLedgerDao().healthConnectMapping(provider, recordId)
+            ?: return null
+        val pendingAction = mapping.pendingAction()
+        if (pendingAction != LocalHealthConnectPendingAction.SourceDelete) {
+            return PendingProviderDeletion.Failure(
+                pendingActionResult(mapping, pendingAction, LocalHealthConnectPendingAction.SourceDelete),
+            )
+        }
+        val activity = mapping.activityId?.let { activityId ->
+            database.activityLedgerDao().activity(activityId)
+        }
+            ?: return PendingProviderDeletion.Failure(
+                LocalHealthConnectPendingResolutionResult.ActivityMissing(mapping.mappingId),
+            )
+        if (activity.reviewState != ACTIVITY_REVIEW_STATE_ACCEPTED) {
+            return PendingProviderDeletion.Failure(
+                LocalHealthConnectPendingResolutionResult.UnexpectedActivityState(
+                    mapping.mappingId,
+                    activity.reviewState,
+                ),
+            )
+        }
+        if (activity.source != HEALTH_CONNECT_SOURCE) {
+            return PendingProviderDeletion.Failure(
+                LocalHealthConnectPendingResolutionResult.UnexpectedActivitySource(
+                    mapping.mappingId,
+                    activity.source,
+                ),
+            )
+        }
+        return PendingProviderDeletion.Ready(mapping, activity)
+    }
+
+    private fun pendingResolutionFailure(
+        provider: String,
+        recordId: String,
+    ): LocalHealthConnectPendingResolutionResult =
+        LocalHealthConnectPendingResolutionResult.MappingMissing(provider, recordId)
+
+    private fun pendingActionResult(
+        mapping: HealthConnectMappingEntity,
+        actual: LocalHealthConnectPendingAction,
+        expected: LocalHealthConnectPendingAction,
+    ): LocalHealthConnectPendingResolutionResult = when (actual) {
+        LocalHealthConnectPendingAction.None -> LocalHealthConnectPendingResolutionResult.AlreadyResolved(
+            mapping.mappingId,
+            expected,
+        )
+        else -> LocalHealthConnectPendingResolutionResult.WrongPendingAction(
+            mapping.mappingId,
+            expected,
+            actual,
+        )
     }
 
     private suspend fun persist(
@@ -229,7 +471,38 @@ class LocalHealthConnectRepository(
         const val ROUTE_MODE_PRIVATE = "private"
         const val MAX_RETAINED_ROUTE_SAMPLES = 600
         const val MAX_RETAINED_HEART_RATE_SAMPLES = 600
+        const val HEALTH_CONNECT_MAPPING_STATE_ACTIVE = "active"
+        const val HEALTH_CONNECT_MAPPING_STATE_DETACHED = "detached"
     }
+}
+
+sealed interface LocalHealthConnectPendingResolutionResult {
+    data class CorrectionAccepted(val activityId: String) : LocalHealthConnectPendingResolutionResult
+    data class CorrectionRejected(val activityId: String) : LocalHealthConnectPendingResolutionResult
+    data class ProviderDeletionDeleted(val activityId: String) : LocalHealthConnectPendingResolutionResult
+    data class ProviderDeletionRetained(val activityId: String) : LocalHealthConnectPendingResolutionResult
+    data class MappingMissing(val provider: String, val recordId: String) : LocalHealthConnectPendingResolutionResult
+    data class ActivityMissing(val mappingId: String) : LocalHealthConnectPendingResolutionResult
+    data class UnexpectedActivityState(val mappingId: String, val state: String) : LocalHealthConnectPendingResolutionResult
+    data class UnexpectedActivitySource(val mappingId: String, val source: String) : LocalHealthConnectPendingResolutionResult
+    data class IncompletePendingState(val mappingId: String) : LocalHealthConnectPendingResolutionResult
+    data class AlreadyResolved(
+        val mappingId: String,
+        val expected: LocalHealthConnectPendingAction,
+    ) : LocalHealthConnectPendingResolutionResult
+    data class WrongPendingAction(
+        val mappingId: String,
+        val expected: LocalHealthConnectPendingAction,
+        val actual: LocalHealthConnectPendingAction,
+    ) : LocalHealthConnectPendingResolutionResult
+}
+
+private sealed interface PendingProviderDeletion {
+    data class Ready(
+        val mapping: HealthConnectMappingEntity,
+        val activity: ActivityEntity,
+    ) : PendingProviderDeletion
+    data class Failure(val result: LocalHealthConnectPendingResolutionResult) : PendingProviderDeletion
 }
 
 sealed interface LocalHealthConnectPersistenceResult {
@@ -280,6 +553,13 @@ private suspend fun HealthConnectMappingEntity?.toRecordState(
         tombstoned = mapping.lifecycleState == "tombstoned" || mapping.tombstonedAtEpochMillis != null,
         duplicateCandidateActivityId = duplicateCandidateActivityId,
     )
+}
+
+private fun HealthConnectMappingEntity.pendingAction(): LocalHealthConnectPendingAction = when {
+    correctionPending && deletePending -> error("A Health Connect mapping cannot wait for correction and deletion at once.")
+    correctionPending -> LocalHealthConnectPendingAction.Correction
+    deletePending -> LocalHealthConnectPendingAction.SourceDelete
+    else -> LocalHealthConnectPendingAction.None
 }
 
 private fun LocalHealthConnectMapping.toEntity(

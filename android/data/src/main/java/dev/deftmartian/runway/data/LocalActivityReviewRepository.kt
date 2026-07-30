@@ -134,6 +134,15 @@ class LocalActivityReviewRepository(
         val dao = database.activityLedgerDao()
         val activity = dao.activity(activityId)
             ?: return@withTransaction rejected(LocalActivityReviewIssue.ACTIVITY_NOT_FOUND)
+        val accepted = activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED
+        val alreadyApplied = when {
+            !accepted -> false
+            activity.linkedWorkoutId != null -> dao.workoutFeedbackForActivity(activity.activityId)
+                ?.let { dao.workoutFeedbackConsequence(it.feedbackId)?.appliedDecision != null } == true
+            activity.extraPlanImpactConfirmed -> dao.activityConsequence(activity.activityId)
+                ?.appliedDecision != null
+            else -> false
+        }
         val now = nowEpochMillis()
         val feedback = ActivityFeedbackEntity(
             feedbackId = "activity-feedback-${activity.activityId}",
@@ -144,7 +153,14 @@ class LocalActivityReviewRepository(
             recordedAtEpochMillis = now,
         )
         dao.saveFeedback(feedback)
-        if (pain) markCurrentPain(now)
+        // Review is a factual-data boundary: its health feedback remains attached to the record
+        // until the runner explicitly accepts a plan role for that activity.
+        if (accepted && pain) markCurrentPain(now)
+        // Preserve an already applied consequence as immutable decision history. Recalculating it
+        // would clear its claim and make a second future-plan mutation possible from one activity.
+        if (alreadyApplied) {
+            return@withTransaction LocalActivityReviewResult.FeedbackUpdated(activity.activityId, null)
+        }
 
         val consequence = when {
             activity.reviewState != ACTIVITY_REVIEW_STATE_ACCEPTED -> null

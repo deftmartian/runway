@@ -37,16 +37,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             RunwayTheme {
                 RunwayNativeApp(
                     state = readyState(destination),
-                    onStartAuthorization = {},
-                    onCancelAuthorization = {},
-                    onSignInLocal = { _, _ -> },
-                    onSignUpLocal = { _, _, _ -> },
-                    onVerifyTwoFactor = {},
-                    onSelectSecondFactor = {},
-                    onCancelTwoFactor = {},
-                    onOpenExternalAuthorization = {},
-                    onOpenPasswordReset = {},
-                    onRetry = {},
                     onDestinationSelected = { destination = it },
                     onCalendarMonthSelected = {},
                     onLoadMoreHistory = {},
@@ -55,26 +45,11 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onOpenHistoryDetail = { destination = NativeDestination.HistoryDetail },
                     onRefresh = {},
                     onAction = {},
-                    onRequestPasswordReset = {},
-                    onChangePassword = { _, _ -> },
-                    onEnableTwoFactor = {},
-                    onOpenAuthenticator = {},
-                    onVerifyTwoFactorSetup = {},
-                    onCancelTotpSetup = {},
-                    onDisableTwoFactor = {},
-                    onRegenerateRecoveryCodes = {},
-                    onSaveRecoveryCodes = {},
-                    onClearRecoveryCodes = {},
-                    onRevokeAccountSession = {},
-                    onRenamePasskey = { _, _ -> },
-                    onDeletePasskey = {},
-                    onExportTrainingData = {},
-                    onDeleteAccount = {},
-                    onConfirmActionPreview = {},
-                    onDismissActionPreview = {},
-                    onSignOut = {},
-                    onOpenServer = {},
+                    onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
                     onOpenFolder = {},
+                    onImportGpx = {}, onOpenHealthConnect = {}, onCreateBackup = {}, onRestoreBackup = {},
+                    onExportData = {}, onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
+                    onHeartRateChanged = {}, onHealthContextChanged = {}, onEraseAllData = {},
                 )
             }
         }
@@ -83,7 +58,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         assertSurface("Inbox", "Link each imported run, count it as extra training, or delete it.")
         assertSurface("Stats", "Recorded runs and past plans.")
         assertSurface("History", "Current and past training plans.")
-        assertSurface("Settings", "Training preferences and app connections.")
+        assertSurface("Settings", "Private training preferences and local data.")
 
         selectSurface("History")
         compose.onNodeWithText("Open plan record").performClick()
@@ -92,15 +67,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Current and past training plans.").assertIsDisplayed()
 
         selectSurface("Settings")
-        compose.onAllNodesWithText("Android source").assertCountEquals(0)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Technical details"))
-        compose.onNodeWithText("Show").performClick()
-        compose.onNodeWithText("Android source").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Account security"))
-        compose.onNodeWithText("Account security").performClick()
-        compose.onNodeWithText("A private summary of sign-in and import access.").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back to Settings").performClick()
-        compose.onNodeWithText("Training preferences and app connections.").assertIsDisplayed()
+        compose.onNodeWithText("Stored locally on this phone").assertIsDisplayed()
     }
 
     private fun assertSurface(label: String, marker: String) {
@@ -129,7 +96,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         loading = false,
     )
 
-    private fun payloadFor(destination: NativeDestination): NativeViewPayload? = when (destination) {
+    private fun payloadFor(destination: NativeDestination): Any? = when (destination) {
         NativeDestination.Calendar -> NativeCalendarPayload(
             onboardingRequired = false,
             hasActivePlan = true,
@@ -182,20 +149,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             offset = null,
             pageSize = null,
         )
-        NativeDestination.Settings -> NativeSettingsPayload(
-            profile = null,
-            healthConnect = null,
-            androidDevices = emptyList(),
-            sources = emptyList(),
-            about = NativeAbout("test", "test", "https://runway.test"),
-            accountSecurityAvailable = true,
-        )
-        NativeDestination.AccountSecurity -> NativeAccountSecurityPayload(
-            authentication = null,
-            passkeys = emptyList(),
-            sessions = null,
-            importDevices = emptyList(),
-        )
+        NativeDestination.Settings -> NativeSettingsState(appVersion = "test", sourceCommit = "test")
         NativeDestination.HistoryDetail -> NativeHistoryDetailPayload(
             onboardingRequired = false,
             detail = NativeHistoryDetail(

@@ -4,8 +4,12 @@ import dev.deftmartian.runway.domain.GeneratedCalibrationPlan
 import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.GeneratedFoundationPlan
 import dev.deftmartian.runway.domain.StartMode
+import dev.deftmartian.runway.data.LocalPlanCandidate
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,6 +64,99 @@ class StandaloneOnboardingAdapterTest {
         val result = StandaloneOnboardingAdapter.adapt(command(startMode = "established", targetDate = "2026-03-01", timeZone = "America/Halifax"), Instant.parse("2026-01-01T00:30:00Z")) as StandaloneOnboardingOutcome.Planned
         assertEquals("2026-02-25", result.metadata.targetBounds?.minimum)
         assertEquals("2026-01-05", result.plan.startDate)
+    }
+
+    @Test fun `established baseline errors identify each missing field`() {
+        val result = StandaloneOnboardingAdapter.adapt(
+            command(
+                startMode = "established",
+                targetDate = "2026-04-01",
+                currentWeeklyDistanceKm = "",
+                currentRunsPerWeek = "",
+                longestRecentRunKm = "",
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+
+        assertTrue(OnboardingFieldError.REQUIRED in result.fieldErrors.getValue(OnboardingField.WEEKLY_DISTANCE))
+        assertTrue(OnboardingFieldError.REQUIRED in result.fieldErrors.getValue(OnboardingField.RUNS_PER_WEEK))
+        assertTrue(OnboardingFieldError.REQUIRED in result.fieldErrors.getValue(OnboardingField.LONGEST_RUN))
+    }
+
+    @Test fun `foundation ignores established-only stale baseline fields`() {
+        val result = StandaloneOnboardingAdapter.adapt(
+            command(
+                goalKind = "foundation",
+                startMode = "foundation_only",
+                raceDistance = "",
+                targetDate = "",
+                currentWeeklyDistanceKm = "not-a-number",
+                currentRunsPerWeek = "three",
+                longestRecentRunKm = "none",
+            ),
+            utcNow,
+        )
+
+        assertTrue(result is StandaloneOnboardingOutcome.Planned)
+    }
+
+    @Test fun `persistence boundary maps all four start paths with deterministic identities`() {
+        val cases = listOf(
+            command(startMode = "established", targetDate = "2026-04-01") to "distance",
+            command(startMode = "foundation_to_goal", targetDate = "2026-05-01") to "foundation",
+            command(goalKind = "foundation", startMode = "foundation_only", raceDistance = "", targetDate = "") to "foundation",
+            command(startMode = "calibration", targetDate = "2026-03-15", availability = listOf(2, 6)) to "calibration",
+        )
+        cases.forEachIndexed { index, (command, phase) ->
+            val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
+            val request = StandaloneOnboardingPersistenceMapper.map(command, outcome, "setup-$index", 1234)
+            val generated = request.candidate as LocalPlanCandidate.Generated
+
+            assertEquals(phase, generated.graph.plan.phaseType)
+            assertEquals("active", generated.graph.goal.state)
+            assertEquals(command.confirmReplace, request.confirmReplaceActive)
+            assertEquals(command.availability, request.availabilityDays)
+            assertEquals(1234, request.archiveAtEpochMillis)
+            assertEquals(request, StandaloneOnboardingPersistenceMapper.map(command, outcome, "setup-$index", 1234))
+        }
+    }
+
+    @Test fun `persistence boundary retains health-blocked goal without inventing a graph`() {
+        val command = command(
+            startMode = "established",
+            targetDate = "2026-04-01",
+            currentWeeklyDistanceKm = "",
+            currentRunsPerWeek = "",
+            longestRecentRunKm = "",
+            currentPain = true,
+        ).copy(confirmReplace = true)
+        val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
+        val request = StandaloneOnboardingPersistenceMapper.map(command, outcome, "blocked-operation", 5678)
+        val pending = request.candidate as LocalPlanCandidate.Pending
+
+        assertEquals("pending", pending.goal.state)
+        assertEquals("2026-04-01", java.time.LocalDate.ofEpochDay(requireNotNull(pending.goal.targetDateEpochDay)).toString())
+        assertTrue(request.profile.currentPain)
+        assertNull(request.profile.baselineDistanceMeters)
+        assertFalse(request.profile.baselineConfirmed)
+        assertTrue(request.confirmReplaceActive)
+    }
+
+    @Test fun `persistence profile keeps established baseline and operation ids differ`() {
+        val command = command(startMode = "established", targetDate = "2026-04-01")
+        val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
+        val first = StandaloneOnboardingPersistenceMapper.map(command, outcome, "one", 999)
+        val second = StandaloneOnboardingPersistenceMapper.map(command, outcome, "two", 999)
+        val firstGraph = (first.candidate as LocalPlanCandidate.Generated).graph
+        val secondGraph = (second.candidate as LocalPlanCandidate.Generated).graph
+
+        assertEquals(12_000, first.profile.baselineDistanceMeters)
+        assertEquals(3, first.profile.currentRunsPerWeek)
+        assertEquals(8_000, first.profile.longestRecentRunMeters)
+        assertTrue(first.profile.baselineConfirmed)
+        assertEquals(6, first.profile.preferredLongRunDay)
+        assertNotEquals(firstGraph.goal.goalId, secondGraph.goal.goalId)
+        assertNotEquals(firstGraph.plan.planId, secondGraph.plan.planId)
     }
 
     private fun command(

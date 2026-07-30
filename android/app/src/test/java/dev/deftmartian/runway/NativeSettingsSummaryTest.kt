@@ -5,15 +5,15 @@ import org.junit.Test
 
 class NativeSettingsSummaryTest {
     @Test
-    fun `current pain remains visible in the settings summary`() {
+    fun `current pain remains visible in the standalone settings summary`() {
         assertEquals(
             "Current pain reported",
             healthContextSummary(
-                NativeInjuryFlags(
+                NativeHealthContext(
                     recentInjury = false,
                     currentPain = true,
                     recurringPain = false,
-                    medicalRestriction = false,
+                    clinicianRestriction = false,
                     notes = "private detail",
                 ),
             ),
@@ -21,31 +21,18 @@ class NativeSettingsSummaryTest {
     }
 
     @Test
-    fun `configured import sources are not all described as connected`() {
+    fun `folder status keeps a permission consequence visible`() {
         assertEquals(
-            "1 need attention · 1 active · 1 paused",
-            nextcloudSourceSummary(
-                listOf(
-                    NativeImportSource("error", "Error", true, "Could not connect", null),
-                    NativeImportSource("active", "Active", true, null, null),
-                    NativeImportSource("paused", "Paused", false, null, null),
-                ),
-            ),
+            "Permission needed",
+            importConnectionSummary(NativeImportConnection.PermissionRequired),
         )
     }
 
     @Test
-    fun `health connect attention retains its actionable server detail`() {
+    fun `health connect attention retains its actionable local detail`() {
         assertEquals(
-            "Waiting for this phone to send records.",
-            phoneImportSummary(
-                NativeHealthConnectStatus(
-                    state = "needs_attention",
-                    message = "Waiting for this phone to send records.",
-                    lastSyncAt = null,
-                    permissions = emptyList(),
-                ),
-            ),
+            "Grant activity access in Health Connect",
+            importConnectionSummary(NativeImportConnection.Attention("Grant activity access in Health Connect")),
         )
     }
 }

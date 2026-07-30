@@ -147,6 +147,7 @@ internal fun CalendarScreen(
     actionPending: Boolean,
     actionNotice: NativeNotice?,
     completedAction: String?,
+    workoutPreview: LocalWorkoutChangePreview?,
     onCalendarMonthSelected: (String) -> Unit,
     activityEvidence: Map<String, NativeActivityEvidence>,
     activityEvidenceLoading: Set<String>,
@@ -154,6 +155,8 @@ internal fun CalendarScreen(
     onLoadActivityTrace: (String) -> Unit,
     onDestinationSelected: (NativeDestination) -> Unit,
     onAction: (MobileCommand) -> Unit,
+    onApplyWorkoutPreview: () -> Unit,
+    onDismissWorkoutPreview: () -> Unit,
 ) {
     val calendar = payload?.calendar
     val month = calendar?.month.orEmpty()
@@ -337,6 +340,15 @@ internal fun CalendarScreen(
                 submittedDialogAction = "preview_workout_add"
                 onAction(it)
             },
+        )
+    }
+    workoutPreview?.let { pending ->
+        WorkoutPreviewDialog(
+            preview = pending.display,
+            actionPending = actionPending,
+            errorMessage = actionNotice?.takeIf { it.isError }?.message,
+            onDismiss = onDismissWorkoutPreview,
+            onConfirm = onApplyWorkoutPreview,
         )
     }
     if (showManualRun) {

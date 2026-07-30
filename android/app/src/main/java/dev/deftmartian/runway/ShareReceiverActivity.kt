@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
-import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -15,12 +14,12 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
-import java.io.IOException
-import java.security.MessageDigest
-import java.util.concurrent.Executors
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ShareReceiverActivity : ComponentActivity() {
-    private val executor = Executors.newSingleThreadExecutor()
     private lateinit var status: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,18 +31,7 @@ class ShareReceiverActivity : ComponentActivity() {
         inspectSharedFile()
     }
 
-    override fun onDestroy() {
-        executor.shutdownNow()
-        super.onDestroy()
-    }
-
     private fun inspectSharedFile() {
-        val serverStore = ServerConnectionStore(this)
-        val serverConnection = serverStore.currentConnection()
-        if (serverConnection == null) {
-            status.setText(R.string.share_server_required)
-            return
-        }
         val uri = resolveSingleContentUri()
         if (intent.action != Intent.ACTION_SEND || uri == null) {
             status.setText(R.string.share_rejected)
@@ -61,11 +49,11 @@ class ShareReceiverActivity : ComponentActivity() {
             return
         }
 
-        executor.execute {
-            val result = oneOffGpxStatus(OneOffGpxImport.importUri(this, serverConnection, uri))
-            runOnUiThread {
-                if (!isDestroyed) status.setText(result)
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                oneOffGpxStatus(OneOffGpxImport.importUri(this@ShareReceiverActivity, uri))
             }
+            if (!isDestroyed) status.setText(result)
         }
     }
 
@@ -85,36 +73,6 @@ class ShareReceiverActivity : ComponentActivity() {
         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
     } else {
         intent.getParcelableExtra(Intent.EXTRA_STREAM)
-    }
-
-    private fun readMetadata(uri: Uri): SharedFileMetadata {
-        return try {
-            contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (!cursor.moveToFirst()) return@use SharedFileMetadata(null, null)
-                val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
-                SharedFileMetadata(
-                    displayName = if (nameColumn >= 0 && !cursor.isNull(nameColumn)) {
-                        cursor.getString(nameColumn)
-                    } else {
-                        null
-                    },
-                    sizeBytes = if (sizeColumn >= 0 && !cursor.isNull(sizeColumn)) {
-                        cursor.getLong(sizeColumn)
-                    } else {
-                        null
-                    },
-                )
-            } ?: SharedFileMetadata(null, null)
-        } catch (_: RuntimeException) {
-            SharedFileMetadata(null, null)
-        }
     }
 
     private fun buildContent(): View {
@@ -141,7 +99,7 @@ class ShareReceiverActivity : ComponentActivity() {
             setText(R.string.open_runway)
             isAllCaps = false
             setOnClickListener {
-                startActivity(Intent(this@ShareReceiverActivity, ServerConnectionActivity::class.java))
+                startActivity(Intent(this@ShareReceiverActivity, MainActivity::class.java))
                 finish()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -163,12 +121,4 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(bytes)
-        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-
-    private data class SharedFileMetadata(
-        val displayName: String?,
-        val sizeBytes: Long?,
-    )
 }

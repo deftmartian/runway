@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "0f7d089fcf587b232642e453f459713f",
+    "identityHash": "154538ddd4b50c6c924697299e447e9a",
     "entities": [
       {
         "tableName": "profile_settings",
@@ -782,7 +782,7 @@
       },
       {
         "tableName": "workouts",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`workoutId` TEXT NOT NULL, `planId` TEXT NOT NULL, `weekId` TEXT NOT NULL, `position` INTEGER NOT NULL, `generatedPurpose` TEXT, `generatedDistanceMeters` INTEGER, `generatedDurationSeconds` INTEGER, `currentPurpose` TEXT, `currentDistanceMeters` INTEGER, `currentDurationSeconds` INTEGER, `tombstonedAtEpochMillis` INTEGER, `updatedAtEpochMillis` INTEGER NOT NULL, `generatedScheduledEpochDay` INTEGER NOT NULL, `currentScheduledEpochDay` INTEGER NOT NULL, `generatedWorkoutType` TEXT NOT NULL, `currentWorkoutType` TEXT NOT NULL, `generatedPrescriptionKind` TEXT NOT NULL, `currentPrescriptionKind` TEXT NOT NULL, `generatedIntensity` TEXT, `currentIntensity` TEXT, `generatedReason` TEXT, `currentReason` TEXT, `currentStatus` TEXT NOT NULL, `generatedWarmupSeconds` INTEGER, `generatedCooldownSeconds` INTEGER, `currentWarmupSeconds` INTEGER, `currentCooldownSeconds` INTEGER, PRIMARY KEY(`workoutId`), FOREIGN KEY(`planId`, `weekId`) REFERENCES `plan_weeks`(`planId`, `weekId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`workoutId` TEXT NOT NULL, `planId` TEXT NOT NULL, `weekId` TEXT NOT NULL, `position` INTEGER NOT NULL, `generatedPurpose` TEXT, `generatedDistanceMeters` INTEGER, `generatedDurationSeconds` INTEGER, `currentPurpose` TEXT, `currentDistanceMeters` INTEGER, `currentDurationSeconds` INTEGER, `tombstonedAtEpochMillis` INTEGER, `updatedAtEpochMillis` INTEGER NOT NULL, `generatedScheduledEpochDay` INTEGER NOT NULL, `currentScheduledEpochDay` INTEGER NOT NULL, `generatedWorkoutType` TEXT NOT NULL, `currentWorkoutType` TEXT NOT NULL, `generatedPrescriptionKind` TEXT NOT NULL, `currentPrescriptionKind` TEXT NOT NULL, `generatedIntensity` TEXT, `currentIntensity` TEXT, `generatedReason` TEXT, `currentReason` TEXT, `currentStatus` TEXT NOT NULL, `generatedWarmupSeconds` INTEGER, `generatedCooldownSeconds` INTEGER, `currentWarmupSeconds` INTEGER, `currentCooldownSeconds` INTEGER, `addedByAdjustmentId` TEXT, PRIMARY KEY(`workoutId`), FOREIGN KEY(`planId`, `weekId`) REFERENCES `plan_weeks`(`planId`, `weekId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "workoutId",
@@ -930,6 +930,11 @@
             "fieldPath": "currentCooldownSeconds",
             "columnName": "currentCooldownSeconds",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "addedByAdjustmentId",
+            "columnName": "addedByAdjustmentId",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -2117,7 +2122,7 @@
       },
       {
         "tableName": "plan_adjustments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`adjustmentId` TEXT NOT NULL, `planId` TEXT NOT NULL, `workoutId` TEXT, `sourceActivityId` TEXT, `adjustmentType` TEXT NOT NULL, `state` TEXT NOT NULL, `measuredLoadSharePercent` REAL, `projectedRampPercent` REAL, `affectedWorkoutCount` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`adjustmentId`), FOREIGN KEY(`planId`) REFERENCES `plans`(`planId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`workoutId`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`sourceActivityId`) REFERENCES `activities`(`activityId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`adjustmentId` TEXT NOT NULL, `planId` TEXT NOT NULL, `workoutId` TEXT, `sourceActivityId` TEXT, `adjustmentType` TEXT NOT NULL, `state` TEXT NOT NULL, `measuredLoadSharePercent` REAL, `projectedRampPercent` REAL, `affectedWorkoutCount` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `triggerKind` TEXT, `triggerId` TEXT, `triggerVersion` TEXT, PRIMARY KEY(`adjustmentId`), FOREIGN KEY(`planId`) REFERENCES `plans`(`planId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`workoutId`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`sourceActivityId`) REFERENCES `activities`(`activityId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
         "fields": [
           {
             "fieldPath": "adjustmentId",
@@ -2174,6 +2179,21 @@
             "columnName": "createdAtEpochMillis",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "triggerKind",
+            "columnName": "triggerKind",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "triggerId",
+            "columnName": "triggerId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "triggerVersion",
+            "columnName": "triggerVersion",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -2210,6 +2230,17 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_plan_adjustments_sourceActivityId` ON `${TABLE_NAME}` (`sourceActivityId`)"
+          },
+          {
+            "name": "index_plan_adjustments_triggerKind_triggerId_triggerVersion",
+            "unique": true,
+            "columnNames": [
+              "triggerKind",
+              "triggerId",
+              "triggerVersion"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_plan_adjustments_triggerKind_triggerId_triggerVersion` ON `${TABLE_NAME}` (`triggerKind`, `triggerId`, `triggerVersion`)"
           }
         ],
         "foreignKeys": [
@@ -2331,7 +2362,7 @@
       },
       {
         "tableName": "adjustment_workout_effects",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`effectId` TEXT NOT NULL, `groupId` TEXT NOT NULL, `workoutId` TEXT, `ordinal` INTEGER NOT NULL, `previousScheduledEpochDay` INTEGER, `newScheduledEpochDay` INTEGER, `previousWorkoutType` TEXT, `newWorkoutType` TEXT, `previousStatus` TEXT, `newStatus` TEXT, `previousDistanceMeters` INTEGER, `newDistanceMeters` INTEGER, `previousDurationSeconds` INTEGER, `newDurationSeconds` INTEGER, `previousIntensity` TEXT, `newIntensity` TEXT, `previousPurpose` TEXT, `newPurpose` TEXT, `previousReason` TEXT, `newReason` TEXT, `previousTombstonedAtEpochMillis` INTEGER, `newTombstonedAtEpochMillis` INTEGER, `previousWarmupSeconds` INTEGER, `newWarmupSeconds` INTEGER, `previousCooldownSeconds` INTEGER, `newCooldownSeconds` INTEGER, `previousPrescriptionKind` TEXT, `newPrescriptionKind` TEXT, PRIMARY KEY(`effectId`), FOREIGN KEY(`groupId`) REFERENCES `adjustment_effect_groups`(`groupId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`workoutId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`effectId` TEXT NOT NULL, `groupId` TEXT NOT NULL, `workoutId` TEXT, `ordinal` INTEGER NOT NULL, `previousScheduledEpochDay` INTEGER, `newScheduledEpochDay` INTEGER, `previousWorkoutType` TEXT, `newWorkoutType` TEXT, `previousStatus` TEXT, `newStatus` TEXT, `previousDistanceMeters` INTEGER, `newDistanceMeters` INTEGER, `previousDurationSeconds` INTEGER, `newDurationSeconds` INTEGER, `previousIntensity` TEXT, `newIntensity` TEXT, `previousPurpose` TEXT, `newPurpose` TEXT, `previousReason` TEXT, `newReason` TEXT, `previousTombstonedAtEpochMillis` INTEGER, `newTombstonedAtEpochMillis` INTEGER, `previousWarmupSeconds` INTEGER, `newWarmupSeconds` INTEGER, `previousCooldownSeconds` INTEGER, `newCooldownSeconds` INTEGER, `previousPrescriptionKind` TEXT, `newPrescriptionKind` TEXT, `previousWeekId` TEXT, `newWeekId` TEXT, PRIMARY KEY(`effectId`), FOREIGN KEY(`groupId`) REFERENCES `adjustment_effect_groups`(`groupId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`workoutId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
         "fields": [
           {
             "fieldPath": "effectId",
@@ -2474,6 +2505,16 @@
           {
             "fieldPath": "newPrescriptionKind",
             "columnName": "newPrescriptionKind",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "previousWeekId",
+            "columnName": "previousWeekId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "newWeekId",
+            "columnName": "newWeekId",
             "affinity": "TEXT"
           }
         ],
@@ -3569,7 +3610,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0f7d089fcf587b232642e453f459713f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '154538ddd4b50c6c924697299e447e9a')"
     ]
   }
 }

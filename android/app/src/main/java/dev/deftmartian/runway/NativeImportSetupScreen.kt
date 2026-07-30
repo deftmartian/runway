@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -15,172 +15,200 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-internal enum class NativeImportSetupDialog {
+internal enum class NativeImportDialog {
     None,
     HealthPermission,
     HealthBackgroundPermission,
-    ForgetUnrevoked,
     RouteConsent,
 }
 
-internal data class NativeImportSetupUiState(
-    val serverOrigin: String = "",
-    val deviceLabel: String = "",
-    val setupStatus: String = "",
-    val setupReady: Boolean = false,
-    val pairingStatus: String = "",
+internal data class NativeImportSettingsUiState(
+    val oneOffStatus: String = "",
     val folderStatus: String = "",
-    val backgroundStatus: String = "",
-    val lastCheckStatus: String = "",
-    val healthConnectStatus: String = "",
-    val primaryActionLabel: String = "",
-    val primaryActionEnabled: Boolean = true,
-    val showPairingForm: Boolean = false,
-    val showForgetAccount: Boolean = false,
-    val forgetActionEnabled: Boolean = true,
-    val showChangeFolder: Boolean = false,
-    val showDisconnectFolder: Boolean = false,
-    val backgroundActionLabel: String = "",
-    val backgroundActionEnabled: Boolean = false,
-    val showHealthPermission: Boolean = false,
-    val showHealthSync: Boolean = false,
-    val healthSyncActionEnabled: Boolean = false,
-    val showHealthBackground: Boolean = false,
-    val healthBackgroundActionLabel: String = "",
-    val healthBackgroundActionEnabled: Boolean = false,
-    val oneOffImportEnabled: Boolean = false,
-    val oneOffImportStatus: String = "",
-    val dialog: NativeImportSetupDialog = NativeImportSetupDialog.None,
+    val folderConnected: Boolean = false,
+    val folderPermissionRequired: Boolean = false,
+    val folderCheckRunning: Boolean = false,
+    val periodicFolderChecks: Boolean = false,
+    val lastFolderCheck: String = "",
+    val healthStatus: String = "",
+    val healthAvailable: Boolean = false,
+    val healthPermissionsGranted: Boolean = false,
+    val healthSyncRunning: Boolean = false,
+    val healthBackgroundSupported: Boolean = false,
+    val healthBackgroundEnabled: Boolean = false,
+    val dialog: NativeImportDialog = NativeImportDialog.None,
 )
 
 @Composable
 internal fun NativeImportSetupScreen(
-    state: NativeImportSetupUiState,
-    onDeviceLabelChange: (String) -> Unit,
-    onPrimaryAction: () -> Unit,
-    onChangeServer: () -> Unit,
-    onForgetAccount: () -> Unit,
-    onChangeFolder: () -> Unit,
+    state: NativeImportSettingsUiState,
+    onPickOneOffGpx: () -> Unit,
+    onChooseFolder: () -> Unit,
     onDisconnectFolder: () -> Unit,
-    onBackgroundAction: () -> Unit,
+    onCheckFolder: () -> Unit,
+    onTogglePeriodicFolderChecks: () -> Unit,
     onHealthPermission: () -> Unit,
     onHealthSync: () -> Unit,
-    onHealthBackground: () -> Unit,
-    onPickOneOffGpx: () -> Unit,
+    onToggleHealthBackground: () -> Unit,
     onReturnToRunway: () -> Unit,
     onDismissDialog: () -> Unit,
-    onConfirmDialog: (NativeImportSetupDialog) -> Unit,
+    onConfirmDialog: (NativeImportDialog) -> Unit,
 ) {
     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
         NativeList(loading = false) {
-            item { ScreenIntro(stringResource(R.string.folder_screen_title), stringResource(R.string.folder_screen_intro)) }
-        item {
-            ImportSetupSection("One-off GPX") {
-                Text("Choose one GPX from this phone. It goes to Review and never completes a workout automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(
-                    onClick = onPickOneOffGpx,
-                    enabled = state.oneOffImportEnabled,
-                    shape = MaterialTheme.shapes.small,
-                ) { Text("Choose GPX file") }
-                state.oneOffImportStatus.takeIf(String::isNotBlank)?.let { LiveStatus(it) }
+            item {
+                ScreenIntro(
+                    stringResource(R.string.folder_screen_title),
+                    stringResource(R.string.folder_screen_intro),
+                )
             }
-        }
-        item {
-            Notice(if (state.setupReady) "✓ ${state.setupStatus}" else "! ${state.setupStatus}")
-        }
-        item {
-            ImportSetupSection(stringResource(R.string.server_section_title)) {
-                Text(state.serverOrigin, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = onChangeServer) { Text(stringResource(R.string.change_server)) }
-            }
-        }
-        item {
-            ImportSetupSection(stringResource(R.string.pairing_title)) {
-                LiveStatus(state.pairingStatus)
-                if (state.showPairingForm) {
-                    OutlinedTextField(
-                        value = state.deviceLabel,
-                        onValueChange = onDeviceLabelChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.device_label)) },
-                        singleLine = true,
+            item {
+                ImportSetupSection(stringResource(R.string.one_off_gpx_title)) {
+                    Text(
+                        stringResource(R.string.one_off_gpx_description),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                if (state.showForgetAccount) {
-                    TextButton(onClick = onForgetAccount, enabled = state.forgetActionEnabled) { Text(stringResource(R.string.forget_account)) }
+                    OutlinedButton(
+                        onClick = onPickOneOffGpx,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(stringResource(R.string.choose_gpx_file))
+                    }
+                    state.oneOffStatus.takeIf(String::isNotBlank)?.let { LiveStatus(it) }
                 }
             }
-        }
-        item {
-            Button(
-                onClick = onPrimaryAction,
-                enabled = state.primaryActionEnabled,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(state.primaryActionLabel) }
-        }
-        item {
-            ImportSetupSection(stringResource(R.string.folder_section_title)) {
-                LiveStatus(state.folderStatus)
-                if (state.showChangeFolder || state.showDisconnectFolder) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        if (state.showChangeFolder) {
-                            OutlinedButton(
-                                onClick = onChangeFolder,
-                                modifier = Modifier.weight(1f),
-                                shape = MaterialTheme.shapes.small,
-                            ) { Text(stringResource(R.string.change_folder)) }
+            item {
+                ImportSetupSection(stringResource(R.string.folder_section_title)) {
+                    LiveStatus(state.folderStatus)
+                    Text(
+                        stringResource(R.string.folder_review_boundary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        OutlinedButton(
+                            onClick = onChooseFolder,
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (state.folderConnected || state.folderPermissionRequired) {
+                                        R.string.change_folder
+                                    } else {
+                                        R.string.choose_folder
+                                    },
+                                ),
+                            )
                         }
-                        if (state.showDisconnectFolder) TextButton(onClick = onDisconnectFolder, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.disconnect_folder)) }
+                        if (state.folderConnected || state.folderPermissionRequired) {
+                            TextButton(
+                                onClick = onDisconnectFolder,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(stringResource(R.string.disconnect_folder))
+                            }
+                        }
+                    }
+                    if (state.folderConnected) {
+                        Button(
+                            onClick = onCheckFolder,
+                            enabled = !state.folderCheckRunning,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (state.folderCheckRunning) {
+                                        R.string.checking_now
+                                    } else {
+                                        R.string.check_now
+                                    },
+                                ),
+                            )
+                        }
+                        TextButton(onClick = onTogglePeriodicFolderChecks) {
+                            Text(
+                                stringResource(
+                                    if (state.periodicFolderChecks) {
+                                        R.string.disable_background
+                                    } else {
+                                        R.string.enable_background
+                                    },
+                                ),
+                            )
+                        }
+                    }
+                    state.lastFolderCheck.takeIf(String::isNotBlank)?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
-        }
-        item {
-            ImportSetupSection(stringResource(R.string.background_title)) {
-                LiveStatus(state.backgroundStatus)
-                Text(state.lastCheckStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(
-                    onClick = onBackgroundAction,
-                    enabled = state.backgroundActionEnabled,
-                    shape = MaterialTheme.shapes.small,
-                ) { Text(state.backgroundActionLabel) }
-            }
-        }
-        item {
-            ImportSetupSection(stringResource(R.string.health_connect_title)) {
-                LiveStatus(state.healthConnectStatus)
-                if (state.showHealthPermission) {
-                    OutlinedButton(
-                        onClick = onHealthPermission,
-                        shape = MaterialTheme.shapes.small,
-                    ) { Text(stringResource(R.string.health_connect_grant_permission)) }
-                }
-                if (state.showHealthSync) {
-                    Button(
-                        onClick = onHealthSync,
-                        enabled = state.healthSyncActionEnabled,
-                        shape = MaterialTheme.shapes.small,
-                    ) { Text(stringResource(R.string.health_connect_sync_now)) }
-                }
-                if (state.showHealthBackground) TextButton(onClick = onHealthBackground, enabled = state.healthBackgroundActionEnabled) { Text(state.healthBackgroundActionLabel) }
-            }
-        }
             item {
-                Text(stringResource(R.string.folder_upload_ready), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ImportSetupSection(stringResource(R.string.health_connect_title)) {
+                    LiveStatus(state.healthStatus)
+                    when {
+                        !state.healthAvailable -> Unit
+                        !state.healthPermissionsGranted -> OutlinedButton(
+                            onClick = onHealthPermission,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(stringResource(R.string.health_connect_grant_permission))
+                        }
+                        else -> {
+                            Button(
+                                onClick = onHealthSync,
+                                enabled = !state.healthSyncRunning,
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (state.healthSyncRunning) {
+                                            R.string.health_connect_syncing_action
+                                        } else {
+                                            R.string.health_connect_sync_now
+                                        },
+                                    ),
+                                )
+                            }
+                            if (state.healthBackgroundSupported) {
+                                TextButton(onClick = onToggleHealthBackground) {
+                                    Text(
+                                        stringResource(
+                                            if (state.healthBackgroundEnabled) {
+                                                R.string.health_connect_disable_background
+                                            } else {
+                                                R.string.health_connect_enable_background
+                                            },
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item {
                 Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onReturnToRunway) { Text(stringResource(R.string.return_to_runway)) }
+                TextButton(onClick = onReturnToRunway) {
+                    Text(stringResource(R.string.return_to_runway))
+                }
             }
         }
     }
@@ -203,32 +231,47 @@ private fun ImportSetupSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun LiveStatus(text: String) {
-    Text(text, modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+        text,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
 private fun ImportSetupDialog(
-    dialog: NativeImportSetupDialog,
+    dialog: NativeImportDialog,
     onDismiss: () -> Unit,
-    onConfirm: (NativeImportSetupDialog) -> Unit,
+    onConfirm: (NativeImportDialog) -> Unit,
 ) {
     val content = when (dialog) {
-        NativeImportSetupDialog.HealthPermission -> stringResource(R.string.health_connect_permission_needed)
-        NativeImportSetupDialog.HealthBackgroundPermission -> stringResource(R.string.health_connect_background_permission_needed)
-        NativeImportSetupDialog.ForgetUnrevoked -> stringResource(R.string.pairing_disconnect_unavailable_consequence)
-        NativeImportSetupDialog.RouteConsent -> stringResource(R.string.health_connect_route_consent)
-        NativeImportSetupDialog.None -> null
+        NativeImportDialog.HealthPermission ->
+            stringResource(R.string.health_connect_permission_needed)
+        NativeImportDialog.HealthBackgroundPermission ->
+            stringResource(R.string.health_connect_background_permission_needed)
+        NativeImportDialog.RouteConsent ->
+            stringResource(R.string.health_connect_route_consent)
+        NativeImportDialog.None -> null
     } ?: return
-    val confirm = when (dialog) {
-        NativeImportSetupDialog.ForgetUnrevoked -> stringResource(R.string.forget_anyway)
-        NativeImportSetupDialog.RouteConsent -> stringResource(R.string.health_connect_route_allow)
-        else -> stringResource(R.string.health_connect_grant_permission)
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(if (dialog == NativeImportSetupDialog.ForgetUnrevoked) R.string.pairing_disconnect_unavailable_title else R.string.health_connect_title)) },
+        title = { Text(stringResource(R.string.health_connect_title)) },
         text = { Text(content) },
-        confirmButton = { TextButton(onClick = { onConfirm(dialog) }) { Text(confirm) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(dialog) }) {
+                Text(
+                    stringResource(
+                        if (dialog == NativeImportDialog.RouteConsent) {
+                            R.string.health_connect_route_allow
+                        } else {
+                            R.string.health_connect_grant_permission
+                        },
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
     )
 }

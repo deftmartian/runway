@@ -67,6 +67,53 @@ abstract class GoalPlanDao {
     @Query("SELECT EXISTS(SELECT 1 FROM plans WHERE planId = :planId)")
     abstract suspend fun planExists(planId: String): Boolean
 
+    @Query("SELECT * FROM goals WHERE goalId = :goalId")
+    abstract suspend fun goal(goalId: String): GoalEntity?
+
+    @Query("SELECT * FROM goals WHERE goalId IN (:goalIds) LIMIT :limit")
+    abstract suspend fun goalsByIds(goalIds: List<String>, limit: Int): List<GoalEntity>
+
+    @Query("SELECT * FROM plan_lifecycle_events WHERE eventId = :eventId")
+    abstract suspend fun lifecycleEvent(eventId: String): PlanLifecycleEventEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertLifecycleEvent(event: PlanLifecycleEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertWeek(week: PlanWeekEntity)
+
+    @Query("UPDATE plans SET state = 'archived', completedAtEpochMillis = :at, archivedAtEpochMillis = :at, updatedAtEpochMillis = :at WHERE planId = :planId AND state = 'active'")
+    abstract suspend fun completePlanIfActive(planId: String, at: Long): Int
+
+    @Query("UPDATE plans SET state = 'archived', completedAtEpochMillis = NULL, archivedAtEpochMillis = :at, updatedAtEpochMillis = :at WHERE planId = :planId AND state = 'active'")
+    abstract suspend fun archivePlanIfActive(planId: String, at: Long): Int
+
+    @Query("UPDATE plans SET endEpochDay = :newEnd, updatedAtEpochMillis = :at WHERE planId = :planId AND state = 'active' AND endEpochDay = :expectedEnd")
+    abstract suspend fun extendPlanIfCurrentEnd(planId: String, expectedEnd: Long, newEnd: Long, at: Long): Int
+
+    @Query("UPDATE goals SET state = :state, updatedAtEpochMillis = :at WHERE goalId = :goalId AND state = 'active'")
+    abstract suspend fun updateActiveGoalState(goalId: String, state: String, at: Long): Int
+
+    @Query("UPDATE goals SET targetDateEpochDay = :targetDateEpochDay, updatedAtEpochMillis = :at WHERE goalId = :goalId AND state = 'active'")
+    abstract suspend fun updateActiveGoalTargetDate(goalId: String, targetDateEpochDay: Long, at: Long): Int
+
+    @Query("""
+        SELECT activity.activityId, activity.distanceMeters, activity.durationSeconds
+        FROM activities AS activity
+        INNER JOIN workouts AS workout ON workout.workoutId = activity.linkedWorkoutId
+        WHERE activity.reviewState = 'accepted' AND activity.linkedWorkoutId IS NOT NULL
+          AND workout.planId = :planId
+          AND workout.currentScheduledEpochDay BETWEEN :fromEpochDay AND :throughEpochDay
+        ORDER BY workout.currentScheduledEpochDay, activity.activityId
+        LIMIT :limit
+    """)
+    abstract suspend fun acceptedLinkedActivitiesForPlan(
+        planId: String,
+        fromEpochDay: Long,
+        throughEpochDay: Long,
+        limit: Int,
+    ): List<LocalAcceptedLinkedActivity>
+
     @Query("UPDATE goals SET state = 'archived', updatedAtEpochMillis = :archivedAtEpochMillis WHERE state = 'active'")
     abstract suspend fun archiveActiveGoals(archivedAtEpochMillis: Long): Int
 
@@ -79,6 +126,9 @@ abstract class GoalPlanDao {
     @Query("SELECT * FROM plans WHERE state = :state ORDER BY startEpochDay DESC LIMIT :limit")
     abstract fun observePlansByState(state: String, limit: Int): Flow<List<PlanEntity>>
 
+    @Query("SELECT * FROM plans WHERE state IN (:states) ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
+    abstract suspend fun plansByStates(states: List<String>, limit: Int): List<PlanEntity>
+
     @Query("SELECT * FROM plans WHERE state = 'active' ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
     abstract suspend fun activePlans(limit: Int): List<PlanEntity>
 
@@ -90,6 +140,9 @@ abstract class GoalPlanDao {
 
     @Query("SELECT * FROM plan_weeks WHERE planId = :planId ORDER BY ordinal LIMIT :limit")
     abstract suspend fun weeksForPlan(planId: String, limit: Int): List<PlanWeekEntity>
+
+    @Query("SELECT * FROM plan_weeks WHERE planId IN (:planIds) ORDER BY planId, ordinal LIMIT :limit")
+    abstract suspend fun weeksForPlans(planIds: List<String>, limit: Int): List<PlanWeekEntity>
 
     @Query("SELECT * FROM workouts WHERE weekId = :weekId AND currentStatus != :tombstoneState ORDER BY currentScheduledEpochDay, position LIMIT :limit")
     abstract suspend fun workoutsForWeek(
@@ -111,6 +164,16 @@ abstract class GoalPlanDao {
         tombstoneState: String = WORKOUT_STATE_TOMBSTONED,
         limit: Int,
     ): List<WorkoutEntity>
+
+    @Query("SELECT * FROM workouts WHERE planId IN (:planIds) AND currentStatus != :tombstoneState ORDER BY planId, currentScheduledEpochDay, position LIMIT :limit")
+    abstract suspend fun visibleWorkoutsForPlans(
+        planIds: List<String>,
+        tombstoneState: String = WORKOUT_STATE_TOMBSTONED,
+        limit: Int,
+    ): List<WorkoutEntity>
+
+    @Query("SELECT * FROM workouts WHERE planId = :planId ORDER BY currentScheduledEpochDay, position LIMIT :limit")
+    abstract suspend fun allWorkoutsForPlan(planId: String, limit: Int): List<WorkoutEntity>
 
     @Query("SELECT * FROM workouts WHERE currentScheduledEpochDay BETWEEN :fromEpochDay AND :toEpochDay AND currentStatus != :tombstoneState ORDER BY currentScheduledEpochDay, position LIMIT :limit")
     abstract suspend fun workoutsInRange(
@@ -164,20 +227,47 @@ abstract class GoalPlanDao {
     @Query("SELECT * FROM plan_lifecycle_events WHERE planId = :planId ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     abstract suspend fun lifecycleEvents(planId: String, limit: Int): List<PlanLifecycleEventEntity>
 
+    @Query("SELECT * FROM plan_lifecycle_events WHERE planId IN (:planIds) ORDER BY planId, occurredAtEpochMillis DESC LIMIT :limit")
+    abstract suspend fun lifecycleEventsForPlans(
+        planIds: List<String>,
+        limit: Int,
+    ): List<PlanLifecycleEventEntity>
+
     @Upsert
     abstract suspend fun saveBlock(block: WorkoutBlockEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertBlocks(blocks: List<WorkoutBlockEntity>)
 
     @Query("SELECT * FROM workout_blocks WHERE workoutId = :workoutId AND prescriptionVersion = :prescriptionVersion ORDER BY ordinal LIMIT :limit")
     abstract suspend fun blocksForWorkout(workoutId: String, prescriptionVersion: String, limit: Int): List<WorkoutBlockEntity>
 
+    @Query("SELECT * FROM workout_blocks WHERE workoutId IN (:workoutIds) ORDER BY workoutId, prescriptionVersion, ordinal LIMIT :limit")
+    abstract suspend fun blocksForWorkouts(
+        workoutIds: List<String>,
+        limit: Int,
+    ): List<WorkoutBlockEntity>
+
     @Upsert
     abstract suspend fun saveSegment(segment: WorkoutSegmentEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertSegments(segments: List<WorkoutSegmentEntity>)
 
     @Query("SELECT * FROM workout_segments WHERE blockId = :blockId ORDER BY ordinal LIMIT :limit")
     abstract suspend fun segmentsForBlock(blockId: String, limit: Int): List<WorkoutSegmentEntity>
 
+    @Query("SELECT * FROM workout_segments WHERE blockId IN (:blockIds) ORDER BY blockId, ordinal LIMIT :limit")
+    abstract suspend fun segmentsForBlocks(
+        blockIds: List<String>,
+        limit: Int,
+    ): List<WorkoutSegmentEntity>
+
     @Upsert
     abstract suspend fun saveWorkoutSourceReference(reference: WorkoutSourceReferenceEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertWorkoutSourceReferences(references: List<WorkoutSourceReferenceEntity>)
 
     @Query("SELECT * FROM workout_source_references WHERE workoutId = :workoutId AND prescriptionVersion = :prescriptionVersion ORDER BY ordinal LIMIT :limit")
     abstract suspend fun workoutSourceReferences(
@@ -185,6 +275,21 @@ abstract class GoalPlanDao {
         prescriptionVersion: String,
         limit: Int,
     ): List<WorkoutSourceReferenceEntity>
+
+    @Query("SELECT * FROM workout_source_references WHERE workoutId IN (:workoutIds) ORDER BY workoutId, prescriptionVersion, ordinal LIMIT :limit")
+    abstract suspend fun workoutSourceReferencesForWorkouts(
+        workoutIds: List<String>,
+        limit: Int,
+    ): List<WorkoutSourceReferenceEntity>
+
+    @Query("DELETE FROM workout_segments WHERE blockId IN (SELECT blockId FROM workout_blocks WHERE workoutId = :workoutId AND prescriptionVersion = :prescriptionVersion)")
+    abstract suspend fun clearSegmentsForWorkoutVersion(workoutId: String, prescriptionVersion: String)
+
+    @Query("DELETE FROM workout_blocks WHERE workoutId = :workoutId AND prescriptionVersion = :prescriptionVersion")
+    abstract suspend fun clearBlocksForWorkoutVersion(workoutId: String, prescriptionVersion: String)
+
+    @Query("DELETE FROM workout_source_references WHERE workoutId = :workoutId AND prescriptionVersion = :prescriptionVersion")
+    abstract suspend fun clearWorkoutSourceReferencesForVersion(workoutId: String, prescriptionVersion: String)
 
     @Transaction
     open suspend fun createPlanGraph(
@@ -211,6 +316,12 @@ interface ActivityLedgerDao {
     @Query("SELECT * FROM activities WHERE reviewState = :reviewState ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     fun observeActivitiesByReviewState(reviewState: String, limit: Int): Flow<List<ActivityEntity>>
 
+    @Query("SELECT * FROM activities WHERE reviewState = :reviewState ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
+    suspend fun activitiesByReviewState(reviewState: String, limit: Int): List<ActivityEntity>
+
+    @Query("SELECT COUNT(*) FROM activities WHERE reviewState = :reviewState")
+    suspend fun activityCountByReviewState(reviewState: String): Int
+
     @Query("SELECT * FROM activities WHERE occurredAtEpochMillis BETWEEN :fromInclusive AND :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     suspend fun activitiesInRange(
         fromInclusive: Long,
@@ -232,14 +343,41 @@ interface ActivityLedgerDao {
     @Query("SELECT * FROM activities WHERE linkedWorkoutId = :workoutId LIMIT 2")
     suspend fun activitiesLinkedToWorkout(workoutId: String): List<ActivityEntity>
 
+    @Query("SELECT * FROM activities WHERE linkedWorkoutId IN (:workoutIds) ORDER BY linkedWorkoutId, occurredAtEpochMillis DESC LIMIT :limit")
+    suspend fun activitiesLinkedToWorkouts(
+        workoutIds: List<String>,
+        limit: Int,
+    ): List<ActivityEntity>
+
     @Query("SELECT * FROM activity_feedback WHERE activityId = :activityId")
     suspend fun activityFeedback(activityId: String): ActivityFeedbackEntity?
+
+    @Query("SELECT * FROM activity_feedback WHERE activityId IN (:activityIds) LIMIT :limit")
+    suspend fun activityFeedbackForActivities(
+        activityIds: List<String>,
+        limit: Int,
+    ): List<ActivityFeedbackEntity>
 
     @Query("SELECT * FROM workout_feedback WHERE workoutId = :workoutId")
     suspend fun workoutFeedback(workoutId: String): WorkoutFeedbackEntity?
 
+    @Query("SELECT * FROM workout_feedback WHERE feedbackId = :feedbackId")
+    suspend fun workoutFeedbackById(feedbackId: String): WorkoutFeedbackEntity?
+
+    @Query("SELECT * FROM workout_feedback WHERE workoutId IN (:workoutIds) LIMIT :limit")
+    suspend fun workoutFeedbackForWorkouts(
+        workoutIds: List<String>,
+        limit: Int,
+    ): List<WorkoutFeedbackEntity>
+
     @Query("SELECT * FROM workout_feedback WHERE sourceActivityId = :activityId")
     suspend fun workoutFeedbackForActivity(activityId: String): WorkoutFeedbackEntity?
+
+    @Query("SELECT * FROM workout_feedback_consequences WHERE feedbackId = :feedbackId")
+    suspend fun workoutFeedbackConsequence(feedbackId: String): WorkoutFeedbackConsequenceEntity?
+
+    @Query("SELECT * FROM activity_consequences WHERE activityId = :activityId")
+    suspend fun activityConsequence(activityId: String): ActivityConsequenceEntity?
 
     @Query(
         """
@@ -257,6 +395,21 @@ interface ActivityLedgerDao {
         planId: String,
         fromEpochDay: Long,
         beforeEpochDay: Long,
+        limit: Int,
+    ): List<WorkoutFeedbackEntity>
+
+    @Query(
+        """
+        SELECT feedback.*
+        FROM workout_feedback AS feedback
+        INNER JOIN workouts AS workout ON workout.workoutId = feedback.workoutId
+        WHERE workout.planId IN (:planIds)
+        ORDER BY workout.planId, feedback.recordedAtEpochMillis DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun workoutFeedbackForPlans(
+        planIds: List<String>,
         limit: Int,
     ): List<WorkoutFeedbackEntity>
 
@@ -292,6 +445,12 @@ interface ActivityLedgerDao {
 
     @Upsert
     suspend fun saveActivityConsequenceOption(option: ActivityConsequenceOptionEntity)
+
+    @Query("UPDATE workout_feedback_consequences SET appliedDecision = :decision WHERE feedbackId = :feedbackId AND appliedDecision IS NULL AND planChangeAvailable = 1")
+    suspend fun claimWorkoutFeedbackConsequence(feedbackId: String, decision: String): Int
+
+    @Query("UPDATE activity_consequences SET appliedDecision = :decision, resolvedAtEpochMillis = :resolvedAtEpochMillis WHERE activityId = :activityId AND appliedDecision IS NULL AND planChangeAvailable = 1")
+    suspend fun claimActivityConsequence(activityId: String, decision: String, resolvedAtEpochMillis: Long): Int
 
     @Query("SELECT * FROM activity_consequence_options WHERE activityId = :activityId ORDER BY decision LIMIT :limit")
     suspend fun activityConsequenceOptions(activityId: String, limit: Int): List<ActivityConsequenceOptionEntity>
@@ -369,6 +528,9 @@ interface ActivityLedgerDao {
 
 @Dao
 interface AdjustmentDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAdjustment(adjustment: PlanAdjustmentEntity)
+
     @Upsert
     suspend fun saveAdjustment(adjustment: PlanAdjustmentEntity)
 
@@ -399,6 +561,24 @@ interface AdjustmentDao {
     @Upsert
     suspend fun saveReversal(reversal: PlanReversalEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertReversalIfAbsent(reversal: PlanReversalEntity): Long
+
+    @Query("SELECT EXISTS(SELECT 1 FROM plan_adjustments WHERE adjustmentId = :adjustmentId)")
+    suspend fun adjustmentExists(adjustmentId: String): Boolean
+
+    @Query("SELECT * FROM plan_adjustments WHERE adjustmentId = :adjustmentId")
+    suspend fun adjustment(adjustmentId: String): PlanAdjustmentEntity?
+
+    @Query("SELECT * FROM plan_decisions WHERE adjustmentId = :adjustmentId LIMIT 1")
+    suspend fun decisionForAdjustment(adjustmentId: String): PlanDecisionEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM plan_reversals WHERE decisionId = :decisionId)")
+    suspend fun reversalExistsForDecision(decisionId: String): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM plan_adjustments WHERE triggerKind = :kind AND triggerId = :id AND triggerVersion = :version)")
+    suspend fun adjustmentExistsForTrigger(kind: String, id: String, version: String): Boolean
+
     @Query("SELECT * FROM plan_adjustments WHERE planId = :planId ORDER BY createdAtEpochMillis DESC LIMIT :limit")
     suspend fun adjustmentsForPlan(planId: String, limit: Int): List<PlanAdjustmentEntity>
 
@@ -416,6 +596,9 @@ interface AdjustmentDao {
 
     @Query("SELECT * FROM adjustment_effect_block_snapshots WHERE effectId = :effectId AND snapshotState = :snapshotState ORDER BY ordinal LIMIT :limit")
     suspend fun effectBlockSnapshots(effectId: String, snapshotState: String, limit: Int): List<AdjustmentEffectBlockSnapshotEntity>
+
+    @Query("SELECT * FROM adjustment_effect_segment_snapshots WHERE blockSnapshotId IN (SELECT blockSnapshotId FROM adjustment_effect_block_snapshots WHERE effectId = :effectId AND snapshotState = :snapshotState) ORDER BY blockSnapshotId, ordinal LIMIT :limit")
+    suspend fun effectSegmentSnapshots(effectId: String, snapshotState: String, limit: Int): List<AdjustmentEffectSegmentSnapshotEntity>
 
     @Query("SELECT * FROM adjustment_effect_source_reference_snapshots WHERE effectId = :effectId AND snapshotState = :snapshotState ORDER BY ordinal LIMIT :limit")
     suspend fun effectSourceReferenceSnapshots(effectId: String, snapshotState: String, limit: Int): List<AdjustmentEffectSourceReferenceSnapshotEntity>

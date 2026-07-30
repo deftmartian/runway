@@ -1,65 +1,41 @@
 # Contributing to runway
 
-runway is a self-hosted decision ledger for self-coached runners. Changes should strengthen its core loop: show a conservative recommendation, preserve user edits, record actual work, explain the difference, and leave the next plan decision with the runner.
+runway is a local Android decision ledger for self-coached runners. A change should strengthen this loop: show a conservative recommendation, preserve deliberate edits, record actual work, explain the difference, and leave the next decision with the runner.
 
-Read these before changing product behavior:
+Read [Product](docs/PRODUCT.md), [Design system](docs/DESIGN_SYSTEM.md), [Architecture](docs/ARCHITECTURE.md), [Security and privacy](docs/SECURITY.md), and [Training sources](docs/TRAINING_SOURCES.md) before changing product behavior.
 
-- [Product direction](docs/PRODUCT.md)
-- [Design system](docs/DESIGN_SYSTEM.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security and privacy](docs/SECURITY.md)
-- [Training sources](docs/TRAINING_SOURCES.md)
+## Development
 
-## Development setup
-
-runway requires Node.js 24, Corepack, pnpm 10.32, and Docker with Compose.
+Use JDK 17, Android SDK Platform 36, matching build tools, and the checked-in Gradle wrapper. Keep local SDK configuration in ignored `local.properties`.
 
 ```sh
-corepack pnpm install
-cp .env.example .env
-corepack pnpm db:start
-corepack pnpm db:migrate
-corepack pnpm dev
+android/gradlew -p android --no-daemon --max-workers=1 lint test assembleDebug
 ```
 
-The default development URL is `http://localhost:4100/`. The example environment is safe for local
-development; replace its placeholders only as needed. Never commit `.env` or real credentials.
+Run connected tests when an emulator or device is available:
+
+```sh
+android/gradlew -p android --no-daemon --max-workers=1 connectedDebugAndroidTest
+```
+
+Use one Gradle build at a time on constrained hosts. A green compile or unit suite is not acceptance evidence for Compose changes: inspect the affected native flow at practical phone sizes, large text, and TalkBack where applicable.
 
 ## Change expectations
 
-- Keep recommendations editable and consequences explicit. Do not add automatic plan mutations.
-- Treat rest and recovery as planned work, not empty space.
-- Keep imported activities in Review until the runner confirms them.
-- Back new training rules with reliable sources and record the evidence in `docs/TRAINING_SOURCES.md`.
-- Do not add medical claims or imply that planner thresholds are health advice.
-- Keep authenticated data user-scoped and route, schedule, pain, pace, heart-rate, and import data private.
-- Never commit real GPX, FIT, or TCX files, credentials, private URLs, or machine-specific paths.
-- Keep queries bounded and migrations explicit.
-- Update documentation and tests with behavior changes.
-
-## Verification
-
-Run focused checks while developing. Before proposing a shared product, auth, privacy, deployment, or UI change, run the relevant broader checks:
-
-```sh
-corepack pnpm verify:docs
-corepack pnpm verify
-corepack pnpm verify:migrations
-corepack pnpm verify:compose:production
-corepack pnpm test:e2e
-corepack pnpm test:visual
-```
-
-Use `corepack pnpm verify:full` for a complete release-oriented pass, including the production container build. Browser-facing changes should also be inspected interactively at mobile and desktop sizes; snapshot updates alone are not acceptance evidence.
+- Keep future workout changes previewed and explicit. Never silently mutate a plan after feedback or import.
+- Treat rest and recovery as first-class planned work.
+- Keep imported activities in Review until the runner accepts, links, changes, or deletes them.
+- Keep Room schema changes explicit. A new unreleased schema may be corrected; released schemas need an upgrade path and an idempotence test.
+- Keep repository boundaries typed and bounded. Do not route new UI behavior through JSON payloads or network-shaped models.
+- Back new training behavior with reliable sources in `docs/TRAINING_SOURCES.md`; do not add medical claims.
+- Do not commit private GPX/FIT/TCX files, backups, route coordinates, health data, signing keys, passwords, or machine-specific paths.
+- Treat plaintext backup and export files as sensitive. Do not invent cryptography.
+- Update tests and documentation with behavior changes.
 
 ## Security reports
 
-Do not put vulnerabilities, credentials, private activity data, or reproduction files containing
-personal data in a public issue. Use the repository's
-[private vulnerability-reporting form](https://github.com/deftmartian/runway/security/advisories/new).
-If that form is unavailable, open a public issue containing only a request for a private contact
-channel. See [Security](docs/SECURITY.md) for the full reporting policy and trust boundaries.
+Do not include private activity data, backups, credentials, or reproduction files containing them in a public issue. Use the repository's [private vulnerability-reporting form](https://github.com/deftmartian/runway/security/advisories/new). If it is unavailable, open a public issue requesting a private contact channel only.
 
 ## License
 
-By contributing, you agree that your contribution is licensed under the repository's [GNU Affero General Public License v3.0 only](LICENSE).
+By contributing, you agree that your contribution is licensed under the repository's [AGPL-3.0-only](LICENSE) terms.

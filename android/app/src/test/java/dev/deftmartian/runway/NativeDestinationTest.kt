@@ -28,9 +28,5 @@ class NativeDestinationTest {
             NativeDestination.History,
             NativeDestination.HistoryDetail.primaryNavigationDestination(),
         )
-        assertEquals(
-            NativeDestination.Settings,
-            NativeDestination.AccountSecurity.primaryNavigationDestination(),
-        )
     }
 }

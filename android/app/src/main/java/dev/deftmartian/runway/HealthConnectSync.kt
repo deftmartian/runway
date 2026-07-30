@@ -19,9 +19,15 @@ import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.runBlocking
+import dev.deftmartian.runway.data.healthconnect.HealthConnectObservation
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectHeartRatePoint
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectPersistenceResult
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectRoutePoint
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectRunningType
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.SortedSet
+import kotlin.math.roundToInt
 
 internal const val HEALTH_CONNECT_SCHEMA_VERSION = 1
 internal val HEALTH_CONNECT_PERMISSIONS = setOf(
@@ -42,10 +48,11 @@ internal data class HealthConnectRun(
     val startEpochMs: Long,
     val endEpochMs: Long,
     val sourcePackage: String,
+    val runningType: LocalHealthConnectRunningType = LocalHealthConnectRunningType.Running,
     val distanceMeters: Double? = null,
     val averageHeartRateBpm: Double? = null,
     val averageSpeedMetersPerSecond: Double? = null,
-    val averageCadenceRpm: Double? = null,
+    val averageCadenceSpm: Double? = null,
     val elevationGainMeters: Double? = null,
     val maxHeartRateBpm: Double? = null,
     val heartRateSamples: List<HealthConnectHeartRateSample> = emptyList(),
@@ -237,13 +244,18 @@ internal class AndroidHealthConnectGateway(
             startEpochMs = record.startTime.toEpochMilli(),
             endEpochMs = record.endTime.toEpochMilli(),
             sourcePackage = record.metadata.dataOrigin.packageName,
+            runningType = if (record.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL) {
+                LocalHealthConnectRunningType.TreadmillRunning
+            } else {
+                LocalHealthConnectRunningType.Running
+            },
             distanceMeters = distanceMeters,
             averageHeartRateBpm = heartRateSamples.map { it.beatsPerMinute.toDouble() }.average()
                 .takeIf { !it.isNaN() },
             maxHeartRateBpm = heartRateSamples.maxOfOrNull { it.beatsPerMinute.toDouble() },
             averageSpeedMetersPerSecond = speeds.map { it.speed.inMetersPerSecond }.average()
                 .takeIf { !it.isNaN() },
-            averageCadenceRpm = cadence.map { it.rate }.average().takeIf { !it.isNaN() },
+            averageCadenceSpm = cadence.map { it.rate }.average().takeIf { !it.isNaN() },
             elevationGainMeters = elevation.takeIf { it > 0.0 },
             heartRateSamples = boundedHeartRateSamples,
             heartRateSourceSampleCount = heartRateSamples.size,
@@ -316,132 +328,54 @@ private suspend fun <T, R : Any> Iterable<T>.mapNotNullSuspend(transform: suspen
     return result
 }
 
-internal data class HealthConnectCursor(
-    val origin: String,
-    val deviceId: String,
-    val credentialGeneration: Long,
-    val importGeneration: Long,
-    val token: String,
-)
+/** A local cursor is the only durable acquisition state: no server identity is part of it. */
+internal data class HealthConnectCursor(val token: String)
 
 internal interface HealthConnectCursorRepository {
     fun load(): HealthConnectCursor?
-    fun isCurrent(connection: ServerConnection, credentialState: AndroidCredentialState): Boolean
-    fun saveIfCurrent(
-        cursor: HealthConnectCursor,
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean
+    fun save(cursor: HealthConnectCursor)
     fun clear()
-    fun clearIfCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean
     fun needsAttention(): Boolean
-    fun markNeedsAttentionIfCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean
-    fun clearNeedsAttentionIfCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean
+    fun markNeedsAttention()
+    fun clearNeedsAttention()
 }
 
-internal class HealthConnectCursorStore(context: Context, private val origin: String) : HealthConnectCursorRepository {
-    private val appContext = context.applicationContext
-    private val preferences = appContext.getSharedPreferences(
+internal class HealthConnectCursorStore(context: Context) : HealthConnectCursorRepository {
+    private val preferences = context.applicationContext.getSharedPreferences(
         "runway_health_connect", Context.MODE_PRIVATE,
     )
-    private val key = AndroidCredentialNamespace.originKey(origin)
-    private val serverStore by lazy { ServerConnectionStore(appContext) }
-    private val credentialStore by lazy { AndroidCredentialStore(appContext, origin) }
 
-    override fun load(): HealthConnectCursor? {
-        val token = preferences.getString("token_$key", null) ?: return null
-        val savedOrigin = preferences.getString("origin_$key", null) ?: return null
-        val deviceId = preferences.getString("device_$key", null) ?: return null
-        return HealthConnectCursor(
-            savedOrigin,
-            deviceId,
-            preferences.getLong("generation_$key", -1),
-            preferences.getLong("import_generation_$key", -1),
-            token,
-        )
+    override fun load(): HealthConnectCursor? = preferences.getString(KEY_TOKEN, null)?.let(::HealthConnectCursor)
+
+    override fun save(cursor: HealthConnectCursor) {
+        preferences.edit(commit = true) { putString(KEY_TOKEN, cursor.token) }
     }
 
-    override fun isCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean = currentStateMatches(connection, credentialState)
+    override fun clear() {
+        preferences.edit(commit = true) { remove(KEY_TOKEN) }
+    }
 
-    override fun saveIfCurrent(
-        cursor: HealthConnectCursor,
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean = AndroidStateCoordinator.write {
-        if (!currentStateMatches(connection, credentialState)) return@write false
+    override fun needsAttention(): Boolean = preferences.getBoolean(KEY_ATTENTION, false)
+
+    override fun markNeedsAttention() {
+        preferences.edit(commit = true) { putBoolean(KEY_ATTENTION, true) }
+    }
+
+    override fun clearNeedsAttention() {
+        preferences.edit(commit = true) { remove(KEY_ATTENTION) }
+    }
+
+    fun clearAll() {
         preferences.edit(commit = true) {
-            putString("token_$key", cursor.token)
-            putString("origin_$key", cursor.origin)
-            putString("device_$key", cursor.deviceId)
-            putLong("generation_$key", cursor.credentialGeneration)
-            putLong("import_generation_$key", cursor.importGeneration)
-        }
-        true
-    }
-
-    override fun clear() = AndroidStateCoordinator.write {
-        preferences.edit(commit = true) { remove("token_$key") }
-    }
-
-    fun clearAll() = AndroidStateCoordinator.write {
-        preferences.edit(commit = true) {
-            remove("token_$key")
-            remove("attention_$key")
+            remove(KEY_TOKEN)
+            remove(KEY_ATTENTION)
         }
     }
 
-    override fun clearIfCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean = AndroidStateCoordinator.write {
-        if (!currentStateMatches(connection, credentialState)) return@write false
-        preferences.edit(commit = true) { remove("token_$key") }
-        true
+    private companion object {
+        const val KEY_TOKEN = "change_token"
+        const val KEY_ATTENTION = "needs_attention"
     }
-
-    override fun needsAttention(): Boolean = preferences.getBoolean("attention_$key", false)
-
-    override fun markNeedsAttentionIfCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean = setAttentionIfCurrent(true, connection, credentialState)
-
-    override fun clearNeedsAttentionIfCurrent(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean = setAttentionIfCurrent(false, connection, credentialState)
-
-    private fun setAttentionIfCurrent(
-        needsAttention: Boolean,
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean = AndroidStateCoordinator.write {
-        if (!currentStateMatches(connection, credentialState)) return@write false
-        preferences.edit(commit = true) {
-            if (needsAttention) putBoolean("attention_$key", true) else remove("attention_$key")
-        }
-        true
-    }
-
-    private fun currentStateMatches(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): Boolean =
-        connection.origin == origin &&
-            serverStore.isCurrent(connection) &&
-            credentialStore.isCurrent(credentialState)
 }
 
 internal sealed interface HealthSyncResult {
@@ -449,213 +383,130 @@ internal sealed interface HealthSyncResult {
     data object PermissionRequired : HealthSyncResult
     data object Unavailable : HealthSyncResult
     data object UpdateRequired : HealthSyncResult
-    data object PairingRequired : HealthSyncResult
     data object Retryable : HealthSyncResult
     data object NeedsAttention : HealthSyncResult
 }
 
-internal sealed interface HealthCredentialRefresh {
-    data class Ready(val state: AndroidCredentialState) : HealthCredentialRefresh
-    data object PairingRequired : HealthCredentialRefresh
-    data object Retryable : HealthCredentialRefresh
-}
-
-internal interface HealthCredentialRepository {
-    fun currentIf(expected: AndroidCredentialState): AndroidCredential?
-    fun replace(expected: AndroidCredentialState, credential: AndroidCredential): Boolean
-    fun clear(expected: AndroidCredentialState): Boolean
-    fun snapshot(): AndroidCredentialState
-}
-
-internal class AndroidHealthCredentialRepository(private val store: AndroidCredentialStore) : HealthCredentialRepository {
-    override fun currentIf(expected: AndroidCredentialState): AndroidCredential? =
-        store.useIfCurrent(expected) { it }
-    override fun replace(expected: AndroidCredentialState, credential: AndroidCredential): Boolean =
-        store.replace(expected, credential)
-    override fun clear(expected: AndroidCredentialState): Boolean = store.clearIfCurrent(expected)
-    override fun snapshot(): AndroidCredentialState = store.snapshot()
-}
-
-/** Refresh server generation before every sync so a server-side erase cannot be replayed locally. */
-internal fun refreshHealthCredential(
-    store: HealthCredentialRepository,
-    expected: AndroidCredentialState,
-    cursor: HealthConnectCursorRepository,
-    status: (AndroidCredential) -> DeviceStatusApiResult,
-): HealthCredentialRefresh {
-    val credential = store.currentIf(expected) ?: return HealthCredentialRefresh.Retryable
-    return when (val result = status(credential)) {
-        is DeviceStatusApiResult.Connected -> {
-            if (result.importGeneration == credential.importGeneration) {
-                HealthCredentialRefresh.Ready(expected)
-            } else if (store.replace(expected, credential.copy(importGeneration = result.importGeneration))) {
-                cursor.clear()
-                HealthCredentialRefresh.Ready(store.snapshot())
-            } else {
-                HealthCredentialRefresh.Retryable
-            }
-        }
-        DeviceStatusApiResult.Unauthorized -> {
-            if (store.clear(expected)) {
-                cursor.clear()
-                HealthCredentialRefresh.PairingRequired
-            } else {
-                HealthCredentialRefresh.Retryable
-            }
-        }
-        DeviceStatusApiResult.Retryable -> HealthCredentialRefresh.Retryable
-    }
-}
-
+/**
+ * Acquires running observations from Health Connect and persists each locally. The cursor advances
+ * only after every observation in a page is committed, so reruns are intentionally idempotent.
+ */
 internal class HealthConnectSyncCoordinator(
     private val gateway: HealthConnectGateway,
-    private val send: (AndroidCredential, HealthConnectRequestPayload) -> HealthConnectApiResult,
     private val cursor: HealthConnectCursorRepository,
+    private val reconcile: suspend (provider: String, observation: HealthConnectObservation) -> LocalHealthConnectPersistenceResult,
+    private val now: () -> Instant = Instant::now,
 ) {
-    private fun sendBatches(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-        credential: AndroidCredential,
-        upserts: List<HealthConnectRun>,
-        deletes: List<String>,
-    ): HealthSyncResult? {
-        var pendingUpserts = mutableListOf<HealthConnectRun>()
-        var pendingDeletes = mutableListOf<String>()
-        var pendingPayload: HealthConnectRequestPayload? = null
-
-        fun terminal(): HealthSyncResult =
-            if (cursor.markNeedsAttentionIfCurrent(connection, credentialState)) {
-                HealthSyncResult.NeedsAttention
-            } else {
-                HealthSyncResult.Retryable
-            }
-
-        fun deliverPending(): HealthSyncResult? {
-            val payload = pendingPayload ?: return null
-            if (!cursor.isCurrent(connection, credentialState)) return HealthSyncResult.Retryable
-            return when (send(credential, payload)) {
-                HealthConnectApiResult.Accepted -> {
-                    pendingUpserts = mutableListOf()
-                    pendingDeletes = mutableListOf()
-                    pendingPayload = null
-                    null
-                }
-                HealthConnectApiResult.Unauthorized -> HealthSyncResult.PairingRequired
-                HealthConnectApiResult.Retryable -> HealthSyncResult.Retryable
-                HealthConnectApiResult.Rejected -> terminal()
-            }
-        }
-
-        fun add(upsert: HealthConnectRun?, delete: String?): HealthSyncResult? {
-            val candidateUpserts = if (upsert == null) pendingUpserts else (pendingUpserts + upsert)
-            val candidateDeletes = if (delete == null) pendingDeletes else (pendingDeletes + delete)
-            val candidate = when (
-                val serialized = HealthConnectPayloadSerializer.serialize(candidateUpserts, candidateDeletes)
-            ) {
-                is HealthConnectPayloadResult.Prepared -> serialized.payload
-                HealthConnectPayloadResult.Invalid -> return terminal()
-            }
-            if (
-                candidate.changeCount <= MAX_CHANGES_PER_REQUEST &&
-                candidate.bytes.size <= MAX_HEALTH_CONNECT_PAYLOAD_BYTES
-            ) {
-                pendingUpserts = candidateUpserts.toMutableList()
-                pendingDeletes = candidateDeletes.toMutableList()
-                pendingPayload = candidate
-                return null
-            }
-            if (pendingPayload != null) {
-                deliverPending()?.let { return it }
-                return add(upsert, delete)
-            }
-            return terminal()
-        }
-
-        for (upsert in upserts) add(upsert, null)?.let { return it }
-        for (delete in deletes) add(null, delete)?.let { return it }
-        return deliverPending()
-    }
-
-    fun sync(connection: ServerConnection, credentialState: AndroidCredentialState): HealthSyncResult {
-        return try {
-            syncProvider(connection, credentialState)
-        } catch (_: SecurityException) {
-            HealthSyncResult.PermissionRequired
-        } catch (_: Exception) {
-            HealthSyncResult.Retryable
-        }
-    }
-
-    private fun syncProvider(
-        connection: ServerConnection,
-        credentialState: AndroidCredentialState,
-    ): HealthSyncResult {
-        if (!cursor.isCurrent(connection, credentialState)) return HealthSyncResult.Retryable
+    suspend fun sync(): HealthSyncResult = try {
         when (gateway.availability()) {
-            HealthConnectAvailability.Unavailable -> return HealthSyncResult.Unavailable
-            HealthConnectAvailability.UpdateRequired -> return HealthSyncResult.UpdateRequired
-            HealthConnectAvailability.Available -> Unit
+            HealthConnectAvailability.Unavailable -> HealthSyncResult.Unavailable
+            HealthConnectAvailability.UpdateRequired -> HealthSyncResult.UpdateRequired
+            HealthConnectAvailability.Available -> syncAvailable()
         }
-        val credential = credentialState.credential ?: return HealthSyncResult.PairingRequired
+    } catch (_: SecurityException) {
+        HealthSyncResult.PermissionRequired
+    } catch (_: Exception) {
+        HealthSyncResult.Retryable
+    }
+
+    private suspend fun syncAvailable(): HealthSyncResult {
         if (!gateway.hasPermissions()) return HealthSyncResult.PermissionRequired
-        val savedCursor = cursor.load()?.takeIf {
-            it.origin == connection.origin && it.deviceId == credential.deviceId &&
-                it.credentialGeneration == credentialState.generation
-                && it.importGeneration == credential.importGeneration
-        }
         var resetAttempted = false
-        var current = savedCursor ?: run {
-            // Capture first: anything written while the initial 30-day read is in progress is
-            // recovered by the following change-log pass rather than silently missed.
-            val initialToken = gateway.newChangesToken()
-            val initial = gateway.initialRuns(Instant.now().minus(30, ChronoUnit.DAYS))
-            sendBatches(connection, credentialState, credential, initial, emptyList())?.let { return it }
-            val firstCursor = HealthConnectCursor(
-                connection.origin, credential.deviceId, credentialState.generation,
-                credential.importGeneration, initialToken,
-            )
-            if (!cursor.saveIfCurrent(firstCursor, connection, credentialState)) {
-                return HealthSyncResult.Retryable
-            }
-            firstCursor
-        }
+        var current = cursor.load() ?: bootstrap() ?: return HealthSyncResult.NeedsAttention
         while (true) {
             val batch = gateway.changes(current.token)
             if (batch.expired) {
                 if (resetAttempted) return HealthSyncResult.Retryable
                 resetAttempted = true
-                if (!cursor.clearIfCurrent(connection, credentialState)) return HealthSyncResult.Retryable
-                val resetToken = gateway.newChangesToken()
-                val initial = gateway.initialRuns(Instant.now().minus(30, ChronoUnit.DAYS))
-                sendBatches(connection, credentialState, credential, initial, emptyList())?.let { return it }
-                current = current.copy(token = resetToken)
-                if (!cursor.saveIfCurrent(current, connection, credentialState)) {
-                    return HealthSyncResult.Retryable
-                }
+                cursor.clear()
+                current = bootstrap() ?: return HealthSyncResult.NeedsAttention
                 continue
             }
-            // Metric records have no session foreign key. Re-reading the bounded initial window
-            // is intentionally conservative: it turns metric-only edits into an idempotent
-            // session upsert instead of silently leaving a stale summary.
-            if (batch.metricChanged) {
-                val initial = gateway.initialRuns(Instant.now().minus(30, ChronoUnit.DAYS))
-                sendBatches(connection, credentialState, credential, initial, emptyList())?.let { return it }
+            // Metric records have no session foreign key. Re-read the bounded window so a metric
+            // edit becomes an idempotent local session upsert rather than stale derived data.
+            if (batch.metricChanged && !persist(batch = gateway.initialRuns(now().minus(30, ChronoUnit.DAYS)))) {
+                return HealthSyncResult.NeedsAttention
             }
-            sendBatches(connection, credentialState, credential, batch.upserts, batch.deletes)?.let { return it }
-            current = current.copy(token = batch.nextToken)
-            if (!cursor.saveIfCurrent(current, connection, credentialState)) {
-                return HealthSyncResult.Retryable
-            }
+            if (!persist(batch.upserts) || !persistDeletes(batch.deletes)) return HealthSyncResult.NeedsAttention
+            current = HealthConnectCursor(batch.nextToken)
+            cursor.save(current)
             if (!batch.hasMore) break
         }
-        if (!cursor.clearNeedsAttentionIfCurrent(connection, credentialState)) {
-            return HealthSyncResult.Retryable
-        }
+        cursor.clearNeedsAttention()
         return HealthSyncResult.Synced
     }
 
+    private suspend fun bootstrap(): HealthConnectCursor? {
+        // Capture first: sessions written during the 30-day read are recovered by the following
+        // change-log pass rather than being silently missed.
+        val token = gateway.newChangesToken()
+        if (!persist(gateway.initialRuns(now().minus(30, ChronoUnit.DAYS)))) return null
+        return HealthConnectCursor(token).also(cursor::save)
+    }
+
+    private suspend fun persist(batch: List<HealthConnectRun>): Boolean {
+        for (run in batch) {
+            val accepted = runCatching {
+                reconcile(HEALTH_CONNECT_PROVIDER, run.toObservation())
+            }.getOrNull() is LocalHealthConnectPersistenceResult.Applied
+            if (!accepted) {
+                cursor.markNeedsAttention()
+                return false
+            }
+        }
+        return true
+    }
+
+    private suspend fun persistDeletes(recordIds: List<String>): Boolean {
+        for (recordId in recordIds) {
+            val accepted = reconcile(
+                HEALTH_CONNECT_PROVIDER,
+                HealthConnectObservation.Deleted(recordId, now().toEpochMilli()),
+            ) is LocalHealthConnectPersistenceResult.Applied
+            if (!accepted) {
+                cursor.markNeedsAttention()
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun HealthConnectRun.toObservation(): HealthConnectObservation.RunningUpsert {
+        val durationSeconds = ((endEpochMs - startEpochMs) / 1_000).toInt()
+        require(durationSeconds > 0) { "Health Connect run duration must be positive." }
+        val distance = distanceMeters?.roundToInt() ?: 0
+        require(distance > 0) { "Health Connect running observations require a positive distance." }
+        return HealthConnectObservation.RunningUpsert(
+            recordId = id,
+            provider = HEALTH_CONNECT_PROVIDER,
+            runningType = runningType,
+            originKey = sourcePackage,
+            originLabel = sourcePackage,
+            startedAtEpochMillis = startEpochMs,
+            durationSeconds = durationSeconds,
+            distanceMeters = distance,
+            averageHeartRateBpm = averageHeartRateBpm?.roundToInt(),
+            maxHeartRateBpm = maxHeartRateBpm?.roundToInt(),
+            // StepsCadenceRecord.Sample.rate is already steps per minute.
+            averageCadenceSpm = averageCadenceSpm?.roundToInt(),
+            elevationGainMeters = elevationGainMeters,
+            averageSpeedMetersPerSecond = averageSpeedMetersPerSecond,
+            heartRate = heartRateSamples.map { LocalHealthConnectHeartRatePoint(it.elapsedSeconds, it.bpm) },
+            heartRateSourceSampleCount = heartRateSourceSampleCount,
+            route = routePoints.map {
+                LocalHealthConnectRoutePoint(
+                    elapsedSeconds = it.elapsedSeconds,
+                    latitudeE6 = it.latitudeE6,
+                    longitudeE6 = it.longitudeE6,
+                    speedMetersPerSecond = it.speedMetersPerSecond,
+                )
+            },
+            routeSourcePointCount = routeSourcePointCount,
+        )
+    }
+
     private companion object {
-        const val MAX_CHANGES_PER_REQUEST = 100
+        const val HEALTH_CONNECT_PROVIDER = "health_connect"
     }
 }
 

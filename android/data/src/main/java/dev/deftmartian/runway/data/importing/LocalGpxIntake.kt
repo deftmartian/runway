@@ -73,7 +73,10 @@ object LocalGpxIntake {
         } catch (error: LocalGpxImportException) {
             throw error
         } catch (_: ByteQuotaExceededException) {
-            throw LocalGpxImportException("GPX file is too large for import.")
+            throw LocalGpxImportException(
+                reason = LocalGpxImportFailure.TOO_LARGE,
+                message = "GPX file is too large for import.",
+            )
         } catch (_: DoctypeRejectedException) {
             throw LocalGpxImportException("GPX files with document type declarations or entities are not supported.")
         } catch (error: SAXException) {
@@ -271,7 +274,12 @@ data class LocalGpxActivity(
 )
 data class LocalRoutePoint(val latitudeE6: Int, val longitudeE6: Int, val elapsedSeconds: Int, val segmentIndex: Int, val speedMetersPerSecond: Double?)
 data class LocalHeartRatePoint(val elapsedSeconds: Int, val bpm: Int)
-class LocalGpxImportException(message: String) : IllegalArgumentException(message)
+enum class LocalGpxImportFailure { INVALID_FILE, TOO_LARGE }
+
+class LocalGpxImportException(
+    message: String,
+    val reason: LocalGpxImportFailure = LocalGpxImportFailure.INVALID_FILE,
+) : IllegalArgumentException(message)
 
 private class ByteQuotaInputStream(input: InputStream, private val limit: Long) : FilterInputStream(input) {
     private var read = 0L

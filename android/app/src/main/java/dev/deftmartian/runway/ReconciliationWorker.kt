@@ -1,341 +1,125 @@
 package dev.deftmartian.runway
 
 import android.content.Context
+import androidx.work.CoroutineWorker
 import androidx.work.Data
-import androidx.work.Worker
 import androidx.work.WorkerParameters
+import dev.deftmartian.runway.data.importing.LocalGpxImportException
+import dev.deftmartian.runway.data.importing.LocalGpxImportFailure
+import dev.deftmartian.runway.data.importing.LocalGpxImportOutcome
 import java.io.IOException
-import java.security.MessageDigest
 
+/**
+ * Scans one persisted SAF folder and commits at most one stable GPX per invocation.
+ *
+ * The local Room ledger owns duplicate and tombstone truth. [FolderImportIndex] only avoids
+ * repeatedly opening unchanged documents and can be discarded without changing product state.
+ */
 class ReconciliationWorker(
     appContext: Context,
     workerParameters: WorkerParameters,
-) : Worker(appContext, workerParameters) {
+) : CoroutineWorker(appContext, workerParameters) {
     private val statusStore = ReconciliationStatusStore(appContext)
-    private var statusGuard: (() -> Boolean)? = null
 
-    override fun doWork(): Result {
-        val serverStore = ServerConnectionStore(applicationContext)
-        val serverConnection = serverStore.currentConnection() ?: run {
-            val handled = serverStore.mutateIfCurrent(null) {
-                ReconciliationScheduler.cancelAll(applicationContext)
-                statusStore.record(STATE_SERVER_REQUIRED)
-                true
-            } == true
-            return successResult(if (handled) STATE_SERVER_REQUIRED else STATE_STALE_CONNECTION)
-        }
-        val origin = serverConnection.origin
-        val credentialStore = AndroidCredentialStore(applicationContext, origin)
-        val credentialState = credentialStore.snapshot()
-        val credential = credentialState.credential ?: run {
-            val handled = serverStore.mutateIfCurrent(serverConnection) {
-                if (!credentialStore.isCurrent(credentialState)) {
-                    false
-                } else {
-                    ReconciliationScheduler.cancelAll(applicationContext)
-                    statusStore.record(STATE_PAIRING_REQUIRED)
-                    true
-                }
-            } == true
-            return successResult(if (handled) STATE_PAIRING_REQUIRED else STATE_STALE_CONNECTION)
-        }
+    override suspend fun doWork(): Result {
         val treeStore = TreeAccessStore(applicationContext)
-        val treeState = treeStore.currentState(serverConnection)
+        val treeState = treeStore.currentState()
         if (treeState !is TreeAccessState.Connected) {
-            val handled = serverStore.mutateIfCurrent(serverConnection) {
-                if (
-                    !credentialStore.isCurrent(credentialState) ||
-                    treeStore.currentState(serverConnection) != treeState
-                ) {
-                    false
-                } else {
-                    ReconciliationScheduler.cancelAll(applicationContext)
-                    statusStore.record(STATE_PERMISSION_REQUIRED)
-                    true
-                }
-            } == true
-            return successResult(if (handled) STATE_PERMISSION_REQUIRED else STATE_STALE_CONNECTION)
+            ReconciliationScheduler.disablePeriodic(applicationContext)
+            return success(STATE_PERMISSION_REQUIRED)
         }
-        val connection = ImportConnectionGeneration.capture(serverConnection, credentialState, treeState)
-        statusGuard = {
-            connection.isCurrent(
-                serverStore.currentConnection(),
-                credentialStore.snapshot(),
-                treeStore.currentState(serverConnection),
-            )
-        }
+
         val scan = SafTreeScanner(applicationContext.contentResolver).scan(treeState)
         if (scan !is TreeScanResult.Success) {
             return when (scan) {
                 TreeScanResult.PermissionRequired -> {
-                    stopAutomationIfCurrent(
-                        serverStore,
-                        serverConnection,
-                        credentialStore,
-                        credentialState,
-                        treeStore,
-                        treeState,
-                        STATE_PERMISSION_REQUIRED,
-                    )
+                    ReconciliationScheduler.disablePeriodic(applicationContext)
+                    success(STATE_PERMISSION_REQUIRED)
                 }
                 TreeScanResult.ProviderError -> success(STATE_PROVIDER_ERROR)
                 is TreeScanResult.Success -> error("unreachable")
             }
         }
 
-        val handledStore = HandledImportStore(applicationContext)
-        val candidates = handledStore
-            .filterPotentiallyUnhandled(credential.deviceId, scan.summary.candidates)
+        if (treeStore.currentState() != treeState) return success(STATE_STALE_FOLDER)
+        val index = FolderImportIndex(applicationContext)
+        val now = System.currentTimeMillis()
+        val candidates = scan.summary.candidates
             .sortedByDescending { it.lastModifiedEpochMs ?: Long.MIN_VALUE }
-        val candidate = candidates.firstOrNull()
-        if (candidate == null) {
-            return success(
-                state = if (scan.summary.truncated) STATE_SCAN_LIMIT else STATE_NO_CANDIDATES,
-                candidateCount = scan.summary.gpxCandidates,
-                truncated = scan.summary.truncated,
-            )
+            .map { it to index.readiness(it, now, FILE_SETTLE_MS) }
+        val ready = candidates.firstOrNull { (_, state) -> state == FolderCandidateReadiness.Ready }
+        if (ready == null) {
+            val settling = candidates.any { (_, state) ->
+                state == FolderCandidateReadiness.WaitingForStableFile
+            }
+            return if (settling) {
+                retry(STATE_SETTLING, candidates.size, scan.summary.truncated)
+            } else {
+                success(
+                    state = if (scan.summary.truncated) STATE_SCAN_LIMIT else STATE_NO_CANDIDATES,
+                    candidateCount = scan.summary.gpxCandidates,
+                    truncated = scan.summary.truncated,
+                )
+            }
         }
 
-        if (isStopped) return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
-
-        var oversized = false
-        var bytes = ByteArray(0)
-        val contentSha256 = try {
-            bytes = applicationContext.contentResolver.openInputStream(candidate.uri)?.use {
-                BoundedStreamInspector.readBytes(it, GpxCandidatePolicy.MAX_FILE_BYTES)
+        val candidate = ready.first
+        val outcome = try {
+            applicationContext.contentResolver.openInputStream(candidate.uri)?.use { input ->
+                applicationContext.runwayServices.gpxImports.import(input)
             } ?: return success(STATE_PROVIDER_ERROR)
-            sha256(bytes)
-        } catch (error: PayloadTooLargeException) {
-            oversized = true
-            error.observedPrefixSha256 ?: return retry(
-                STATE_RETRYING,
-                candidates.size,
-                scan.summary.truncated,
-            )
         } catch (_: SecurityException) {
-            return stopAutomationIfCurrent(
-                serverStore,
-                serverConnection,
-                credentialStore,
-                credentialState,
-                treeStore,
-                treeState,
-                STATE_PERMISSION_REQUIRED,
-            )
+            ReconciliationScheduler.disablePeriodic(applicationContext)
+            return success(STATE_PERMISSION_REQUIRED)
         } catch (_: IOException) {
             return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
+        } catch (error: LocalGpxImportException) {
+            index.markHandled(candidate)
+            return terminal(
+                state = if (error.reason == LocalGpxImportFailure.TOO_LARGE) {
+                    STATE_TOO_LARGE
+                } else {
+                    STATE_INVALID
+                },
+                remainingCandidates = candidates.count { (_, state) ->
+                    state != FolderCandidateReadiness.AlreadyHandled
+                } - 1,
+                summary = scan.summary,
+            )
         } catch (_: RuntimeException) {
-            return success(STATE_PROVIDER_ERROR)
+            return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
         }
 
-        if (
-            !connection.isCurrent(
-                serverStore.currentConnection(),
-                credentialStore.snapshot(),
-                treeStore.currentState(serverConnection),
-            )
-        ) {
-            return success(STATE_STALE_CONNECTION)
-        }
-        val stability = mutateIfCurrent(
-            serverStore,
-            serverConnection,
-            credentialStore,
-            credentialState,
-            treeStore,
-            treeState,
-        ) {
-            handledStore.observeContent(
-                deviceId = credential.deviceId,
-                uri = candidate.uri,
-                contentSha256 = contentSha256,
-                nowEpochMs = System.currentTimeMillis(),
-                settleDurationMs = FILE_SETTLE_MS,
-            )
-        } ?: return success(STATE_STALE_CONNECTION)
-        when (stability) {
-            CandidateStability.Waiting -> return retry(
-                STATE_SETTLING,
-                candidates.size,
-                scan.summary.truncated,
-            )
-            CandidateStability.StableHandled -> {
-                return mutateIfCurrent(
-                    serverStore,
-                    serverConnection,
-                    credentialStore,
-                    credentialState,
-                    treeStore,
-                    treeState,
-                ) {
-                    handledStore.markHandled(credential.deviceId, candidate, contentSha256)
-                    terminal(
-                        state = STATE_DUPLICATE,
-                        remainingCandidates = candidates.size - 1,
-                        summary = scan.summary,
-                    )
-                } ?: success(STATE_STALE_CONNECTION)
+        // The import itself remains useful if the folder changed while the stream was open, but an
+        // old worker must not update the new folder's accelerator or visible status.
+        if (treeStore.currentState() != treeState) return success(STATE_STALE_FOLDER)
+        return when (outcome) {
+            is LocalGpxImportOutcome.Imported -> {
+                index.markHandled(candidate)
+                terminal(STATE_IMPORTED, remaining(candidates), scan.summary)
             }
-            CandidateStability.StableUnhandled -> Unit
-        }
-
-        if (oversized) {
-            return mutateIfCurrent(
-                serverStore,
-                serverConnection,
-                credentialStore,
-                credentialState,
-                treeStore,
-                treeState,
-            ) {
-                handledStore.markHandled(credential.deviceId, candidate, contentSha256)
-                terminal(
-                    state = STATE_QUARANTINED,
-                    remainingCandidates = candidates.size - 1,
-                    summary = scan.summary,
-                )
-            } ?: success(STATE_STALE_CONNECTION)
-        }
-
-        if (isStopped) return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
-        val requestId = mutateIfCurrent(
-            serverStore,
-            serverConnection,
-            credentialStore,
-            credentialState,
-            treeStore,
-            treeState,
-        ) {
-            handledStore.requestIdFor(credential.deviceId, contentSha256)
-        } ?: return success(STATE_STALE_CONNECTION)
-        if (
-            !connection.isCurrent(
-                serverStore.currentConnection(),
-                credentialStore.snapshot(),
-                treeStore.currentState(serverConnection),
-            ) || isStopped
-        ) {
-            return success(STATE_STALE_CONNECTION)
-        }
-        val imported = credentialStore.useIfCurrent(credentialState) { current ->
-            if (
-                !connection.isCurrent(
-                    serverStore.currentConnection(),
-                    credentialStore.snapshot(),
-                    treeStore.currentState(serverConnection),
-                ) || isStopped
-            ) {
-                return@useIfCurrent null
+            is LocalGpxImportOutcome.Duplicate -> {
+                index.markHandled(candidate)
+                terminal(STATE_DUPLICATE, remaining(candidates), scan.summary)
             }
-            RunwayApiClient(origin).importGpx(current, bytes, requestId)
-        } ?: return success(STATE_STALE_CONNECTION)
-        if (
-            !connection.isCurrent(
-                serverStore.currentConnection(),
-                credentialStore.snapshot(),
-                treeStore.currentState(serverConnection),
-            )
-        ) {
-            return success(STATE_STALE_CONNECTION)
-        }
-        return when (imported) {
-            is ImportApiResult.Handled -> {
-                mutateIfCurrent(
-                    serverStore,
-                    serverConnection,
-                    credentialStore,
-                    credentialState,
-                    treeStore,
-                    treeState,
-                ) {
-                    handledStore.markHandled(credential.deviceId, candidate, contentSha256)
-                    terminal(
-                        state = when (imported.result) {
-                            "imported" -> STATE_IMPORTED
-                            "duplicate" -> STATE_DUPLICATE
-                            else -> STATE_QUARANTINED
-                        },
-                        remainingCandidates = candidates.size - 1,
-                        summary = scan.summary,
-                    )
-                } ?: success(STATE_STALE_CONNECTION)
+            LocalGpxImportOutcome.Tombstoned -> {
+                index.markHandled(candidate)
+                terminal(STATE_DELETED_PREVIOUSLY, remaining(candidates), scan.summary)
             }
-            ImportApiResult.Unauthorized -> {
-                val cleared = serverStore.mutateIfCurrent(serverConnection) {
-                    if (!credentialStore.clearIfCurrent(credentialState)) {
-                        false
-                    } else {
-                        handledStore.clearForDevice(credential.deviceId)
-                        ReconciliationScheduler.cancelAll(applicationContext)
-                        statusStore.record(STATE_PAIRING_REQUIRED)
-                        true
-                    }
-                } == true
-                successResult(if (cleared) STATE_PAIRING_REQUIRED else STATE_STALE_CONNECTION)
+            LocalGpxImportOutcome.FutureActivity -> {
+                index.markHandled(candidate)
+                terminal(STATE_FUTURE_ACTIVITY, remaining(candidates), scan.summary)
             }
-            ImportApiResult.RequestConflict -> {
-                mutateIfCurrent(
-                    serverStore,
-                    serverConnection,
-                    credentialStore,
-                    credentialState,
-                    treeStore,
-                    treeState,
-                ) {
-                    handledStore.clearPendingRequest(credential.deviceId, contentSha256)
-                    retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
-                } ?: success(STATE_STALE_CONNECTION)
-            }
-            ImportApiResult.Retryable -> retry(
-                STATE_RETRYING,
-                candidates.size,
-                scan.summary.truncated,
-            )
+            LocalGpxImportOutcome.ConfigurationRequired ->
+                success(STATE_SETUP_REQUIRED, scan.summary.gpxCandidates, scan.summary.truncated)
         }
     }
 
-    private fun <T> mutateIfCurrent(
-        serverStore: ServerConnectionStore,
-        serverConnection: ServerConnection,
-        credentialStore: AndroidCredentialStore,
-        credentialState: AndroidCredentialState,
-        treeStore: TreeAccessStore,
-        treeState: TreeAccessState.Connected,
-        block: () -> T,
-    ): T? = serverStore.mutateIfCurrent(serverConnection) {
-        if (
-            !credentialStore.isCurrent(credentialState) ||
-            treeStore.currentState(serverConnection) != treeState
-        ) {
-            null
-        } else {
-            block()
-        }
-    }
-
-    private fun stopAutomationIfCurrent(
-        serverStore: ServerConnectionStore,
-        serverConnection: ServerConnection,
-        credentialStore: AndroidCredentialStore,
-        credentialState: AndroidCredentialState,
-        treeStore: TreeAccessStore,
-        treeState: TreeAccessState.Connected,
-        state: String,
-    ): Result {
-        val handled = mutateIfCurrent(
-            serverStore,
-            serverConnection,
-            credentialStore,
-            credentialState,
-            treeStore,
-            treeState,
-        ) {
-            ReconciliationScheduler.cancelAll(applicationContext)
-            statusStore.record(state)
-            true
-        } == true
-        return successResult(if (handled) state else STATE_STALE_CONNECTION)
-    }
+    private fun remaining(
+        candidates: List<Pair<GpxTreeCandidate, FolderCandidateReadiness>>,
+    ): Int = (candidates.count { (_, state) ->
+        state != FolderCandidateReadiness.AlreadyHandled
+    } - 1).coerceAtLeast(0)
 
     private fun terminal(
         state: String,
@@ -357,7 +141,7 @@ class ReconciliationWorker(
     }
 
     private fun retry(state: String, backlog: Int, truncated: Boolean): Result {
-        recordStatus(state, backlog, truncated)
+        statusStore.record(state, backlog, truncated)
         return Result.retry()
     }
 
@@ -367,16 +151,8 @@ class ReconciliationWorker(
         truncated: Boolean = false,
         backlog: Int = 0,
     ): Result {
-        recordStatus(state, backlog, truncated)
-        return successResult(state, candidateCount, truncated, backlog)
-    }
-
-    private fun successResult(
-        state: String,
-        candidateCount: Int = 0,
-        truncated: Boolean = false,
-        backlog: Int = 0,
-    ): Result = Result.success(
+        statusStore.record(state, backlog, truncated)
+        return Result.success(
             Data.Builder()
                 .putString(OUTPUT_STATE, state)
                 .putInt(OUTPUT_CANDIDATE_COUNT, candidateCount)
@@ -384,16 +160,7 @@ class ReconciliationWorker(
                 .putInt(OUTPUT_BACKLOG, backlog)
                 .build(),
         )
-
-    private fun recordStatus(state: String, backlog: Int, truncated: Boolean) {
-        AndroidStateCoordinator.read {
-            if (statusGuard?.invoke() != false) statusStore.record(state, backlog, truncated)
-        }
     }
-
-    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(bytes)
-        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     companion object {
         const val INPUT_DRAIN_WORKERS = "drain_workers"
@@ -403,16 +170,18 @@ class ReconciliationWorker(
         const val OUTPUT_BACKLOG = "backlog"
         const val STATE_IMPORTED = "imported"
         const val STATE_DUPLICATE = "duplicate"
-        const val STATE_QUARANTINED = "quarantined"
+        const val STATE_DELETED_PREVIOUSLY = "deleted_previously"
+        const val STATE_INVALID = "invalid"
+        const val STATE_TOO_LARGE = "too_large"
+        const val STATE_FUTURE_ACTIVITY = "future_activity"
         const val STATE_NO_CANDIDATES = "no_candidates"
-        const val STATE_PAIRING_REQUIRED = "pairing_required"
+        const val STATE_SETUP_REQUIRED = "setup_required"
         const val STATE_PERMISSION_REQUIRED = "permission_required"
         const val STATE_PROVIDER_ERROR = "provider_error"
         const val STATE_SCAN_LIMIT = "scan_limit"
         const val STATE_SETTLING = "settling"
         const val STATE_RETRYING = "retrying"
-        const val STATE_STALE_CONNECTION = "stale_connection"
-        const val STATE_SERVER_REQUIRED = "server_required"
+        const val STATE_STALE_FOLDER = "stale_folder"
         const val FILE_SETTLE_MS = 30_000L
     }
 }

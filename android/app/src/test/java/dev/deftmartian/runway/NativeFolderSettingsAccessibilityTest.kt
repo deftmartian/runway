@@ -6,12 +6,16 @@ import org.junit.Test
 
 class NativeFolderSettingsAccessibilityTest {
     @Test
-    fun `compose setup state keeps the health connect action unavailable until permission is known`() {
-        val pending = NativeImportSetupUiState()
-        val ready = pending.copy(showHealthSync = true, healthSyncActionEnabled = true)
+    fun `compose setup state distinguishes unavailable permission and ready health connect`() {
+        val pending = NativeImportSettingsUiState()
+        val ready = pending.copy(
+            healthAvailable = true,
+            healthPermissionsGranted = true,
+        )
 
-        assertFalse(pending.healthSyncActionEnabled)
-        assertTrue(ready.showHealthSync)
-        assertTrue(ready.healthSyncActionEnabled)
+        assertFalse(pending.healthAvailable)
+        assertFalse(pending.healthPermissionsGranted)
+        assertTrue(ready.healthAvailable)
+        assertTrue(ready.healthPermissionsGranted)
     }
 }
