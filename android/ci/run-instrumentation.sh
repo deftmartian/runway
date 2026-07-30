@@ -7,6 +7,20 @@ run_bounded() {
   python3 android/ci/run-with-timeout.py "$@"
 }
 
+report_instrumentation_failure() {
+  local title="$1"
+  local output_file="$2"
+  local reason="$3"
+  local output_tail
+  output_tail="$(
+    tail -n 24 "$output_file" |
+      tr '\r\n' '  ' |
+      cut -c 1-1800 |
+      sed 's/%/%25/g'
+  )"
+  echo "::error title=$title::$reason Output: $output_tail"
+}
+
 collect_diagnostics() {
   status="$?"
   if [ "$status" -ne 0 ]; then
@@ -41,18 +55,26 @@ if [ "$app_status" -ne 0 ]; then
   echo "::error title=App instrumentation failed::Runner exited with status $app_status."
   exit "$app_status"
 fi
-if grep -Eq \
-  'FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation' \
-  "$RUNNER_TEMP/app-instrumentation.txt"
-then
-  echo "::error title=App instrumentation failed::Runner output contained a failure marker."
+failure_pattern='FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation'
+app_failure_marker="$(
+  grep -Eo "$failure_pattern" "$RUNNER_TEMP/app-instrumentation.txt" |
+    head -n 1 ||
+    true
+)"
+if [ -n "$app_failure_marker" ]; then
+  report_instrumentation_failure \
+    "App instrumentation failed" \
+    "$RUNNER_TEMP/app-instrumentation.txt" \
+    "Runner output contained $app_failure_marker."
   exit 1
 fi
 if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' \
   "$RUNNER_TEMP/app-instrumentation.txt"
 then
-  tail -n 40 "$RUNNER_TEMP/app-instrumentation.txt" >&2
-  echo "::error title=App instrumentation failed::Runner output did not contain a success marker."
+  report_instrumentation_failure \
+    "App instrumentation failed" \
+    "$RUNNER_TEMP/app-instrumentation.txt" \
+    "Runner output did not contain a success marker."
   exit 1
 fi
 
@@ -69,17 +91,24 @@ if [ "$data_status" -ne 0 ]; then
   echo "::error title=Data instrumentation failed::Runner exited with status $data_status."
   exit "$data_status"
 fi
-if grep -Eq \
-  'FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation' \
-  "$RUNNER_TEMP/data-instrumentation.txt"
-then
-  echo "::error title=Data instrumentation failed::Runner output contained a failure marker."
+data_failure_marker="$(
+  grep -Eo "$failure_pattern" "$RUNNER_TEMP/data-instrumentation.txt" |
+    head -n 1 ||
+    true
+)"
+if [ -n "$data_failure_marker" ]; then
+  report_instrumentation_failure \
+    "Data instrumentation failed" \
+    "$RUNNER_TEMP/data-instrumentation.txt" \
+    "Runner output contained $data_failure_marker."
   exit 1
 fi
 if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' \
   "$RUNNER_TEMP/data-instrumentation.txt"
 then
-  tail -n 40 "$RUNNER_TEMP/data-instrumentation.txt" >&2
-  echo "::error title=Data instrumentation failed::Runner output did not contain a success marker."
+  report_instrumentation_failure \
+    "Data instrumentation failed" \
+    "$RUNNER_TEMP/data-instrumentation.txt" \
+    "Runner output did not contain a success marker."
   exit 1
 fi
