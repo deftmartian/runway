@@ -1,0 +1,4 @@
+No feature changes.
+
+- Republish the standalone Android cutover after strengthening the hosted device gate.
+- Require hardware acceleration so an unsuitable CI host fails before running app tests.
