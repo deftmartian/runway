@@ -66,6 +66,14 @@ run_bounded 120 adb -s "$serial" install -r -t \
 run_bounded 120 adb -s "$serial" install -r -t \
   android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
+# Hosted emulators can spend long enough compiling Compose and test dex on first process start to
+# trigger Android's startup ANR before AndroidJUnitRunner reaches a test. Compile the installed
+# packages up front; the device tests still execute the production APK and fail on test errors.
+run_bounded 180 adb -s "$serial" shell cmd package compile \
+  -m speed -f dev.deftmartian.runway.debug
+run_bounded 180 adb -s "$serial" shell cmd package compile \
+  -m speed -f dev.deftmartian.runway.debug.test
+
 set +e
 run_bounded 300 adb -s "$serial" shell am instrument -w -r \
   -e class "$app_test_classes" \
@@ -102,6 +110,8 @@ fi
 
 run_bounded 120 adb -s "$serial" install -r -t \
   android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
+run_bounded 180 adb -s "$serial" shell cmd package compile \
+  -m speed -f dev.deftmartian.runway.data.test
 
 set +e
 run_bounded 300 adb -s "$serial" shell am instrument -w -r \
