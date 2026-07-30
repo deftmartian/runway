@@ -71,6 +71,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Current and past training plans.").assertIsDisplayed()
 
         selectSurface("Settings")
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Privacy"))
         compose.onNodeWithText("Privacy").assertIsDisplayed()
         compose.onNodeWithText("Heart-rate privacy").performClick()
         compose.onNodeWithText("Discard imported heart-rate values").performClick()
