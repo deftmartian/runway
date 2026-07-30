@@ -9,6 +9,29 @@ run_bounded() {
   python3 android/ci/run-with-timeout.py "$@"
 }
 
+compile_package() {
+  local package_name="$1"
+  local output_file="$RUNNER_TEMP/package-compile-${package_name//./-}.txt"
+  local compile_status
+
+  set +e
+  run_bounded 180 adb -s "$serial" shell cmd package compile \
+    -m speed -f "$package_name" 2>&1 | tee "$output_file"
+  compile_status="${PIPESTATUS[0]}"
+  set -e
+  if [ "$compile_status" -ne 0 ]; then
+    local output_tail
+    output_tail="$(
+      tail -n 12 "$output_file" |
+        tr '\r\n' '  ' |
+        cut -c 1-1800 |
+        sed 's/%/%25/g'
+    )"
+    echo "::error title=Package compilation failed::$package_name exited with status $compile_status. Output: $output_tail"
+    return "$compile_status"
+  fi
+}
+
 report_instrumentation_failure() {
   local title="$1"
   local output_file="$2"
@@ -69,10 +92,8 @@ run_bounded 120 adb -s "$serial" install -r -t \
 # Hosted emulators can spend long enough compiling Compose and test dex on first process start to
 # trigger Android's startup ANR before AndroidJUnitRunner reaches a test. Compile the installed
 # packages up front; the device tests still execute the production APK and fail on test errors.
-run_bounded 180 adb -s "$serial" shell cmd package compile \
-  -m speed -f dev.deftmartian.runway.debug
-run_bounded 180 adb -s "$serial" shell cmd package compile \
-  -m speed -f dev.deftmartian.runway.debug.test
+compile_package dev.deftmartian.runway.debug
+compile_package dev.deftmartian.runway.debug.test
 
 set +e
 run_bounded 300 adb -s "$serial" shell am instrument -w -r \
@@ -110,8 +131,7 @@ fi
 
 run_bounded 120 adb -s "$serial" install -r -t \
   android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
-run_bounded 180 adb -s "$serial" shell cmd package compile \
-  -m speed -f dev.deftmartian.runway.data.test
+compile_package dev.deftmartian.runway.data.test
 
 set +e
 run_bounded 300 adb -s "$serial" shell am instrument -w -r \

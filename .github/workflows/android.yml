@@ -140,6 +140,7 @@ jobs:
             ${{ runner.temp }}/emulator-last-anr.txt
             ${{ runner.temp }}/emulator-logcat.txt
             ${{ runner.temp }}/emulator-packages.txt
+            ${{ runner.temp }}/package-compile-*.txt
             ${{ runner.temp }}/app-instrumentation.txt
             ${{ runner.temp }}/data-instrumentation.txt
             android/**/build/reports/androidTests/
