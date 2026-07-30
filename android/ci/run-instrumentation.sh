@@ -3,6 +3,10 @@ set -euo pipefail
 
 serial="emulator-${EMULATOR_PORT:-5554}"
 
+run_bounded() {
+  python3 android/ci/run-with-timeout.py "$@"
+}
+
 collect_diagnostics() {
   status="$?"
   if [ "$status" -ne 0 ]; then
@@ -19,16 +23,16 @@ for package_name in \
   dev.deftmartian.runway.debug.test \
   dev.deftmartian.runway.data.test
 do
-  timeout 30s adb -s "$serial" uninstall "$package_name" >/dev/null 2>&1 || true
+  run_bounded 30 adb -s "$serial" uninstall "$package_name" >/dev/null 2>&1 || true
 done
 
-timeout 2m adb -s "$serial" install -r -t \
+run_bounded 120 adb -s "$serial" install -r -t \
   android/app/build/outputs/apk/debug/app-debug.apk
-timeout 2m adb -s "$serial" install -r -t \
+run_bounded 120 adb -s "$serial" install -r -t \
   android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 set +e
-timeout 5m adb -s "$serial" shell am instrument -w -r \
+run_bounded 300 adb -s "$serial" shell am instrument -w -r \
   dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner \
   2>&1 | tee "$RUNNER_TEMP/app-instrumentation.txt"
 app_status="${PIPESTATUS[0]}"
@@ -48,11 +52,11 @@ then
   exit 1
 fi
 
-timeout 2m adb -s "$serial" install -r -t \
+run_bounded 120 adb -s "$serial" install -r -t \
   android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
 
 set +e
-timeout 5m adb -s "$serial" shell am instrument -w -r \
+run_bounded 300 adb -s "$serial" shell am instrument -w -r \
   dev.deftmartian.runway.data.test/androidx.test.runner.AndroidJUnitRunner \
   2>&1 | tee "$RUNNER_TEMP/data-instrumentation.txt"
 data_status="${PIPESTATUS[0]}"
