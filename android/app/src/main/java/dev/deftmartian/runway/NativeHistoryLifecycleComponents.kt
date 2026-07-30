@@ -53,6 +53,29 @@ internal fun PhaseCompletionDecision(
                 ).joinToString(" · "),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            racePlan.risk?.let {
+                SettingRow("Ramp assessment", it.replaceFirstChar(Char::uppercase))
+            }
+            racePlan.summary?.let { summary ->
+                SettingRow(
+                    "Starting week",
+                    summary.baselineMeters?.let(::formatDistance).orDash(),
+                )
+                SettingRow(
+                    "Peak week",
+                    summary.peakMeters?.let(::formatDistance).orDash(),
+                )
+                SettingRow(
+                    "Peak long run",
+                    summary.longRunPeakMeters?.let(::formatDistance).orDash(),
+                )
+                SettingRow(
+                    "Required weekly increase",
+                    summary.requiredWeeklyIncreasePercent
+                        ?.let { "${formatDecimal(it)}%" }
+                        .orDash(),
+                )
+            }
             review.preferredLongRunDay
                 ?.let(dayLabels::getOrNull)
                 ?.let { longRunDay ->
@@ -67,7 +90,7 @@ internal fun PhaseCompletionDecision(
         }
         if (review.goalKind == "race" && !lifecycle.canConfirmBaseline) {
             Notice(
-                "The recorded work does not support the retained race ramp yet. No baseline will be applied.",
+                "The current goal, date, and recorded work do not produce a supported race phase yet. No baseline will be applied.",
             )
         }
         if (lifecycle.canConfirmBaseline) {

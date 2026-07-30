@@ -7,12 +7,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.contracts.ExerciseRouteRequestContract
 import androidx.health.connect.client.records.ExerciseRoute
 import androidx.lifecycle.lifecycleScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,40 +91,53 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         }
         setContent {
             RunwayTheme {
-                NativeImportSetupScreen(
-                    state = uiState.value,
-                    onPickOneOffGpx = {
-                        chooseOneOffGpx.launch(
-                            arrayOf(
-                                "application/gpx+xml",
-                                "application/x-gpx+xml",
-                                "application/xml",
-                                "text/xml",
-                                "application/octet-stream",
-                            ),
-                        )
-                    },
-                    onChooseFolder = ::openDirectoryPicker,
-                    onDisconnectFolder = ::disconnectFolder,
-                    onCheckFolder = {
-                        ReconciliationScheduler.runOnce(this)
-                        updateState {
-                            copy(
-                                folderCheckRunning = true,
-                                lastFolderCheck = getString(R.string.last_check_queued),
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.onBackground,
+                ) {
+                    NativeImportSetupScreen(
+                        state = uiState.value,
+                        initialSection = when (intent.action) {
+                            MainActivity.ACTION_OPEN_HEALTH_CONNECT_SETTINGS ->
+                                NativeImportSection.HealthConnect
+                            MainActivity.ACTION_OPEN_FOLDER_SETTINGS ->
+                                NativeImportSection.Folder
+                            else -> NativeImportSection.Overview
+                        },
+                        onPickOneOffGpx = {
+                            chooseOneOffGpx.launch(
+                                arrayOf(
+                                    "application/gpx+xml",
+                                    "application/x-gpx+xml",
+                                    "application/xml",
+                                    "text/xml",
+                                    "application/octet-stream",
+                                ),
                             )
-                        }
-                    },
-                    onTogglePeriodicFolderChecks = ::togglePeriodicFolderChecks,
-                    onHealthPermission = {
-                        updateState { copy(dialog = NativeImportDialog.HealthPermission) }
-                    },
-                    onHealthSync = ::syncHealthConnectForeground,
-                    onToggleHealthBackground = ::toggleHealthBackground,
-                    onReturnToRunway = ::returnToRunway,
-                    onDismissDialog = { updateState { copy(dialog = NativeImportDialog.None) } },
-                    onConfirmDialog = ::confirmDialog,
-                )
+                        },
+                        onChooseFolder = ::openDirectoryPicker,
+                        onDisconnectFolder = ::disconnectFolder,
+                        onCheckFolder = {
+                            ReconciliationScheduler.runOnce(this)
+                            updateState {
+                                copy(
+                                    folderCheckRunning = true,
+                                    lastFolderCheck = getString(R.string.last_check_queued),
+                                )
+                            }
+                        },
+                        onTogglePeriodicFolderChecks = ::togglePeriodicFolderChecks,
+                        onHealthPermission = {
+                            updateState { copy(dialog = NativeImportDialog.HealthPermission) }
+                        },
+                        onHealthSync = ::syncHealthConnectForeground,
+                        onToggleHealthBackground = ::toggleHealthBackground,
+                        onReturnToRunway = ::returnToRunway,
+                        onDismissDialog = { updateState { copy(dialog = NativeImportDialog.None) } },
+                        onConfirmDialog = ::confirmDialog,
+                    )
+                }
             }
         }
         observeWork()
@@ -146,8 +164,11 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     }
 
     private fun disconnectFolder() {
-        treeAccess.disconnect()
-        refreshAll(folderMessage = getString(R.string.folder_disconnected))
+        val message = when (treeAccess.disconnect()) {
+            TreeAccessMutation.Changed -> R.string.folder_disconnected
+            TreeAccessMutation.Failed -> R.string.folder_disconnect_failed
+        }
+        refreshAll(folderMessage = getString(message))
     }
 
     private fun togglePeriodicFolderChecks() {
@@ -190,11 +211,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 routeOverrides = routeOverrides.toMap(),
             )
             val outcome = withContext(Dispatchers.IO) {
-                HealthConnectSyncCoordinator(
-                    gateway = gateway,
-                    cursor = HealthConnectCursorStore(this@NativeFolderSettingsActivity),
-                    reconcile = runwayServices.healthConnect::reconcile,
-                ).sync()
+                AndroidStateCoordinator.withImportDataBoundary {
+                    HealthConnectSyncCoordinator(
+                        gateway = gateway,
+                        cursor = HealthConnectCursorStore(this@NativeFolderSettingsActivity),
+                        reconcile = runwayServices.healthConnect::reconcile,
+                    ).sync()
+                }
             }
             updateState {
                 copy(
@@ -219,9 +242,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         lifecycleScope.launch {
             val gateway = AndroidHealthConnectGateway(this@NativeFolderSettingsActivity)
             val allowed = withContext(Dispatchers.IO) {
-                runCatching {
+                try {
                     gateway.supportsBackgroundRead() && gateway.hasBackgroundPermission()
-                }.getOrDefault(false)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    false
+                }
             }
             if (allowed) {
                 ReconciliationScheduler.enableHealthConnectPeriodic(this@NativeFolderSettingsActivity)
@@ -258,7 +285,13 @@ class NativeFolderSettingsActivity : ComponentActivity() {
             val result = withContext(Dispatchers.IO) {
                 val availability = gateway.availability()
                 val permissions = availability == HealthConnectAvailability.Available &&
-                    runCatching(gateway::hasPermissions).getOrDefault(false)
+                    try {
+                        gateway.hasPermissions()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        false
+                    }
                 val backgroundSupported = availability == HealthConnectAvailability.Available &&
                     runCatching(gateway::supportsBackgroundRead).getOrDefault(false)
                 Triple(availability, permissions, backgroundSupported)

@@ -14,14 +14,25 @@ import java.io.FilterOutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** The only supported local-ledger backup format is a plaintext SQLite database. */
-data class LocalBackupResult(
-    val bytesWritten: Long,
-    val privacyWarning: String = PLAINTEXT_BACKUP_WARNING,
-)
+/** Stable SAF suggestion for the only supported local-ledger backup format. */
+object LocalBackupDocumentContract {
+    const val MIME_TYPE = "application/vnd.sqlite3"
+    const val DEFAULT_FILE_NAME = "runway-backup.sqlite3"
+}
+
+/** The only supported local-ledger backup format is an unencrypted SQLite database. */
+sealed interface LocalBackupResult {
+    data class Created(
+        val bytesWritten: Long,
+        val privacyWarning: String = PLAINTEXT_BACKUP_WARNING,
+    ) : LocalBackupResult
+
+    data class Rejected(val reason: String) : LocalBackupResult
+}
 
 sealed interface LocalRestoreResult {
     data class Restored(
@@ -46,24 +57,61 @@ data class LocalTrainingExportResult(
     val privacyWarning: String = PLAINTEXT_BACKUP_WARNING,
 )
 
+/** Result of removing only data that arrived through an import source. */
+data class LocalImportedActivityEraseResult(
+    val activitiesErased: Int,
+    val retainedImportTombstones: Int,
+)
+
 const val PLAINTEXT_BACKUP_WARNING =
     "This file is plaintext. It can contain your training history, notes, route data, and heart-rate data. Store and share it carefully."
+
+/** Presentation-independent result for callers that must never turn a rejected restore into success. */
+data class LocalDocumentUserOutcome(
+    val succeeded: Boolean,
+    val message: String,
+    val restartRequired: Boolean = false,
+)
+
+fun LocalBackupResult.toUserOutcome(): LocalDocumentUserOutcome = when (this) {
+    is LocalBackupResult.Created -> LocalDocumentUserOutcome(true, "Backup created.")
+    is LocalBackupResult.Rejected -> LocalDocumentUserOutcome(false, reason)
+}
+
+fun LocalRestoreResult.toUserOutcome(): LocalDocumentUserOutcome = when (this) {
+    is LocalRestoreResult.Restored -> LocalDocumentUserOutcome(true, "Backup restored.", restartRequired)
+    is LocalRestoreResult.Rejected -> LocalDocumentUserOutcome(false, reason, restartRequired)
+    is LocalRestoreResult.RecoveryRequired -> LocalDocumentUserOutcome(false, reason, restartRequired = true)
+}
 
 /**
  * Destructive local-ledger operations. Device grants and Health Connect permissions are owned by
  * the app layer and are revoked only after this transaction succeeds.
  *
  * Backup and restore deliberately use Android's Storage Access Framework URI supplied by the UI.
- * No server, account, encryption, or custom cryptography is involved. A restore closes this Room
- * instance, so callers must immediately restart the process and must first stop workers and other
- * owners of this database.
+ * The selected document is local plaintext; no custom cryptography is involved. A restore closes
+ * this Room instance, so callers must immediately restart the process and must first stop workers
+ * and other owners of this database.
  */
 class LocalDataManagementRepository(
     private val database: RunwayLedgerDatabase,
+    private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
     suspend fun eraseAllTrainingData() {
         database.maintenanceDao().clearAll()
     }
+
+    /**
+     * Removes imported activity evidence without changing manually entered activities, plans,
+     * preferences, or audit adjustments. The import identities remain as tombstones so a source
+     * cannot silently put the same private data back on the phone after it is reconnected.
+     *
+     * Android-owned source grants and Health Connect permissions are intentionally not touched
+     * here. The caller must stop acquisition and revoke them before entering this transaction so
+     * an in-flight worker cannot recreate imported data after the delete commits.
+     */
+    suspend fun eraseImportedActivityData(): LocalImportedActivityEraseResult =
+        database.maintenanceDao().clearImportedActivityData(nowEpochMillis())
 
     /** Writes a self-contained, checkpointed SQLite snapshot to a user-selected SAF document. */
     suspend fun backupToDocument(context: Context, destination: Uri): LocalBackupResult = withContext(Dispatchers.IO) {
@@ -76,7 +124,13 @@ class LocalDataManagementRepository(
                 FileInputStream(snapshot).use { input -> input.copyTo(output) }
                 output.flush()
             } ?: error("The selected document could not be opened for writing.")
-            LocalBackupResult(bytes)
+            LocalBackupResult.Created(bytes)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            LocalBackupResult.Rejected(
+                "Could not create the local SQLite backup: ${error.message ?: "unknown error"}",
+            )
         } finally {
             snapshot.delete()
         }
@@ -94,6 +148,8 @@ class LocalDataManagementRepository(
             val validationError = validateCandidate(candidate)
             if (validationError != null) return@withContext LocalRestoreResult.Rejected(validationError)
             replaceInstalledDatabase(context, candidate, bytes)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: IllegalArgumentException) {
             LocalRestoreResult.Rejected(error.message ?: "The backup is not valid.")
         } catch (error: Exception) {
@@ -207,6 +263,8 @@ class LocalDataManagementRepository(
         val staged = File(directory, "${RunwayLedgerDatabase.DATABASE_NAME}.restore-${UUID.randomUUID()}")
         val rollback = File(directory, "${RunwayLedgerDatabase.DATABASE_NAME}.rollback")
         var databaseClosed = false
+        var replacementInstalled = false
+        var hadInstalled = false
         return try {
             copyFile(candidate, staged)
             check(validateCandidate(staged) == null) { "The staged restore database did not validate." }
@@ -216,7 +274,7 @@ class LocalDataManagementRepository(
             if (rollback.exists() && !rollback.delete()) {
                 return LocalRestoreResult.Rejected("A previous restore rollback file could not be cleared.", restartRequired = true)
             }
-            val hadInstalled = installed.exists()
+            hadInstalled = installed.exists()
             if (hadInstalled) copyFile(installed, rollback)
             // On Android's app-private filesystem this is the OS rename operation: it atomically
             // replaces the installed file. The independently fsynced rollback copy remains until
@@ -227,14 +285,35 @@ class LocalDataManagementRepository(
                     restartRequired = true,
                 )
             }
+            replacementInstalled = true
             deleteSidecars(rollback)
             rollback.delete()
             LocalRestoreResult.Restored(bytes)
         } catch (error: Exception) {
-            LocalRestoreResult.Rejected(
-                reason = "Restore failed before replacement: ${error.message ?: "unknown error"}",
-                restartRequired = databaseClosed,
-            )
+            if (replacementInstalled) {
+                val restored = if (hadInstalled && rollback.exists()) {
+                    installed.delete() && rollback.renameTo(installed)
+                } else if (!hadInstalled) {
+                    !installed.exists() || installed.delete()
+                } else {
+                    false
+                }
+                if (!restored) {
+                    LocalRestoreResult.RecoveryRequired(
+                        "Restore failed after replacement and the previous local database could not be restored: ${error.message ?: "unknown error"}",
+                    )
+                } else {
+                    LocalRestoreResult.Rejected(
+                        reason = "Restore failed and the previous local database was restored: ${error.message ?: "unknown error"}",
+                        restartRequired = true,
+                    )
+                }
+            } else {
+                LocalRestoreResult.Rejected(
+                    reason = "Restore failed before replacement: ${error.message ?: "unknown error"}",
+                    restartRequired = databaseClosed,
+                )
+            }
         } finally {
             staged.delete()
         }

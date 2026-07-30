@@ -1,2 +1,0 @@
-Let the browser toolbar collapse while scrolling, leaving more room for the runway interface while
-keeping browser controls available when needed.

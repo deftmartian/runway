@@ -55,9 +55,15 @@ class LocalPlanLifecycleRepository(
                 baseline = prepared.baseline,
                 transition = prepared.transition,
                 preferredLongRunDay = prepared.preferredLongRunDay,
-                racePlanGenerationRequiresConfirmation =
-                    prepared.goalKind == GoalKind.RACE &&
-                        PhaseTransitions.canUseDistancePlannerBaseline(prepared.baseline),
+                racePlan = LocalPlanLifecyclePreparation.prepareRacePlan(
+                    phasePlan = context.plan,
+                    goal = context.goal,
+                    profile = context.profile,
+                    review = prepared,
+                    acceptedLinkedActivities = context.activities,
+                    availabilityDays = context.availabilityDays,
+                    todayEpochDay = todayEpochDay,
+                )?.preview,
             ),
         )
     }
@@ -69,6 +75,7 @@ class LocalPlanLifecycleRepository(
             !LocalPlanLifecyclePreparation.validOperationId(request.phasePlanId) ||
             !LocalPlanLifecyclePreparation.validOperationId(request.newPlanId) ||
             request.phasePlanId == request.newPlanId ||
+            !LocalPlanLifecyclePreparation.validOperationId(request.expectedPreviewToken) ||
             request.occurredAtEpochMillis < 0
         ) {
             return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.INVALID_REQUEST)
@@ -113,45 +120,21 @@ class LocalPlanLifecycleRepository(
         }
         val targetEpochDay = context.goal.targetDateEpochDay
             ?: return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.RACE_GOAL_REQUIRED)
-        val raceDistance = LocalPlanLifecyclePreparation.raceDistance(context.goal.raceDistanceMeters)
-            ?: return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.RACE_GOAL_REQUIRED)
-        val profile = context.profile
-        val generated = runCatching {
-            TrainingPlanner.generatePlan(
-                EstablishedTrainingIntake(
-                    priority = if (context.goal.priority == "consistency") GoalPriority.CONSISTENCY else GoalPriority.FINISH_HEALTHY,
-                    experience = when (profile.experienceLevel) {
-                        "new" -> Experience.NEW
-                        "comfortable" -> Experience.COMFORTABLE
-                        else -> Experience.RETURNING
-                    },
-                    availability = context.availabilityDays,
-                    injuryFlags = InjuryFlags(
-                        recentInjury = profile.recentInjury,
-                        currentPain = profile.currentPain,
-                        recurringPain = profile.recurringPain,
-                        medicalRestriction = profile.medicalRestriction,
-                        notes = profile.privateNotes.orEmpty(),
-                    ),
-                    raceDistance = raceDistance,
-                    targetDate = LocalDate.ofEpochDay(targetEpochDay).toString(),
-                    currentWeeklyDistanceMeters = prepared.baseline.weeklyDistanceMeters,
-                    currentRunsPerWeek = LocalPlanLifecyclePreparation.normalizedRuns(prepared.baseline),
-                    longestRecentRunMeters = prepared.baseline.longestActivityMeters,
-                    preferredLongRunDay = prepared.preferredLongRunDay,
-                    // A confirmation can happen after the phase ended.  Do not resurrect the
-                    // old phase boundary: planner weeks must begin at the current scheduling
-                    // boundary so that the newly persisted graph contains no past work.
-                    startDate = LocalDate.ofEpochDay(
-                        nextSchedulingBoundary(request.todayEpochDay),
-                    ).toString(),
-                ),
-            )
-        }.getOrNull() as? GeneratedDistancePlan
+        val racePlan = LocalPlanLifecyclePreparation.prepareRacePlan(
+            phasePlan = context.plan,
+            goal = context.goal,
+            profile = context.profile,
+            review = prepared,
+            acceptedLinkedActivities = context.activities,
+            availabilityDays = context.availabilityDays,
+            todayEpochDay = request.todayEpochDay,
+        )
             ?: return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.RACE_PLAN_UNSUPPORTED)
-        if (generated.risk == RiskRating.UNSAFE || generated.weeks.size > MAX_PLAN_WEEKS) {
-            return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.RACE_PLAN_UNSUPPORTED)
+        if (racePlan.preview.token != request.expectedPreviewToken) {
+            return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.STALE_PREVIEW)
         }
+        val generated = racePlan.generated
+        val profile = context.profile
         val graph = GeneratedPlanPersistenceMapper.map(
             generated,
             GeneratedPlanGoalMetadata(
@@ -247,7 +230,7 @@ class LocalPlanLifecycleRepository(
         // A delayed continuation must not copy the final phase week into an already elapsed
         // calendar week.  Continue from today when it is a boundary, otherwise from the next
         // Monday; keep the copied weekday offsets within that new week.
-        val newWeekStart = nextSchedulingBoundary(request.todayEpochDay)
+        val newWeekStart = LocalPlanLifecyclePreparation.nextSchedulingBoundary(request.todayEpochDay)
         val newWeek = copyContinuationWeek(plan, lastWeek, oldWorkouts, request, newWeekStart)
         val newEnd = newWeekStart + 6
         val updated = plans.extendPlanIfCurrentEnd(
@@ -524,14 +507,6 @@ class LocalPlanLifecycleRepository(
             (note == null || event.note == note)
     }
 
-    /** Monday is the plan boundary; a later day starts at the following Monday. */
-    private fun nextSchedulingBoundary(todayEpochDay: Long): Long {
-        val today = LocalDate.ofEpochDay(todayEpochDay)
-        val daysSinceMonday = today.dayOfWeek.value - 1L
-        val currentMonday = today.minusDays(daysSinceMonday)
-        return if (currentMonday == today) todayEpochDay else currentMonday.plusDays(7).toEpochDay()
-    }
-
     private data class PhaseContext(
         val plan: PlanEntity,
         val goal: GoalEntity,
@@ -563,6 +538,7 @@ data class LocalRaceBaselineConfirmationRequest(
     val phasePlanId: String,
     val newPlanId: String,
     val operationId: String,
+    val expectedPreviewToken: String,
     val todayEpochDay: Long,
     val occurredAtEpochMillis: Long,
     val explicitlyConfirmed: Boolean,
@@ -594,6 +570,7 @@ enum class LocalPlanLifecycleError {
     RACE_GOAL_REQUIRED,
     BASELINE_NOT_SUPPORTED,
     RACE_PLAN_UNSUPPORTED,
+    STALE_PREVIEW,
     PLAN_WEEK_LIMIT_REACHED,
     CONCURRENT_CHANGE,
     IDENTITY_CONFLICT,
@@ -612,7 +589,26 @@ data class LocalPhaseReview(
     val baseline: PhaseBaseline,
     val transition: PhaseTransition,
     val preferredLongRunDay: Int,
-    val racePlanGenerationRequiresConfirmation: Boolean,
+    val racePlan: LocalRacePlanPreview?,
+)
+
+data class LocalRacePlanPreview(
+    val token: String,
+    val risk: RiskRating,
+    val weeks: Int,
+    val startEpochDay: Long,
+    val targetEpochDay: Long,
+    val baselineMeters: Int,
+    val peakMeters: Int,
+    val requiredWeeklyIncreasePercent: Double,
+    val defaultWeeklyIncreasePercent: Double,
+    val longRunPeakMeters: Int,
+    val warnings: List<String>,
+)
+
+data class PreparedLocalRacePlan(
+    val generated: GeneratedDistancePlan,
+    val preview: LocalRacePlanPreview,
 )
 
 sealed interface LocalPhaseReviewResult {
@@ -687,6 +683,114 @@ object LocalPlanLifecyclePreparation {
     }
 
     fun validOperationId(value: String): Boolean = value.isNotBlank() && value.length <= 256
+
+    fun prepareRacePlan(
+        phasePlan: PlanEntity,
+        goal: GoalEntity,
+        profile: ProfileSettingsEntity,
+        review: PreparedLocalPhaseReview,
+        acceptedLinkedActivities: List<LocalAcceptedLinkedActivity>,
+        availabilityDays: List<Int>,
+        todayEpochDay: Long,
+    ): PreparedLocalRacePlan? {
+        if (
+            phasePlan.state != "active" ||
+            phasePlan.phaseType !in setOf("foundation", "calibration") ||
+            goal.kind != "race" ||
+            review.goalKind != GoalKind.RACE ||
+            !PhaseTransitions.canUseDistancePlannerBaseline(review.baseline)
+        ) {
+            return null
+        }
+        val targetEpochDay = goal.targetDateEpochDay ?: return null
+        val distance = raceDistance(goal.raceDistanceMeters) ?: return null
+        val startEpochDay = nextSchedulingBoundary(todayEpochDay)
+        val generated = runCatching {
+            TrainingPlanner.generatePlan(
+                EstablishedTrainingIntake(
+                    priority =
+                        if (goal.priority == "consistency") {
+                            GoalPriority.CONSISTENCY
+                        } else {
+                            GoalPriority.FINISH_HEALTHY
+                        },
+                    experience = when (profile.experienceLevel) {
+                        "new" -> Experience.NEW
+                        "comfortable" -> Experience.COMFORTABLE
+                        else -> Experience.RETURNING
+                    },
+                    availability = availabilityDays,
+                    injuryFlags = InjuryFlags(
+                        recentInjury = profile.recentInjury,
+                        currentPain = profile.currentPain,
+                        recurringPain = profile.recurringPain,
+                        medicalRestriction = profile.medicalRestriction,
+                        notes = profile.privateNotes.orEmpty(),
+                    ),
+                    raceDistance = distance,
+                    targetDate = LocalDate.ofEpochDay(targetEpochDay).toString(),
+                    currentWeeklyDistanceMeters = review.baseline.weeklyDistanceMeters,
+                    currentRunsPerWeek = normalizedRuns(review.baseline),
+                    longestRecentRunMeters = review.baseline.longestActivityMeters,
+                    preferredLongRunDay = review.preferredLongRunDay,
+                    startDate = LocalDate.ofEpochDay(startEpochDay).toString(),
+                ),
+            )
+        }.getOrNull() as? GeneratedDistancePlan ?: return null
+        if (generated.risk == RiskRating.UNSAFE || generated.weeks.size > MAX_RACE_PLAN_WEEKS) {
+            return null
+        }
+        val token = stableId(
+            "race-preview",
+            phasePlan.planId,
+            phasePlan.updatedAtEpochMillis.toString(),
+            goal.goalId,
+            goal.updatedAtEpochMillis.toString(),
+            profile.updatedAtEpochMillis.toString(),
+            todayEpochDay.toString(),
+            availabilityDays.joinToString(","),
+            acceptedLinkedActivities
+                .sortedBy(LocalAcceptedLinkedActivity::activityId)
+                .joinToString("|") {
+                    "${it.activityId}:${it.distanceMeters ?: "-"}:${it.durationSeconds ?: "-"}"
+                },
+            generated.startDate,
+            generated.targetDate,
+            generated.risk.name,
+            generated.weeks.size.toString(),
+            generated.summary.toString(),
+        )
+        return PreparedLocalRacePlan(
+            generated = generated,
+            preview = LocalRacePlanPreview(
+                token = token,
+                risk = generated.risk,
+                weeks = generated.weeks.size,
+                startEpochDay = LocalDate.parse(generated.startDate).toEpochDay(),
+                targetEpochDay = LocalDate.parse(generated.targetDate).toEpochDay(),
+                baselineMeters = generated.summary.baselineMeters,
+                peakMeters = generated.summary.peakMeters,
+                requiredWeeklyIncreasePercent = generated.summary.requiredWeeklyIncreasePercent,
+                defaultWeeklyIncreasePercent = generated.summary.defaultWeeklyIncreasePercent,
+                longRunPeakMeters = generated.summary.longRunPeakMeters,
+                warnings = generated.summary.warnings,
+            ),
+        )
+    }
+
+    /** Monday is the plan boundary; a later day starts at the following Monday. */
+    fun nextSchedulingBoundary(todayEpochDay: Long): Long {
+        val today = LocalDate.ofEpochDay(todayEpochDay)
+        val daysSinceMonday = today.dayOfWeek.value - 1L
+        val currentMonday = today.minusDays(daysSinceMonday)
+        return if (currentMonday == today) {
+            todayEpochDay
+        } else {
+            currentMonday.plusDays(7).toEpochDay()
+        }
+    }
+
+    private const val MAX_RACE_PLAN_WEEKS = 52
 }
 
 private fun stableId(prefix: String, vararg parts: String): String {

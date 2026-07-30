@@ -1,3 +1,0 @@
-Runway is now a full native Android app for planning, reviewing, adjusting, and recording runs.
-Choose your server in the app, sign in securely, and optionally import GPX files or read approved
-running sessions from Health Connect. The old browser-shell and installable web-app paths are gone.

@@ -108,7 +108,6 @@ class LocalHealthConnectRepository(
     suspend fun reconcile(
         provider: String,
         observation: HealthConnectObservation,
-        duplicateCandidateActivityId: String? = null,
     ): LocalHealthConnectPersistenceResult = database.withTransaction {
         require(provider.isNotBlank()) { "Health Connect provider must not be blank." }
         if (observation is HealthConnectObservation.RunningUpsert && observation.provider != provider) {
@@ -127,17 +126,55 @@ class LocalHealthConnectRepository(
             return@withTransaction LocalHealthConnectPersistenceResult.FutureActivity
         }
         val importDao = database.importLedgerDao()
+        val activityDao = database.activityLedgerDao()
         val storedMapping = importDao.healthConnectMapping(provider, observation.recordId)
-        val candidate = duplicateCandidateActivityId ?: storedMapping?.duplicateCandidateActivityId
-        if (candidate != null && database.activityLedgerDao().activity(candidate) == null) {
-            return@withTransaction LocalHealthConnectPersistenceResult.DuplicateCandidateMissing(candidate)
+        // A candidate may have been deleted through its own local workflow. It is not a reason to
+        // block a later provider reconciliation; clear only that stale relationship.
+        val canonicalMapping = storedMapping?.let { mapping ->
+            if (
+                mapping.duplicateCandidateActivityId != null &&
+                activityDao.activity(mapping.duplicateCandidateActivityId) == null
+            ) {
+                val cleared = mapping.copy(duplicateCandidateActivityId = null)
+                importDao.saveHealthConnectMapping(cleared)
+                cleared
+            } else {
+                mapping
+            }
+        }
+        val candidate = when (observation) {
+            // Duplicate detection is deliberately a new-record decision. A subsequent provider
+            // update reconciles the already-owned Health Connect review rather than discovering a
+            // second relationship after the fact.
+            is HealthConnectObservation.RunningUpsert -> canonicalMapping?.duplicateCandidateActivityId
+                ?: if (canonicalMapping == null) activityDao.findConservativeDuplicateCandidate(observation) else null
+            is HealthConnectObservation.Deleted -> canonicalMapping?.duplicateCandidateActivityId
         }
 
-        val state = storedMapping.toRecordState(database, candidate)
-        val outcome = LocalHealthConnectReconciler.reduce(observation, state)
+        val state = canonicalMapping.toRecordState(database, candidate)
+        val routeChanged = observation is HealthConnectObservation.RunningUpsert &&
+            observation.routeObserved &&
+            profile.routeDataMode == ROUTE_MODE_PRIVATE &&
+            state.activity != null &&
+            canonicalMapping?.activityId?.let { activityId ->
+                val activity = activityDao.activity(activityId)
+                if (activity?.routeStartEndRedacted == true) {
+                    false
+                } else {
+                    val retained = observation.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES)
+                    val existing = activityDao.routeSamples(activityId, MAX_RETAINED_ROUTE_SAMPLES)
+                        .map(RouteSampleEntity::toLocalHealthConnectRoutePoint)
+                    retained != existing
+                }
+            } == true
+        val outcome = LocalHealthConnectReconciler.reduce(
+            observation = observation,
+            state = state,
+            routeChanged = routeChanged,
+        )
         persist(
             importDao = importDao,
-            existingMapping = storedMapping,
+            existingMapping = canonicalMapping,
             profile = profile,
             provider = provider,
             observation = observation,
@@ -145,6 +182,74 @@ class LocalHealthConnectRepository(
             now = now,
         )
         LocalHealthConnectPersistenceResult.Applied(outcome)
+    }
+
+    /** Resolves a duplicate candidate without ever merging or mutating the existing local run. */
+    suspend fun resolveDuplicateCandidate(
+        provider: String,
+        recordId: String,
+        decision: LocalHealthConnectDuplicateDecision,
+    ): LocalHealthConnectDuplicateResolutionResult = database.withTransaction {
+        require(provider.isNotBlank()) { "Health Connect provider must not be blank." }
+        require(recordId.isNotBlank()) { "Health Connect record id must not be blank." }
+        val importDao = database.importLedgerDao()
+        val mapping = importDao.healthConnectMapping(provider, recordId)
+            ?: return@withTransaction LocalHealthConnectDuplicateResolutionResult.MappingMissing(provider, recordId)
+        val candidateId = mapping.duplicateCandidateActivityId
+            ?: return@withTransaction LocalHealthConnectDuplicateResolutionResult.AlreadyResolved(mapping.mappingId)
+        if (mapping.correctionPending || mapping.deletePending || mapping.lifecycleState != HEALTH_CONNECT_MAPPING_STATE_ACTIVE) {
+            return@withTransaction LocalHealthConnectDuplicateResolutionResult.UnexpectedMappingState(
+                mapping.mappingId,
+                mapping.lifecycleState,
+            )
+        }
+        val healthConnectActivityId = mapping.activityId
+            ?: return@withTransaction LocalHealthConnectDuplicateResolutionResult.HealthConnectReviewMissing(mapping.mappingId)
+        val healthConnectActivity = database.activityLedgerDao().activity(healthConnectActivityId)
+            ?: return@withTransaction LocalHealthConnectDuplicateResolutionResult.HealthConnectReviewMissing(mapping.mappingId)
+        if (
+            healthConnectActivity.source != HEALTH_CONNECT_SOURCE ||
+            healthConnectActivity.reviewState != REVIEW_STATE
+        ) {
+            return@withTransaction LocalHealthConnectDuplicateResolutionResult.UnexpectedHealthConnectReview(
+                mapping.mappingId,
+                healthConnectActivity.source,
+                healthConnectActivity.reviewState,
+            )
+        }
+        val existing = database.activityLedgerDao().activity(candidateId)
+            ?: return@withTransaction LocalHealthConnectDuplicateResolutionResult.ExistingActivityMissing(
+                mapping.mappingId,
+                candidateId,
+            )
+        if (existing.source == HEALTH_CONNECT_SOURCE) {
+            return@withTransaction LocalHealthConnectDuplicateResolutionResult.UnexpectedExistingActivitySource(
+                mapping.mappingId,
+                existing.source,
+            )
+        }
+
+        when (decision) {
+            LocalHealthConnectDuplicateDecision.KeepBoth -> {
+                importDao.saveHealthConnectMapping(mapping.copy(duplicateCandidateActivityId = null))
+                LocalHealthConnectDuplicateResolutionResult.KeptBoth(
+                    healthConnectActivityId = healthConnectActivity.activityId,
+                    existingActivityId = existing.activityId,
+                )
+            }
+            LocalHealthConnectDuplicateDecision.UseExisting -> {
+                importDao.deleteImportedActivityToTombstone(
+                    activityId = healthConnectActivity.activityId,
+                    source = HEALTH_CONNECT_SOURCE,
+                    digest = mapping.externalRecordId,
+                    tombstonedAtEpochMillis = nowEpochMillis(),
+                )
+                LocalHealthConnectDuplicateResolutionResult.UsedExisting(
+                    removedHealthConnectActivityId = healthConnectActivity.activityId,
+                    existingActivityId = existing.activityId,
+                )
+            }
+        }
     }
 
     private suspend fun resolvePendingCorrection(
@@ -353,10 +458,19 @@ class LocalHealthConnectRepository(
         now: Long,
     ) {
         val retainRoute = profile.routeDataMode == ROUTE_MODE_PRIVATE
-        val route = if (retainRoute) activity.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES) else emptyList()
-        val heartRate = activity.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
         val existingActivity = database.activityLedgerDao().activity(activity.activityId)
-        val entity = activity.toReviewEntity(
+        val preserveExistingRoute = existingActivity != null &&
+            (!observation.routeObserved || existingActivity.routeStartEndRedacted)
+        val route = when {
+            !retainRoute -> emptyList()
+            preserveExistingRoute -> database.activityLedgerDao()
+                .routeSamples(activity.activityId, MAX_RETAINED_ROUTE_SAMPLES)
+                .map(RouteSampleEntity::toLocalHealthConnectRoutePoint)
+            observation.routeObserved -> activity.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES)
+            else -> emptyList()
+        }
+        val heartRate = activity.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
+        val proposedEntity = activity.toReviewEntity(
             now = now,
             route = route,
             heartRate = heartRate,
@@ -364,12 +478,23 @@ class LocalHealthConnectRepository(
             sourceRecordId = observation.recordId,
             createdAtEpochMillis = existingActivity?.createdAtEpochMillis ?: now,
         )
+        val entity = if (preserveExistingRoute) {
+            proposedEntity.copy(
+                routePointCount = requireNotNull(existingActivity).routePointCount,
+                routeTraceRetained = existingActivity.routeTraceRetained,
+                routeStartEndRedacted = existingActivity.routeStartEndRedacted,
+            )
+        } else {
+            proposedEntity
+        }
         database.activityLedgerDao().saveActivity(entity)
-        database.activityLedgerDao().replaceRouteSamplesBounded(
-            entity.activityId,
-            route.toRouteEntities(entity.activityId),
-            MAX_RETAINED_ROUTE_SAMPLES,
-        )
+        if (!preserveExistingRoute) {
+            database.activityLedgerDao().replaceRouteSamplesBounded(
+                entity.activityId,
+                route.toRouteEntities(entity.activityId),
+                MAX_RETAINED_ROUTE_SAMPLES,
+            )
+        }
         database.activityLedgerDao().replaceHeartRateSamplesBounded(
             entity.activityId,
             heartRate.toHeartRateEntities(entity.activityId, activity.heartRateSourceSampleCount),
@@ -392,7 +517,28 @@ class LocalHealthConnectRepository(
         now: Long,
     ) {
         val retainRoute = profile.routeDataMode == ROUTE_MODE_PRIVATE
-        val route = if (retainRoute) proposed.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES) else emptyList()
+        val existingActivity = mapping.activityId?.let { activityId ->
+            database.activityLedgerDao().activity(activityId)
+        }
+        val preserveExistingRoute = existingActivity != null &&
+            (!observation.routeObserved || existingActivity.routeStartEndRedacted)
+        val route = when {
+            !retainRoute -> emptyList()
+            preserveExistingRoute -> database.activityLedgerDao()
+                .routeSamples(requireNotNull(existingActivity).activityId, MAX_RETAINED_ROUTE_SAMPLES)
+                .map(RouteSampleEntity::toLocalHealthConnectRoutePoint)
+            observation.routeObserved -> proposed.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES)
+            else -> emptyList()
+        }
+        val routeSourcePointCount = if (preserveExistingRoute) {
+            when {
+                requireNotNull(existingActivity).routeStartEndRedacted -> 1
+                existingActivity.routeTraceRetained -> existingActivity.routePointCount
+                else -> 0
+            }
+        } else {
+            proposed.routeSourcePointCount
+        }
         val heartRate = proposed.heartRate.boundEvenly(MAX_RETAINED_HEART_RATE_SAMPLES)
         importDao.saveHealthConnectMapping(mapping.toEntity(existing, observation, provider, now))
         importDao.savePendingHealthConnectObservation(
@@ -407,7 +553,7 @@ class LocalHealthConnectRepository(
                 averageCadenceSpm = proposed.averageCadenceSpm,
                 elevationGainMeters = proposed.elevationGainMeters,
                 heartRateSourceSampleCount = proposed.heartRateSourceSampleCount,
-                routeSourcePointCount = proposed.routeSourcePointCount,
+                routeSourcePointCount = routeSourcePointCount,
                 fingerprint = mapping.fingerprint,
                 originKey = observation.originKey,
                 originLabel = observation.originLabel,
@@ -510,8 +656,74 @@ sealed interface LocalHealthConnectPersistenceResult {
     data object ProfileNotConfigured : LocalHealthConnectPersistenceResult
     data object InvalidProvider : LocalHealthConnectPersistenceResult
     data object FutureActivity : LocalHealthConnectPersistenceResult
-    data class DuplicateCandidateMissing(val activityId: String) : LocalHealthConnectPersistenceResult
 }
+
+enum class LocalHealthConnectDuplicateDecision { KeepBoth, UseExisting }
+
+sealed interface LocalHealthConnectDuplicateResolutionResult {
+    data class KeptBoth(
+        val healthConnectActivityId: String,
+        val existingActivityId: String,
+    ) : LocalHealthConnectDuplicateResolutionResult
+
+    data class UsedExisting(
+        val removedHealthConnectActivityId: String,
+        val existingActivityId: String,
+    ) : LocalHealthConnectDuplicateResolutionResult
+
+    data class MappingMissing(val provider: String, val recordId: String) : LocalHealthConnectDuplicateResolutionResult
+    data class AlreadyResolved(val mappingId: String) : LocalHealthConnectDuplicateResolutionResult
+    data class UnexpectedMappingState(val mappingId: String, val lifecycleState: String) : LocalHealthConnectDuplicateResolutionResult
+    data class HealthConnectReviewMissing(val mappingId: String) : LocalHealthConnectDuplicateResolutionResult
+    data class ExistingActivityMissing(val mappingId: String, val activityId: String) : LocalHealthConnectDuplicateResolutionResult
+    data class UnexpectedHealthConnectReview(
+        val mappingId: String,
+        val source: String,
+        val reviewState: String,
+    ) : LocalHealthConnectDuplicateResolutionResult
+    data class UnexpectedExistingActivitySource(
+        val mappingId: String,
+        val source: String,
+    ) : LocalHealthConnectDuplicateResolutionResult
+}
+
+private suspend fun dev.deftmartian.runway.data.ActivityLedgerDao.findConservativeDuplicateCandidate(
+    observation: HealthConnectObservation.RunningUpsert,
+): String? = potentialDuplicateActivities(
+    targetEpochMillis = observation.startedAtEpochMillis,
+    fromInclusive = observation.startedAtEpochMillis - DUPLICATE_TIME_WINDOW_MILLIS,
+    throughInclusive = observation.startedAtEpochMillis + DUPLICATE_TIME_WINDOW_MILLIS,
+    excludedSource = HEALTH_CONNECT_SOURCE,
+    limit = MAX_DUPLICATE_CANDIDATES,
+).firstOrNull { candidate -> candidate.isConservativeDuplicateOf(observation) }?.activityId
+
+internal fun ActivityEntity.isConservativeDuplicateOf(
+    observation: HealthConnectObservation.RunningUpsert,
+): Boolean {
+    val candidateDistance = distanceMeters ?: return false
+    val candidateDuration = durationSeconds ?: return false
+    if (source == HEALTH_CONNECT_SOURCE) return false
+    if (kotlin.math.abs(occurredAtEpochMillis - observation.startedAtEpochMillis) > DUPLICATE_TIME_WINDOW_MILLIS) return false
+    val allowedDistanceDifference = maxOf(
+        DUPLICATE_MIN_DISTANCE_DIFFERENCE_METERS,
+        (maxOf(candidateDistance, observation.distanceMeters) * DUPLICATE_DISTANCE_DIFFERENCE_PERCENT) / 100,
+    )
+    if (kotlin.math.abs(candidateDistance - observation.distanceMeters) > allowedDistanceDifference) return false
+    val allowedDurationDifference = maxOf(
+        DUPLICATE_MIN_DURATION_DIFFERENCE_SECONDS,
+        (maxOf(candidateDuration, observation.durationSeconds) * DUPLICATE_DURATION_DIFFERENCE_PERCENT) / 100,
+    )
+    return kotlin.math.abs(candidateDuration - observation.durationSeconds) <= allowedDurationDifference
+}
+
+private const val HEALTH_CONNECT_SOURCE = "health_connect"
+private const val REVIEW_STATE = "review"
+private const val DUPLICATE_TIME_WINDOW_MILLIS = 10 * 60 * 1_000L
+private const val DUPLICATE_MIN_DISTANCE_DIFFERENCE_METERS = 200
+private const val DUPLICATE_DISTANCE_DIFFERENCE_PERCENT = 3
+private const val DUPLICATE_MIN_DURATION_DIFFERENCE_SECONDS = 180
+private const val DUPLICATE_DURATION_DIFFERENCE_PERCENT = 5
+private const val MAX_DUPLICATE_CANDIDATES = 20
 
 private suspend fun HealthConnectMappingEntity?.toRecordState(
     database: RunwayLedgerDatabase,
@@ -648,6 +860,15 @@ private fun List<LocalHealthConnectRoutePoint>.toRouteEntities(activityId: Strin
             speedMetersPerSecond = point.speedMetersPerSecond,
         )
     }
+
+private fun RouteSampleEntity.toLocalHealthConnectRoutePoint(): LocalHealthConnectRoutePoint =
+    LocalHealthConnectRoutePoint(
+        elapsedSeconds = elapsedSeconds ?: 0,
+        latitudeE6 = latitudeE6,
+        longitudeE6 = longitudeE6,
+        segmentIndex = segmentOrdinal ?: 0,
+        speedMetersPerSecond = speedMetersPerSecond,
+    )
 
 private fun List<LocalHealthConnectHeartRatePoint>.toHeartRateEntities(
     activityId: String,

@@ -101,6 +101,20 @@ class LocalProfileRepository(
         }
     }
 
+    suspend fun clearHeartRateProfile(): LocalProfileUpdateResult = update {
+        it.copy(
+            sexForEstimates = SexForEstimate.NotSpecified.storageValue,
+            ageYears = null,
+            heartRateSettingsSource = "none",
+            maxHeartRateBpm = null,
+            zone2FloorBpm = null,
+            zone3FloorBpm = null,
+            zone4FloorBpm = null,
+            zone5FloorBpm = null,
+            updatedAtEpochMillis = nowEpochMillis(),
+        )
+    }
+
     private suspend fun update(
         mutation: (ProfileSettingsEntity) -> ProfileSettingsEntity,
     ): LocalProfileUpdateResult = database.withTransaction {

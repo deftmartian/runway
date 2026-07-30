@@ -1,1 +1,1 @@
-Self-hosted running planner with GPX folders and optional Health Connect run imports.
+Private running plans that adapt to the training you actually complete.

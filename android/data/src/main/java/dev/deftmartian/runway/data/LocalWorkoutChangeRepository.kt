@@ -588,7 +588,8 @@ object LocalWorkoutChangeMapper {
                     },
                 )
             } else null,
-            intensity = (if (after) effect.newIntensity else effect.previousIntensity).orEmpty(),
+            intensity = (if (after) effect.newIntensity else effect.previousIntensity)
+                ?: if (prescription == PrescriptionKind.REST) "rest" else "easy",
             purpose = (if (after) effect.newPurpose else effect.previousPurpose).orEmpty(),
             reason = (if (after) effect.newReason else effect.previousReason).orEmpty(),
             sourceRefs = references.map { it.sourceLocator ?: it.sourceName },

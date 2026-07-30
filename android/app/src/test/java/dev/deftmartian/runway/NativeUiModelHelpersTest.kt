@@ -6,6 +6,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeUiModelHelpersTest {
+
+    @Test
+    fun `timed prescription text preserves warmup repeats segments and cooldown`() {
+        val text = formatTimedStructure(
+            TimedIntervalStructureDto(
+                warmupSeconds = 300,
+                cooldownSeconds = 120,
+                blocks = listOf(
+                    TimedBlockDto(
+                        repetitions = 4,
+                        segments = listOf(
+                            TimedSegmentDto("run", 120),
+                            TimedSegmentDto("walk", 60),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("Warm up 5 min · 4 × Run 2 min / Walk 1 min · Cool down 2 min", text)
+    }
+
     @Test
     fun `interval resizing preserves structure and exact requested duration`() {
         val source = TimedIntervalStructureDto(
@@ -179,7 +201,6 @@ class NativeUiModelHelpersTest {
         routeSummary = null,
         matchedWorkoutPurpose = null,
         matchedWorkoutDate = null,
-        healthConnect = null,
     )
 
     private fun totalSeconds(structure: TimedIntervalStructureDto): Int =

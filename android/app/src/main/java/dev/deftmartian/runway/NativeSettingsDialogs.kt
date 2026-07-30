@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +33,7 @@ private fun TextEntryField(label: String, value: String, onValueChange: (String)
 @Composable
 internal fun RoutePrivacyDialog(current: NativeRoutePrivacy, actionPending: Boolean, onDismiss: () -> Unit, onSubmit: (NativeRoutePrivacy) -> Unit) {
     var selection by rememberSaveable { mutableStateOf(current) }
+    val deletesStoredRoutes = routePrivacyChangeDeletesStoredRoutes(current, selection)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Route privacy") },
@@ -44,12 +46,42 @@ internal fun RoutePrivacyDialog(current: NativeRoutePrivacy, actionPending: Bool
                     ChoiceRow("Keep route traces privately", selection == NativeRoutePrivacy.KeepPrivate) { selection = NativeRoutePrivacy.KeepPrivate }
                     Text("Keep route traces only in local runway storage.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
+                if (deletesStoredRoutes) {
+                    item {
+                        Text(
+                            "This permanently removes every route trace already stored by runway, including routes waiting in review. Activity totals and heart rate stay.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
             }
         },
-        confirmButton = { Button(onClick = { onSubmit(selection) }, enabled = !actionPending) { Text("Save") } },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(selection) },
+                enabled = !actionPending,
+                colors =
+                    if (deletesStoredRoutes) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        )
+                    } else {
+                        ButtonDefaults.buttonColors()
+                    },
+            ) {
+                Text(if (deletesStoredRoutes) "Discard stored routes" else "Save")
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+internal fun routePrivacyChangeDeletesStoredRoutes(
+    current: NativeRoutePrivacy,
+    selected: NativeRoutePrivacy,
+): Boolean = current == NativeRoutePrivacy.KeepPrivate && selected == NativeRoutePrivacy.Discard
 
 @Composable
 internal fun HealthContextDialog(current: NativeHealthContext, actionPending: Boolean, onDismiss: () -> Unit, onSubmit: (NativeHealthContext) -> Unit) {

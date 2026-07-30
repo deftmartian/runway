@@ -26,6 +26,71 @@ class LocalTrainingMutationRepository(
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
+    /**
+     * Removes runner-entered feedback only when it has not become evidence for a later decision.
+     * Linked-import feedback and an already-applied consequence need their own reversal boundary.
+     */
+    suspend fun deleteWorkoutFeedback(workoutId: String): LocalWorkoutFeedbackDeletionResult =
+        database.withTransaction {
+            if (workoutId.isBlank()) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.WORKOUT_NOT_FOUND,
+                )
+            }
+            val planDao = database.goalPlanDao()
+            val activityDao = database.activityLedgerDao()
+            val workout = planDao.workout(workoutId)
+                ?: return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.WORKOUT_NOT_FOUND,
+                )
+            val feedback = activityDao.workoutFeedback(workoutId)
+                ?: return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.FEEDBACK_NOT_FOUND,
+                )
+            if (feedback.sourceActivityId != null) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.NOT_DIRECT_FEEDBACK,
+                )
+            }
+            val plan = planDao.plan(workout.planId)
+                ?: return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.PLAN_NOT_FOUND,
+                )
+            if (plan.state != ACTIVE_STATE) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.PLAN_NOT_ACTIVE,
+                )
+            }
+            val today = currentToday()
+                ?: return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.PROFILE_NOT_CONFIGURED,
+                )
+            if (workout.currentScheduledEpochDay > today.toEpochDay()) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.WORKOUT_IN_FUTURE,
+                )
+            }
+            if (activityDao.activitiesLinkedToWorkout(workoutId).any { it.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED }) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.LINKED_ACCEPTED_ACTIVITY,
+                )
+            }
+            if (activityDao.workoutFeedbackConsequence(feedback.feedbackId)?.appliedDecision != null) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.CONSEQUENCE_APPLIED,
+                )
+            }
+            if (activityDao.deleteDirectWorkoutFeedback(feedback.feedbackId) != 1) {
+                return@withTransaction LocalWorkoutFeedbackDeletionResult.Rejected(
+                    LocalWorkoutFeedbackDeletionIssue.FEEDBACK_NOT_FOUND,
+                )
+            }
+            planDao.saveWorkout(
+                workout.copy(currentStatus = PLANNED_STATE, updatedAtEpochMillis = nowEpochMillis()),
+            )
+            LocalWorkoutFeedbackDeletionResult.Deleted(feedback.feedbackId, workoutId)
+        }
+
     suspend fun recordWorkoutFeedback(command: LocalWorkoutFeedbackCommand): LocalTrainingMutationResult =
         database.withTransaction {
             val planDao = database.goalPlanDao()
@@ -288,6 +353,23 @@ sealed interface LocalTrainingMutationResult {
     data class WorkoutFeedbackRecorded(val feedbackId: String, val consequence: Consequence) : LocalTrainingMutationResult
     data class ManualRunRecorded(val activity: ActivityEntity, val consequence: Consequence?) : LocalTrainingMutationResult
     data class Rejected(val issue: LocalTrainingMutationIssue) : LocalTrainingMutationResult
+}
+
+sealed interface LocalWorkoutFeedbackDeletionResult {
+    data class Deleted(val feedbackId: String, val workoutId: String) : LocalWorkoutFeedbackDeletionResult
+    data class Rejected(val issue: LocalWorkoutFeedbackDeletionIssue) : LocalWorkoutFeedbackDeletionResult
+}
+
+enum class LocalWorkoutFeedbackDeletionIssue {
+    WORKOUT_NOT_FOUND,
+    FEEDBACK_NOT_FOUND,
+    NOT_DIRECT_FEEDBACK,
+    PLAN_NOT_FOUND,
+    PLAN_NOT_ACTIVE,
+    PROFILE_NOT_CONFIGURED,
+    WORKOUT_IN_FUTURE,
+    LINKED_ACCEPTED_ACTIVITY,
+    CONSEQUENCE_APPLIED,
 }
 
 enum class LocalTrainingMutationIssue {

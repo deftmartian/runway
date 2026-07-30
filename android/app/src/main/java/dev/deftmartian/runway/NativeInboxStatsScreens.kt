@@ -29,16 +29,17 @@ internal fun InboxScreen(
     actionNotice: NativeNotice?,
     completedAction: String?,
     onAction: (MobileCommand) -> Unit,
-    onLoadMore: () -> Unit,
     activityEvidence: Map<String, NativeActivityEvidence>,
     activityEvidenceLoading: Set<String>,
     activityEvidenceFailures: Set<String>,
     onLoadActivityTrace: (String) -> Unit,
-    onOpenPhoneImports: () -> Unit,
+    onLoadMore: () -> Unit,
+    onImportGpx: () -> Unit,
     onOpenImportSettings: () -> Unit,
 ) {
     val candidates = payload?.candidates.orEmpty()
     val activities = payload?.activities.orEmpty()
+    val healthConnectChanges = payload?.healthConnectChanges.orEmpty()
     var selectedActivity by remember { mutableStateOf<NativeActivity?>(null) }
     var pendingDecision by remember { mutableStateOf<PendingPlanDecision?>(null) }
     var submittedDialogAction by remember { mutableStateOf<String?>(null) }
@@ -61,9 +62,40 @@ internal fun InboxScreen(
         }
         when {
             payload == null -> item { EmptyCard("Loading activity review…") }
-            activities.none { it.reviewState == "review" } ->
+            activities.none { it.reviewState == "review" } && healthConnectChanges.isEmpty() -> {
                 item { EmptyCard("Nothing needs a decision right now.") }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = onImportGpx,
+                            enabled = !actionPending,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Choose GPX")
+                        }
+                        OutlinedButton(
+                            onClick = onOpenImportSettings,
+                            enabled = !actionPending,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Import settings")
+                        }
+                    }
+                }
+            }
             else -> {
+                if (healthConnectChanges.isNotEmpty()) {
+                    item { SectionLabel("Health Connect changes") }
+                    items(
+                        healthConnectChanges,
+                        key = { "health-connect-${it.mappingId}" },
+                    ) { change ->
+                        HealthConnectChangeCard(change, actionPending, onAction)
+                    }
+                }
                 items(
                     activities.filter { it.reviewState == "review" },
                     key = { it.id.orEmpty() },
@@ -116,52 +148,15 @@ internal fun InboxScreen(
                 }
             }
         }
-        if (payload != null) {
-            item { SectionLabel("Sources") }
-            item {
-                SettingCard("Import connections") {
-                    SettingRow(
-                        "This phone",
-                        if (payload.androidDevices.isEmpty()) "Not connected" else "Connected",
-                    )
-                    OutlinedButton(
-                        onClick = onOpenPhoneImports,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Folder and Health Connect")
-                    }
-                    if (payload.sources.isEmpty()) {
-                        SettingRow("Server folders", "Not connected")
-                    } else {
-                        payload.sources.forEach { source ->
-                            SettingRow(
-                                source.label.orDash(),
-                                source.lastError?.takeIf(String::isNotBlank)
-                                    ?: if (source.enabled == true) "Connected" else "Disabled",
-                            )
-                        }
-                    }
-                    TextButton(
-                        onClick = onOpenImportSettings,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text("Manage server folders")
-                    }
-                    SettingRow(
-                        "Route points",
-                        if (payload.routeDataMode == "discard") "Discarded" else "Kept privately",
-                    )
-                }
-            }
-        }
-        if (payload?.activityPage?.nextOffset != null) {
+        if (payload?.hasMore == true) {
             item {
                 OutlinedButton(
                     onClick = onLoadMore,
                     enabled = !loading && !actionPending,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (loading) "Loading…" else "Load earlier activity") }
+                ) {
+                    Text(if (loading) "Loading…" else "Load earlier imports")
+                }
             }
         }
     }
@@ -194,6 +189,149 @@ internal fun InboxScreen(
         )
     }
 }
+
+@Composable
+private fun HealthConnectChangeCard(
+    change: NativeHealthConnectChange,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) {
+    val isCorrection = change.state == "pending_correction"
+    val isDuplicate = change.state == "possible_duplicate"
+    val title = when {
+        isCorrection -> "An imported run changed"
+        isDuplicate -> "These may be the same run"
+        else -> "An imported run was deleted"
+    }
+    SettingCard(title) {
+        Text(
+            when {
+                isCorrection ->
+                    "Health Connect has newer details for a run you already accepted. Review both records before choosing."
+                isDuplicate ->
+                    "A new Health Connect run closely matches one already in runway. Nothing is merged or removed until you choose."
+                else ->
+                    "Health Connect no longer has this run. Choose whether its accepted copy should remain in runway."
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        change.current?.let {
+            ActivitySummaryRows(
+                if (isDuplicate) "Health Connect import" else "Current",
+                it,
+            )
+        }
+        if (isCorrection) {
+            change.proposed?.let { ActivitySummaryRows("Updated", it) }
+            Button(
+                onClick = {
+                    onAction(
+                        ResolveHealthConnectRecordCommand(
+                            provider = change.provider,
+                            recordId = change.recordId,
+                            decision = HealthConnectRecordDecision.AcceptCorrection,
+                        ),
+                    )
+                },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Use updated record")
+            }
+            OutlinedButton(
+                onClick = {
+                    onAction(
+                        ResolveHealthConnectRecordCommand(
+                            provider = change.provider,
+                            recordId = change.recordId,
+                            decision = HealthConnectRecordDecision.KeepCurrent,
+                        ),
+                    )
+                },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Keep current record")
+            }
+        } else if (isDuplicate) {
+            change.proposed?.let { ActivitySummaryRows("Existing runway run", it) }
+            Button(
+                onClick = {
+                    onAction(
+                        ResolveHealthConnectDuplicateCommand(
+                            provider = change.provider,
+                            recordId = change.recordId,
+                            decision = HealthConnectDuplicateDecision.UseExisting,
+                        ),
+                    )
+                },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Use existing run")
+            }
+            OutlinedButton(
+                onClick = {
+                    onAction(
+                        ResolveHealthConnectDuplicateCommand(
+                            provider = change.provider,
+                            recordId = change.recordId,
+                            decision = HealthConnectDuplicateDecision.KeepBoth,
+                        ),
+                    )
+                },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Keep both")
+            }
+        } else {
+            Button(
+                onClick = {
+                    onAction(
+                        ResolveHealthConnectRecordCommand(
+                            provider = change.provider,
+                            recordId = change.recordId,
+                            decision = HealthConnectRecordDecision.RetainInRunway,
+                        ),
+                    )
+                },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Keep in runway")
+            }
+            TextButton(
+                onClick = {
+                    onAction(
+                        ResolveHealthConnectRecordCommand(
+                            provider = change.provider,
+                            recordId = change.recordId,
+                            decision = HealthConnectRecordDecision.DeleteFromRunway,
+                        ),
+                    )
+                },
+                enabled = !actionPending,
+            ) {
+                Text("Remove from runway")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivitySummaryRows(label: String, activity: NativeActivitySummary) {
+    Text(label, style = MaterialTheme.typography.titleSmall)
+    SettingRow("Date", activity.date)
+    SettingRow(
+        "Recorded",
+        listOfNotNull(
+            activity.distanceMeters?.let(::formatDistance),
+            activity.durationSeconds?.let(::formatDuration),
+        ).joinToString(" · ").ifBlank { "No distance or duration" },
+    )
+}
+
 @Composable
 internal fun StatsScreen(
     payload: NativeStatsPayload?,

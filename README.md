@@ -1,6 +1,6 @@
 # runway
 
-[![Android CI](https://github.com/deftmartian/runway/actions/workflows/check.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/check.yml)
+[![Android CI](https://github.com/deftmartian/runway/actions/workflows/android.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/android.yml)
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
@@ -8,7 +8,7 @@
 
 runway helps a self-coached runner keep the recommendation, their edits, and the work actually completed separate. A missed day, short run, extra run, or hard effort does not quietly rewrite the plan: runway records it, explains the available next decisions, and waits for the runner to choose.
 
-It is a native Kotlin + Jetpack Compose application. There is no account, server, web client, PWA, or hosted service.
+It is a native Kotlin + Jetpack Compose application. All product state stays on the phone; there is no account or hosted service.
 
 ## The loop
 
@@ -50,9 +50,21 @@ Do not commit real GPX, FIT, or TCX files, device backups, route coordinates, he
 
 The stable application id is `dev.deftmartian.runway`. Android updates are tied to both that id and the signing certificate: retain the release key securely and back it up before distributing an APK.
 
-GitHub version tags publish a signed universal APK only when the protected signing environment is available. The F-Droid source-build path is deliberately unsigned so F-Droid can sign it. See [Android release instructions](android/docs/RELEASE.md).
+GitHub version tags publish a signed universal APK only when the protected signing environment is available. There is one canonical APK signing key: a personal F-Droid repository may use a separate repository-index key, but its APKs must use the same application id and canonical APK certificate for in-place updates. The F-Droid source-build path is deliberately unsigned until that repository signs it. See [Android release instructions](android/docs/RELEASE.md).
 
-Current screenshots from the retired client are intentionally not shown here. Fresh screenshots must come from the standalone native app and be checked on an emulator or device before publication.
+To install from GitHub, download the APK and matching `.sha256` file from the
+[latest release](https://github.com/deftmartian/runway/releases/latest), verify the checksum, and
+open the APK on the Android device. Future releases signed by the same certificate install as
+in-place updates. A personal F-Droid repository must publish APKs signed with that same certificate
+to preserve the update path.
+
+## The app
+
+| Calendar | Inbox |
+| --- | --- |
+| ![Calendar in dark mode](docs/images/runway-android-calendar-dark.png) | ![Import review in light mode](docs/images/runway-android-inbox-light.png) |
+| Stats | Settings |
+| ![Training stats in light mode](docs/images/runway-android-stats-light.png) | ![Settings in dark mode](docs/images/runway-android-settings-dark.png) |
 
 ## Read more
 

@@ -171,6 +171,15 @@ internal fun HistoryScreen(
                     PlanHistoryRecord(item, onOpenPlan)
                 }
             }
+            if (payload.activitiesOutsidePlans.isNotEmpty()) {
+                item { SectionLabel("Runs outside a plan") }
+                items(
+                    payload.activitiesOutsidePlans,
+                    key = { activity -> activity.id.orEmpty() },
+                ) { activity ->
+                    OutsidePlanActivityRecord(activity)
+                }
+            }
         }
         if (history?.nextOffset != null) {
             item {
@@ -196,13 +205,49 @@ internal fun HistoryScreen(
                 confirmation = null
                 onAction(
                     when (requested) {
-                        NativeHistoryConfirmation.UseBaseline -> ConfirmPhaseBaselineCommand
+                        NativeHistoryConfirmation.UseBaseline -> ConfirmPhaseBaselineCommand(
+                            expectedPreviewToken = checkNotNull(
+                                payload?.phaseReview?.racePlan?.previewToken,
+                            ) {
+                                "The race-plan preview is no longer available."
+                            },
+                        )
                         NativeHistoryConfirmation.ContinuePhase -> ContinueBeginnerPhaseCommand
                         NativeHistoryConfirmation.Complete -> CompletePlanCommand
                         NativeHistoryConfirmation.Stop -> ArchivePlanCommand
                     },
                 )
             },
+        )
+    }
+}
+
+@Composable
+private fun OutsidePlanActivityRecord(activity: NativeActivity) {
+    LedgerSurface {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(activity.activityDate.orDash(), fontFamily = FontFamily.Monospace)
+            LedgerState("Accepted", LedgerEmphasis.Actual)
+        }
+        Text(
+            listOfNotNull(
+                activity.distanceMeters?.let(::formatDistance),
+                activity.durationSeconds?.let(::formatDuration),
+            ).joinToString(" · ").orDash(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            when (activity.source) {
+                "gpx" -> "GPX import"
+                "health_connect" -> "Health Connect"
+                "manual" -> "Manual run"
+                else -> activity.source.orDash()
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

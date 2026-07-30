@@ -68,7 +68,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         assertTrueFeedbackUpdated(result)
         val stored = requireNotNull(database.activityLedgerDao().activityConsequence("accepted"))
         assertEquals("keep_plan", stored.appliedDecision)
-        assertEquals(1_000, stored.resolvedAtEpochMillis)
+        assertEquals(1_000L, stored.resolvedAtEpochMillis)
         assertNotNull(database.activityLedgerDao().activityFeedback("accepted"))
     }
 

@@ -22,8 +22,8 @@ import org.junit.runner.RunWith
 
 /**
  * A rendered-shell regression test. The payloads are intentionally local and bounded: this proves
- * information architecture and parent Back behavior without requiring a server, credentials, or
- * imported activity data.
+ * information architecture and parent Back behavior without requiring imported activity fixtures
+ * or a pre-seeded local database.
  */
 @RunWith(AndroidJUnit4::class)
 class NativeFiveSurfaceNavigationInstrumentedTest {
@@ -46,10 +46,12 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onRefresh = {},
                     onAction = {},
                     onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {}, onDismissPlanDecisionPreview = {},
                     onOpenFolder = {},
                     onImportGpx = {}, onOpenHealthConnect = {}, onCreateBackup = {}, onRestoreBackup = {},
                     onExportData = {}, onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
-                    onHeartRateChanged = {}, onHealthContextChanged = {}, onEraseAllData = {},
+                    onHeartRateChanged = {}, onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseAllData = {},
                 )
             }
         }
@@ -67,7 +69,9 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Current and past training plans.").assertIsDisplayed()
 
         selectSurface("Settings")
-        compose.onNodeWithText("Stored locally on this phone").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Build revision"))
+        compose.onNodeWithText("Build revision").assertIsDisplayed()
+        compose.onNodeWithText("This phone only").assertIsDisplayed()
     }
 
     private fun assertSurface(label: String, marker: String) {
@@ -81,38 +85,23 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     private fun readyState(destination: NativeDestination) = RunwayUiState.Ready(
-        bootstrap = NativeBootstrapPayload(
-            user = null,
-            setupComplete = true,
-            timeZone = "America/Halifax",
-            release = "test",
-            commit = "test",
-            serverOrigin = "https://runway.test",
-            androidApi = 2,
-            features = null,
-        ),
-        destination = destination,
-        payload = payloadFor(destination),
+        surface = surfaceFor(destination),
         loading = false,
     )
 
-    private fun payloadFor(destination: NativeDestination): Any? = when (destination) {
-        NativeDestination.Calendar -> NativeCalendarPayload(
+    private fun surfaceFor(destination: NativeDestination): NativeSurface = when (destination) {
+        NativeDestination.Calendar -> NativeSurface.Calendar(NativeCalendarPayload(
             onboardingRequired = false,
             hasActivePlan = true,
             calendar = null,
             nextWorkout = null,
             activityCandidates = emptyList(),
-        )
-        NativeDestination.Inbox -> NativeReviewPayload(
+        ))
+        NativeDestination.Inbox -> NativeSurface.Inbox(NativeReviewPayload(
             candidates = emptyList(),
             activities = emptyList(),
-            activityPage = null,
-            sources = emptyList(),
-            androidDevices = emptyList(),
-            routeDataMode = null,
-        )
-        NativeDestination.Stats -> NativeStatsPayload(
+        ))
+        NativeDestination.Stats -> NativeSurface.Stats(NativeStatsPayload(
             onboardingRequired = false,
             active = null,
             detail = null,
@@ -120,8 +109,8 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             planTrace = emptyList(),
             planHistory = null,
             phaseReview = null,
-        )
-        NativeDestination.History -> NativeHistoryPayload(
+        ))
+        NativeDestination.History -> NativeSurface.History(NativeHistoryPayload(
             onboardingRequired = false,
             history = NativePlanHistoryPage(emptyList(), nextOffset = null, today = "2026-07-29"),
             activeItem = NativePlanHistoryItem(
@@ -148,9 +137,9 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             phaseReview = null,
             offset = null,
             pageSize = null,
-        )
-        NativeDestination.Settings -> NativeSettingsState(appVersion = "test", sourceCommit = "test")
-        NativeDestination.HistoryDetail -> NativeHistoryDetailPayload(
+        ))
+        NativeDestination.Settings -> NativeSurface.Settings(NativeSettingsState(appVersion = "test", sourceCommit = "test"))
+        NativeDestination.HistoryDetail -> NativeSurface.HistoryDetail(NativeHistoryDetailPayload(
             onboardingRequired = false,
             detail = NativeHistoryDetail(
                 plan = null,
@@ -163,7 +152,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                 timeline = emptyList(),
                 weeks = emptyList(),
             ),
-        )
-        NativeDestination.Setup -> null
+        ))
+        NativeDestination.Setup -> NativeSurface.Setup(null)
     }
 }

@@ -7,6 +7,7 @@ import dev.deftmartian.runway.data.importing.LocalGpxImportException
 import dev.deftmartian.runway.data.importing.LocalGpxImportFailure
 import dev.deftmartian.runway.data.importing.LocalGpxImportOutcome
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 internal enum class OneOffGpxImportOutcome {
     Imported,
@@ -20,7 +21,17 @@ internal enum class OneOffGpxImportOutcome {
 
 /** Shared, streaming, review-only GPX path for Android shares and the in-app document picker. */
 internal object OneOffGpxImport {
-    suspend fun importUri(context: Context, uri: Uri): OneOffGpxImportOutcome {
+    suspend fun importUri(
+        context: Context,
+        uri: Uri,
+    ): OneOffGpxImportOutcome = AndroidStateCoordinator.withImportDataBoundary {
+        importUriWithinBoundary(context, uri)
+    }
+
+    private suspend fun importUriWithinBoundary(
+        context: Context,
+        uri: Uri,
+    ): OneOffGpxImportOutcome {
         if (uri.scheme != "content") return OneOffGpxImportOutcome.Rejected
         val metadata = metadata(context, uri)
         val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
@@ -54,6 +65,8 @@ internal object OneOffGpxImport {
             OneOffGpxImportOutcome.Rejected
         } catch (_: IOException) {
             OneOffGpxImportOutcome.Rejected
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: RuntimeException) {
             OneOffGpxImportOutcome.Rejected
         }

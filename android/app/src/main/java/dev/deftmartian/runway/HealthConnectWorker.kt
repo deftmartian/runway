@@ -1,25 +1,30 @@
 package dev.deftmartian.runway
 
 import android.content.Context
-import androidx.work.Worker
+import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 
 /** Optional six-hour local import. First setup and the 30-day bootstrap remain foreground-led. */
 class HealthConnectWorker(
     appContext: Context,
     workerParameters: WorkerParameters,
-) : Worker(appContext, workerParameters) {
-    override fun doWork(): Result {
+) : CoroutineWorker(appContext, workerParameters) {
+    override suspend fun doWork(): Result {
         val gateway = AndroidHealthConnectGateway(applicationContext)
-        val backgroundAllowed = runCatching {
+        val backgroundAllowed = try {
             gateway.supportsBackgroundRead() && gateway.hasBackgroundPermission()
-        }.getOrDefault(false)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
         if (!backgroundAllowed) {
             ReconciliationScheduler.disableHealthConnectPeriodic(applicationContext)
             return Result.success()
         }
 
-        val outcome = kotlinx.coroutines.runBlocking {
+        val outcome = AndroidStateCoordinator.withImportDataBoundary {
             HealthConnectSyncCoordinator(
                 gateway = gateway,
                 cursor = HealthConnectCursorStore(applicationContext),

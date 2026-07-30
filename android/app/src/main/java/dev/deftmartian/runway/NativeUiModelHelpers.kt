@@ -176,6 +176,26 @@ internal fun formatPrescriptionMeasurement(
     ).joinToString(" · ").ifBlank { "Plan details" }
 }
 
+/** Compact, readable interval detail for cards; the typed structure remains the source of truth. */
+internal fun formatTimedStructure(structure: TimedIntervalStructureDto?): String? {
+    structure ?: return null
+    val parts = buildList {
+        structure.warmupSeconds?.takeIf { it > 0 }?.let { add("Warm up ${formatDuration(it.toDouble())}") }
+        structure.blocks.forEach { block ->
+            val segments = block.segments.mapNotNull { segment ->
+                val kind = segment.kind?.replaceFirstChar(Char::uppercase) ?: return@mapNotNull null
+                segment.durationSeconds?.takeIf { it > 0 }?.let { "$kind ${formatDuration(it.toDouble())}" } ?: kind
+            }
+            if (segments.isNotEmpty()) {
+                val repeats = block.repetitions?.takeIf { it > 1 }?.let { "$it × " }.orEmpty()
+                add(repeats + segments.joinToString(" / "))
+            }
+        }
+        structure.cooldownSeconds?.takeIf { it > 0 }?.let { add("Cool down ${formatDuration(it.toDouble())}") }
+    }
+    return parts.joinToString(" · ").takeIf(String::isNotBlank)
+}
+
 internal fun formatDuration(seconds: Double): String {
     val minutes = (seconds / 60).toInt()
     return if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"

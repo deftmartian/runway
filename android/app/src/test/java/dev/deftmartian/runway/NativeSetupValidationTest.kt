@@ -3,6 +3,7 @@ package dev.deftmartian.runway
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
 
 class NativeSetupValidationTest {
     @Test
@@ -36,7 +37,7 @@ class NativeSetupValidationTest {
     }
 
     @Test
-    fun `goal and schedule validation mirror server bounds`() {
+    fun `goal and schedule validation enforce planner bounds`() {
         assertEquals(
             "Choose a date from 2026-09-01 to 2027-07-27.",
             goalValidation(true, "2026-08-31", "2026-09-01", "2027-07-27"),
@@ -65,5 +66,40 @@ class NativeSetupValidationTest {
             true,
             requiresConcentratedScheduleAcceptance("established", "2", "marathon", false),
         )
+    }
+
+    @Test
+    fun `collapsed health context states what is actually saved`() {
+        assertEquals(
+            "Nothing noted",
+            healthContextSummary(false, false, false, false),
+        )
+        assertEquals(
+            "Recent injury, Pain now, Training limited",
+            healthContextSummary(true, true, false, true),
+        )
+    }
+
+    @Test
+    fun `setup exposes mode specific bounds in the entered training time zone`() {
+        val now = Instant.parse("2026-07-30T12:00:00Z")
+
+        assertEquals(
+            "2026-09-24",
+            setupTargetDateBounds("America/Halifax", "established", now)?.minimum,
+        )
+        assertEquals(
+            "2026-10-08",
+            setupTargetDateBounds("America/Halifax", "calibration", now)?.minimum,
+        )
+        assertEquals(
+            "2026-11-26",
+            setupTargetDateBounds("America/Halifax", "foundation_to_goal", now)?.minimum,
+        )
+        assertEquals(
+            "2027-07-28",
+            setupTargetDateBounds("America/Halifax", "established", now)?.maximum,
+        )
+        assertNull(setupTargetDateBounds("not/a-zone", "established", now))
     }
 }

@@ -1,28 +1,28 @@
-.env
-.env.*
-!.env.example
+# Android and Gradle state
+.gradle/
+.kotlin/
+.idea/
+local.properties
+**/build/
 
-node_modules/
-.svelte-kit/
-.svelte-kit-*/
-.svelte-kit-playwright/
-.svelte-kit-playwright-visual/
-.vite/
-build/
-/.runway-*
-.runway-live/
-dist/
-coverage/
-artifacts/
-playwright-report/
-test-results/
+# Release signing is operator-owned
+*.jks
+*.keystore
+*.p12
+*.pfx
+signing.properties
 
-*.log
-.DS_Store
-
-# Personal activity exports can expose home/work locations and health signals.
-samples/*
-!samples/README.md
+# Private activity and recovery artifacts
 *.gpx
 *.fit
 *.tcx
+*.sqlite
+*.sqlite3
+*.db
+*.backup
+
+# Local tooling
+.env
+.env.*
+*.log
+.DS_Store

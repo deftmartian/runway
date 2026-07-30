@@ -20,7 +20,7 @@ Health Connect access is optional and read-only. Permissions are scoped to the r
 - Content markers and tombstones prevent a deleted activity from being recreated by a later folder or Health Connect pass.
 - Route discard clears retained and pending route samples together.
 - Backup and export are user-initiated plaintext files. The product must warn before writing them and never present them as encrypted.
-- Erase is destructive, explicit, and limited to runway's local data and app-owned import markers. Android-held folder grants and Health Connect permissions are controlled separately by the platform.
+- Removing imported runs and resetting runway first stop import work, release the selected-folder grant, and revoke Health Connect access. If Android cannot confirm those changes, data deletion does not proceed. A later database failure is reported as a partial result because platform permissions and Room cannot be rolled back atomically.
 
 ## Secure engineering
 

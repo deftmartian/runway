@@ -87,6 +87,108 @@ jobs:
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict assembleDebug assembleDebugAndroidTest
 
+  instrumentation:
+    name: instrumentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: >-
+            platforms;android-36 build-tools;36.0.0 platform-tools emulator
+            system-images;android-35;google_apis;x86_64
+      - name: Restore Android Virtual Device
+        id: avd-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.android/avd
+            ~/.android/adb*
+          key: runway-avd-api35-google-apis-x86-64-v1
+      - name: Create Android Virtual Device
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        run: |
+          echo 'no' | avdmanager create avd --force --name runway-ci \
+            --package 'system-images;android-35;google_apis;x86_64' --device pixel_2
+      - name: Package instrumentation APKs before starting the emulator
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
+          --dependency-verification strict
+          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
+      - name: Run instrumentation tests on a serial emulator
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/emulator/emulator" -avd runway-ci -no-window -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect -no-snapshot -no-metrics >"$RUNNER_TEMP/runway-emulator.log" 2>&1 &
+          emulator_pid="$!"
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            if [ "$(adb get-state 2>/dev/null || true)" = 'device' ]; then
+              break
+            fi
+            sleep 2
+          done
+          [ "$(adb get-state 2>/dev/null || true)" = 'device' ] || {
+            cat "$RUNNER_TEMP/runway-emulator.log"
+            exit 1
+          }
+          for _ in $(seq 1 90); do
+            if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = '1' ]; then
+              break
+            fi
+            sleep 2
+          done
+          [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = '1' ] || {
+            cat "$RUNNER_TEMP/runway-emulator.log"
+            exit 1
+          }
+          adb shell input keyevent 82
+          adb install -r -t android/app/build/outputs/apk/debug/app-debug.apk
+          adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          set +e
+          adb shell am instrument -w -r \
+            dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner \
+            2>&1 | tee "$RUNNER_TEMP/app-instrumentation.txt"
+          app_status="${PIPESTATUS[0]}"
+          set -e
+          [ "$app_status" -eq 0 ] || exit "$app_status"
+          grep -q '^OK (' "$RUNNER_TEMP/app-instrumentation.txt"
+          ! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
+            "$RUNNER_TEMP/app-instrumentation.txt"
+          adb install -r -t android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
+          set +e
+          adb shell am instrument -w -r \
+            dev.deftmartian.runway.data.test/androidx.test.runner.AndroidJUnitRunner \
+            2>&1 | tee "$RUNNER_TEMP/data-instrumentation.txt"
+          data_status="${PIPESTATUS[0]}"
+          set -e
+          [ "$data_status" -eq 0 ] || exit "$data_status"
+          grep -q '^OK (' "$RUNNER_TEMP/data-instrumentation.txt"
+          ! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
+            "$RUNNER_TEMP/data-instrumentation.txt"
+      - name: Upload instrumentation diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-instrumentation-diagnostics
+          path: |
+            ${{ runner.temp }}/runway-emulator.log
+            ${{ runner.temp }}/app-instrumentation.txt
+            ${{ runner.temp }}/data-instrumentation.txt
+            android/**/build/reports/androidTests/
+            android/**/build/outputs/androidTest-results/
+          if-no-files-found: warn
+          retention-days: 14
+
   release-build:
     name: unsigned release candidate
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -122,11 +224,35 @@ jobs:
             echo "::error::Tag $tag must exactly match Android versionName $version."
             exit 1
           fi
+          version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' android/app/build.gradle.kts)"
+          [[ "$version_code" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::Could not read a positive Android versionCode."
+            exit 1
+          }
           tagged_commit="$(git rev-parse "${GITHUB_REF}^{commit}")"
           git rev-parse --verify "refs/remotes/origin/${DEFAULT_BRANCH}"
           if ! git merge-base --is-ancestor "$tagged_commit" "refs/remotes/origin/${DEFAULT_BRANCH}"; then
             echo "::error::Version tags must point to a commit in ${DEFAULT_BRANCH} history."
             exit 1
+          fi
+          previous_tag=''
+          while IFS= read -r candidate; do
+            if [ "$candidate" != "$tag" ]; then
+              previous_tag="$candidate"
+              break
+            fi
+          done < <(git tag --merged "$tagged_commit" --list 'v*' --sort=-version:refname)
+          if [ -n "$previous_tag" ]; then
+            previous_code="$(git show "${previous_tag}:android/app/build.gradle.kts" |
+              sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p')"
+            [[ "$previous_code" =~ ^[1-9][0-9]*$ ]] || {
+              echo "::error::Could not read Android versionCode from ${previous_tag}."
+              exit 1
+            }
+            if [ "$version_code" -le "$previous_code" ]; then
+              echo "::error::Android versionCode ${version_code} must exceed ${previous_code} from ${previous_tag}."
+              exit 1
+            fi
           fi
       - name: Build and test the unsigned release candidate once
         run: >-
@@ -139,16 +265,20 @@ jobs:
           name: unsigned-android-release
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
-          retention-days: 1
+          # Protected-environment approval can legitimately wait overnight.
+          retention-days: 7
 
   android-release:
     name: protected signing
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: release-build
+    needs: [release-build, instrumentation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: android-release
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: build-tools;36.0.0
@@ -178,13 +308,29 @@ jobs:
             --ks-key-alias "$RUNWAY_ANDROID_KEY_ALIAS" --ks-pass env:RUNWAY_ANDROID_KEYSTORE_PASSWORD \
             --key-pass env:RUNWAY_ANDROID_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true \
             --v3-signing-enabled true --out "release-assets/runway-${GITHUB_REF_NAME}.apk" unsigned/app-release-unsigned.apk
-      - name: Verify exact signing identity
+      - name: Verify APK identity and exact signing certificate
         shell: bash
         env:
           RUNWAY_ANDROID_CERT_SHA256: ${{ vars.RUNWAY_ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           apk="release-assets/runway-${GITHUB_REF_NAME}.apk"
+          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk")"
+          printf '%s\n' "$badging"
+          package_name="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging")"
+          version_code="$(sed -n "s/^package:.* versionCode='\([^']*\)'.*/\1/p" <<< "$badging")"
+          version_name="$(sed -n "s/^package:.* versionName='\([^']*\)'.*/\1/p" <<< "$badging")"
+          expected_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' android/app/build.gradle.kts)"
+          [ "$package_name" = 'dev.deftmartian.runway' ] || { echo '::error::APK package id is not dev.deftmartian.runway.'; exit 1; }
+          [ "$version_name" = "${GITHUB_REF_NAME#v}" ] || { echo '::error::APK versionName does not match the release tag.'; exit 1; }
+          [[ "$expected_code" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Could not read a positive Android versionCode.'; exit 1; }
+          [ "$version_code" = "$expected_code" ] || { echo '::error::APK versionCode does not match the source release version.'; exit 1; }
+          permissions="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$apk")"
+          printf '%s\n' "$permissions"
+          if grep -Eq 'android\.permission\.(INTERNET|ACCESS_NETWORK_STATE)' <<< "$permissions"; then
+            echo '::error::Standalone APK unexpectedly requests a network permission.'
+            exit 1
+          fi
           verification="$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk")"
           printf '%s\n' "$verification"
           grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true$' <<< "$verification"

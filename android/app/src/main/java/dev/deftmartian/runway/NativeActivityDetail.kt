@@ -76,7 +76,6 @@ internal fun ImportedActivityDetailSheet(
             )
             ImportedActivitySummary(activity)
             ImportedActivityProvenance(activity)
-            HealthConnectResolutionControls(activity, actionPending, onAction)
             ImportedActivityHeartRate(activity, evidence)
             ImportedActivityRouteDisclosure(
                 activity = activity,
@@ -179,61 +178,6 @@ private fun ImportedActivityProvenance(activity: NativeActivity) {
                 SettingRow("Matched run", "${activity.matchedWorkoutDate.orDash()} · ${activity.matchedWorkoutPurpose}")
             activity.extraPlanImpactConfirmed == true -> SettingRow("Plan state", "Counted as extra training")
             else -> SettingRow("Plan state", "Not matched to a planned run")
-        }
-    }
-}
-
-@Composable
-private fun HealthConnectResolutionControls(
-    activity: NativeActivity,
-    actionPending: Boolean,
-    onAction: (MobileCommand) -> Unit,
-) {
-    val healthConnect = activity.healthConnect ?: return
-    val mappingId = healthConnect.mappingId?.takeIf(String::isNotBlank) ?: return
-    when (healthConnect.recordState) {
-        "pending_correction" -> SettingCard("Source update") {
-            Text("A correction from the source is waiting for your decision.")
-            if (!activity.workoutId.isNullOrBlank() || activity.extraPlanImpactConfirmed == true) {
-                Text("Before accepting it, unlink this accepted activity or stop counting it as extra training.")
-            }
-            Button(
-                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.AcceptCorrection)) },
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Accept correction") }
-            OutlinedButton(
-                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.KeepCurrent)) },
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Keep current record") }
-        }
-        "pending_source_deletion" -> SettingCard("Source update") {
-            Text("The source deleted this record. Choose whether runway should remove it too.")
-            TextButton(
-                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.DeleteFromRunway)) },
-                enabled = !actionPending,
-            ) { Text("Remove from runway") }
-            OutlinedButton(
-                onClick = { onAction(ResolveHealthConnectRecordCommand(mappingId, HealthConnectRecordDecision.RetainInRunway)) },
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Keep in runway") }
-        }
-    }
-    healthConnect.duplicateCandidate?.let { candidate ->
-        SettingCard("Possible duplicate") {
-            Text("Another ${candidate.distanceMeters?.let(::formatDistance).orDash()} activity on ${candidate.activityDate.orDash()} already exists as ${candidate.sourceLabel.orDash()}.")
-            Button(
-                onClick = { onAction(ResolveHealthConnectDuplicateCommand(mappingId, HealthConnectDuplicateDecision.KeepHealthConnect)) },
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Keep this record") }
-            OutlinedButton(
-                onClick = { onAction(ResolveHealthConnectDuplicateCommand(mappingId, HealthConnectDuplicateDecision.UseExisting)) },
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Use existing record") }
         }
     }
 }
@@ -449,7 +393,7 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
 
 private fun activitySourceLabel(activity: NativeActivity): String = when (activity.source) {
     "gpx" -> "GPX import"
-    "health_connect" -> activity.healthConnect?.originLabel?.takeIf(String::isNotBlank) ?: "Health Connect"
+    "health_connect" -> "Health Connect"
     else -> activity.source.orDash()
 }
 

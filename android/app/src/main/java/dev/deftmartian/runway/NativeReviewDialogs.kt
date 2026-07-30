@@ -342,6 +342,57 @@ internal fun PlanDecisionDialog(
 }
 
 @Composable
+internal fun PlanDecisionPreviewDialog(
+    preview: LocalPlanDecisionPreview,
+    actionPending: Boolean,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Review the future plan") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                errorMessage?.let { Notice(it, isError = true) }
+                SettingRow("Decision", planDecisionLabel(preview.decision))
+                SettingRow("Based on", preview.sourceLabel)
+                if (preview.changes.isEmpty()) {
+                    Text(
+                        "No future workout changes. The recorded result remains in the training log.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    preview.changes.forEach { change ->
+                        SettingCard(change.scheduledDate) {
+                            SettingRow("Current", change.before)
+                            SettingRow("After choice", change.after)
+                        }
+                    }
+                    Text(
+                        "Only these future workouts change. The recorded result and original recommendation remain in the ledger.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = !actionPending) {
+                Text("Apply choice")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !actionPending) {
+                Text("Go back")
+            }
+        },
+    )
+}
+
+@Composable
 internal fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier

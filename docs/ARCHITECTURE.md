@@ -2,7 +2,7 @@
 
 ## Boundary
 
-runway is a standalone Android application. Its persisted state, planning, activity review, imports, privacy controls, and backup/export all execute locally. There is no remote authority and no compatibility layer for the retired server product.
+runway is a standalone Android application. Its persisted state, planning, activity review, imports, privacy controls, and backup/export all execute locally. The local ledger is the only product authority.
 
 ## Modules
 
@@ -27,6 +27,8 @@ Released Room schemas require explicit migration and upgrade tests. New unreleas
 GPX share and folder imports use a bounded local parser. Raw files are consumed for parsing and not stored. Content-derived records and tombstones prevent accidental re-import after deletion. Folder access uses the Android Storage Access Framework, so the user grants only a selected tree and may revoke it in system settings. Scans run on foreground return and optional bounded WorkManager work; Android does not provide a reliable directory watch.
 
 Health Connect is an optional read-only source for supported running and treadmill-running records. The app requests only the permissions it needs, treats route access separately, and brings additions, corrections, and deletions through the same review/confirmation boundary. A denied or revoked permission leaves the local ledger intact.
+
+Folder scans, one-off GPX intake, foreground/background Health Connect sync, destructive erase, and restore share one process-wide import-data boundary. Scheduler cancellation is not treated as proof that an active Room write has finished.
 
 ## Privacy and data management
 

@@ -1,22 +1,19 @@
-runway is a private, self-hosted running plan and activity review app.
+runway is a private running planner and training decision ledger for Android.
 
-On first launch, choose your self-hosted runway server. The app verifies that address, then presents
-the planner, calendar, run detail, import review, history, stats, settings, and sign-in in native
-Jetpack Compose UI. runway is not an embedded WebView or browser wrapper. The system browser appears
-only for OIDC or passkey sign-in, password reset, and new passkey registration. Local account
-creation, password and two-factor sign-in, planning, review, and account controls stay native.
+Build a conservative plan around your current training, available days, and goal. The calendar keeps
+the prescribed run, the work you completed, rest, missed work, and the next decision together. You
+can change an individual workout, record a different run, or skip a day without losing the original
+plan. Any suggested plan change is shown before you choose whether to apply it.
 
-Android also retains read access to a user-approved Gadgetbridge GPX export folder and can schedule
-bounded checks without broad storage, location, activity-recognition, Play Services, or advertising
-permissions. You can share one GPX file to runway from another Android app.
+Import runs from a GPX file, a folder you approve, or Health Connect. Every imported run waits in
+Review before it can complete a planned workout or affect future training. Folder access is limited
+to the directory you choose. Health Connect access is optional, read-only, and limited to running
+sessions and their relevant metrics. Route access is requested separately for each run, and route
+points can be discarded after import.
 
-Optionally connect Health Connect to import running and treadmill-running sessions. runway requests
-only the exercise-session and workout metrics needed for those runs: distance, heart rate, speed,
-steps cadence, and elevation gained. It never writes to Health Connect. Background reads are opt-in
-and separately approved; route access is requested per run while the native screen is open. A route
-is retained only when the runway server's private route setting allows it; otherwise the server keeps
-a redacted summary.
+Plans, activities, private notes, heart-rate data, and preferences stay in runway's local app
+storage. There is no account and no remote service. You control complete local backups and readable
+training exports; both are plaintext files, so runway warns you before creating them.
 
-Native folder and share imports use a scoped device credential, stable request ids, bounded reads,
-content-based revision checks, and the same review inbox as web imports. Folder access remains
-limited to the directory you choose, and imported activities never change the plan before review.
+runway is not a GPS recorder, social network, or medical coach. It helps make a training ramp,
+recovery, completed work, missed work, and the next decision easier to reason about.

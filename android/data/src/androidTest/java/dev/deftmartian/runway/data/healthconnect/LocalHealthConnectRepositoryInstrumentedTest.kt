@@ -4,7 +4,10 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.deftmartian.runway.data.ACTIVITY_REVIEW_STATE_ACCEPTED
+import dev.deftmartian.runway.data.ActivityEntity
+import dev.deftmartian.runway.data.LocalPrivacyRepository
 import dev.deftmartian.runway.data.ProfileSettingsEntity
+import dev.deftmartian.runway.data.RouteDataMode
 import dev.deftmartian.runway.data.RunwayLedgerDatabase
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -80,6 +83,86 @@ class LocalHealthConnectRepositoryInstrumentedTest {
         assertNull(database.activityLedgerDao().activity(reviewInitial.activity.activityId))
         assertTrue(requireNotNull(database.importLedgerDao().healthConnectMapping("provider", "review-record")).tombstonedAtEpochMillis != null)
         assertNull(database.importLedgerDao().pendingHealthConnectObservation(reviewInitial.mapping.mappingId))
+    }
+
+    @Test
+    fun unavailableRouteNeverLooksLikeDeletionAndMetricCorrectionPreservesRetainedTrack() = runBlocking {
+        database.profileSettingsDao().save(profile(routeDataMode = "private"))
+        val repository = LocalHealthConnectRepository(database) { 300L }
+        val accepted = acceptedActivity(repository, "route-unavailable")
+        val unavailable = running(recordId = "route-unavailable").copy(
+            route = emptyList(),
+            routeSourcePointCount = 0,
+            routeObserved = false,
+        )
+
+        assertEquals(
+            LocalHealthConnectOutcome.Unchanged("route-unavailable"),
+            (repository.reconcile("provider", unavailable) as LocalHealthConnectPersistenceResult.Applied).outcome,
+        )
+        assertEquals(
+            1,
+            database.activityLedgerDao().routeSamples(accepted.activityId, 1_000).size,
+        )
+
+        val correction = (repository.reconcile(
+            "provider",
+            unavailable.copy(distanceMeters = 5_100),
+        ) as LocalHealthConnectPersistenceResult.Applied).outcome
+        assertTrue(correction is LocalHealthConnectOutcome.PendingCorrection)
+        val mapping = requireNotNull(
+            database.importLedgerDao().healthConnectMapping("provider", "route-unavailable"),
+        )
+        assertEquals(
+            1,
+            database.importLedgerDao().pendingHealthConnectRouteSamples(mapping.mappingId, 1_000).size,
+        )
+
+        assertEquals(
+            LocalHealthConnectPendingResolutionResult.CorrectionAccepted(accepted.activityId),
+            repository.acceptPendingCorrection("provider", "route-unavailable"),
+        )
+        val corrected = requireNotNull(database.activityLedgerDao().activity(accepted.activityId))
+        assertEquals(5_100, corrected.distanceMeters)
+        assertTrue(corrected.routeTraceRetained)
+        assertEquals(1, database.activityLedgerDao().routeSamples(accepted.activityId, 1_000).size)
+    }
+
+    @Test
+    fun explicitlyObservedEmptyRouteCanBeAcceptedButDiscardedRouteCannotBeRestored() = runBlocking {
+        database.profileSettingsDao().save(profile(routeDataMode = "private"))
+        val repository = LocalHealthConnectRepository(database) { 400L }
+        val removable = acceptedActivity(repository, "route-removed")
+
+        val removal = (repository.reconcile(
+            "provider",
+            running(recordId = "route-removed").copy(
+                route = emptyList(),
+                routeSourcePointCount = 0,
+                routeObserved = true,
+            ),
+        ) as LocalHealthConnectPersistenceResult.Applied).outcome
+        assertTrue(removal is LocalHealthConnectOutcome.PendingCorrection)
+        repository.acceptPendingCorrection("provider", "route-removed")
+        assertTrue(database.activityLedgerDao().routeSamples(removable.activityId, 1_000).isEmpty())
+        assertFalse(requireNotNull(database.activityLedgerDao().activity(removable.activityId)).routeTraceRetained)
+
+        val discarded = acceptedActivity(repository, "route-discarded")
+        val privacy = LocalPrivacyRepository(database) { 401L }
+        privacy.updateRouteDataMode(RouteDataMode.Discard)
+        privacy.updateRouteDataMode(RouteDataMode.Private)
+
+        assertEquals(
+            LocalHealthConnectOutcome.Unchanged("route-discarded"),
+            (repository.reconcile(
+                "provider",
+                running(recordId = "route-discarded"),
+            ) as LocalHealthConnectPersistenceResult.Applied).outcome,
+        )
+        val discardedActivity = requireNotNull(database.activityLedgerDao().activity(discarded.activityId))
+        assertTrue(discardedActivity.routeStartEndRedacted)
+        assertFalse(discardedActivity.routeTraceRetained)
+        assertTrue(database.activityLedgerDao().routeSamples(discarded.activityId, 1_000).isEmpty())
     }
 
     @Test
@@ -207,6 +290,118 @@ class LocalHealthConnectRepositoryInstrumentedTest {
         assertTrue(database.importLedgerDao().pendingHealthConnectObservation(mapping.mappingId) != null)
     }
 
+    @Test
+    fun duplicateCandidatesAreDetectedLocallyAndResolvedWithoutMutatingTheExistingRun() = runBlocking {
+        database.profileSettingsDao().save(profile(routeDataMode = "private"))
+        val repository = LocalHealthConnectRepository(database) { 1_000L }
+        val keepExisting = localActivity("manual-keep", startedAtEpochMillis = 1_000L)
+        database.activityLedgerDao().saveActivity(keepExisting)
+
+        val keepOutcome = (repository.reconcile("provider", running(recordId = "keep-duplicate"))
+            as LocalHealthConnectPersistenceResult.Applied).outcome as LocalHealthConnectOutcome.DuplicateCandidate
+        assertEquals(keepExisting.activityId, keepOutcome.existingActivityId)
+        assertEquals(keepExisting.activityId, database.importLedgerDao()
+            .healthConnectMapping("provider", "keep-duplicate")?.duplicateCandidateActivityId)
+        assertEquals(
+            LocalHealthConnectDuplicateResolutionResult.KeptBoth(
+                healthConnectActivityId = keepOutcome.activity.activityId,
+                existingActivityId = keepExisting.activityId,
+            ),
+            repository.resolveDuplicateCandidate(
+                "provider",
+                "keep-duplicate",
+                LocalHealthConnectDuplicateDecision.KeepBoth,
+            ),
+        )
+        assertNull(database.importLedgerDao().healthConnectMapping("provider", "keep-duplicate")?.duplicateCandidateActivityId)
+        assertTrue(database.activityLedgerDao().activity(keepOutcome.activity.activityId) != null)
+        assertTrue(database.activityLedgerDao().activity(keepExisting.activityId) != null)
+        assertEquals(
+            LocalHealthConnectDuplicateResolutionResult.AlreadyResolved(keepOutcome.mapping.mappingId),
+            repository.resolveDuplicateCandidate(
+                "provider",
+                "keep-duplicate",
+                LocalHealthConnectDuplicateDecision.KeepBoth,
+            ),
+        )
+
+        val useExisting = localActivity("manual-use", startedAtEpochMillis = 10_000L)
+        database.activityLedgerDao().saveActivity(useExisting)
+        val useOutcome = (repository.reconcile(
+            "provider",
+            running(recordId = "use-duplicate", startedAtEpochMillis = 10_000L),
+        ) as LocalHealthConnectPersistenceResult.Applied).outcome as LocalHealthConnectOutcome.DuplicateCandidate
+        assertEquals(
+            LocalHealthConnectDuplicateResolutionResult.UsedExisting(
+                removedHealthConnectActivityId = useOutcome.activity.activityId,
+                existingActivityId = useExisting.activityId,
+            ),
+            repository.resolveDuplicateCandidate(
+                "provider",
+                "use-duplicate",
+                LocalHealthConnectDuplicateDecision.UseExisting,
+            ),
+        )
+        assertNull(database.activityLedgerDao().activity(useOutcome.activity.activityId))
+        assertTrue(database.activityLedgerDao().activity(useExisting.activityId) != null)
+        val usedMapping = requireNotNull(database.importLedgerDao().healthConnectMapping("provider", "use-duplicate"))
+        assertEquals("tombstoned", usedMapping.lifecycleState)
+        assertNull(usedMapping.activityId)
+        assertNull(usedMapping.duplicateCandidateActivityId)
+        assertEquals(
+            LocalHealthConnectDuplicateResolutionResult.AlreadyResolved(usedMapping.mappingId),
+            repository.resolveDuplicateCandidate(
+                "provider",
+                "use-duplicate",
+                LocalHealthConnectDuplicateDecision.UseExisting,
+            ),
+        )
+        assertEquals(
+            LocalHealthConnectOutcome.Unchanged("use-duplicate"),
+            (repository.reconcile(
+                "provider",
+                running(recordId = "use-duplicate", startedAtEpochMillis = 10_000L),
+            ) as LocalHealthConnectPersistenceResult.Applied).outcome,
+        )
+    }
+
+    @Test
+    fun duplicateResolutionRejectsAChangedHealthConnectReviewWithoutDeletingEitherRun() = runBlocking {
+        database.profileSettingsDao().save(profile(routeDataMode = "private"))
+        val repository = LocalHealthConnectRepository(database) { 1_000L }
+        val existing = localActivity("manual-guard", startedAtEpochMillis = 20_000L)
+        database.activityLedgerDao().saveActivity(existing)
+        val outcome = (repository.reconcile(
+            "provider",
+            running(recordId = "guard-duplicate", startedAtEpochMillis = 20_000L),
+        ) as LocalHealthConnectPersistenceResult.Applied).outcome as LocalHealthConnectOutcome.DuplicateCandidate
+        database.activityLedgerDao().saveActivity(
+            requireNotNull(database.activityLedgerDao().activity(outcome.activity.activityId)).copy(
+                reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
+                acceptedAtEpochMillis = 2_000L,
+            ),
+        )
+
+        assertEquals(
+            LocalHealthConnectDuplicateResolutionResult.UnexpectedHealthConnectReview(
+                outcome.mapping.mappingId,
+                "health_connect",
+                ACTIVITY_REVIEW_STATE_ACCEPTED,
+            ),
+            repository.resolveDuplicateCandidate(
+                "provider",
+                "guard-duplicate",
+                LocalHealthConnectDuplicateDecision.UseExisting,
+            ),
+        )
+        assertTrue(database.activityLedgerDao().activity(outcome.activity.activityId) != null)
+        assertTrue(database.activityLedgerDao().activity(existing.activityId) != null)
+        assertEquals(
+            existing.activityId,
+            database.importLedgerDao().healthConnectMapping("provider", "guard-duplicate")?.duplicateCandidateActivityId,
+        )
+    }
+
     private suspend fun acceptedActivity(
         repository: LocalHealthConnectRepository,
         recordId: String,
@@ -237,14 +432,18 @@ class LocalHealthConnectRepositoryInstrumentedTest {
         updatedAtEpochMillis = 1L,
     )
 
-    private fun running(recordId: String = "record-1", distanceMeters: Int = 5_000) =
+    private fun running(
+        recordId: String = "record-1",
+        distanceMeters: Int = 5_000,
+        startedAtEpochMillis: Long = 1_000L,
+    ) =
         HealthConnectObservation.RunningUpsert(
             recordId = recordId,
             provider = "provider",
             runningType = LocalHealthConnectRunningType.Running,
             originKey = "org.example.tracker",
             originLabel = "Tracker",
-            startedAtEpochMillis = 1_000L,
+            startedAtEpochMillis = startedAtEpochMillis,
             durationSeconds = 1_800,
             distanceMeters = distanceMeters,
             averageHeartRateBpm = 145,
@@ -254,4 +453,23 @@ class LocalHealthConnectRepositoryInstrumentedTest {
             route = listOf(LocalHealthConnectRoutePoint(0, 45_000_000, -63_000_000)),
             routeSourcePointCount = 1,
         )
+
+    private fun localActivity(
+        activityId: String,
+        startedAtEpochMillis: Long,
+    ) = ActivityEntity(
+        activityId = activityId,
+        source = "manual",
+        sourceRecordId = activityId,
+        reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
+        occurredAtEpochMillis = startedAtEpochMillis,
+        durationSeconds = 1_800,
+        distanceMeters = 5_050,
+        averageHeartRateBpm = null,
+        averageCadenceSpm = null,
+        linkedWorkoutId = null,
+        acceptedAtEpochMillis = 1L,
+        createdAtEpochMillis = 1L,
+        updatedAtEpochMillis = 1L,
+    )
 }

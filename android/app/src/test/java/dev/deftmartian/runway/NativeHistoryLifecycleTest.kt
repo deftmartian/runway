@@ -25,7 +25,7 @@ class NativeHistoryLifecycleTest {
     }
 
     @Test
-    fun `race phase review exposes only server-supported decisions`() {
+    fun `race phase review exposes only locally supported decisions`() {
         val state = nativeHistoryLifecycleState(
             activePlan = activePlan(targetDate = "2026-07-01"),
             today = "2026-08-01",
@@ -106,6 +106,7 @@ class NativeHistoryLifecycleTest {
     )
 
     private fun racePlan() = NativeRacePlan(
+        previewToken = "preview-1",
         risk = "conservative",
         weeks = 10,
         startDate = "2026-08-03",

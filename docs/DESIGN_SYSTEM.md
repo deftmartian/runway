@@ -34,4 +34,4 @@ Pain and hard-effort labels describe a runner's report, not a diagnosis. Use con
 
 ## Visual verification
 
-Native UI changes require emulator or device inspection at a compact phone size, a larger phone size, system light/dark schemes, increased font scale, and TalkBack where the changed flow warrants it. Screenshot updates are evidence only when they come from the current standalone app; old browser or server-era captures must not be reused.
+Native UI changes require emulator or device inspection at a compact phone size, a larger phone size, system light/dark schemes, increased font scale, and TalkBack where the changed flow warrants it. Screenshot updates are evidence only when they come from the current native build.

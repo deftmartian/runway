@@ -26,6 +26,31 @@ class LocalConsequenceDecisionRepository(
     fun preview(input: LocalDecisionInput): LocalDecisionResult =
         LocalConsequenceDecisionEngine.preview(input)
 
+    /**
+     * Builds a preview from current ledger evidence instead of trusting presentation-layer copies
+     * of a consequence, source version, or future plan.
+     */
+    suspend fun prepare(
+        kind: LocalDecisionSourceKind,
+        sourceId: String,
+        decision: PlanDecision,
+    ): LocalConsequenceDecisionPreparation = database.withTransaction {
+        val source = currentSource(kind, sourceId)
+            ?: return@withTransaction LocalConsequenceDecisionPreparation.Rejected(
+                LocalDecisionIssue.PROPOSAL_NOT_AVAILABLE,
+            )
+        val input = canonicalInput(source, decision)
+            ?: return@withTransaction LocalConsequenceDecisionPreparation.Rejected(
+                LocalDecisionIssue.PROPOSAL_NOT_AVAILABLE,
+            )
+        when (val preview = LocalConsequenceDecisionEngine.preview(input)) {
+            is LocalDecisionResult.Preview ->
+                LocalConsequenceDecisionPreparation.Prepared(input, preview)
+            is LocalDecisionResult.Rejected ->
+                LocalConsequenceDecisionPreparation.Rejected(preview.issue)
+        }
+    }
+
     suspend fun apply(
         preview: LocalDecisionResult.Preview,
         input: LocalDecisionInput,
@@ -85,7 +110,13 @@ class LocalConsequenceDecisionRepository(
         )
         ready.changes.forEachIndexed { ordinal, change ->
             val after = change.after.copy(updatedAtEpochMillis = appliedAtEpochMillis)
-            adjustmentDao.saveWorkoutEffect(effect("$adjustmentId-effect-$ordinal", groupId, ordinal, change.before, after))
+            val effectId = "$adjustmentId-effect-$ordinal"
+            adjustmentDao.saveWorkoutEffect(effect(effectId, groupId, ordinal, change.before, after))
+            saveCurrentStructureSnapshot(
+                effectId = effectId,
+                snapshotState = "before",
+                workoutId = change.before.workoutId,
+            )
             planDao.saveWorkout(after)
             replaceCurrentStructure(
                 planDao = planDao,
@@ -93,6 +124,11 @@ class LocalConsequenceDecisionRepository(
                 after = after,
                 repeatSource = current.originWorkout,
                 seed = "$adjustmentId-$ordinal",
+            )
+            saveCurrentStructureSnapshot(
+                effectId = effectId,
+                snapshotState = "after",
+                workoutId = after.workoutId,
             )
         }
         adjustmentDao.saveDecision(
@@ -128,6 +164,7 @@ class LocalConsequenceDecisionRepository(
         return when (source.kind) {
             LocalDecisionSourceKind.WorkoutFeedback -> {
                 val feedback = activityDao.workoutFeedbackById(source.sourceId) ?: return null
+                if (feedback.recordedAtEpochMillis.toString() != source.version) return null
                 val stored = activityDao.workoutFeedbackConsequence(source.sourceId) ?: return null
                 val workout = planDao.workout(feedback.workoutId) ?: return null
                 val plan = planDao.plan(workout.planId)?.takeIf { it.state == "active" } ?: return null
@@ -151,6 +188,10 @@ class LocalConsequenceDecisionRepository(
                             it.linkedWorkoutId == null &&
                             it.extraPlanImpactConfirmed
                     } ?: return null
+                val feedback = activityDao.activityFeedback(activity.activityId)
+                val currentVersion =
+                    (feedback?.recordedAtEpochMillis ?: activity.updatedAtEpochMillis).toString()
+                if (currentVersion != source.version) return null
                 val stored = activityDao.activityConsequence(activity.activityId) ?: return null
                 val plan = planDao.activePlans(limit = 2).singleOrNull() ?: return null
                 val candidates = planDao.visibleWorkoutsForPlan(plan.planId, limit = MAX_PLAN_WORKOUTS)
@@ -165,7 +206,6 @@ class LocalConsequenceDecisionRepository(
                 val week = candidates.filter {
                     it.currentScheduledEpochDay in weekStart.toEpochDay()..weekStart.plusDays(6).toEpochDay()
                 }
-                val feedback = activityDao.activityFeedback(activity.activityId)
                 val calculated = calculateExtraActivityConsequence(
                     ExtraActivityInput(
                         distanceMeters = activity.distanceMeters ?: 0,
@@ -199,6 +239,24 @@ class LocalConsequenceDecisionRepository(
                 )
             }
         }
+    }
+
+    private suspend fun currentSource(
+        kind: LocalDecisionSourceKind,
+        sourceId: String,
+    ): LocalDecisionSource? {
+        if (sourceId.isBlank()) return null
+        val dao = database.activityLedgerDao()
+        val version = when (kind) {
+            LocalDecisionSourceKind.WorkoutFeedback ->
+                dao.workoutFeedbackById(sourceId)?.recordedAtEpochMillis
+            LocalDecisionSourceKind.Activity -> {
+                val activity = dao.activity(sourceId) ?: return null
+                dao.activityFeedback(sourceId)?.recordedAtEpochMillis
+                    ?: activity.updatedAtEpochMillis
+            }
+        } ?: return null
+        return LocalDecisionSource(kind, sourceId, version.toString())
     }
 
     private suspend fun sourceOffersDecision(source: LocalDecisionSource, decision: PlanDecision): Boolean {
@@ -295,6 +353,59 @@ class LocalConsequenceDecisionRepository(
         if (references.isNotEmpty()) planDao.insertWorkoutSourceReferences(references)
     }
 
+    /** Records the exact structured state that the shared guarded undo path compares and restores. */
+    private suspend fun saveCurrentStructureSnapshot(
+        effectId: String,
+        snapshotState: String,
+        workoutId: String,
+    ) {
+        val planDao = database.goalPlanDao()
+        val adjustmentDao = database.adjustmentDao()
+        val blocks = planDao.blocksForWorkout(workoutId, "current", MAX_BLOCKS)
+        blocks.forEachIndexed { blockOrdinal, block ->
+            val blockSnapshotId = "$effectId-$snapshotState-block-$blockOrdinal"
+            adjustmentDao.saveEffectBlockSnapshot(
+                AdjustmentEffectBlockSnapshotEntity(
+                    blockSnapshotId = blockSnapshotId,
+                    effectId = effectId,
+                    snapshotState = snapshotState,
+                    ordinal = blockOrdinal,
+                    blockType = block.blockType,
+                    repetitions = block.repetitions,
+                ),
+            )
+            planDao.segmentsForBlock(block.blockId, MAX_SEGMENTS)
+                .forEachIndexed { segmentOrdinal, segment ->
+                    adjustmentDao.saveEffectSegmentSnapshot(
+                        AdjustmentEffectSegmentSnapshotEntity(
+                            segmentSnapshotId =
+                                "$effectId-$snapshotState-segment-$blockOrdinal-$segmentOrdinal",
+                            blockSnapshotId = blockSnapshotId,
+                            ordinal = segmentOrdinal,
+                            segmentType = segment.segmentType,
+                            targetDistanceMeters = segment.targetDistanceMeters,
+                            targetDurationSeconds = segment.targetDurationSeconds,
+                        ),
+                    )
+                }
+        }
+        planDao.workoutSourceReferences(workoutId, "current", MAX_REFERENCES)
+            .forEachIndexed { referenceOrdinal, reference ->
+                adjustmentDao.saveEffectSourceReferenceSnapshot(
+                    AdjustmentEffectSourceReferenceSnapshotEntity(
+                        sourceReferenceSnapshotId =
+                            "$effectId-$snapshotState-source-$referenceOrdinal",
+                        effectId = effectId,
+                        snapshotState = snapshotState,
+                        ordinal = referenceOrdinal,
+                        sourceName = reference.sourceName,
+                        sourceUrl = reference.sourceUrl,
+                        sourceLocator = reference.sourceLocator,
+                    ),
+                )
+            }
+    }
+
     private companion object {
         const val MAX_PLAN_WORKOUTS = 1_024
         const val MAX_OPTIONS = 16
@@ -302,6 +413,15 @@ class LocalConsequenceDecisionRepository(
         const val MAX_SEGMENTS = 100
         const val MAX_REFERENCES = 100
     }
+}
+
+sealed interface LocalConsequenceDecisionPreparation {
+    data class Prepared(
+        val input: LocalDecisionInput,
+        val preview: LocalDecisionResult.Preview,
+    ) : LocalConsequenceDecisionPreparation
+
+    data class Rejected(val issue: LocalDecisionIssue) : LocalConsequenceDecisionPreparation
 }
 
 private fun WorkoutFeedbackConsequenceEntity.toCanonicalConsequence(

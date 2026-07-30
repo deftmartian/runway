@@ -6,7 +6,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
-/** Pure, server-parity decision arithmetic. It does not persist or mutate a plan. */
+/** Pure, deterministic decision arithmetic. It does not persist or mutate a plan. */
 enum class LoadMetric { DISTANCE, DURATION, NONE }
 enum class Risk { CONSERVATIVE, MODERATE, AGGRESSIVE, UNSAFE }
 enum class Deviation { NEAR_PLAN, SHORT, OVER, SKIPPED, UNPLANNED, NOT_APPLICABLE }

@@ -1,8 +1,8 @@
 # Android development
 
-This document is retained as the Android development entry point. The architecture is described in [ARCHITECTURE.md](ARCHITECTURE.md), and release handling is in [android/docs/RELEASE.md](../android/docs/RELEASE.md).
+This is the Android development entry point. The architecture is described in [ARCHITECTURE.md](ARCHITECTURE.md), and release handling is in [android/docs/RELEASE.md](../android/docs/RELEASE.md).
 
-runway is a standalone native Compose app with local Room storage. It does not select an origin, sign in, open a browser, or contact a remote service.
+runway is a standalone native Compose app with local Room storage and no account or remote dependency.
 
 ## Build and test
 

@@ -4,34 +4,51 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dev.deftmartian.runway.data.LocalActivityEvidenceReadModel
-import dev.deftmartian.runway.data.LocalCalendarReadModel
 import dev.deftmartian.runway.data.LocalHistoryReadModel
-import dev.deftmartian.runway.data.LocalInboxReadModel
-import dev.deftmartian.runway.data.LocalSettingsReadModel
-import dev.deftmartian.runway.data.LocalStatsReadModel
 import dev.deftmartian.runway.data.LocalActivityReviewResult
+import dev.deftmartian.runway.data.LocalBackupResult
+import dev.deftmartian.runway.data.LocalConsequenceDecisionPreparation
+import dev.deftmartian.runway.data.LocalConsequenceDecisionPersistenceResult
+import dev.deftmartian.runway.data.LocalContinuePhaseRequest
+import dev.deftmartian.runway.data.LocalDecisionIssue
+import dev.deftmartian.runway.data.LocalDecisionSourceKind
 import dev.deftmartian.runway.data.LocalManualRunCommand
 import dev.deftmartian.runway.data.LocalPlanSetupResult
 import dev.deftmartian.runway.data.LocalProfileUpdateResult
+import dev.deftmartian.runway.data.LocalRaceBaselineConfirmationRequest
+import dev.deftmartian.runway.data.LocalRestoreResult
+import dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackCommand
 import dev.deftmartian.runway.data.LocalPlanEndRequest
+import dev.deftmartian.runway.data.LocalPhaseReviewResult
+import dev.deftmartian.runway.data.LocalPlanLifecycleResult
 import dev.deftmartian.runway.data.LocalWorkoutChangeRequest
 import dev.deftmartian.runway.data.ApplyLocalWorkoutChangeCommand
 import dev.deftmartian.runway.domain.WorkoutProposal
 import dev.deftmartian.runway.domain.WorkoutType
 import dev.deftmartian.runway.domain.PrescriptionKind
 import dev.deftmartian.runway.data.RouteDataMode
+import dev.deftmartian.runway.data.RouteDataModeUpdate
 import dev.deftmartian.runway.data.SexForEstimate
 import dev.deftmartian.runway.data.HeartRateSettingsSource
 import dev.deftmartian.runway.data.LocalHeartRateProfile
 import dev.deftmartian.runway.data.LocalHealthContext
 import dev.deftmartian.runway.domain.FeedbackStatus
 import dev.deftmartian.runway.domain.PlanDecision
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectPendingResolutionResult
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectDuplicateDecision
+import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectDuplicateResolutionResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,12 +83,79 @@ internal fun NativeDestination.primaryNavigationDestination(): NativeDestination
     generateSequence(this) { it.navigationParent }.firstOrNull(NativeDestination::primaryNavigation)
 
 internal data class NativeNotice(val message: String, val isError: Boolean = false)
+internal data class LocalPlanDecisionChangeDisplay(
+    val scheduledDate: String,
+    val before: String,
+    val after: String,
+)
+
+internal data class LocalPlanDecisionPreview(
+    val prepared: LocalConsequenceDecisionPreparation.Prepared,
+    val sourceLabel: String,
+    val decision: String,
+    val changes: List<LocalPlanDecisionChangeDisplay>,
+)
+
+internal sealed interface RunwayUiEffect {
+    data object RestartAfterRestore : RunwayUiEffect
+}
+
+internal sealed interface NativeSurface {
+    val destination: NativeDestination
+    val hasContent: Boolean
+
+    data class Setup(val payload: NativeOnboardingPayload?) : NativeSurface {
+        override val destination = NativeDestination.Setup
+        override val hasContent = payload != null
+    }
+
+    data class Calendar(val payload: NativeCalendarPayload?) : NativeSurface {
+        override val destination = NativeDestination.Calendar
+        override val hasContent = payload != null
+    }
+
+    data class Inbox(val payload: NativeReviewPayload?) : NativeSurface {
+        override val destination = NativeDestination.Inbox
+        override val hasContent = payload != null
+    }
+
+    data class Stats(val payload: NativeStatsPayload?) : NativeSurface {
+        override val destination = NativeDestination.Stats
+        override val hasContent = payload != null
+    }
+
+    data class History(val payload: NativeHistoryPayload?) : NativeSurface {
+        override val destination = NativeDestination.History
+        override val hasContent = payload != null
+    }
+
+    data class Settings(val payload: NativeSettingsState?) : NativeSurface {
+        override val destination = NativeDestination.Settings
+        override val hasContent = payload != null
+    }
+
+    data class HistoryDetail(val payload: NativeHistoryDetailPayload?) : NativeSurface {
+        override val destination = NativeDestination.HistoryDetail
+        override val hasContent = payload != null
+    }
+
+    companion object {
+        fun empty(destination: NativeDestination): NativeSurface = when (destination) {
+            NativeDestination.Setup -> Setup(null)
+            NativeDestination.Calendar -> Calendar(null)
+            NativeDestination.Inbox -> Inbox(null)
+            NativeDestination.Stats -> Stats(null)
+            NativeDestination.History -> History(null)
+            NativeDestination.Settings -> Settings(null)
+            NativeDestination.HistoryDetail -> HistoryDetail(null)
+        }
+    }
+}
+
 internal sealed interface RunwayUiState {
     data object Loading : RunwayUiState
     data class Ready(
-        val bootstrap: NativeBootstrapPayload,
-        val destination: NativeDestination,
-        val payload: Any?,
+        val surface: NativeSurface,
         val loading: Boolean,
         val actionPending: Boolean = false,
         val notice: NativeNotice? = null,
@@ -80,20 +164,40 @@ internal sealed interface RunwayUiState {
         val activityEvidenceLoading: Set<String> = emptySet(),
         val activityEvidenceFailures: Set<String> = emptySet(),
         val workoutPreview: LocalWorkoutChangePreview? = null,
-    ) : RunwayUiState
+        val planDecisionPreview: LocalPlanDecisionPreview? = null,
+    ) : RunwayUiState {
+        val destination: NativeDestination
+            get() = surface.destination
+    }
 
     data class Failed(val message: String) : RunwayUiState
 }
 
-/** Local-only app coordinator. It deliberately has no session, server, or browser state. */
-internal class RunwayViewModel(application: Application) : AndroidViewModel(application) {
+/** Local app coordinator for UI state and typed repository commands. */
+internal class RunwayViewModel(
+    application: Application,
+    private val savedStateHandle: SavedStateHandle,
+) : AndroidViewModel(application) {
     private val services = application.runwayServices
+    private val surfaceLoader = NativeSurfaceLoader(application, services)
     private val mutableState = MutableStateFlow<RunwayUiState>(RunwayUiState.Loading)
-    private var calendarMonth: YearMonth = YearMonth.now()
+    private val mutableEffects = MutableSharedFlow<RunwayUiEffect>(extraBufferCapacity = 1)
+    private var calendarMonth: YearMonth = savedStateHandle.get<String>(SAVED_CALENDAR_MONTH)
+        ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
+        ?: YearMonth.now()
+    private var calendarMonthWasSelected = savedStateHandle.contains(SAVED_CALENDAR_MONTH)
+    private var historyPlanLimit = savedStateHandle.get<Int>(SAVED_HISTORY_LIMIT)
+        ?.coerceIn(HISTORY_PAGE_SIZE, MAX_HISTORY_PLANS)
+        ?: HISTORY_PAGE_SIZE
+    private var inboxActivityLimit = savedStateHandle.get<Int>(SAVED_INBOX_LIMIT)
+        ?.coerceIn(INBOX_PAGE_SIZE, MAX_INBOX_ACTIVITIES)
+        ?: INBOX_PAGE_SIZE
+    private var loadGeneration = 0L
+    private var surfaceLoadJob: Job? = null
     private var history: LocalHistoryReadModel? = null
-    private var evidenceByActivity: Map<String, LocalActivityEvidenceReadModel> = emptyMap()
 
     val state: StateFlow<RunwayUiState> = mutableState.asStateFlow()
+    val effects: SharedFlow<RunwayUiEffect> = mutableEffects.asSharedFlow()
 
     init {
         refresh()
@@ -101,28 +205,87 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
 
     fun selectDestination(destination: NativeDestination) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
-        if (ready.destination == destination && ready.payload != null) return
-        mutableState.value = ready.copy(destination = destination, payload = null, loading = true, notice = null)
+        if (ready.destination == destination && ready.surface.hasContent) return
+        savedStateHandle[SAVED_DESTINATION] = destination.name
+        if (destination != NativeDestination.HistoryDetail) {
+            savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
+        }
+        mutableState.value = ready.copy(
+            surface = NativeSurface.empty(destination),
+            loading = true,
+            notice = null,
+            activityEvidence = emptyMap(),
+            activityEvidenceLoading = emptySet(),
+            activityEvidenceFailures = emptySet(),
+            workoutPreview = null,
+            planDecisionPreview = null,
+        )
         load(destination)
     }
 
     fun loadCalendarMonth(month: String) {
         calendarMonth = runCatching { YearMonth.parse(month) }.getOrDefault(calendarMonth)
-        selectDestination(NativeDestination.Calendar)
-        load(NativeDestination.Calendar)
+        calendarMonthWasSelected = true
+        savedStateHandle[SAVED_CALENDAR_MONTH] = calendarMonth.toString()
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.destination == NativeDestination.Calendar) {
+            mutableState.value = ready.copy(loading = true, notice = null)
+            load(NativeDestination.Calendar)
+        } else {
+            selectDestination(NativeDestination.Calendar)
+        }
     }
 
-    fun loadMoreHistory() = refresh()
-    fun loadMoreInbox() = refresh()
+    fun loadMoreHistory() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        val payload = (ready.surface as? NativeSurface.History)?.payload ?: return
+        if (payload.history?.nextOffset == null || ready.loading) return
+        if (historyPlanLimit >= MAX_HISTORY_PLANS) {
+            mutableState.value = ready.copy(
+                notice = NativeNotice(
+                    "The oldest plans are outside this on-device history window.",
+                    isError = true,
+                ),
+            )
+            return
+        }
+        historyPlanLimit = (historyPlanLimit + HISTORY_PAGE_SIZE).coerceAtMost(MAX_HISTORY_PLANS)
+        savedStateHandle[SAVED_HISTORY_LIMIT] = historyPlanLimit
+        mutableState.value = ready.copy(loading = true, notice = null)
+        load(NativeDestination.History)
+    }
+
+    fun loadMoreInbox() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        val payload = (ready.surface as? NativeSurface.Inbox)?.payload ?: return
+        if (!payload.hasMore || ready.loading) return
+        if (inboxActivityLimit >= MAX_INBOX_ACTIVITIES) {
+            mutableState.value = ready.copy(
+                notice = NativeNotice(
+                    "The oldest review items are outside this on-device Inbox window.",
+                    isError = true,
+                ),
+            )
+            return
+        }
+        inboxActivityLimit = (inboxActivityLimit + INBOX_PAGE_SIZE)
+            .coerceAtMost(MAX_INBOX_ACTIVITIES)
+        savedStateHandle[SAVED_INBOX_LIMIT] = inboxActivityLimit
+        mutableState.value = ready.copy(loading = true, notice = null)
+        load(NativeDestination.Inbox)
+    }
 
     fun openHistoryDetail(planId: String) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
-        val item = history?.plans?.firstOrNull { it.planId == planId }
+        val detail = history?.let { surfaceLoader.cachedHistoryDetail(it, planId) }
+        if (detail != null) {
+            savedStateHandle[SAVED_DESTINATION] = NativeDestination.HistoryDetail.name
+            savedStateHandle[SAVED_HISTORY_PLAN_ID] = planId
+        }
         mutableState.value = ready.copy(
-            destination = NativeDestination.HistoryDetail,
+            surface = detail ?: ready.surface,
             loading = false,
-            payload = item?.toNativeHistoryDetail(),
-            notice = if (item == null) NativeNotice("That local plan record is no longer available.", true) else null,
+            notice = if (detail == null) NativeNotice("That local plan record is no longer available.", true) else null,
         )
     }
 
@@ -131,21 +294,41 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         if (activityId in ready.activityEvidenceLoading) return
         mutableState.value = ready.copy(activityEvidenceLoading = ready.activityEvidenceLoading + activityId)
         viewModelScope.launch {
-            val evidence = withContext(Dispatchers.IO) { services.surfaces.activityEvidence(activityId) }
+            val result = runCatching {
+                withContext(Dispatchers.IO) { services.surfaces.activityEvidence(activityId) }
+            }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
-            mutableState.value = if (evidence == null) current.copy(
-                activityEvidenceLoading = current.activityEvidenceLoading - activityId,
-                activityEvidenceFailures = current.activityEvidenceFailures + activityId,
-                notice = NativeNotice("This activity no longer has local evidence.", true),
-            ) else current.copy(
-                activityEvidenceLoading = current.activityEvidenceLoading - activityId,
-                activityEvidence = current.activityEvidence + (activityId to evidence.evidence.toNativeEvidence()),
+            mutableState.value = result.fold(
+                onSuccess = { evidence ->
+                    if (evidence == null) {
+                        current.copy(
+                            activityEvidenceLoading = current.activityEvidenceLoading - activityId,
+                            activityEvidenceFailures = current.activityEvidenceFailures + activityId,
+                            notice = NativeNotice("This activity no longer has local evidence.", true),
+                        )
+                    } else {
+                        current.copy(
+                            activityEvidenceLoading = current.activityEvidenceLoading - activityId,
+                            activityEvidenceFailures = current.activityEvidenceFailures - activityId,
+                            activityEvidence =
+                                current.activityEvidence + (activityId to evidence.evidence.toNativeEvidence()),
+                        )
+                    }
+                },
+                onFailure = {
+                    current.copy(
+                        activityEvidenceLoading = current.activityEvidenceLoading - activityId,
+                        activityEvidenceFailures = current.activityEvidenceFailures + activityId,
+                        notice = NativeNotice("Couldn’t read this activity from local storage.", true),
+                    )
+                },
             )
         }
     }
 
     fun refresh() {
-        val destination = (mutableState.value as? RunwayUiState.Ready)?.destination ?: NativeDestination.Calendar
+        val destination = (mutableState.value as? RunwayUiState.Ready)?.destination
+            ?: restoredDestination()
         load(destination)
     }
 
@@ -157,7 +340,25 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
             result.onSuccess { message ->
                 mutableState.value = current.copy(actionPending = false, completedAction = command.action, notice = NativeNotice(message))
-                refresh()
+                if (command is CreatePlanCommand) {
+                    calendarMonthWasSelected = false
+                    savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
+                    savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
+                    val redirected = requireNotNull(mutableState.value as? RunwayUiState.Ready)
+                    mutableState.value = redirected.copy(
+                        surface = NativeSurface.empty(NativeDestination.Calendar),
+                        loading = true,
+                    )
+                    load(NativeDestination.Calendar)
+                } else if (
+                    command !is PreviewWorkoutEditCommand &&
+                    command !is PreviewWorkoutAddCommand &&
+                    command !is PreviewWorkoutRemovalCommand &&
+                    command !is ResetWorkoutCommand &&
+                    command !is PreviewPlanDecisionCommand
+                ) {
+                    refresh()
+                }
             }.onFailure { error ->
                 mutableState.value = current.copy(actionPending = false, notice = NativeNotice(error.message ?: "That local change could not be saved.", true))
             }
@@ -167,6 +368,11 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
     fun dismissWorkoutPreview() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         mutableState.value = ready.copy(workoutPreview = null)
+    }
+
+    fun dismissPlanDecisionPreview() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        mutableState.value = ready.copy(planDecisionPreview = null)
     }
 
     fun applyWorkoutPreview() {
@@ -199,15 +405,75 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    fun applyPlanDecisionPreview() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        val pending = ready.planDecisionPreview ?: return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val preview = pending.prepared.preview
+                    val identity = stableId(
+                        "${preview.source.kind}:${preview.source.sourceId}:" +
+                            "${preview.source.version}:${preview.decision}:${preview.token}",
+                    )
+                    services.consequenceDecisions.apply(
+                        preview = preview,
+                        input = pending.prepared.input,
+                        adjustmentId = "consequence-$identity",
+                        decisionId = "decision-$identity",
+                        appliedAtEpochMillis = System.currentTimeMillis(),
+                    )
+                }
+            }
+            val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
+            result.onSuccess { outcome ->
+                when (outcome) {
+                    is LocalConsequenceDecisionPersistenceResult.Applied,
+                    LocalConsequenceDecisionPersistenceResult.AlreadyApplied,
+                    -> {
+                        mutableState.value = current.copy(
+                            actionPending = false,
+                            planDecisionPreview = null,
+                            completedAction = "apply_plan_decision",
+                            notice = NativeNotice("Your choice was applied to the future plan."),
+                        )
+                        refresh()
+                    }
+                    is LocalConsequenceDecisionPersistenceResult.Rejected ->
+                        mutableState.value = current.copy(
+                            actionPending = false,
+                            notice = NativeNotice(
+                                decisionIssueMessage(outcome.issue),
+                                isError = true,
+                            ),
+                        )
+                }
+            }.onFailure {
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(
+                        it.message ?: "The plan changed before this choice could be applied. Review it again.",
+                        isError = true,
+                    ),
+                )
+            }
+        }
+    }
+
     fun updateTimeZone(value: String) = mutateSetting { services.profile.updateTimeZone(value) }
     fun updateRoutePrivacy(value: NativeRoutePrivacy) = mutateSetting { services.privacy.updateRouteDataMode(if (value == NativeRoutePrivacy.KeepPrivate) RouteDataMode.Private else RouteDataMode.Discard) }
     fun updateHeartRate(value: NativeHeartRateProfile) = mutateSetting {
-        services.profile.updateHeartRateProfile(LocalHeartRateProfile(
-            sexForEstimate = SexForEstimate.NotSpecified, ageYears = null,
-            source = if (value.source == NativeHeartRateSource.Custom) HeartRateSettingsSource.Custom else HeartRateSettingsSource.Estimated,
-            maxHeartRateBpm = requireNotNull(value.maxHeartRateBpm), zone2FloorBpm = requireNotNull(value.zone2FloorBpm),
-            zone3FloorBpm = requireNotNull(value.zone3FloorBpm), zone4FloorBpm = requireNotNull(value.zone4FloorBpm), zone5FloorBpm = requireNotNull(value.zone5FloorBpm),
-        ))
+        if (value.source == NativeHeartRateSource.NotConfigured) {
+            services.profile.clearHeartRateProfile()
+        } else {
+            services.profile.updateHeartRateProfile(LocalHeartRateProfile(
+                sexForEstimate = SexForEstimate.NotSpecified, ageYears = null,
+                source = if (value.source == NativeHeartRateSource.Custom) HeartRateSettingsSource.Custom else HeartRateSettingsSource.Estimated,
+                maxHeartRateBpm = requireNotNull(value.maxHeartRateBpm), zone2FloorBpm = requireNotNull(value.zone2FloorBpm),
+                zone3FloorBpm = requireNotNull(value.zone3FloorBpm), zone4FloorBpm = requireNotNull(value.zone4FloorBpm), zone5FloorBpm = requireNotNull(value.zone5FloorBpm),
+            ))
+        }
     }
     fun updateHealthContext(value: NativeHealthContext) = mutateSetting {
         services.profile.updateHealthContext(LocalHealthContext(value.recentInjury, value.currentPain, value.recurringPain, value.clinicianRestriction, value.notes))
@@ -216,9 +482,50 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { services.dataManagement.eraseAllTrainingData() } }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    services.importSources.disconnectBeforeErase {
+                        services.dataManagement.eraseAllTrainingData()
+                    }
+                }
+            }
                 .onSuccess { mutableState.value = RunwayUiState.Loading; load(NativeDestination.Setup) }
                 .onFailure { mutableState.value = ready.copy(actionPending = false, notice = NativeNotice(it.message ?: "Local data could not be erased.", true)) }
+        }
+    }
+
+    fun eraseImportedActivityData() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    services.importSources.disconnectBeforeErase {
+                        services.dataManagement.eraseImportedActivityData()
+                    }
+                }
+            }.onSuccess { outcome ->
+                val current = mutableState.value as? RunwayUiState.Ready
+                if (current != null) {
+                    mutableState.value = current.copy(
+                        actionPending = false,
+                        notice = NativeNotice(
+                            when {
+                                outcome.activitiesErased == 0 ->
+                                    "There was no imported activity data to remove. Import sources were disconnected."
+                                else ->
+                                    "Removed ${outcome.activitiesErased} imported activit${if (outcome.activitiesErased == 1) "y" else "ies"}. Manual entries and plans were kept."
+                            },
+                        ),
+                    )
+                    refresh()
+                }
+            }.onFailure { error ->
+                mutableState.value = ready.copy(
+                    actionPending = false,
+                    notice = NativeNotice(error.message ?: "Imported activity data could not be removed.", true),
+                )
+            }
         }
     }
 
@@ -233,8 +540,72 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    fun backup(context: Context, uri: Uri) = documentMutation("Backup created.") { services.dataManagement.backupToDocument(context, uri) }
-    fun restore(context: Context, uri: Uri) = documentMutation("Backup restored. Runway was reopened from the restored local data.") { services.dataManagement.restoreFromDocument(context, uri) }
+    fun backup(context: Context, uri: Uri) {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    services.dataManagement.backupToDocument(context, uri)
+                }
+            }
+            result.onSuccess { outcome ->
+                when (outcome) {
+                    is LocalBackupResult.Created ->
+                        mutableState.value = ready.copy(
+                            actionPending = false,
+                            notice = NativeNotice("Backup created. It is not encrypted; store it somewhere you trust."),
+                        )
+                    is LocalBackupResult.Rejected ->
+                        mutableState.value = ready.copy(
+                            actionPending = false,
+                            notice = NativeNotice(outcome.reason, isError = true),
+                        )
+                }
+            }.onFailure {
+                mutableState.value = ready.copy(
+                    actionPending = false,
+                    notice = NativeNotice(it.message ?: "The backup could not be created.", true),
+                )
+            }
+        }
+    }
+
+    fun restore(context: Context, uri: Uri) {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    AndroidStateCoordinator.withImportDataBoundary {
+                        ReconciliationScheduler.cancelAllAndWait(context)
+                        services.dataManagement.restoreFromDocument(context, uri)
+                    }
+                }
+            }
+            result.onSuccess { outcome ->
+                val (message, isError, restartRequired) = when (outcome) {
+                    is LocalRestoreResult.Restored ->
+                        Triple("Backup restored. Restarting runway…", false, outcome.restartRequired)
+                    is LocalRestoreResult.Rejected ->
+                        Triple(outcome.reason, true, outcome.restartRequired)
+                    is LocalRestoreResult.RecoveryRequired ->
+                        Triple(outcome.reason, true, true)
+                }
+                mutableState.value = ready.copy(
+                    actionPending = restartRequired,
+                    notice = NativeNotice(message, isError),
+                )
+                if (restartRequired) mutableEffects.emit(RunwayUiEffect.RestartAfterRestore)
+            }.onFailure {
+                mutableState.value = ready.copy(
+                    actionPending = false,
+                    notice = NativeNotice(it.message ?: "The selected backup could not be restored.", true),
+                )
+            }
+        }
+    }
+
     fun export(context: Context, uri: Uri) = documentMutation("Training data exported.") { services.dataManagement.exportTrainingJson(context, uri) }
 
     private fun documentMutation(success: String, block: suspend () -> Any) {
@@ -251,7 +622,21 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { block() } }.onSuccess {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    when (val result = block()) {
+                        LocalProfileUpdateResult.Updated,
+                        is RouteDataModeUpdate.Updated,
+                        -> Unit
+                        LocalProfileUpdateResult.ProfileNotConfigured,
+                        RouteDataModeUpdate.ProfileNotConfigured,
+                        -> error("Finish local setup before changing this setting.")
+                        is LocalProfileUpdateResult.Invalid ->
+                            error(result.issue.name.lowercase().replace('_', ' '))
+                        else -> Unit
+                    }
+                }
+            }.onSuccess {
                 mutableState.value = ready.copy(actionPending = false, notice = NativeNotice("Saved.")); refresh()
             }.onFailure { mutableState.value = ready.copy(actionPending = false, notice = NativeNotice(it.message ?: "Could not save that setting.", true)) }
         }
@@ -266,14 +651,241 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         is UpdateActivityFeedbackCommand -> services.activityReview.updateFeedback(command.activityId, command.feltHard, command.pain).message()
         is UnlinkActivityCommand -> services.activityReview.unlink(command.activityId).message()
         is DeleteActivityCommand -> services.activityReview.delete(command.activityId).message()
+        is DeleteFeedbackCommand -> deleteWorkoutFeedback(command)
+        is ResolveHealthConnectRecordCommand -> resolveHealthConnectRecord(command)
+        is ResolveHealthConnectDuplicateCommand -> resolveHealthConnectDuplicate(command)
+        is PreviewPlanDecisionCommand -> previewPlanDecision(command)
         is PreviewWorkoutEditCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
         is PreviewWorkoutAddCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
         is PreviewWorkoutRemovalCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
         is ResetWorkoutCommand -> { previewWorkoutChange(command); "Review the plan effect before applying it." }
         is UndoWorkoutAdjustmentCommand -> undoWorkoutChange(command)
+        is ConfirmPhaseBaselineCommand -> confirmPhaseBaseline(command)
+        ContinueBeginnerPhaseCommand -> continueBeginnerPhase()
         CompletePlanCommand -> endActivePlan(completed = true)
         ArchivePlanCommand -> endActivePlan(completed = false)
         else -> throw IllegalStateException("${command.action.replace('_', ' ')} is not available in this local screen yet.")
+    }
+
+    private suspend fun deleteWorkoutFeedback(
+        command: DeleteFeedbackCommand,
+    ): String = when (
+        val result = services.trainingMutations.deleteWorkoutFeedback(command.workoutId)
+    ) {
+        is LocalWorkoutFeedbackDeletionResult.Deleted ->
+            "The saved result was removed. The planned workout is unchanged."
+        is LocalWorkoutFeedbackDeletionResult.Rejected ->
+            throw IllegalStateException(
+                when (result.issue) {
+                    dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionIssue.NOT_DIRECT_FEEDBACK ->
+                        "This result belongs to an imported activity. Change or delete that activity instead."
+                    dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionIssue.WORKOUT_IN_FUTURE ->
+                        "A future workout cannot have a saved result removed."
+                    dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionIssue.LINKED_ACCEPTED_ACTIVITY ->
+                        "Unlink the accepted activity before removing this result."
+                    dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionIssue.CONSEQUENCE_APPLIED ->
+                        "This result already changed the plan and cannot be removed."
+                    else -> "The saved result is no longer removable."
+                },
+            )
+    }
+
+    private suspend fun resolveHealthConnectRecord(
+        command: ResolveHealthConnectRecordCommand,
+    ): String {
+        val result = when (command.decision) {
+            HealthConnectRecordDecision.AcceptCorrection ->
+                services.healthConnect.acceptPendingCorrection(command.provider, command.recordId)
+            HealthConnectRecordDecision.KeepCurrent ->
+                services.healthConnect.rejectPendingCorrection(command.provider, command.recordId)
+            HealthConnectRecordDecision.DeleteFromRunway ->
+                services.healthConnect.deleteFromRunwayAfterProviderDeletion(
+                    command.provider,
+                    command.recordId,
+                )
+            HealthConnectRecordDecision.RetainInRunway ->
+                services.healthConnect.retainLocallyAfterProviderDeletion(
+                    command.provider,
+                    command.recordId,
+                )
+        }
+        return when (result) {
+            is LocalHealthConnectPendingResolutionResult.CorrectionAccepted ->
+                "The updated Health Connect record is now the accepted activity."
+            is LocalHealthConnectPendingResolutionResult.CorrectionRejected ->
+                "The existing accepted activity was kept."
+            is LocalHealthConnectPendingResolutionResult.ProviderDeletionDeleted ->
+                "The activity was removed from runway."
+            is LocalHealthConnectPendingResolutionResult.ProviderDeletionRetained ->
+                "The activity remains in runway as a local record."
+            is LocalHealthConnectPendingResolutionResult.MappingMissing ->
+                throw IllegalStateException("That Health Connect change no longer exists.")
+            is LocalHealthConnectPendingResolutionResult.ActivityMissing ->
+                throw IllegalStateException("The activity for that Health Connect change is missing.")
+            is LocalHealthConnectPendingResolutionResult.UnexpectedActivityState ->
+                throw IllegalStateException("Review the activity before resolving its source change.")
+            is LocalHealthConnectPendingResolutionResult.UnexpectedActivitySource ->
+                throw IllegalStateException("That record no longer belongs to Health Connect.")
+            is LocalHealthConnectPendingResolutionResult.IncompletePendingState ->
+                throw IllegalStateException("The pending Health Connect record is incomplete. Import again.")
+            is LocalHealthConnectPendingResolutionResult.AlreadyResolved ->
+                "That Health Connect change was already resolved."
+            is LocalHealthConnectPendingResolutionResult.WrongPendingAction ->
+                throw IllegalStateException("The Health Connect change has changed. Review it again.")
+        }
+    }
+
+    private suspend fun resolveHealthConnectDuplicate(
+        command: ResolveHealthConnectDuplicateCommand,
+    ): String {
+        val decision = when (command.decision) {
+            HealthConnectDuplicateDecision.KeepBoth ->
+                LocalHealthConnectDuplicateDecision.KeepBoth
+            HealthConnectDuplicateDecision.UseExisting ->
+                LocalHealthConnectDuplicateDecision.UseExisting
+        }
+        return when (
+            val result = services.healthConnect.resolveDuplicateCandidate(
+                command.provider,
+                command.recordId,
+                decision,
+            )
+        ) {
+            is LocalHealthConnectDuplicateResolutionResult.KeptBoth ->
+                "Both runs remain in the Inbox for separate review."
+            is LocalHealthConnectDuplicateResolutionResult.UsedExisting ->
+                "The existing run was kept and the duplicate Health Connect copy was removed."
+            is LocalHealthConnectDuplicateResolutionResult.AlreadyResolved ->
+                "That possible duplicate was already resolved."
+            is LocalHealthConnectDuplicateResolutionResult.MappingMissing ->
+                throw IllegalStateException("That Health Connect import no longer exists.")
+            is LocalHealthConnectDuplicateResolutionResult.HealthConnectReviewMissing ->
+                throw IllegalStateException("The Health Connect review copy is missing.")
+            is LocalHealthConnectDuplicateResolutionResult.ExistingActivityMissing ->
+                throw IllegalStateException("The existing run is no longer available. Import again to review it.")
+            is LocalHealthConnectDuplicateResolutionResult.UnexpectedMappingState,
+            is LocalHealthConnectDuplicateResolutionResult.UnexpectedHealthConnectReview,
+            is LocalHealthConnectDuplicateResolutionResult.UnexpectedExistingActivitySource,
+            -> throw IllegalStateException("Those runs changed after this comparison. Review the Inbox again.")
+        }
+    }
+
+    private suspend fun previewPlanDecision(
+        command: PreviewPlanDecisionCommand,
+    ): String {
+        val sourceKind = when (command.source) {
+            "feedback" -> LocalDecisionSourceKind.WorkoutFeedback
+            "activity" -> LocalDecisionSourceKind.Activity
+            else -> throw IllegalArgumentException("That plan-decision source is not supported.")
+        }
+        val decision = planDecision(command.decision)
+            ?: throw IllegalArgumentException("That plan choice is not supported.")
+        return when (
+            val prepared = services.consequenceDecisions.prepare(
+                sourceKind,
+                command.sourceId,
+                decision,
+            )
+        ) {
+            is LocalConsequenceDecisionPreparation.Rejected ->
+                throw IllegalStateException(decisionIssueMessage(prepared.issue))
+            is LocalConsequenceDecisionPreparation.Prepared -> {
+                val current = mutableState.value as? RunwayUiState.Ready
+                    ?: throw IllegalStateException("The current screen is no longer available.")
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    planDecisionPreview = LocalPlanDecisionPreview(
+                        prepared = prepared,
+                        sourceLabel =
+                            if (sourceKind == LocalDecisionSourceKind.WorkoutFeedback) {
+                                "Recorded workout result"
+                            } else {
+                                "Extra activity"
+                            },
+                        decision = command.decision,
+                        changes = prepared.preview.changes.map { change ->
+                            LocalPlanDecisionChangeDisplay(
+                                scheduledDate =
+                                    LocalDate.ofEpochDay(change.before.currentScheduledEpochDay)
+                                        .toString(),
+                                before = workoutDecisionSummary(change.before),
+                                after = workoutDecisionSummary(change.after),
+                            )
+                        },
+                    ),
+                )
+                "Review the exact future workouts before applying this choice."
+            }
+        }
+    }
+
+    private suspend fun confirmPhaseBaseline(
+        command: ConfirmPhaseBaselineCommand,
+    ): String {
+        val active = services.trainingContext.activePlan()
+            ?: throw IllegalStateException("There is no active phase to confirm.")
+        val today = localToday()
+        val review = services.planLifecycle.phaseReview(active.planId, today.toEpochDay())
+        if (review !is LocalPhaseReviewResult.Available) {
+            throw IllegalStateException("The phase is not ready for a baseline decision.")
+        }
+        val identity = stableId(
+            "phase-baseline:${active.planId}:${review.review.phase}:${review.review.baseline}",
+        )
+        return when (
+            val result = services.planLifecycle.confirmRaceBaseline(
+                LocalRaceBaselineConfirmationRequest(
+                    phasePlanId = active.planId,
+                    newPlanId = "race-plan-$identity",
+                    operationId = "confirm-baseline-$identity",
+                    expectedPreviewToken = command.expectedPreviewToken,
+                    todayEpochDay = today.toEpochDay(),
+                    occurredAtEpochMillis = System.currentTimeMillis(),
+                    explicitlyConfirmed = true,
+                ),
+            )
+        ) {
+            is LocalPlanLifecycleResult.RacePlanStarted ->
+                "The recorded baseline was confirmed and the race phase was built."
+            LocalPlanLifecycleResult.ConfirmationRequired ->
+                throw IllegalStateException("Confirm the recorded baseline before building the race phase.")
+            is LocalPlanLifecycleResult.NotYetAvailable ->
+                throw IllegalStateException("This phase ends on ${LocalDate.ofEpochDay(result.targetEpochDay)}.")
+            is LocalPlanLifecycleResult.Rejected ->
+                throw IllegalStateException(
+                    "The race phase could not be built: " +
+                        result.error.name.lowercase().replace('_', ' '),
+                )
+            else -> throw IllegalStateException("The race phase could not be built from this state.")
+        }
+    }
+
+    private suspend fun continueBeginnerPhase(): String {
+        val active = services.trainingContext.activePlan()
+            ?: throw IllegalStateException("There is no active beginner phase to continue.")
+        val today = localToday()
+        val identity = stableId("continue-phase:${active.planId}:${active.endEpochDay}")
+        return when (
+            val result = services.planLifecycle.continueBeginnerPhase(
+                LocalContinuePhaseRequest(
+                    planId = active.planId,
+                    operationId = "continue-phase-$identity",
+                    todayEpochDay = today.toEpochDay(),
+                    occurredAtEpochMillis = System.currentTimeMillis(),
+                ),
+            )
+        ) {
+            is LocalPlanLifecycleResult.PhaseContinued ->
+                "Another phase week was added to the calendar."
+            is LocalPlanLifecycleResult.NotYetAvailable ->
+                throw IllegalStateException("This phase ends on ${LocalDate.ofEpochDay(result.targetEpochDay)}.")
+            is LocalPlanLifecycleResult.Rejected ->
+                throw IllegalStateException(
+                    "The phase could not be continued: " +
+                        result.error.name.lowercase().replace('_', ' '),
+                )
+            else -> throw IllegalStateException("That phase continuation is not available.")
+        }
     }
 
     private suspend fun previewWorkoutChange(command: MobileCommand) {
@@ -336,8 +948,8 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         val request = LocalPlanEndRequest(
             planId = active.planId,
             operationId = "${if (completed) "complete" else "archive"}:${active.planId}",
-            todayEpochDay = LocalDate.now().toEpochDay(), occurredAtEpochMillis = now,
-            reason = if (completed) "completed" else "archived by runner",
+            todayEpochDay = localToday().toEpochDay(), occurredAtEpochMillis = now,
+            reason = if (completed) "completed" else "abandoned",
         )
         val result = if (completed) services.planLifecycle.complete(request) else services.planLifecycle.archive(request)
         return when (result) {
@@ -416,44 +1028,76 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
         .take(48)
 
+    private fun decisionIssueMessage(issue: LocalDecisionIssue): String = when (issue) {
+        LocalDecisionIssue.PROPOSAL_NOT_AVAILABLE ->
+            "That plan choice is no longer available for this result."
+        LocalDecisionIssue.DECISION_NOT_OFFERED ->
+            "That choice is not offered for the current result."
+        LocalDecisionIssue.NO_FUTURE_WORKOUT ->
+            "There is no future planned run for this choice to change."
+        LocalDecisionIssue.NO_COMPATIBLE_WORKOUT ->
+            "No compatible run remains in this week."
+        LocalDecisionIssue.NO_REPEATABLE_PRESCRIPTION ->
+            "The original prescription cannot be repeated."
+        LocalDecisionIssue.NO_REDUCIBLE_AMOUNT ->
+            "The next compatible run cannot be reduced safely."
+        LocalDecisionIssue.ALREADY_APPLIED ->
+            "A choice was already applied for this result."
+        LocalDecisionIssue.STALE_PREVIEW ->
+            "The plan changed after this preview. Review the choice again."
+    }
+
+    private fun workoutDecisionSummary(
+        workout: dev.deftmartian.runway.data.WorkoutEntity,
+    ): String {
+        if (workout.currentWorkoutType == "rest" || workout.currentPrescriptionKind == "rest") {
+            return "Recovery day"
+        }
+        return listOfNotNull(
+            workout.currentDistanceMeters?.let { formatDistance(it.toDouble()) },
+            workout.currentDurationSeconds?.let { formatDuration(it.toDouble()) },
+            workout.currentPurpose?.takeIf(String::isNotBlank),
+        ).joinToString(" · ").ifBlank { "Planned run" }
+    }
+
     private fun load(destination: NativeDestination) {
+        val generation = ++loadGeneration
         val previous = mutableState.value as? RunwayUiState.Ready
-        viewModelScope.launch {
+        surfaceLoadJob?.cancel()
+        surfaceLoadJob = viewModelScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    when (destination) {
-                        NativeDestination.Calendar -> services.surfaces.calendar(
-                            calendarMonth.atDay(1).toEpochDay(),
-                            calendarMonth.atEndOfMonth().toEpochDay(),
-                        ).also { cacheEvidence(it.days.flatMap { day -> day.unlinkedActivities } + it.days.flatMap { day -> day.workouts.mapNotNull { workout -> workout.actual } }) }.toNativeCalendar()
-                        NativeDestination.Inbox -> services.surfaces.inbox().also { cacheEvidence(it.activities) }.toNativeInbox()
-                        NativeDestination.Stats -> services.surfaces.stats().toNativeStats()
-                        NativeDestination.History -> services.surfaces.history().also { history = it; cacheEvidence(it.unlinkedActivities) }.toNativeHistory()
-                        NativeDestination.Settings -> services.surfaces.settings().toNativeSettingsState()
-                        NativeDestination.Setup -> NativeOnboardingPayload(
-                            initialValues = null,
-                            minimumTargetDate = null,
-                            minimumCalibrationTargetDate = null,
-                            minimumFoundationTargetDate = null,
-                            maximumTargetDate = null,
-                            activeGoal = null,
-                        )
-                        NativeDestination.HistoryDetail -> previous?.payload
-                            ?: error("A plan record must be selected before opening detail.")
-                    }
-                }
+                surfaceLoader.load(
+                    SurfaceLoadRequest(
+                        destination = destination,
+                        calendarMonth = calendarMonth,
+                        calendarMonthWasSelected = calendarMonthWasSelected,
+                        historyPlanId = savedStateHandle[SAVED_HISTORY_PLAN_ID],
+                        previousHistoryDetail =
+                            previous?.surface as? NativeSurface.HistoryDetail,
+                        historyPlanLimit = historyPlanLimit,
+                        inboxActivityLimit = inboxActivityLimit,
+                    ),
+                )
             }
-            result.onSuccess { payload ->
-                val resolvedDestination = if (destination == NativeDestination.Calendar &&
-                    (payload as? NativeCalendarPayload)?.onboardingRequired == true
-                ) NativeDestination.Setup else destination
-                mutableState.value = RunwayUiState.Ready(
-                    bootstrap = localBootstrap(),
-                    destination = resolvedDestination,
-                    payload = payload,
+            if (result.exceptionOrNull() is CancellationException) return@launch
+            result.onSuccess { loaded ->
+                if (generation != loadGeneration) return@onSuccess
+                calendarMonth = loaded.calendarMonth
+                if (destination == NativeDestination.Calendar) {
+                    savedStateHandle[SAVED_CALENDAR_MONTH] = calendarMonth.toString()
+                }
+                loaded.history?.let { history = it }
+                savedStateHandle[SAVED_DESTINATION] = loaded.surface.destination.name
+                mutableState.value = previous?.copy(
+                    surface = loaded.surface,
+                    loading = false,
+                    actionPending = false,
+                ) ?: RunwayUiState.Ready(
+                    surface = loaded.surface,
                     loading = false,
                 )
             }.onFailure { error ->
+                if (generation != loadGeneration) return@onFailure
                 mutableState.value = RunwayUiState.Failed(
                     "Local training data could not be opened: ${error.message ?: "unknown error"}",
                 )
@@ -461,18 +1105,22 @@ internal class RunwayViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private fun localBootstrap() = NativeBootstrapPayload(
-        user = null,
-        setupComplete = false,
-        timeZone = java.time.ZoneId.systemDefault().id,
-        release = BuildConfig.VERSION_NAME,
-        commit = BuildConfig.SOURCE_COMMIT,
-        serverOrigin = null,
-        androidApi = null,
-        features = NativeFeatures(nativeUi = true, deviceAuthorization = false, healthConnect = true, backgroundFolderImport = true),
-    )
+    private fun restoredDestination(): NativeDestination {
+        return restoredNativeDestination(
+            savedDestination = savedStateHandle[SAVED_DESTINATION],
+            savedHistoryPlanId = savedStateHandle[SAVED_HISTORY_PLAN_ID],
+        )
+    }
 
-    private fun cacheEvidence(activities: List<dev.deftmartian.runway.data.LocalActivityReadModel>) {
-        evidenceByActivity = activities.associate { it.activityId to it.evidence }
+    private companion object {
+        const val SAVED_DESTINATION = "runway.destination"
+        const val SAVED_HISTORY_PLAN_ID = "runway.history.plan-id"
+        const val SAVED_CALENDAR_MONTH = "runway.calendar.month"
+        const val SAVED_HISTORY_LIMIT = "runway.history.limit"
+        const val SAVED_INBOX_LIMIT = "runway.inbox.limit"
+        const val HISTORY_PAGE_SIZE = 50
+        const val INBOX_PAGE_SIZE = 50
+        const val MAX_HISTORY_PLANS = 400
+        const val MAX_INBOX_ACTIVITIES = 1_000
     }
 }

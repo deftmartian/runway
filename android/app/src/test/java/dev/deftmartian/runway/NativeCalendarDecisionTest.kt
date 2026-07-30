@@ -80,7 +80,6 @@ class NativeCalendarDecisionTest {
         workouts = workouts,
         activities = activities,
         feedback = feedback,
-        activityOverflow = null,
     )
 
     private fun workout(
@@ -134,7 +133,6 @@ class NativeCalendarDecisionTest {
         routeSummary = null,
         matchedWorkoutPurpose = null,
         matchedWorkoutDate = null,
-        healthConnect = null,
     )
 
     private fun feedback(

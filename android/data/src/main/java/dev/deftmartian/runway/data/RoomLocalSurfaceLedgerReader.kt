@@ -1,32 +1,43 @@
 package dev.deftmartian.runway.data
 
 import androidx.room.withTransaction
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 /**
  * Bounded Room reader for the standalone surfaces.
  *
- * Bulk joins are intentionally not emulated with unbounded reads. Until the dedicated DAO methods
- * exist, plan children are loaded with a strictly capped fan-out and missing goal titles use the
+ * Plan children and supporting evidence use bounded bulk DAO reads; missing goal titles use the
  * neutral surface placeholder.
  */
 class RoomLocalSurfaceLedgerReader(
     private val database: RunwayLedgerDatabase,
     private val versionName: String? = null,
     private val buildRevision: String? = null,
+    private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : LocalSurfaceLedgerReader {
     override suspend fun calendar(
         fromEpochDay: Long,
         throughEpochDay: Long,
         limits: LocalSurfaceReadLimits,
     ): LocalCalendarLedgerSlice = database.withTransaction {
-        val timeZone = database.profileSettingsDao().get()?.timeZone ?: ZoneId.systemDefault().id
+        val profile = database.profileSettingsDao().get()
+        val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
         val zone = ZoneId.of(timeZone)
+        val todayEpochDay = todayEpochDay(timeZone)
+        val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
         val review = reviewWindow(limits.inboxActivities)
-        val plans = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS)
-            .take(1)
-            .let { planSlices(it, limits, limits.calendarWorkouts) }
+        val activePlans = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
+        val plans = planSlices(
+            activePlans,
+            limits,
+            limits.calendarWorkouts,
+            undoTodayEpochDay = todayEpochDay,
+        )
+        val nextWorkout = activePlans.singleOrNull()?.let { plan ->
+            database.goalPlanDao().nextPlannedWorkout(plan.planId, todayEpochDay)
+        }
         val activityWindow = database.activityLedgerDao().acceptedActivitiesInRange(
             fromInclusive = LocalDate.ofEpochDay(fromEpochDay).atStartOfDay(zone).toInstant().toEpochMilli(),
             toExclusive = LocalDate.ofEpochDay(throughEpochDay + 1).atStartOfDay(zone).toInstant().toEpochMilli(),
@@ -41,22 +52,45 @@ class RoomLocalSurfaceLedgerReader(
             hasMoreActivities = activityWindow.size > limits.calendarActivities,
             plans = plans,
             activities = activitySlices(activityWindow.take(limits.calendarActivities)),
+            todayEpochDay = todayEpochDay,
+            phaseReview = phaseReview(plans.firstOrNull(), profile, availability, todayEpochDay),
+            nextWorkout = nextWorkout,
         )
     }
 
     override suspend fun inbox(limits: LocalSurfaceReadLimits): LocalInboxLedgerSlice =
         database.withTransaction {
+            val profile = database.profileSettingsDao().get()
+            val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+            val todayEpochDay = todayEpochDay(timeZone)
+            val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
             val review = reviewWindow(limits.inboxActivities)
+            val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
+                .let { planSlices(it, limits, MAX_LINK_CANDIDATES).firstOrNull() }
             LocalInboxLedgerSlice(
                 reviewCount = review.visibleCount,
                 reviewCountIsExact = review.isExact,
-                hasMore = !review.isExact,
+                hasMore = review.visibleCount > review.items.size,
                 activities = activitySlices(review.items),
+                linkCandidates = activePlan?.workouts.orEmpty().filter {
+                    it.currentStatus == "planned" && it.tombstonedAtEpochMillis == null &&
+                        it.currentWorkoutType !in setOf("rest", "race")
+                }.take(MAX_LINK_CANDIDATES),
+                linkCandidateBlocks = activePlan?.workoutBlocks.orEmpty(),
+                linkCandidateSegments = activePlan?.workoutSegments.orEmpty(),
+                pendingHealthConnect = pendingHealthConnect(MAX_PENDING_HEALTH_CONNECT),
+                timeZone = timeZone,
+                todayEpochDay = todayEpochDay,
+                phaseReview = phaseReview(activePlan, profile, availability, todayEpochDay),
             )
         }
 
     override suspend fun stats(limits: LocalSurfaceReadLimits): LocalStatsLedgerSlice =
         database.withTransaction {
+            val profile = database.profileSettingsDao().get()
+            val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+            val todayEpochDay = todayEpochDay(timeZone)
+            val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
             val planWindow = surfacePlans(limits.historyPlans + 1)
             val activityWindow = database.activityLedgerDao().acceptedActivitiesInRange(
                 fromInclusive = Long.MIN_VALUE,
@@ -73,41 +107,74 @@ class RoomLocalSurfaceLedgerReader(
                 activities = activitySlices(activityWindow.take(limits.statsActivities)),
                 hasMorePlans = planWindow.size > limits.historyPlans,
                 hasMoreActivities = activityWindow.size > limits.statsActivities,
+                timeZone = timeZone,
+                todayEpochDay = todayEpochDay,
+                phaseReview = phaseReview(
+                    plans.firstOrNull { it.plan.state == "active" },
+                    profile,
+                    availability,
+                    todayEpochDay,
+                ),
+                profile = profile,
             )
         }
 
     override suspend fun history(limits: LocalSurfaceReadLimits): LocalHistoryLedgerSlice =
         database.withTransaction {
+            val profile = database.profileSettingsDao().get()
+            val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+            val todayEpochDay = todayEpochDay(timeZone)
+            val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
             val planWindow = surfacePlans(limits.historyPlans + 1)
             val activityWindow = database.activityLedgerDao().acceptedActivitiesInRange(
                 fromInclusive = Long.MIN_VALUE,
                 toExclusive = Long.MAX_VALUE,
                 limit = limits.historyActivities + 1,
             )
+            val plans = planSlices(
+                planWindow.take(limits.historyPlans),
+                limits,
+                limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
+                includeHistoryAudit = true,
+            )
             LocalHistoryLedgerSlice(
-                plans = planSlices(
-                    planWindow.take(limits.historyPlans),
-                    limits,
-                    limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
-                ),
+                plans = plans,
                 activities = activitySlices(activityWindow.take(limits.historyActivities)),
                 hasMorePlans = planWindow.size > limits.historyPlans,
                 hasMoreActivities = activityWindow.size > limits.historyActivities,
+                timeZone = timeZone,
+                todayEpochDay = todayEpochDay,
+                phaseReview = phaseReview(
+                    plans.firstOrNull { it.plan.state == "active" },
+                    profile,
+                    availability,
+                    todayEpochDay,
+                ),
             )
         }
 
     override suspend fun settings(limits: LocalSurfaceReadLimits): LocalSettingsLedgerSlice =
         database.withTransaction {
             val profile = database.profileSettingsDao().get()
+            val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+            val todayEpochDay = todayEpochDay(timeZone)
+            val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS)
             val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS)
                 .take(1)
                 .let { planSlices(it, limits, limits.calendarWorkouts).firstOrNull() }
             LocalSettingsLedgerSlice(
                 profile = profile,
-                availabilityDays = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS),
+                availabilityDays = availability,
                 activePlan = activePlan,
                 versionName = versionName,
                 buildRevision = buildRevision,
+                phaseReview = phaseReview(
+                    activePlan,
+                    profile,
+                    availability.map { it.dayOfWeek },
+                    todayEpochDay,
+                ),
+                pendingHealthConnect = pendingHealthConnect(MAX_PENDING_HEALTH_CONNECT),
             )
         }
 
@@ -121,6 +188,8 @@ class RoomLocalSurfaceLedgerReader(
             feedback = database.activityLedgerDao().activityFeedback(activityId),
             route = database.activityLedgerDao().routeSamples(activityId, limits.evidenceSamples),
             heartRate = database.activityLedgerDao().heartRateSamples(activityId, limits.evidenceSamples),
+            consequence = database.activityLedgerDao().activityConsequence(activityId),
+            consequenceOptions = database.activityLedgerDao().activityConsequenceOptions(activityId, MAX_CONSEQUENCE_OPTIONS),
         )
     }
 
@@ -128,6 +197,8 @@ class RoomLocalSurfaceLedgerReader(
         plans: List<PlanEntity>,
         limits: LocalSurfaceReadLimits,
         workoutLimitPerPlan: Int,
+        undoTodayEpochDay: Long? = null,
+        includeHistoryAudit: Boolean = false,
     ): List<LocalPlanLedgerSlice> {
         if (plans.isEmpty()) return emptyList()
         val planIds = plans.map(PlanEntity::planId)
@@ -140,10 +211,57 @@ class RoomLocalSurfaceLedgerReader(
             planIds,
             plans.size * limits.statsWeeks,
         ).groupBy(PlanWeekEntity::planId)
+        val summaryWarnings = dao.planSummaryWarningsForPlans(
+            planIds,
+            plans.size * MAX_SUMMARY_WARNINGS_PER_PLAN,
+        ).groupBy(PlanSummaryWarningEntity::planId)
+        val historyAdjustments = if (includeHistoryAudit) {
+            database.adjustmentDao().historyAdjustmentRowsForPlans(
+                planIds,
+                plans.size * MAX_HISTORY_ADJUSTMENT_ROWS_PER_PLAN,
+            ).groupBy(HistoryAdjustmentRow::planId)
+        } else {
+            emptyMap()
+        }
         val workouts = dao.visibleWorkoutsForPlans(
             planIds,
             limit = plans.size * workoutLimitPerPlan,
         ).groupBy(WorkoutEntity::planId)
+        val visibleWorkoutIds = workouts.values.flatten().map(WorkoutEntity::workoutId)
+        val undoableAdjustments = if (undoTodayEpochDay == null || visibleWorkoutIds.isEmpty()) {
+            emptyList()
+        } else {
+            database.adjustmentDao().undoableWorkoutAdjustments(
+                workoutIds = visibleWorkoutIds,
+                todayEpochDay = undoTodayEpochDay,
+                limit = visibleWorkoutIds.size * MAX_UNDO_ADJUSTMENTS_PER_WORKOUT,
+            ).map {
+                LocalWorkoutAdjustmentReadModel(
+                    workoutId = it.workoutId,
+                    adjustmentId = it.adjustmentId,
+                    kind = it.kind,
+                    createdAtEpochMillis = it.createdAtEpochMillis,
+                )
+            }
+        }
+        val latestUndoableAdjustmentByWorkout = undoableAdjustments
+            .groupBy(LocalWorkoutAdjustmentReadModel::workoutId)
+            .mapValues { (_, rows) -> rows.first() }
+        val blocks = chunkedSqliteIdRead(
+            ids = visibleWorkoutIds,
+            limit = minOf(
+                MAX_SURFACE_WORKOUT_BLOCKS,
+                visibleWorkoutIds.size * MAX_BLOCKS_PER_WORKOUT_ACROSS_VERSIONS,
+            ),
+            read = dao::blocksForWorkouts,
+        )
+        val segments = chunkedSqliteIdRead(
+            ids = blocks.map(WorkoutBlockEntity::blockId),
+            limit = minOf(MAX_SURFACE_WORKOUT_SEGMENTS, blocks.size * MAX_SEGMENTS_PER_BLOCK),
+            read = dao::segmentsForBlocks,
+        )
+        val blocksByWorkout = blocks.groupBy(WorkoutBlockEntity::workoutId)
+        val segmentsByBlock = segments.groupBy(WorkoutSegmentEntity::blockId)
         val workoutPlan = workouts.flatMap { (planId, rows) ->
             rows.map { it.workoutId to planId }
         }.toMap()
@@ -151,18 +269,47 @@ class RoomLocalSurfaceLedgerReader(
             planIds,
             plans.size * workoutLimitPerPlan,
         ).groupBy { workoutPlan[it.workoutId] }
+        val feedbackIds = feedback.values.flatten().map(WorkoutFeedbackEntity::feedbackId)
+        val consequences = chunkedSqliteIdRead(
+            ids = feedbackIds,
+            limit = feedbackIds.size,
+            read = database.activityLedgerDao()::workoutFeedbackConsequencesForFeedbackIds,
+        )
+        val consequenceOptions = chunkedSqliteIdRead(
+            ids = feedbackIds,
+            limit = feedbackIds.size * MAX_CONSEQUENCE_OPTIONS,
+            read = database.activityLedgerDao()::workoutFeedbackConsequenceOptionsForFeedbackIds,
+        )
+        val feedbackIdsByPlan = feedback.mapValues { (_, rows) -> rows.map(WorkoutFeedbackEntity::feedbackId).toSet() }
+        val consequencesByPlan = consequences.groupBy { consequence ->
+            feedbackIdsByPlan.entries.firstOrNull { consequence.feedbackId in it.value }?.key
+        }
+        val optionsByPlan = consequenceOptions.groupBy { option ->
+            feedbackIdsByPlan.entries.firstOrNull { option.feedbackId in it.value }?.key
+        }
         val lifecycle = dao.lifecycleEventsForPlans(
             planIds,
             plans.size * MAX_LIFECYCLE_EVENTS,
         ).groupBy(PlanLifecycleEventEntity::planId)
         return plans.map { plan ->
+            val planWorkouts = workouts[plan.planId].orEmpty().take(workoutLimitPerPlan)
+            val planBlocks = planWorkouts.flatMap { blocksByWorkout[it.workoutId].orEmpty() }
             LocalPlanLedgerSlice(
                 goal = goals[plan.goalId],
                 plan = plan,
                 weeks = weeks[plan.planId].orEmpty().take(limits.statsWeeks),
-                workouts = workouts[plan.planId].orEmpty().take(workoutLimitPerPlan),
+                workouts = planWorkouts,
                 feedback = feedback[plan.planId].orEmpty().take(workoutLimitPerPlan),
                 lifecycle = lifecycle[plan.planId].orEmpty().take(MAX_LIFECYCLE_EVENTS),
+                workoutConsequences = consequencesByPlan[plan.planId].orEmpty(),
+                workoutConsequenceOptions = optionsByPlan[plan.planId].orEmpty(),
+                summaryWarnings = summaryWarnings[plan.planId].orEmpty(),
+                historyAdjustments = historyAdjustments[plan.planId].orEmpty(),
+                undoableWorkoutAdjustments = planWorkouts.mapNotNull { workout ->
+                    latestUndoableAdjustmentByWorkout[workout.workoutId]
+                },
+                workoutBlocks = planBlocks,
+                workoutSegments = planBlocks.flatMap { segmentsByBlock[it.blockId].orEmpty() },
             )
         }
     }
@@ -189,19 +336,148 @@ class RoomLocalSurfaceLedgerReader(
         activities: List<ActivityEntity>,
     ): List<LocalActivityLedgerSlice> {
         if (activities.isEmpty()) return emptyList()
-        val feedback = database.activityLedgerDao()
-            .activityFeedbackForActivities(
-                activityIds = activities.map(ActivityEntity::activityId),
-                limit = activities.size,
-            )
+        val activityIds = activities.map(ActivityEntity::activityId)
+        val feedback = chunkedSqliteIdRead(
+            ids = activityIds,
+            limit = activities.size,
+            read = database.activityLedgerDao()::activityFeedbackForActivities,
+        )
             .associateBy(ActivityFeedbackEntity::activityId)
+        val consequences = chunkedSqliteIdRead(
+            ids = activityIds,
+            limit = activityIds.size,
+            read = database.activityLedgerDao()::activityConsequencesForActivityIds,
+        )
+            .associateBy(ActivityConsequenceEntity::activityId)
+        val options = chunkedSqliteIdRead(
+            ids = activityIds,
+            limit = activityIds.size * MAX_CONSEQUENCE_OPTIONS,
+            read = database.activityLedgerDao()::activityConsequenceOptionsForActivityIds,
+        )
+            .groupBy(ActivityConsequenceOptionEntity::activityId)
         return activities.map { activity ->
             LocalActivityLedgerSlice(
                 activity = activity,
                 feedback = feedback[activity.activityId],
+                consequence = consequences[activity.activityId],
+                consequenceOptions = options[activity.activityId].orEmpty(),
             )
         }
     }
+
+    private suspend fun pendingHealthConnect(limit: Int): List<LocalHealthConnectPendingReadModel> {
+        val importDao = database.importLedgerDao()
+        val mappings = importDao.pendingHealthConnectMappings(limit)
+        if (mappings.isEmpty()) return emptyList()
+        val mappingIds = mappings.map(HealthConnectMappingEntity::mappingId)
+        val proposed = importDao.pendingHealthConnectObservations(mappingIds, mappingIds.size)
+            .associateBy(HealthConnectPendingObservationEntity::mappingId)
+        val activityIds = mappings.flatMap { mapping ->
+            listOfNotNull(mapping.activityId, mapping.duplicateCandidateActivityId)
+        }.distinct()
+        val current = if (activityIds.isEmpty()) emptyMap() else database.activityLedgerDao()
+            .activitiesByIds(activityIds, activityIds.size)
+            .associateBy(ActivityEntity::activityId)
+        return mappings.map { mapping ->
+            val pending = proposed[mapping.mappingId]
+            val state = when {
+                mapping.correctionPending -> "pending_correction"
+                mapping.deletePending -> "pending_delete"
+                mapping.duplicateCandidateActivityId != null -> "possible_duplicate"
+                else -> error("Health Connect mapping is not pending review.")
+            }
+            LocalHealthConnectPendingReadModel(
+                mappingId = mapping.mappingId,
+                provider = mapping.provider,
+                externalRecordId = mapping.externalRecordId,
+                state = state,
+                current = mapping.activityId?.let { current[it] }?.let(::summary),
+                proposed = if (state == "possible_duplicate") {
+                    mapping.duplicateCandidateActivityId
+                        ?.let { current[it] }
+                        ?.let(::summary)
+                } else {
+                    pending?.let(::summary)
+                },
+            )
+        }
+    }
+
+    private suspend fun phaseReview(
+        plan: LocalPlanLedgerSlice?,
+        profile: ProfileSettingsEntity?,
+        availability: List<Int>,
+        todayEpochDay: Long,
+    ): LocalPhaseReviewReadModel? {
+        val active = plan?.takeIf { it.plan.state == "active" } ?: return null
+        val end = active.plan.endEpochDay ?: return null
+        val phase = when (active.plan.phaseType) {
+            "foundation" -> LocalPlanPhase.FOUNDATION
+            "calibration" -> LocalPlanPhase.CALIBRATION
+            else -> return null
+        }
+        val goalKind = active.goal?.kind ?: return null
+        if (end > todayEpochDay) return LocalPhaseReviewReadModel(active.plan.planId, phase, goalKind, end, ready = false)
+        if (availability.isEmpty()) return LocalPhaseReviewReadModel(active.plan.planId, phase, goalKind, end, ready = false)
+        val observedWeeks = minOf(2, active.weeks.size).coerceAtLeast(1)
+        val activities = database.goalPlanDao().acceptedLinkedActivitiesForPlan(
+            active.plan.planId,
+            end - (observedWeeks * 7L - 1),
+            end,
+            MAX_PHASE_ACTIVITIES,
+        )
+        val prepared = LocalPlanLifecyclePreparation.prepareReview(
+            active.plan.phaseType,
+            goalKind,
+            activities,
+            observedWeeks,
+            availability,
+        )
+        return LocalPhaseReviewReadModel(
+            planId = active.plan.planId,
+            phase = phase,
+            goalKind = goalKind,
+            phaseEndEpochDay = end,
+            ready = true,
+            activityCount = prepared.baseline.activityCount,
+            totalDistanceMeters = prepared.baseline.totalDistanceMeters,
+            weeklyDistanceMeters = prepared.baseline.weeklyDistanceMeters,
+            totalDurationSeconds = prepared.baseline.totalDurationSeconds,
+            longestActivityMeters = prepared.baseline.longestActivityMeters,
+            runsPerWeek = prepared.baseline.runsPerWeek,
+            recommendedTransition = prepared.transition.recommended.name.lowercase(),
+            transitionOptions = prepared.transition.options.map { it.name.lowercase() },
+            preferredLongRunDay = prepared.preferredLongRunDay,
+            racePlan = if (profile == null) {
+                null
+            } else {
+                LocalPlanLifecyclePreparation.prepareRacePlan(
+                    phasePlan = active.plan,
+                    goal = requireNotNull(active.goal),
+                    profile = profile,
+                    review = prepared,
+                    acceptedLinkedActivities = activities,
+                    availabilityDays = availability,
+                    todayEpochDay = todayEpochDay,
+                )?.preview
+            },
+        )
+    }
+
+    private fun summary(activity: ActivityEntity) = LocalActivitySummaryReadModel(
+        activity.activityId,
+        activity.occurredAtEpochMillis,
+        LocalLoadReadModel(activity.distanceMeters, activity.durationSeconds),
+    )
+
+    private fun summary(pending: HealthConnectPendingObservationEntity) = LocalActivitySummaryReadModel(
+        pending.mappingId,
+        pending.occurredAtEpochMillis,
+        LocalLoadReadModel(pending.distanceMeters, pending.durationSeconds),
+    )
+
+    private fun todayEpochDay(timeZone: String): Long =
+        Instant.ofEpochMilli(nowEpochMillis()).atZone(ZoneId.of(timeZone)).toLocalDate().toEpochDay()
 
     private data class ReviewWindow(
         val items: List<ActivityEntity>,
@@ -214,5 +490,40 @@ class RoomLocalSurfaceLedgerReader(
         const val MAX_AVAILABILITY_DAYS = 7
         const val MAX_WORKOUTS_PER_WEEK = 14
         const val MAX_LIFECYCLE_EVENTS = 50
+        const val MAX_SUMMARY_WARNINGS_PER_PLAN = 16
+        const val MAX_HISTORY_ADJUSTMENT_ROWS_PER_PLAN = 128
+        const val MAX_LINK_CANDIDATES = 128
+        const val MAX_PENDING_HEALTH_CONNECT = 50
+        const val MAX_CONSEQUENCE_OPTIONS = 8
+        const val MAX_UNDO_ADJUSTMENTS_PER_WORKOUT = 8
+        const val MAX_PHASE_ACTIVITIES = 512
+        // These are read caps, not schema limits. They bound a large history read.
+        const val MAX_BLOCKS_PER_WORKOUT_ACROSS_VERSIONS = 200
+        const val MAX_SEGMENTS_PER_BLOCK = 100
+        const val MAX_SURFACE_WORKOUT_BLOCKS = 4_000
+        const val MAX_SURFACE_WORKOUT_SEGMENTS = 16_000
     }
+}
+
+private const val MAX_SQLITE_IN_IDS = 900
+
+/**
+ * Room expands collection parameters into one SQLite bind per ID. Split every potentially large
+ * local-ledger lookup below the platform ceiling while preserving one explicit total result cap.
+ */
+internal suspend fun <Id, Row> chunkedSqliteIdRead(
+    ids: List<Id>,
+    limit: Int,
+    read: suspend (List<Id>, Int) -> List<Row>,
+): List<Row> {
+    if (ids.isEmpty() || limit <= 0) return emptyList()
+    val output = ArrayList<Row>(minOf(ids.size, limit))
+    var remaining = limit
+    for (chunk in ids.distinct().chunked(MAX_SQLITE_IN_IDS)) {
+        if (remaining == 0) break
+        val rows = read(chunk, remaining)
+        output.addAll(rows.take(remaining))
+        remaining -= minOf(rows.size, remaining)
+    }
+    return output
 }

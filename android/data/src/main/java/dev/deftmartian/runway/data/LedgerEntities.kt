@@ -7,8 +7,8 @@ import androidx.room.PrimaryKey
 
 /**
  * Room-facing persistence records for one runner. These deliberately use only stable primitive
- * values; domain adapters own conversion to the Kotlin training model and must not leak app or
- * server transport DTOs into this module.
+ * values; domain adapters own conversion to the Kotlin training model and must not leak
+ * presentation-specific types into this module.
  */
 @Entity(tableName = "profile_settings")
 data class ProfileSettingsEntity(

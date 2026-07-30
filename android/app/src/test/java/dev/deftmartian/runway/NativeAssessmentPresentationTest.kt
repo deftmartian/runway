@@ -6,7 +6,7 @@ import org.junit.Test
 
 class NativeAssessmentPresentationTest {
     @Test
-    fun `legacy risk storage is never rendered as a medical-sounding raw label`() {
+    fun `unsupported risk value is never rendered as a medical-sounding raw label`() {
         assertEquals("Unsupported", nativeRampAssessment("unsafe").label)
         assertEquals("Outside default", nativeLoadAssessment("unsafe").label)
         assertFalse(nativeRampAssessment("unsafe").label.contains("unsafe", ignoreCase = true))

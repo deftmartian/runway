@@ -1,4 +1,0 @@
-Developer preview of the native runway client with persisted folder access, bounded GPX shares, and
-scheduled reconciliation.
-
-Adds scoped account pairing plus bounded GPX folder and share imports into the review inbox.

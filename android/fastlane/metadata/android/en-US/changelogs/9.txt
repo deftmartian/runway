@@ -1,2 +1,0 @@
-Settings remains usable when its optional Health Connect status cannot be read. Deployment checks now
-exercise the separate database accounts used for migrations and normal app traffic.

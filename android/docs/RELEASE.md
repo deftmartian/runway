@@ -4,7 +4,7 @@
 
 The application id is `dev.deftmartian.runway`. Android updates require the same application id and APK signing certificate. Keep the release key outside this repository, encrypted and access-controlled, with a tested independent backup. Losing it prevents in-place updates.
 
-The personal F-Droid repository index key is separate from the APK signing key. Keep and test both independently.
+The personal F-Droid repository index key is separate from the APK signing key. Keep and test both independently. There is exactly one canonical APK signing certificate for `dev.deftmartian.runway`: GitHub releases and every APK in the personal F-Droid repository must use it. A differently signed APK with this same application id is a separate, non-upgradeable installation path.
 
 ## Build a candidate
 
@@ -30,13 +30,13 @@ Version tags are expected to use `v<semver>`. The protected Android release envi
 
 ## Personal F-Droid repository
 
-The source-build path intentionally remains unsigned so `fdroidserver` can sign it:
+The source-build path intentionally remains unsigned so `fdroidserver` can apply the canonical APK signing key:
 
 ```sh
 android/gradlew -p android --no-daemon --max-workers=1 -PrunwayFdroidSourceBuild=true assembleRelease
 ```
 
-Run `fdroidserver` in a dedicated operator or CI environment. Keep index and APK signing keys outside its web root. Publish the index, APKs, and signatures over HTTPS, add the repository using its exact URL and fingerprint, then test a clean install and upgrade from the preceding signed APK without losing the local ledger.
+Run `fdroidserver` in a dedicated operator or CI environment. Configure it with the same canonical APK signing key used by the protected GitHub release, while keeping its repository-index key separate; do not let it generate or use another APK key for this application id. Keep both keys outside its web root. Before publishing, verify the F-Droid APK's certificate SHA-256 against `RUNWAY_ANDROID_CERT_SHA256`. Publish the index, APKs, and signatures over HTTPS, add the repository using its exact URL and index fingerprint, then test a clean install and an upgrade from the preceding GitHub-signed APK without losing the local ledger.
 
 ## Acceptance evidence
 

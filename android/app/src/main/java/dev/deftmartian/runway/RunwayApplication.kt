@@ -26,6 +26,7 @@ class RunwayApplication : Application() {
 
 class RunwayServices(application: Application) {
     private val database: RunwayLedgerDatabase = RunwayLedgerDatabase.create(application)
+    internal val importSources = AndroidImportSourceController(application)
     val planSetup = LocalPlanSetupRepository(database)
     val profile = LocalProfileRepository(database)
     val privacy = LocalPrivacyRepository(database)

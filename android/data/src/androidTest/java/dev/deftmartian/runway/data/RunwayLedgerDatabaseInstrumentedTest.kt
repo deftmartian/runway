@@ -284,4 +284,39 @@ class RunwayLedgerDatabaseInstrumentedTest {
         assertNull(database.appMetadataDao().value("schema_owner"))
         assertTrue(database.goalPlanDao().weeksForPlan(plan.planId, 10).isEmpty())
     }
+
+    @Test
+    fun activityRangesIncludeTheStartAndExcludeTheExactEndBoundary() = runBlocking {
+        val dao = database.activityLedgerDao()
+        fun activity(id: String, occurredAt: Long) = ActivityEntity(
+            activityId = id,
+            source = "manual",
+            sourceRecordId = null,
+            reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
+            occurredAtEpochMillis = occurredAt,
+            durationSeconds = 600,
+            distanceMeters = 1_000,
+            averageHeartRateBpm = null,
+            averageCadenceSpm = null,
+            linkedWorkoutId = null,
+            acceptedAtEpochMillis = occurredAt,
+            createdAtEpochMillis = occurredAt,
+            updatedAtEpochMillis = occurredAt,
+        )
+        listOf(
+            activity("before", 999),
+            activity("start", 1_000),
+            activity("inside", 1_999),
+            activity("exact-end", 2_000),
+        ).forEach { dao.saveActivity(it) }
+
+        assertEquals(
+            listOf("inside", "start"),
+            dao.activitiesInRange(1_000, 2_000, 10).map(ActivityEntity::activityId),
+        )
+        assertEquals(
+            listOf("inside", "start"),
+            dao.acceptedActivitiesInRange(1_000, 2_000, 10).map(ActivityEntity::activityId),
+        )
+    }
 }

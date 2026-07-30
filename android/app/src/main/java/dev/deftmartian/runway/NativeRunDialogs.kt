@@ -92,13 +92,13 @@ internal fun FeedbackDialog(
                     }
                 }
                 item {
-                    CheckRow("Pain changed or limited this run", painDuringOrAfter) {
+                    CheckRow("Pain occurred during or after this run", painDuringOrAfter) {
                         painDuringOrAfter = it
                     }
                 }
                 item {
                     Text(
-                        "Hard effort changes the next-run advice. Pain adds health guidance. Select both when both were true.",
+                        "These reports can offer conservative next-step options. Nothing changes until you choose and apply it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

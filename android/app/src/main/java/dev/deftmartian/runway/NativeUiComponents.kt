@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -35,20 +37,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun NativeList(loading: Boolean, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+internal fun NativeList(
+    loading: Boolean,
+    state: LazyListState = rememberLazyListState(),
+    bottomContentPadding: Dp = 18.dp,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
+            state = state,
             modifier = Modifier
                 .widthIn(max = 760.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 18.dp,
+                end = 16.dp,
+                bottom = bottomContentPadding,
+            ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (loading) item { LinearLoadingNotice() }
@@ -130,6 +144,22 @@ internal fun WorkoutCard(
         }
         Spacer(Modifier.height(12.dp))
         MeasurementReadout(if (isRest) "Schedule" else "Planned", measurement, emphasis)
+        formatTimedStructure(workout.intervalStructure)?.let { detail ->
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (workout.isEdited == true && workout.generatedIntervalStructure != workout.intervalStructure) {
+            formatTimedStructure(workout.generatedIntervalStructure)?.let { original ->
+                Text(
+                    "Original: $original",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (onRecord != null || onEdit != null) {
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

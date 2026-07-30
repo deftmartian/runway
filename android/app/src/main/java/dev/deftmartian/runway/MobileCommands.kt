@@ -4,10 +4,6 @@ internal sealed interface MobileCommand {
     val action: String
 }
 
-internal sealed interface PreviewableMobileCommand : MobileCommand {
-    fun confirmed(): MobileCommand
-}
-
 internal data class CreatePlanCommand(
     val goalKind: String,
     val startMode: String,
@@ -94,41 +90,32 @@ internal enum class HealthConnectRecordDecision(val wireValue: String) {
 }
 
 internal data class ResolveHealthConnectRecordCommand(
-    val mappingId: String,
+    val provider: String,
+    val recordId: String,
     val decision: HealthConnectRecordDecision,
 ) : MobileCommand {
     override val action = "resolve_health_connect_record"
 }
 
-internal enum class HealthConnectDuplicateDecision(val wireValue: String) {
-    KeepHealthConnect("keep_health_connect"),
-    UseExisting("use_existing"),
+internal enum class HealthConnectDuplicateDecision {
+    KeepBoth,
+    UseExisting,
 }
 
 internal data class ResolveHealthConnectDuplicateCommand(
-    val mappingId: String,
+    val provider: String,
+    val recordId: String,
     val decision: HealthConnectDuplicateDecision,
 ) : MobileCommand {
     override val action = "resolve_health_connect_duplicate"
-}
-
-internal data class ApplyPlanDecisionCommand(
-    val source: String,
-    val sourceId: String,
-    val decision: String,
-    val confirmRisk: Boolean = true,
-) : MobileCommand {
-    override val action = "apply_plan_decision"
 }
 
 internal data class PreviewPlanDecisionCommand(
     val source: String,
     val sourceId: String,
     val decision: String,
-) : PreviewableMobileCommand {
+) : MobileCommand {
     override val action = "preview_plan_decision"
-
-    override fun confirmed(): MobileCommand = ApplyPlanDecisionCommand(source, sourceId, decision)
 }
 
 internal data class WorkoutMutation(
@@ -148,45 +135,20 @@ internal data class WorkoutMutation(
 internal data class PreviewWorkoutEditCommand(
     val workoutId: String,
     val mutation: WorkoutMutation,
-) : PreviewableMobileCommand {
-    override val action = "preview_workout_edit"
-
-    override fun confirmed(): MobileCommand =
-        ApplyWorkoutEditCommand(workoutId, mutation.copy(confirmRisk = true))
-}
-
-internal data class ApplyWorkoutEditCommand(
-    val workoutId: String,
-    val mutation: WorkoutMutation,
 ) : MobileCommand {
-    override val action = "apply_workout_edit"
+    override val action = "preview_workout_edit"
 }
 
 internal data class PreviewWorkoutAddCommand(
     val mutation: WorkoutMutation,
-) : PreviewableMobileCommand {
-    override val action = "preview_workout_add"
-
-    override fun confirmed(): MobileCommand =
-        ApplyWorkoutAddCommand(mutation.copy(confirmRisk = true))
-}
-
-internal data class ApplyWorkoutAddCommand(
-    val mutation: WorkoutMutation,
 ) : MobileCommand {
-    override val action = "apply_workout_add"
+    override val action = "preview_workout_add"
 }
 
 internal data class PreviewWorkoutRemovalCommand(
     val workoutId: String,
-) : PreviewableMobileCommand {
+) : MobileCommand {
     override val action = "preview_workout_removal"
-
-    override fun confirmed(): MobileCommand = RemoveWorkoutCommand(workoutId)
-}
-
-internal data class RemoveWorkoutCommand(val workoutId: String) : MobileCommand {
-    override val action = "remove_workout"
 }
 
 internal data class ResetWorkoutCommand(val workoutId: String) : MobileCommand {
@@ -201,7 +163,9 @@ internal data object CompletePlanCommand : MobileCommand {
     override val action = "complete_plan"
 }
 
-internal data object ConfirmPhaseBaselineCommand : MobileCommand {
+internal data class ConfirmPhaseBaselineCommand(
+    val expectedPreviewToken: String,
+) : MobileCommand {
     override val action = "confirm_phase_baseline"
 }
 
@@ -242,30 +206,6 @@ internal data class UpdateTrainingProfileCommand(
     val zone5FloorBpm: Int,
 ) : MobileCommand {
     override val action = "update_training_profile"
-}
-
-internal data class ConnectNextcloudCommand(
-    val label: String,
-    val shareUrl: String,
-    val sharePassword: String,
-) : MobileCommand {
-    override val action = "connect_nextcloud"
-}
-
-internal data class TestNextcloudCommand(val sourceId: String) : MobileCommand {
-    override val action = "test_nextcloud"
-}
-
-internal data class SyncNextcloudCommand(val sourceId: String) : MobileCommand {
-    override val action = "sync_nextcloud"
-}
-
-internal data class DisconnectNextcloudCommand(val sourceId: String) : MobileCommand {
-    override val action = "disconnect_nextcloud"
-}
-
-internal data class RevokeAndroidDeviceCommand(val deviceId: String) : MobileCommand {
-    override val action = "revoke_android_device"
 }
 
 internal data object DeleteImportedActivityDataCommand : MobileCommand {

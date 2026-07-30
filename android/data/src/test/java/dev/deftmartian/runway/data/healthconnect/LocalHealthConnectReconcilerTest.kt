@@ -1,5 +1,6 @@
 package dev.deftmartian.runway.data.healthconnect
 
+import dev.deftmartian.runway.data.ActivityEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +48,24 @@ class LocalHealthConnectReconcilerTest {
     }
 
     @Test
+    fun `an explicitly observed route change remains a pending correction`() {
+        val initial = LocalHealthConnectReconciler.reduce(run(), empty()) as LocalHealthConnectOutcome.NewReview
+        val outcome = LocalHealthConnectReconciler.reduce(
+            observation = run(),
+            state = LocalHealthConnectRecordState(
+                mapping = initial.mapping,
+                activity = LocalHealthConnectMappedActivity(
+                    initial.activity.activityId,
+                    LocalActivityReviewState.Accepted,
+                ),
+            ),
+            routeChanged = true,
+        )
+
+        assertTrue(outcome is LocalHealthConnectOutcome.PendingCorrection)
+    }
+
+    @Test
     fun `review activity is updated and accepted deletion requires retain or delete decision`() {
         val initial = LocalHealthConnectReconciler.reduce(run(), empty()) as LocalHealthConnectOutcome.NewReview
         val updated = LocalHealthConnectReconciler.reduce(
@@ -91,6 +110,18 @@ class LocalHealthConnectReconcilerTest {
         assertFalse(outcome.activity.activityId == outcome.existingActivityId)
     }
 
+    @Test
+    fun `duplicate matcher requires a close start distance and duration from a non Health Connect activity`() {
+        val observation = run()
+
+        assertTrue(activity().isConservativeDuplicateOf(observation))
+        assertFalse(activity(occurredAtEpochMillis = observation.startedAtEpochMillis + 600_001).isConservativeDuplicateOf(observation))
+        assertFalse(activity(distanceMeters = 5_201).isConservativeDuplicateOf(observation))
+        assertFalse(activity(durationSeconds = 1_981).isConservativeDuplicateOf(observation))
+        assertFalse(activity(source = "health_connect").isConservativeDuplicateOf(observation))
+        assertFalse(activity(distanceMeters = null).isConservativeDuplicateOf(observation))
+    }
+
     private fun empty() = LocalHealthConnectRecordState(null, null)
 
     private fun run(distanceMeters: Int = 5_000) = HealthConnectObservation.RunningUpsert(
@@ -105,6 +136,27 @@ class LocalHealthConnectReconcilerTest {
         averageHeartRateBpm = 145,
         heartRate = listOf(LocalHealthConnectHeartRatePoint(0, 140)),
         route = listOf(LocalHealthConnectRoutePoint(0, 45_000_000, -63_000_000)),
+    )
+
+    private fun activity(
+        source: String = "manual",
+        occurredAtEpochMillis: Long = 1_000,
+        distanceMeters: Int? = 5_100,
+        durationSeconds: Int? = 1_900,
+    ) = ActivityEntity(
+        activityId = "candidate-$source-$occurredAtEpochMillis-$distanceMeters-$durationSeconds",
+        source = source,
+        sourceRecordId = "candidate-record",
+        reviewState = "accepted",
+        occurredAtEpochMillis = occurredAtEpochMillis,
+        durationSeconds = durationSeconds,
+        distanceMeters = distanceMeters,
+        averageHeartRateBpm = null,
+        averageCadenceSpm = null,
+        linkedWorkoutId = null,
+        acceptedAtEpochMillis = 1,
+        createdAtEpochMillis = 1,
+        updatedAtEpochMillis = 1,
     )
 
     private companion object {

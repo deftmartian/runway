@@ -165,6 +165,22 @@ abstract class GoalPlanDao {
         limit: Int,
     ): List<WorkoutEntity>
 
+    @Query(
+        """
+        SELECT * FROM workouts
+        WHERE planId = :planId
+          AND currentStatus = 'planned'
+          AND currentWorkoutType != 'rest'
+          AND currentScheduledEpochDay >= :fromEpochDay
+        ORDER BY currentScheduledEpochDay, position
+        LIMIT 1
+        """,
+    )
+    abstract suspend fun nextPlannedWorkout(
+        planId: String,
+        fromEpochDay: Long,
+    ): WorkoutEntity?
+
     @Query("SELECT * FROM workouts WHERE planId IN (:planIds) AND currentStatus != :tombstoneState ORDER BY planId, currentScheduledEpochDay, position LIMIT :limit")
     abstract suspend fun visibleWorkoutsForPlans(
         planIds: List<String>,
@@ -217,6 +233,12 @@ abstract class GoalPlanDao {
 
     @Query("SELECT * FROM plan_summary_warnings WHERE planId = :planId ORDER BY ordinal LIMIT :limit")
     abstract suspend fun planSummaryWarnings(planId: String, limit: Int): List<PlanSummaryWarningEntity>
+
+    @Query("SELECT * FROM plan_summary_warnings WHERE planId IN (:planIds) ORDER BY planId, ordinal LIMIT :limit")
+    abstract suspend fun planSummaryWarningsForPlans(
+        planIds: List<String>,
+        limit: Int,
+    ): List<PlanSummaryWarningEntity>
 
     @Query("SELECT * FROM plan_source_references WHERE planId = :planId ORDER BY ordinal LIMIT :limit")
     abstract suspend fun planSourceReferences(planId: String, limit: Int): List<PlanSourceReferenceEntity>
@@ -322,14 +344,14 @@ interface ActivityLedgerDao {
     @Query("SELECT COUNT(*) FROM activities WHERE reviewState = :reviewState")
     suspend fun activityCountByReviewState(reviewState: String): Int
 
-    @Query("SELECT * FROM activities WHERE occurredAtEpochMillis BETWEEN :fromInclusive AND :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
+    @Query("SELECT * FROM activities WHERE occurredAtEpochMillis >= :fromInclusive AND occurredAtEpochMillis < :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     suspend fun activitiesInRange(
         fromInclusive: Long,
         toExclusive: Long,
         limit: Int,
     ): List<ActivityEntity>
 
-    @Query("SELECT * FROM activities WHERE reviewState = :acceptedState AND occurredAtEpochMillis BETWEEN :fromInclusive AND :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
+    @Query("SELECT * FROM activities WHERE reviewState = :acceptedState AND occurredAtEpochMillis >= :fromInclusive AND occurredAtEpochMillis < :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     suspend fun acceptedActivitiesInRange(
         fromInclusive: Long,
         toExclusive: Long,
@@ -337,8 +359,28 @@ interface ActivityLedgerDao {
         acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
     ): List<ActivityEntity>
 
+    @Query(
+        """
+        SELECT * FROM activities
+        WHERE occurredAtEpochMillis BETWEEN :fromInclusive AND :throughInclusive
+          AND source != :excludedSource
+        ORDER BY ABS(occurredAtEpochMillis - :targetEpochMillis), activityId
+        LIMIT :limit
+        """,
+    )
+    suspend fun potentialDuplicateActivities(
+        targetEpochMillis: Long,
+        fromInclusive: Long,
+        throughInclusive: Long,
+        excludedSource: String,
+        limit: Int,
+    ): List<ActivityEntity>
+
     @Query("SELECT * FROM activities WHERE activityId = :activityId")
     suspend fun activity(activityId: String): ActivityEntity?
+
+    @Query("SELECT * FROM activities WHERE activityId IN (:activityIds) LIMIT :limit")
+    suspend fun activitiesByIds(activityIds: List<String>, limit: Int): List<ActivityEntity>
 
     @Query("SELECT * FROM activities WHERE linkedWorkoutId = :workoutId LIMIT 2")
     suspend fun activitiesLinkedToWorkout(workoutId: String): List<ActivityEntity>
@@ -376,8 +418,20 @@ interface ActivityLedgerDao {
     @Query("SELECT * FROM workout_feedback_consequences WHERE feedbackId = :feedbackId")
     suspend fun workoutFeedbackConsequence(feedbackId: String): WorkoutFeedbackConsequenceEntity?
 
+    @Query("SELECT * FROM workout_feedback_consequences WHERE feedbackId IN (:feedbackIds) LIMIT :limit")
+    suspend fun workoutFeedbackConsequencesForFeedbackIds(
+        feedbackIds: List<String>,
+        limit: Int,
+    ): List<WorkoutFeedbackConsequenceEntity>
+
     @Query("SELECT * FROM activity_consequences WHERE activityId = :activityId")
     suspend fun activityConsequence(activityId: String): ActivityConsequenceEntity?
+
+    @Query("SELECT * FROM activity_consequences WHERE activityId IN (:activityIds) LIMIT :limit")
+    suspend fun activityConsequencesForActivityIds(
+        activityIds: List<String>,
+        limit: Int,
+    ): List<ActivityConsequenceEntity>
 
     @Query(
         """
@@ -437,8 +491,18 @@ interface ActivityLedgerDao {
     @Query("SELECT * FROM workout_feedback_consequence_options WHERE feedbackId = :feedbackId ORDER BY decision LIMIT :limit")
     suspend fun workoutFeedbackConsequenceOptions(feedbackId: String, limit: Int): List<WorkoutFeedbackConsequenceOptionEntity>
 
+    @Query("SELECT * FROM workout_feedback_consequence_options WHERE feedbackId IN (:feedbackIds) ORDER BY feedbackId, decision LIMIT :limit")
+    suspend fun workoutFeedbackConsequenceOptionsForFeedbackIds(
+        feedbackIds: List<String>,
+        limit: Int,
+    ): List<WorkoutFeedbackConsequenceOptionEntity>
+
     @Query("DELETE FROM workout_feedback_consequence_options WHERE feedbackId = :feedbackId")
     suspend fun clearWorkoutFeedbackConsequenceOptions(feedbackId: String)
+
+    /** Deleting direct feedback cascades its consequence and offered-decision rows. */
+    @Query("DELETE FROM workout_feedback WHERE feedbackId = :feedbackId AND sourceActivityId IS NULL")
+    suspend fun deleteDirectWorkoutFeedback(feedbackId: String): Int
 
     @Upsert
     suspend fun saveActivityConsequence(consequence: ActivityConsequenceEntity)
@@ -454,6 +518,12 @@ interface ActivityLedgerDao {
 
     @Query("SELECT * FROM activity_consequence_options WHERE activityId = :activityId ORDER BY decision LIMIT :limit")
     suspend fun activityConsequenceOptions(activityId: String, limit: Int): List<ActivityConsequenceOptionEntity>
+
+    @Query("SELECT * FROM activity_consequence_options WHERE activityId IN (:activityIds) ORDER BY activityId, decision LIMIT :limit")
+    suspend fun activityConsequenceOptionsForActivityIds(
+        activityIds: List<String>,
+        limit: Int,
+    ): List<ActivityConsequenceOptionEntity>
 
     @Query("DELETE FROM activity_consequence_options WHERE activityId = :activityId")
     suspend fun clearActivityConsequenceOptions(activityId: String)
@@ -582,6 +652,124 @@ interface AdjustmentDao {
     @Query("SELECT * FROM plan_adjustments WHERE planId = :planId ORDER BY createdAtEpochMillis DESC LIMIT :limit")
     suspend fun adjustmentsForPlan(planId: String, limit: Int): List<PlanAdjustmentEntity>
 
+    /**
+     * One bounded read for the history timeline. A row represents either one stored workout effect
+     * or an adjustment without a workout effect (for example, a keep-plan decision).
+     */
+    @Query(
+        """
+        SELECT adjustment.planId AS planId,
+               adjustment.adjustmentId AS adjustmentId,
+               adjustment.adjustmentType AS adjustmentType,
+               adjustment.state AS adjustmentState,
+               adjustment.triggerKind AS triggerKind,
+               adjustment.createdAtEpochMillis AS createdAtEpochMillis,
+               decision.decisionId AS decisionId,
+               decision.decisionType AS decisionType,
+               reversal.reason AS reversalReason,
+               reversal.reversedAtEpochMillis AS reversedAtEpochMillis,
+               effect.effectId AS effectId,
+               effect.newScheduledEpochDay AS newScheduledEpochDay,
+               effect.newWorkoutType AS newWorkoutType,
+               effect.newPrescriptionKind AS newPrescriptionKind,
+               effect.newStatus AS newStatus,
+               effect.newDistanceMeters AS newDistanceMeters,
+               effect.newDurationSeconds AS newDurationSeconds,
+               effect.newTombstonedAtEpochMillis AS newTombstonedAtEpochMillis,
+               effect.newReason AS newReason
+        FROM plan_adjustments AS adjustment
+        LEFT JOIN plan_decisions AS decision
+            ON decision.adjustmentId = adjustment.adjustmentId
+        LEFT JOIN plan_reversals AS reversal
+            ON reversal.decisionId = decision.decisionId
+        LEFT JOIN adjustment_effect_groups AS effect_group
+            ON effect_group.adjustmentId = adjustment.adjustmentId
+        LEFT JOIN adjustment_workout_effects AS effect
+            ON effect.groupId = effect_group.groupId
+        WHERE adjustment.planId IN (:planIds)
+        ORDER BY adjustment.createdAtEpochMillis DESC,
+                 adjustment.adjustmentId,
+                 effect_group.ordinal,
+                 effect.ordinal
+        LIMIT :limit
+        """,
+    )
+    suspend fun historyAdjustmentRowsForPlans(
+        planIds: List<String>,
+        limit: Int,
+    ): List<HistoryAdjustmentRow>
+
+    /**
+     * One bounded query for changes whose persisted scalar after-state still matches the current,
+     * future plan. Manual edits and applied consequence decisions both persist the complete
+     * before/after structure required by the shared guarded undo boundary. The mutation command
+     * remains the final guard for interval/source-reference snapshot equality.
+     */
+    @Query(
+        """
+        SELECT effect.workoutId AS workoutId,
+               adjustment.adjustmentId AS adjustmentId,
+               adjustment.adjustmentType AS kind,
+               adjustment.createdAtEpochMillis AS createdAtEpochMillis
+        FROM plan_adjustments AS adjustment
+        INNER JOIN adjustment_effect_groups AS effect_group
+            ON effect_group.adjustmentId = adjustment.adjustmentId
+        INNER JOIN adjustment_workout_effects AS effect
+            ON effect.groupId = effect_group.groupId
+        INNER JOIN plan_decisions AS decision
+            ON decision.adjustmentId = adjustment.adjustmentId
+        INNER JOIN plans AS plan_row
+            ON plan_row.planId = adjustment.planId
+        LEFT JOIN plan_reversals AS reversal
+            ON reversal.decisionId = decision.decisionId
+        INNER JOIN workouts AS current_workout
+            ON current_workout.workoutId = effect.workoutId
+        WHERE effect.workoutId IN (:workoutIds)
+          AND adjustment.state = 'applied'
+          AND plan_row.state = 'active'
+          AND effect_group.effectType IN ('workout_change', 'consequence_decision')
+          AND reversal.reversalId IS NULL
+          AND current_workout.currentStatus = 'planned'
+          AND current_workout.currentScheduledEpochDay >= :todayEpochDay
+          AND NOT EXISTS (
+              SELECT 1
+              FROM adjustment_effect_groups AS own_group
+              INNER JOIN adjustment_workout_effects AS own_effect
+                  ON own_effect.groupId = own_group.groupId
+              LEFT JOIN workouts AS own_current
+                  ON own_current.workoutId = own_effect.workoutId
+              WHERE own_group.adjustmentId = adjustment.adjustmentId
+                AND (
+                    own_effect.workoutId IS NULL
+                    OR own_effect.previousWeekId IS NULL
+                    OR own_effect.newWeekId IS NULL
+                    OR own_current.workoutId IS NULL
+                    OR own_current.currentStatus IS NOT own_effect.newStatus
+                    OR own_current.currentScheduledEpochDay IS NOT own_effect.newScheduledEpochDay
+                    OR own_current.currentWorkoutType IS NOT own_effect.newWorkoutType
+                    OR own_current.currentPrescriptionKind IS NOT own_effect.newPrescriptionKind
+                    OR own_current.currentDistanceMeters IS NOT own_effect.newDistanceMeters
+                    OR own_current.currentDurationSeconds IS NOT own_effect.newDurationSeconds
+                    OR own_current.currentIntensity IS NOT own_effect.newIntensity
+                    OR own_current.currentPurpose IS NOT own_effect.newPurpose
+                    OR own_current.currentReason IS NOT own_effect.newReason
+                    OR own_current.currentWarmupSeconds IS NOT own_effect.newWarmupSeconds
+                    OR own_current.currentCooldownSeconds IS NOT own_effect.newCooldownSeconds
+                    OR own_current.tombstonedAtEpochMillis IS NOT own_effect.newTombstonedAtEpochMillis
+                    OR own_current.weekId IS NOT own_effect.newWeekId
+                    OR own_current.currentScheduledEpochDay < :todayEpochDay
+                )
+          )
+        ORDER BY effect.workoutId, adjustment.createdAtEpochMillis DESC, adjustment.adjustmentId DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun undoableWorkoutAdjustments(
+        workoutIds: List<String>,
+        todayEpochDay: Long,
+        limit: Int,
+    ): List<UndoableWorkoutAdjustmentRow>
+
     @Query("SELECT * FROM plan_decisions WHERE adjustmentId = :adjustmentId ORDER BY decidedAtEpochMillis DESC LIMIT :limit")
     suspend fun decisionsForAdjustment(adjustmentId: String, limit: Int): List<PlanDecisionEntity>
 
@@ -603,6 +791,35 @@ interface AdjustmentDao {
     @Query("SELECT * FROM adjustment_effect_source_reference_snapshots WHERE effectId = :effectId AND snapshotState = :snapshotState ORDER BY ordinal LIMIT :limit")
     suspend fun effectSourceReferenceSnapshots(effectId: String, snapshotState: String, limit: Int): List<AdjustmentEffectSourceReferenceSnapshotEntity>
 }
+
+data class UndoableWorkoutAdjustmentRow(
+    val workoutId: String,
+    val adjustmentId: String,
+    val kind: String,
+    val createdAtEpochMillis: Long,
+)
+
+data class HistoryAdjustmentRow(
+    val planId: String,
+    val adjustmentId: String,
+    val adjustmentType: String,
+    val adjustmentState: String,
+    val triggerKind: String?,
+    val createdAtEpochMillis: Long,
+    val decisionId: String?,
+    val decisionType: String?,
+    val reversalReason: String?,
+    val reversedAtEpochMillis: Long?,
+    val effectId: String?,
+    val newScheduledEpochDay: Long?,
+    val newWorkoutType: String?,
+    val newPrescriptionKind: String?,
+    val newStatus: String?,
+    val newDistanceMeters: Int?,
+    val newDurationSeconds: Int?,
+    val newTombstonedAtEpochMillis: Long?,
+    val newReason: String?,
+)
 
 @Dao
 abstract class ImportLedgerDao {
@@ -682,7 +899,25 @@ abstract class ImportLedgerDao {
     @Query("SELECT * FROM health_connect_mappings WHERE provider = :provider AND externalRecordId = :externalRecordId")
     abstract suspend fun healthConnectMapping(provider: String, externalRecordId: String): HealthConnectMappingEntity?
 
-    @Query("UPDATE health_connect_mappings SET activityId = NULL, lifecycleState = :tombstoneState, correctionPending = 0, deletePending = 0, tombstonedAtEpochMillis = :deletedAtEpochMillis, deletedAtEpochMillis = :deletedAtEpochMillis WHERE activityId = :activityId")
+    @Query(
+        """
+        SELECT * FROM health_connect_mappings
+        WHERE correctionPending = 1
+           OR deletePending = 1
+           OR duplicateCandidateActivityId IS NOT NULL
+        ORDER BY lastObservedAtEpochMillis DESC
+        LIMIT :limit
+        """,
+    )
+    abstract suspend fun pendingHealthConnectMappings(limit: Int): List<HealthConnectMappingEntity>
+
+    @Query("SELECT * FROM health_connect_pending_observations WHERE mappingId IN (:mappingIds) LIMIT :limit")
+    abstract suspend fun pendingHealthConnectObservations(
+        mappingIds: List<String>,
+        limit: Int,
+    ): List<HealthConnectPendingObservationEntity>
+
+    @Query("UPDATE health_connect_mappings SET activityId = NULL, lifecycleState = :tombstoneState, correctionPending = 0, deletePending = 0, duplicateCandidateActivityId = NULL, tombstonedAtEpochMillis = :deletedAtEpochMillis, deletedAtEpochMillis = :deletedAtEpochMillis WHERE activityId = :activityId")
     protected abstract suspend fun tombstoneHealthConnectMappingsForActivity(
         activityId: String,
         deletedAtEpochMillis: Long,
@@ -776,6 +1011,51 @@ abstract class LedgerMaintenanceDao {
     @Query("DELETE FROM app_metadata")
     protected abstract suspend fun clearMetadata()
 
+    @Query(
+        """
+        UPDATE import_digests
+        SET activityId = NULL,
+            tombstonedAtEpochMillis = COALESCE(tombstonedAtEpochMillis, :erasedAtEpochMillis)
+        WHERE activityId IS NOT NULL
+        """,
+    )
+    protected abstract suspend fun tombstoneImportedDigests(erasedAtEpochMillis: Long): Int
+
+    @Query(
+        """
+        UPDATE health_connect_mappings
+        SET activityId = NULL,
+            lifecycleState = :tombstoneState,
+            correctionPending = 0,
+            deletePending = 0,
+            duplicateCandidateActivityId = NULL,
+            tombstonedAtEpochMillis = COALESCE(tombstonedAtEpochMillis, :erasedAtEpochMillis),
+            deletedAtEpochMillis = COALESCE(deletedAtEpochMillis, :erasedAtEpochMillis)
+        WHERE lifecycleState != :tombstoneState
+           OR activityId IS NOT NULL
+           OR correctionPending = 1
+           OR deletePending = 1
+           OR duplicateCandidateActivityId IS NOT NULL
+        """,
+    )
+    protected abstract suspend fun tombstoneImportedHealthConnectMappings(
+        erasedAtEpochMillis: Long,
+        tombstoneState: String = HEALTH_CONNECT_MAPPING_STATE_TOMBSTONED,
+    ): Int
+
+    @Query("DELETE FROM health_connect_pending_observations")
+    protected abstract suspend fun clearPendingHealthConnectImportData(): Int
+
+    @Query(
+        """
+        DELETE FROM activities
+        WHERE source != :manualSource
+        """,
+    )
+    protected abstract suspend fun deleteImportedActivities(
+        manualSource: String = "manual",
+    ): Int
+
     /** Deletes runner-owned ledger records in one transaction, including retained import tombstones. */
     @Transaction
     open suspend fun clearAll() {
@@ -785,6 +1065,25 @@ abstract class LedgerMaintenanceDao {
         clearHealthConnectMappings()
         clearProfile()
         clearMetadata()
+    }
+
+    /**
+     * Keeps manual activities and all plan/audit rows. The mapping update precedes the activity
+     * delete so retained provider identities remain terminal even if the app is reconnected.
+     */
+    @Transaction
+    open suspend fun clearImportedActivityData(
+        erasedAtEpochMillis: Long,
+    ): LocalImportedActivityEraseResult {
+        require(erasedAtEpochMillis > 0) { "Imported-data erase time must be positive." }
+        tombstoneImportedHealthConnectMappings(erasedAtEpochMillis)
+        clearPendingHealthConnectImportData()
+        val tombstones = tombstoneImportedDigests(erasedAtEpochMillis)
+        val erased = deleteImportedActivities()
+        return LocalImportedActivityEraseResult(
+            activitiesErased = erased,
+            retainedImportTombstones = tombstones,
+        )
     }
 }
 

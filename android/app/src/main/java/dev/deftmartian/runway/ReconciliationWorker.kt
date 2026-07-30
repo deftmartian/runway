@@ -8,6 +8,7 @@ import dev.deftmartian.runway.data.importing.LocalGpxImportException
 import dev.deftmartian.runway.data.importing.LocalGpxImportFailure
 import dev.deftmartian.runway.data.importing.LocalGpxImportOutcome
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 /**
  * Scans one persisted SAF folder and commits at most one stable GPX per invocation.
@@ -21,7 +22,11 @@ class ReconciliationWorker(
 ) : CoroutineWorker(appContext, workerParameters) {
     private val statusStore = ReconciliationStatusStore(appContext)
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = AndroidStateCoordinator.withImportDataBoundary {
+        importNextCandidate()
+    }
+
+    private suspend fun importNextCandidate(): Result {
         val treeStore = TreeAccessStore(applicationContext)
         val treeState = treeStore.currentState()
         if (treeState !is TreeAccessState.Connected) {
@@ -86,6 +91,8 @@ class ReconciliationWorker(
                 } - 1,
                 summary = scan.summary,
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: RuntimeException) {
             return retry(STATE_RETRYING, candidates.size, scan.summary.truncated)
         }

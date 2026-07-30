@@ -6,7 +6,7 @@ import dev.deftmartian.runway.domain.EditPreview
 import dev.deftmartian.runway.domain.Risk
 import dev.deftmartian.runway.domain.WorkoutProposal
 
-/** A local UI projection, deliberately separate from the retired mobile API DTOs. */
+/** Typed presentation state for a pending local workout change. */
 internal data class LocalWorkoutChangePreview(
     val prepared: PreparedLocalWorkoutChange,
     val planId: String,

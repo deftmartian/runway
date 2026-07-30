@@ -96,8 +96,8 @@ android {
         // Health Connect's Jetpack client supports Android 8.0.
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.7.1"
+        versionCode = 14
+        versionName = "0.8.0"
         buildConfigField("String", "SOURCE_COMMIT", "\"$runwayBuildCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -139,6 +139,11 @@ android {
         compose = true
     }
 
+    lint {
+        // Full lint is an explicit local and CI gate; do not repeat lintVital while packaging.
+        checkReleaseBuilds = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -161,7 +166,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-    implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")

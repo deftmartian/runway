@@ -1,6 +1,6 @@
 # runway for Android
 
-runway is a full native Kotlin + Jetpack Compose running decision ledger. It is local-first: there is no sign-in, server selection, browser handoff, WebView, or companion service.
+runway is a full native Kotlin + Jetpack Compose running decision ledger. Plans, activities, imports, preferences, and backups are owned by the app on the phone.
 
 The app has five destinations—Calendar, Inbox, Stats, History, and Settings—and keeps generated, current, and actual training separate. It supports explicit workout changes, manual results, GPX sharing, approved-folder scans, optional read-only Health Connect imports, privacy controls, and plaintext local backup/export.
 
@@ -28,4 +28,4 @@ Folder import retains only a selected Storage Access Framework tree grant. GPX b
 
 ## Release
 
-The application id `dev.deftmartian.runway` and the APK signing certificate are stable update identity. See [release instructions](docs/RELEASE.md) before distributing a build. Current standalone-app screenshots are pending capture; do not reuse retired browser/client images.
+The application id `dev.deftmartian.runway` and the APK signing certificate are stable update identity. See [release instructions](docs/RELEASE.md) before distributing a build. Release screenshots must come from the current native build on an emulator or device.

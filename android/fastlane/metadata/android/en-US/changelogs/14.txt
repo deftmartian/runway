@@ -1,0 +1,7 @@
+runway is now a standalone native Android app.
+
+- Keep plans, completed runs, reviews, settings, and backups on this phone.
+- Set up a foundation or goal plan entirely on the phone.
+- Import GPX files, approved folders, and optional Health Connect runs for review.
+- Compare generated, current, and completed training before choosing what changes next.
+- Follow the phone's Material You palette and light or dark mode.

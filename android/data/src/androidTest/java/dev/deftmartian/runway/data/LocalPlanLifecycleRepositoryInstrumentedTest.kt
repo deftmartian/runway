@@ -51,6 +51,7 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
                     phasePlanId = "phase-plan",
                     newPlanId = "distance-plan",
                     operationId = "confirm-baseline",
+                    expectedPreviewToken = "confirmation-not-yet-granted",
                     todayEpochDay = 113,
                     occurredAtEpochMillis = 1_500,
                     explicitlyConfirmed = false,
@@ -66,12 +67,12 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
             occurredAtEpochMillis = 2_000,
         )
         assertEquals(
-            LocalPlanLifecycleResult.PhaseContinued("phase-plan", 116, alreadyApplied = false),
+            LocalPlanLifecycleResult.PhaseContinued("phase-plan", 122, alreadyApplied = false),
             repository.continueBeginnerPhase(request),
         )
         assertEquals(3, database.goalPlanDao().weeksForPlan("phase-plan", 100).size)
         assertEquals(
-            LocalPlanLifecycleResult.PhaseContinued("phase-plan", 116, alreadyApplied = true),
+            LocalPlanLifecycleResult.PhaseContinued("phase-plan", 122, alreadyApplied = true),
             repository.continueBeginnerPhase(request),
         )
         assertEquals(3, database.goalPlanDao().weeksForPlan("phase-plan", 100).size)
@@ -85,8 +86,27 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
             activityDao.saveActivity(activity("accepted-$index", workoutId, "accepted", 3_000))
         }
         val repository = LocalPlanLifecycleRepository(database)
+        val delayedToday = 114L
+        val preview = (
+            repository.phaseReview("phase-plan", delayedToday) as LocalPhaseReviewResult.Available
+        ).review.racePlan ?: error("race plan preview missing")
 
-        val delayedToday = 126L
+        assertEquals(
+            LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.STALE_PREVIEW),
+            repository.confirmRaceBaseline(
+                LocalRaceBaselineConfirmationRequest(
+                    phasePlanId = "phase-plan",
+                    newPlanId = "distance-plan",
+                    operationId = "stale-confirmation",
+                    expectedPreviewToken = "${preview.token}-stale",
+                    todayEpochDay = delayedToday,
+                    occurredAtEpochMillis = 1_900,
+                    explicitlyConfirmed = true,
+                ),
+            ),
+        )
+        assertEquals(false, database.goalPlanDao().planExists("distance-plan"))
+
         assertEquals(
             LocalPlanLifecycleResult.RacePlanStarted("distance-plan", alreadyApplied = false),
             repository.confirmRaceBaseline(
@@ -94,6 +114,7 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
                     phasePlanId = "phase-plan",
                     newPlanId = "distance-plan",
                     operationId = "delayed-confirmation",
+                    expectedPreviewToken = preview.token,
                     todayEpochDay = delayedToday,
                     occurredAtEpochMillis = 2_000,
                     explicitlyConfirmed = true,
@@ -101,7 +122,7 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
             ),
         )
         val racePlan = database.goalPlanDao().plan("distance-plan") ?: error("race plan missing")
-        assertEquals(130L, racePlan.startEpochDay)
+        assertEquals(116L, racePlan.startEpochDay)
         assertTrue(
             database.goalPlanDao().allWorkoutsForPlan("distance-plan", 1_000)
                 .all { it.currentScheduledEpochDay >= racePlan.startEpochDay },
@@ -121,8 +142,82 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
         val week = database.goalPlanDao().weeksForPlan("phase-plan", 100).maxBy { it.ordinal }
         assertEquals(130L, week.startEpochDay)
         assertTrue(
-            database.goalPlanDao().workoutsForWeek(week.weekId, 100)
+            database.goalPlanDao().workoutsForWeek(weekId = week.weekId, limit = 100)
                 .all { it.currentScheduledEpochDay >= week.startEpochDay },
+        )
+    }
+
+    @Test
+    fun erasingImportedDataKeepsManualTrainingPlansAndAuditWhileTombstoningImports() = runBlocking {
+        seedCalibrationPlan()
+        val activities = database.activityLedgerDao()
+        activities.saveActivity(activity("manual-run", null, "accepted", 4_000).copy(source = "manual"))
+        val imported = activity("gpx-run", "workout-1", "accepted", 5_000).copy(source = "gpx")
+        assertTrue(
+            database.importLedgerDao().recordImportedActivity(
+                activity = imported,
+                source = "gpx",
+                digest = "import-digest-1",
+                firstSeenAtEpochMillis = 1_100,
+            ),
+        )
+        val healthConnect = activity(
+            "health-connect-run",
+            null,
+            "accepted",
+            4_500,
+        ).copy(source = "health_connect", sourceRecordId = "hc-record")
+        activities.saveActivity(healthConnect)
+        database.importLedgerDao().saveHealthConnectMapping(
+            HealthConnectMappingEntity(
+                mappingId = "hc-mapping",
+                provider = "health_connect",
+                externalRecordId = "hc-record",
+                activityId = healthConnect.activityId,
+                importedAtEpochMillis = 1_000,
+                lastObservedAtEpochMillis = 1_100,
+            ),
+        )
+        database.adjustmentDao().saveAdjustment(
+            PlanAdjustmentEntity(
+                adjustmentId = "import-adjustment",
+                planId = "phase-plan",
+                workoutId = "workout-1",
+                sourceActivityId = imported.activityId,
+                adjustmentType = "consequence",
+                state = "applied",
+                measuredLoadSharePercent = null,
+                projectedRampPercent = null,
+                affectedWorkoutCount = 1,
+                createdAtEpochMillis = 1_200,
+            ),
+        )
+
+        val repository = LocalDataManagementRepository(database) { 2_000 }
+        assertEquals(
+            LocalImportedActivityEraseResult(activitiesErased = 2, retainedImportTombstones = 1),
+            repository.eraseImportedActivityData(),
+        )
+
+        assertTrue(database.goalPlanDao().planExists("phase-plan"))
+        assertEquals("manual", requireNotNull(activities.activity("manual-run")).source)
+        assertEquals(null, activities.activity("gpx-run"))
+        assertEquals(null, activities.activity("health-connect-run"))
+        assertEquals(
+            2_000L,
+            requireNotNull(database.importLedgerDao().digest("gpx", "import-digest-1")).tombstonedAtEpochMillis,
+        )
+        assertEquals(null, database.importLedgerDao().digest("gpx", "import-digest-1")?.activityId)
+        val healthConnectTombstone = requireNotNull(
+            database.importLedgerDao().healthConnectMapping("health_connect", "hc-record"),
+        )
+        assertEquals(HEALTH_CONNECT_MAPPING_STATE_TOMBSTONED, healthConnectTombstone.lifecycleState)
+        assertEquals(null, healthConnectTombstone.activityId)
+        assertEquals(null, requireNotNull(database.adjustmentDao().adjustment("import-adjustment")).sourceActivityId)
+
+        assertEquals(
+            LocalImportedActivityEraseResult(activitiesErased = 0, retainedImportTombstones = 0),
+            repository.eraseImportedActivityData(),
         )
     }
 

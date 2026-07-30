@@ -4,15 +4,18 @@ License: AGPL-3.0-only
 AuthorName: REPLACE_AUTHOR_NAME
 SourceCode: https://REPLACE_SOURCE_URL
 IssueTracker: https://REPLACE_ISSUE_URL
-# After the first controlled publish, pin the fdroidserver-managed APK key:
+# The repository index key is separate from the APK key. This app's APK must be
+# signed with the canonical dev.deftmartian.runway release certificate so it can
+# update installations from GitHub releases. After the first controlled publish,
+# pin that canonical APK signer here:
 # AllowedAPKSigningKeys: REPLACE_WITH_LOWERCASE_CERT_SHA256_WITHOUT_COLONS
 
 RepoType: git
 Repo: https://REPLACE_GIT_URL
 
 Builds:
-  - versionName: 0.7.1
-    versionCode: 13
+  - versionName: 0.8.0
+    versionCode: 14
     commit: REPLACE_SOURCE_COMMIT
     subdir: android
     gradle:

@@ -50,8 +50,8 @@ class NativeStatsLayoutTest {
     fun `technical identifiers and enlarged copy stack before they become cramped`() {
         assertTrue(
             usesStackedSettingRow(
-                label = "Server",
-                value = "https://runway.example.test",
+                label = "Commit",
+                value = "36899686c3bb4d8016b09bfa1def9c9584f8053c",
                 monospace = true,
                 availableWidthDp = 328f,
                 fontScale = 1f,
@@ -59,8 +59,8 @@ class NativeStatsLayoutTest {
         )
         assertTrue(
             usesStackedSettingRow(
-                label = "Two-factor authentication",
-                value = "Not enabled",
+                label = "Health Connect",
+                value = "Permission needed",
                 monospace = false,
                 availableWidthDp = 328f,
                 fontScale = 1.3f,

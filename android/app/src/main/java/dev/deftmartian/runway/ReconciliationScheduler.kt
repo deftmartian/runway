@@ -58,6 +58,23 @@ object ReconciliationScheduler {
         WorkManager.getInstance(context).cancelUniqueWork(HEALTH_CONNECT_WORK_NAME)
     }
 
+    /**
+     * Stops every database-owning worker before a destructive restore closes and replaces Room.
+     *
+     * This is called from an IO dispatcher. Waiting for WorkManager's cancellation operations
+     * prevents an import worker from racing the database replacement.
+     */
+    fun cancelAllAndWait(context: Context) {
+        val manager = WorkManager.getInstance(context)
+        listOf(
+            manager.cancelUniqueWork(ONE_TIME_WORK_NAME),
+            manager.cancelUniqueWork(PERIODIC_WORK_NAME),
+            manager.cancelUniqueWork(HEALTH_CONNECT_WORK_NAME),
+        ).forEach { operation ->
+            operation.result.get(WORK_CANCELLATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        }
+    }
+
     fun enableHealthConnectPeriodic(context: Context) {
         val request = PeriodicWorkRequest.Builder(HealthConnectWorker::class.java, 6, TimeUnit.HOURS)
             .setConstraints(localStorageConstraints())
@@ -99,5 +116,6 @@ object ReconciliationScheduler {
         .build()
 
     private const val RETRY_BACKOFF_SECONDS = 15L
+    private const val WORK_CANCELLATION_TIMEOUT_SECONDS = 30L
     private const val MAX_DRAIN_WORKERS = 8
 }

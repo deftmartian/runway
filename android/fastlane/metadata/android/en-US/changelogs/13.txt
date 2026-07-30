@@ -1,6 +1,0 @@
-The Android app now uses the same five destinations as runway on the web: Calendar, Inbox, Stats,
-History, and Settings. The current decision now lives with the calendar rather than in a separate
-tab, while plan lifecycle and past plans are distinct from training statistics.
-
-This makes the native app easier to learn without changing your server, account, plan, or activity
-data.

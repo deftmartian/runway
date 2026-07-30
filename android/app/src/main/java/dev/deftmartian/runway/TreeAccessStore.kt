@@ -21,9 +21,8 @@ sealed interface TreeAccessMutation {
 /**
  * Owns one durable Storage Access Framework tree grant.
  *
- * The grant belongs to this local installation, not to an account or remote origin. A generation
- * lets an in-flight worker notice that the user changed or removed the folder before it records a
- * result.
+ * The grant belongs to this local installation. A generation lets an in-flight worker notice that
+ * the user changed or removed the folder before it records a result.
  */
 class TreeAccessStore(context: Context) {
     private val appContext = context.applicationContext
@@ -31,6 +30,12 @@ class TreeAccessStore(context: Context) {
 
     fun connect(uri: Uri): TreeAccessMutation = AndroidStateCoordinator.write {
         if (uri.scheme != ContentResolver.SCHEME_CONTENT) return@write TreeAccessMutation.Failed
+        val previous = storedUri()
+        if (previous != null && previous != uri) {
+            ReconciliationScheduler.cancelFolderWork(appContext)
+            if (!release(previous)) return@write TreeAccessMutation.Failed
+            FolderImportIndex(appContext).clear()
+        }
         val persisted = runCatching {
             appContext.contentResolver.takePersistableUriPermission(
                 uri,
@@ -40,15 +45,10 @@ class TreeAccessStore(context: Context) {
         }.getOrDefault(false)
         if (!persisted) return@write TreeAccessMutation.Failed
 
-        val previous = storedUri()
         ReconciliationScheduler.cancelFolderWork(appContext)
         preferences.edit(commit = true) {
             putString(TREE_URI_KEY, uri.toString())
             putLong(TREE_GENERATION_KEY, nextGeneration())
-        }
-        if (previous != null && previous != uri) {
-            release(previous)
-            FolderImportIndex(appContext).clear()
         }
         TreeAccessMutation.Changed
     }
@@ -68,7 +68,8 @@ class TreeAccessStore(context: Context) {
 
     fun disconnect(): TreeAccessMutation = AndroidStateCoordinator.write {
         ReconciliationScheduler.cancelFolderWork(appContext)
-        storedUri()?.let(::release)
+        val uri = storedUri()
+        if (uri != null && !release(uri)) return@write TreeAccessMutation.Failed
         preferences.edit(commit = true) {
             remove(TREE_URI_KEY)
             putLong(TREE_GENERATION_KEY, nextGeneration())
@@ -82,13 +83,19 @@ class TreeAccessStore(context: Context) {
         preferences.getString(TREE_URI_KEY, null)
             ?.let { raw -> runCatching { raw.toUri() }.getOrNull() }
 
-    private fun release(uri: Uri) {
-        runCatching {
+    private fun release(uri: Uri): Boolean {
+        val permissionStillHeld = runCatching {
+            appContext.contentResolver.persistedUriPermissions.any {
+                it.uri == uri && it.isReadPermission
+            }
+        }.getOrElse { return false }
+        if (!permissionStillHeld) return true
+        return runCatching {
             appContext.contentResolver.releasePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
-        }
+        }.isSuccess
     }
 
     private fun nextGeneration(): Long {

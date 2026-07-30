@@ -12,9 +12,10 @@ object LocalHealthConnectReconciler {
     fun reduce(
         observation: HealthConnectObservation,
         state: LocalHealthConnectRecordState,
+        routeChanged: Boolean = false,
     ): LocalHealthConnectOutcome = when (observation) {
         is HealthConnectObservation.Deleted -> reduceDeletion(observation, state)
-        is HealthConnectObservation.RunningUpsert -> reduceUpsert(observation, state)
+        is HealthConnectObservation.RunningUpsert -> reduceUpsert(observation, state, routeChanged)
     }
 
     private fun reduceDeletion(
@@ -50,11 +51,17 @@ object LocalHealthConnectReconciler {
     private fun reduceUpsert(
         observation: HealthConnectObservation.RunningUpsert,
         state: LocalHealthConnectRecordState,
+        routeChanged: Boolean,
     ): LocalHealthConnectOutcome {
         if (state.tombstoned) return LocalHealthConnectOutcome.Unchanged(observation.recordId)
         val fingerprint = healthConnectFingerprint(observation)
         val mapping = state.mapping
-        if (mapping != null && mapping.fingerprint == fingerprint && mapping.deletedAtEpochMillis == null) {
+        if (
+            mapping != null &&
+            mapping.fingerprint == fingerprint &&
+            mapping.deletedAtEpochMillis == null &&
+            !routeChanged
+        ) {
             return LocalHealthConnectOutcome.Unchanged(observation.recordId)
         }
 
@@ -117,6 +124,8 @@ sealed interface HealthConnectObservation {
         val heartRateSourceSampleCount: Int = heartRate.size,
         val route: List<LocalHealthConnectRoutePoint> = emptyList(),
         val routeSourcePointCount: Int = route.size,
+        /** False means the provider route was not read; it is not evidence of an empty route. */
+        val routeObserved: Boolean = true,
     ) : HealthConnectObservation
 
     data class Deleted(
@@ -234,11 +243,17 @@ internal fun localHealthConnectActivity(
     routeSourcePointCount = observation.routeSourcePointCount,
 )
 
-/** Every field is included in order, including omitted values and retained metric samples. */
+/**
+ * Fingerprints decision metrics independently from route acquisition.
+ *
+ * Route availability is optional and consent-bound. The repository compares an actually observed
+ * retained route with local samples separately; an unavailable route must never look like a route
+ * deletion.
+ */
 internal fun healthConnectFingerprint(observation: HealthConnectObservation.RunningUpsert): String =
     sha256(
         buildList {
-            add("runway-local-health-connect-v1")
+            add("runway-local-health-connect-v2")
             add(observation.startedAtEpochMillis.toString())
             add(observation.durationSeconds.toString())
             add(observation.distanceMeters.toString())
@@ -249,10 +264,6 @@ internal fun healthConnectFingerprint(observation: HealthConnectObservation.Runn
             add(observation.averageSpeedMetersPerSecond?.toString())
             add(observation.heartRateSourceSampleCount.toString())
             observation.heartRate.forEach { add("${it.elapsedSeconds},${it.bpm}") }
-            add(observation.routeSourcePointCount.toString())
-            observation.route.forEach {
-                add("${it.elapsedSeconds},${it.latitudeE6},${it.longitudeE6},${it.segmentIndex},${it.speedMetersPerSecond}")
-            }
         }.joinToString("\u0000") { it ?: "<null>" },
     )
 

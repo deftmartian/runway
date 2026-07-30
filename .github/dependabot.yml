@@ -29,7 +29,7 @@ updates:
       - dependency-name: com.android.application
         update-types: [version-update:semver-major]
       - dependency-name: gradle-wrapper
-        # Keep 8.13.x patches flowing, but move later Gradle lines with the
+        # Keep 8.14.x patches flowing, but move later Gradle lines with the
         # reviewed AGP, built-in Kotlin, and SDK 37 migration.
         update-types: [version-update:semver-minor, version-update:semver-major]
       - dependency-name: androidx.core:core-ktx

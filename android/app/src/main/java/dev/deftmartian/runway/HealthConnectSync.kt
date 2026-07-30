@@ -18,6 +18,7 @@ import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import dev.deftmartian.runway.data.healthconnect.HealthConnectObservation
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectHeartRatePoint
@@ -59,6 +60,7 @@ internal data class HealthConnectRun(
     val heartRateSourceSampleCount: Int = heartRateSamples.size,
     val routePoints: List<HealthConnectRoutePoint> = emptyList(),
     val routeSourcePointCount: Int = routePoints.size,
+    val routeObserved: Boolean = true,
 )
 
 internal data class HealthConnectHeartRateSample(val elapsedSeconds: Int, val bpm: Int)
@@ -76,15 +78,16 @@ internal data class HealthConnectBatch(
     val hasMore: Boolean,
     val expired: Boolean = false,
     val metricChanged: Boolean = false,
+    val sourceChangeCount: Int = upserts.size + deletes.size,
 )
 
 /** A narrow seam keeps Android Health Connect IPC out of the sync decision and its unit tests. */
 internal interface HealthConnectGateway {
     fun availability(): HealthConnectAvailability
-    fun hasPermissions(): Boolean
-    fun initialRuns(since: Instant): List<HealthConnectRun>
-    fun newChangesToken(): String
-    fun changes(token: String): HealthConnectBatch
+    suspend fun hasPermissions(): Boolean
+    suspend fun initialRuns(since: Instant): List<HealthConnectRun>
+    suspend fun newChangesToken(): String
+    suspend fun changes(token: String): HealthConnectBatch
 }
 
 internal class AndroidHealthConnectGateway(
@@ -102,13 +105,11 @@ internal class AndroidHealthConnectGateway(
         else -> HealthConnectAvailability.Unavailable
     }
 
-    override fun hasPermissions(): Boolean = runBlocking {
+    override suspend fun hasPermissions(): Boolean =
         client().permissionController.getGrantedPermissions().containsAll(HEALTH_CONNECT_PERMISSIONS)
-    }
 
-    fun hasBackgroundPermission(): Boolean = runBlocking {
+    suspend fun hasBackgroundPermission(): Boolean =
         client().permissionController.getGrantedPermissions().contains(HEALTH_CONNECT_BACKGROUND_PERMISSION)
-    }
 
     fun revokeAllPermissions(): Boolean = runCatching {
         if (availability() == HealthConnectAvailability.Available) {
@@ -122,27 +123,37 @@ internal class AndroidHealthConnectGateway(
             client().features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND),
         )
 
-    override fun initialRuns(since: Instant): List<HealthConnectRun> = runBlocking {
-        readAllRecords(
+    override suspend fun initialRuns(since: Instant): List<HealthConnectRun> {
+        val sessions = readAllRecords(
             ReadRecordsRequest(
                 recordType = ExerciseSessionRecord::class,
                 timeRangeFilter = TimeRangeFilter.between(since, Instant.now()),
             ),
-        ).mapNotNullSuspend(::asRunningRun)
+            maximumRecords = MAX_HEALTH_CONNECT_SESSIONS_PER_WINDOW,
+        )
+        return enrichRunningSessions(sessions, MAX_HEALTH_CONNECT_SESSIONS_PER_WINDOW)
     }
 
-    override fun newChangesToken(): String = runBlocking {
+    override suspend fun newChangesToken(): String =
         client().getChangesToken(ChangesTokenRequest(CHANGE_RECORD_TYPES))
-    }
 
-    override fun changes(token: String): HealthConnectBatch = runBlocking {
+    override suspend fun changes(token: String): HealthConnectBatch {
         val response = client().getChanges(token)
-        HealthConnectBatch(
-            upserts = response.changes.mapNotNullSuspend { change ->
-                val record = (change as? androidx.health.connect.client.changes.UpsertionChange)
-                    ?.record as? ExerciseSessionRecord
-                record?.let { asRunningRun(it) }
-            },
+        if (response.changes.size > MAX_HEALTH_CONNECT_CHANGES_PER_PAGE) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect returned too many changes in one page.",
+            )
+        }
+        val changedSessions = response.changes.mapNotNull { change ->
+            val record = (change as? androidx.health.connect.client.changes.UpsertionChange)
+                ?.record as? ExerciseSessionRecord
+            record
+        }
+        return HealthConnectBatch(
+            upserts = enrichRunningSessions(
+                changedSessions,
+                MAX_HEALTH_CONNECT_SESSIONS_PER_CHANGE_PAGE,
+            ),
             deletes = response.changes.mapNotNull { change ->
                 (change as? androidx.health.connect.client.changes.DeletionChange)?.recordId
             },
@@ -152,23 +163,26 @@ internal class AndroidHealthConnectGateway(
             // 1.1 DeletionChange exposes only recordId, not record type. Treat every deletion as
             // potentially metric-affecting and re-read the bounded session window. We still send
             // every deletion so real session deletes are preserved; an unknown metric deletion is
-            // a harmless unmatched server delete rather than stale metrics.
+            // a harmless unmatched source deletion rather than stale metrics.
             metricChanged = response.changes.any { change ->
                 change is androidx.health.connect.client.changes.DeletionChange ||
                     ((change as? androidx.health.connect.client.changes.UpsertionChange)?.record
                         ?.let { it !is ExerciseSessionRecord } == true)
             },
+            sourceChangeCount = response.changes.size,
         )
     }
 
     private fun client(): HealthConnectClient = HealthConnectClient.getOrCreate(context)
 
     /**
-     * Health Connect paginates every record type, not only exercise sessions. A single session can
-     * span multiple metric pages on high-frequency sources, so derive summaries only after the
-     * complete, bounded result is available.
+     * Health Connect paginates every record type. Every query has both record and page caps, and
+     * metric types are read once per bounded session window rather than once per session.
      */
-    private suspend fun <T : Record> readAllRecords(request: ReadRecordsRequest<T>): List<T> =
+    private suspend fun <T : Record> readAllRecords(
+        request: ReadRecordsRequest<T>,
+        maximumRecords: Int = MAX_HEALTH_CONNECT_METRIC_RECORDS_PER_WINDOW,
+    ): List<T> =
         collectHealthConnectPages(readPage = { pageToken ->
             val page = client().readRecords(
                 ReadRecordsRequest(
@@ -181,20 +195,113 @@ internal class AndroidHealthConnectGateway(
                 ),
             )
             HealthConnectPage(page.records, page.pageToken)
-        })
+        }, maximumRecords = maximumRecords)
 
-    private suspend fun asRunningRun(record: ExerciseSessionRecord): HealthConnectRun? {
-        if (!HealthConnectRunningPolicy.accepts(record.exerciseType)) return null
-        val range = TimeRangeFilter.between(record.startTime, record.endTime)
-        val origin = setOf(DataOrigin(record.metadata.dataOrigin.packageName))
-        val distances = readAllRecords(
-            ReadRecordsRequest(DistanceRecord::class, timeRangeFilter = range, dataOriginFilter = origin),
+    private suspend fun enrichRunningSessions(
+        records: List<ExerciseSessionRecord>,
+        maximumSessions: Int,
+    ): List<HealthConnectRun> {
+        val accepted = records.filter { HealthConnectRunningPolicy.accepts(it.exerciseType) }
+        if (accepted.size > maximumSessions) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect running-session count exceeded its bounded source limit.",
+            )
+        }
+        return sessionWindows(accepted).flatMap { sessions ->
+            val metrics = readMetricWindow(sessions)
+            sessions.mapNotNull { asRunningRun(it, metrics) }
+        }
+    }
+
+    private suspend fun readMetricWindow(
+        sessions: List<ExerciseSessionRecord>,
+    ): HealthConnectMetricWindow {
+        check(sessions.isNotEmpty())
+        val range = TimeRangeFilter.between(
+            sessions.minOf(ExerciseSessionRecord::startTime),
+            sessions.maxOf(ExerciseSessionRecord::endTime),
         )
+        val origins = sessions.mapTo(linkedSetOf()) {
+            DataOrigin(it.metadata.dataOrigin.packageName)
+        }
+        return HealthConnectMetricWindow(
+            distances = readAllRecords(
+                ReadRecordsRequest(
+                    DistanceRecord::class,
+                    timeRangeFilter = range,
+                    dataOriginFilter = origins,
+                ),
+            ),
+            heartRates = readAllRecords(
+                ReadRecordsRequest(
+                    HeartRateRecord::class,
+                    timeRangeFilter = range,
+                    dataOriginFilter = origins,
+                ),
+            ),
+            speeds = readAllRecords(
+                ReadRecordsRequest(
+                    SpeedRecord::class,
+                    timeRangeFilter = range,
+                    dataOriginFilter = origins,
+                ),
+            ),
+            cadence = readAllRecords(
+                ReadRecordsRequest(
+                    StepsCadenceRecord::class,
+                    timeRangeFilter = range,
+                    dataOriginFilter = origins,
+                ),
+            ),
+            elevation = readAllRecords(
+                ReadRecordsRequest(
+                    ElevationGainedRecord::class,
+                    timeRangeFilter = range,
+                    dataOriginFilter = origins,
+                ),
+            ),
+        )
+    }
+
+    private fun sessionWindows(
+        records: List<ExerciseSessionRecord>,
+    ): List<List<ExerciseSessionRecord>> {
+        val windows = mutableListOf<MutableList<ExerciseSessionRecord>>()
+        for (record in records.sortedBy(ExerciseSessionRecord::startTime)) {
+            val current = windows.lastOrNull()
+            val startsNewWindow = current == null ||
+                current.size >= MAX_HEALTH_CONNECT_SESSIONS_PER_ENRICHMENT_WINDOW ||
+                record.endTime.isAfter(
+                    current.first().startTime.plus(
+                        MAX_HEALTH_CONNECT_ENRICHMENT_WINDOW_DAYS,
+                        ChronoUnit.DAYS,
+                    ),
+                )
+            if (startsNewWindow) {
+                windows += mutableListOf(record)
+            } else {
+                requireNotNull(current) += record
+            }
+        }
+        return windows
+    }
+
+    private fun asRunningRun(
+        record: ExerciseSessionRecord,
+        metrics: HealthConnectMetricWindow,
+    ): HealthConnectRun? {
+        val sourcePackage = record.metadata.dataOrigin.packageName
+        val distances = metrics.distances.asSequence()
+            .filter { it.metadata.dataOrigin.packageName == sourcePackage }
+            .filter { it.startTime < record.endTime && it.endTime > record.startTime }
+            .toList()
         val distanceMeters = distances.sumOf { it.distance.inMeters }.takeIf { it > 0.0 } ?: return null
-        val heartRateSamples = readAllRecords(
-            ReadRecordsRequest(HeartRateRecord::class, timeRangeFilter = range, dataOriginFilter = origin),
-        ).flatMap { it.samples }
+        val heartRateSamples = metrics.heartRates.asSequence()
+            .filter { it.metadata.dataOrigin.packageName == sourcePackage }
+            .filter { it.startTime < record.endTime && it.endTime > record.startTime }
+            .flatMap { it.samples.asSequence() }
             .filter { it.time >= record.startTime && it.time <= record.endTime }
+            .boundedHealthConnectSamples("heart-rate")
             .sortedBy { it.time }
         val boundedHeartRateSamples = downsampleHeartRate(
             heartRateSamples.map { sample ->
@@ -205,21 +312,31 @@ internal class AndroidHealthConnectGateway(
                 )
             },
         )
-        val speeds = readAllRecords(
-            ReadRecordsRequest(SpeedRecord::class, timeRangeFilter = range, dataOriginFilter = origin),
-        ).flatMap { it.samples }.filter { it.time >= record.startTime && it.time <= record.endTime }
-        val cadence = readAllRecords(
-            ReadRecordsRequest(StepsCadenceRecord::class, timeRangeFilter = range, dataOriginFilter = origin),
-        ).flatMap { it.samples }.filter { it.time >= record.startTime && it.time <= record.endTime }
-        val elevation = readAllRecords(
-            ReadRecordsRequest(ElevationGainedRecord::class, timeRangeFilter = range, dataOriginFilter = origin),
-        ).sumOf { it.elevation.inMeters }
+        val speeds = metrics.speeds.asSequence()
+            .filter { it.metadata.dataOrigin.packageName == sourcePackage }
+            .filter { it.startTime < record.endTime && it.endTime > record.startTime }
+            .flatMap { it.samples.asSequence() }
+            .filter { it.time >= record.startTime && it.time <= record.endTime }
+            .boundedHealthConnectSamples("speed")
+            .sortedBy { it.time }
+        val cadence = metrics.cadence.asSequence()
+            .filter { it.metadata.dataOrigin.packageName == sourcePackage }
+            .filter { it.startTime < record.endTime && it.endTime > record.startTime }
+            .flatMap { it.samples.asSequence() }
+            .filter { it.time >= record.startTime && it.time <= record.endTime }
+            .boundedHealthConnectSamples("cadence")
+        val elevation = metrics.elevation.asSequence()
+            .filter { it.metadata.dataOrigin.packageName == sourcePackage }
+            .filter { it.startTime < record.endTime && it.endTime > record.startTime }
+            .sumOf { it.elevation.inMeters }
+        var routeObserved = includeRoutes
         val route = if (includeRoutes) {
             when (val routeResult = record.exerciseRouteResult) {
                 is ExerciseRouteResult.Data -> routeResult.exerciseRoute.route
                 is ExerciseRouteResult.ConsentRequired -> {
                     routeOverrides[record.metadata.id]?.route ?: run {
                         routeConsentRecordId = record.metadata.id
+                        routeObserved = false
                         emptyList()
                     }
                 }
@@ -228,22 +345,33 @@ internal class AndroidHealthConnectGateway(
         } else {
             emptyList()
         }
-        val routePoints = downsampleRoute(route.map { point ->
+        if (route.size > MAX_RAW_HEALTH_CONNECT_ROUTE_POINTS_PER_RUN) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect route point count exceeded its bounded source limit.",
+            )
+        }
+        val retainedRoute = if (route.size <= MAX_RETAINED_HEALTH_CONNECT_SAMPLES_PER_RUN) {
+            route
+        } else {
+            route.selectRepresentative(
+                MAX_RETAINED_HEALTH_CONNECT_SAMPLES_PER_RUN,
+                sortedSetOf(0, route.lastIndex),
+            )
+        }
+        val routePoints = retainedRoute.map { point ->
             HealthConnectRoutePoint(
                 elapsedSeconds = ((point.time.toEpochMilli() - record.startTime.toEpochMilli()) / 1_000)
                     .toInt().coerceAtLeast(0),
                 latitudeE6 = (point.latitude * 1_000_000).toInt(),
                 longitudeE6 = (point.longitude * 1_000_000).toInt(),
-                speedMetersPerSecond = speeds.minByOrNull { kotlin.math.abs(
-                    it.time.toEpochMilli() - point.time.toEpochMilli()
-                ) }?.speed?.inMetersPerSecond,
+                speedMetersPerSecond = nearestSpeedMetersPerSecond(speeds, point.time),
             )
-        })
+        }
         return HealthConnectRun(
             id = record.metadata.id,
             startEpochMs = record.startTime.toEpochMilli(),
             endEpochMs = record.endTime.toEpochMilli(),
-            sourcePackage = record.metadata.dataOrigin.packageName,
+            sourcePackage = sourcePackage,
             runningType = if (record.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL) {
                 LocalHealthConnectRunningType.TreadmillRunning
             } else {
@@ -261,11 +389,11 @@ internal class AndroidHealthConnectGateway(
             heartRateSourceSampleCount = heartRateSamples.size,
             routePoints = routePoints,
             routeSourcePointCount = route.size,
+            routeObserved = routeObserved,
         )
     }
 
     private companion object {
-        const val MAX_SAMPLES_PER_RUN = 600
         val CHANGE_RECORD_TYPES = setOf(
             ExerciseSessionRecord::class, DistanceRecord::class, HeartRateRecord::class,
             SpeedRecord::class, StepsCadenceRecord::class, ElevationGainedRecord::class,
@@ -273,7 +401,17 @@ internal class AndroidHealthConnectGateway(
     }
 }
 
+private data class HealthConnectMetricWindow(
+    val distances: List<DistanceRecord>,
+    val heartRates: List<HeartRateRecord>,
+    val speeds: List<SpeedRecord>,
+    val cadence: List<StepsCadenceRecord>,
+    val elevation: List<ElevationGainedRecord>,
+)
+
 internal data class HealthConnectPage<T>(val records: List<T>, val nextPageToken: String?)
+
+internal class HealthConnectSourceLimitException(message: String) : IllegalStateException(message)
 
 /**
  * Bounded, token-driven collection keeps provider pagination explicit and testable outside Android
@@ -281,22 +419,49 @@ internal data class HealthConnectPage<T>(val records: List<T>, val nextPageToken
  */
 internal suspend fun <T> collectHealthConnectPages(
     readPage: suspend (pageToken: String?) -> HealthConnectPage<T>,
-    maximumRecords: Int = MAX_HEALTH_CONNECT_RECORDS_PER_QUERY,
+    maximumRecords: Int = MAX_HEALTH_CONNECT_METRIC_RECORDS_PER_WINDOW,
 ): List<T> {
+    require(maximumRecords > 0)
     val records = mutableListOf<T>()
+    val seenPageTokens = mutableSetOf<String>()
     var pageToken: String? = null
+    var pages = 0
     do {
+        pages += 1
+        if (pages > MAX_HEALTH_CONNECT_PAGES_PER_QUERY) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect query exceeded its bounded page limit.",
+            )
+        }
         val page = readPage(pageToken)
         if (page.records.size > maximumRecords - records.size) {
-            throw IllegalStateException("Health Connect record query exceeded its bounded source limit")
+            throw HealthConnectSourceLimitException(
+                "Health Connect record query exceeded its bounded source limit.",
+            )
         }
         records += page.records
         pageToken = page.nextPageToken
+        if (pageToken != null && !seenPageTokens.add(requireNotNull(pageToken))) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect repeated a pagination token.",
+            )
+        }
     } while (pageToken != null)
     return records
 }
 
-internal const val MAX_HEALTH_CONNECT_RECORDS_PER_QUERY = 100_000
+internal const val MAX_HEALTH_CONNECT_SESSIONS_PER_WINDOW = 512
+internal const val MAX_HEALTH_CONNECT_SESSIONS_PER_CHANGE_PAGE = 256
+internal const val MAX_HEALTH_CONNECT_CHANGES_PER_PAGE = 5_000
+internal const val MAX_HEALTH_CONNECT_CHANGE_PAGES_PER_SYNC = 128
+internal const val MAX_HEALTH_CONNECT_CHANGES_PER_SYNC = 20_000
+internal const val MAX_HEALTH_CONNECT_METRIC_RECORDS_PER_WINDOW = 10_000
+internal const val MAX_HEALTH_CONNECT_PAGES_PER_QUERY = 512
+internal const val MAX_HEALTH_CONNECT_SESSIONS_PER_ENRICHMENT_WINDOW = 32
+internal const val MAX_HEALTH_CONNECT_ENRICHMENT_WINDOW_DAYS = 7L
+internal const val MAX_RAW_HEALTH_CONNECT_SAMPLES_PER_RUN = 50_000
+internal const val MAX_RAW_HEALTH_CONNECT_ROUTE_POINTS_PER_RUN = 50_000
+internal const val MAX_RETAINED_HEALTH_CONNECT_SAMPLES_PER_RUN = 600
 
 internal object HealthConnectRunningPolicy {
     fun accepts(exerciseType: Int): Boolean = exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_RUNNING ||
@@ -304,14 +469,19 @@ internal object HealthConnectRunningPolicy {
 }
 
 internal fun downsampleHeartRate(samples: List<HealthConnectHeartRateSample>): List<HealthConnectHeartRateSample> {
-    if (samples.size <= 600) return samples
+    if (samples.size <= MAX_RETAINED_HEALTH_CONNECT_SAMPLES_PER_RUN) return samples
     val required = sortedSetOf(0, samples.lastIndex, samples.indices.maxBy { samples[it].bpm })
-    return samples.selectRepresentative(600, required)
+    return samples.selectRepresentative(MAX_RETAINED_HEALTH_CONNECT_SAMPLES_PER_RUN, required)
 }
 
-internal fun downsampleRoute(points: List<HealthConnectRoutePoint>): List<HealthConnectRoutePoint> {
-    if (points.size <= 600) return points
-    return points.selectRepresentative(600, sortedSetOf(0, points.lastIndex))
+private fun <T> Sequence<T>.boundedHealthConnectSamples(label: String): List<T> {
+    val samples = take(MAX_RAW_HEALTH_CONNECT_SAMPLES_PER_RUN + 1).toList()
+    if (samples.size > MAX_RAW_HEALTH_CONNECT_SAMPLES_PER_RUN) {
+        throw HealthConnectSourceLimitException(
+            "Health Connect $label sample count exceeded its bounded source limit.",
+        )
+    }
+    return samples
 }
 
 private fun <T> List<T>.selectRepresentative(limit: Int, required: SortedSet<Int>): List<T> {
@@ -322,13 +492,33 @@ private fun <T> List<T>.selectRepresentative(limit: Int, required: SortedSet<Int
     return required.take(limit).map(::get)
 }
 
-private suspend fun <T, R : Any> Iterable<T>.mapNotNullSuspend(transform: suspend (T) -> R?): List<R> {
-    val result = ArrayList<R>()
-    for (item in this) transform(item)?.let(result::add)
-    return result
+private fun nearestSpeedMetersPerSecond(
+    samples: List<SpeedRecord.Sample>,
+    target: Instant,
+): Double? {
+    if (samples.isEmpty()) return null
+    val targetMillis = target.toEpochMilli()
+    var low = 0
+    var high = samples.size
+    while (low < high) {
+        val middle = (low + high) ushr 1
+        if (samples[middle].time.toEpochMilli() < targetMillis) {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    val right = low.coerceAtMost(samples.lastIndex)
+    val left = (low - 1).coerceAtLeast(0)
+    return listOf(left, right)
+        .distinct()
+        .minBy { index ->
+            kotlin.math.abs(samples[index].time.toEpochMilli() - targetMillis)
+        }
+        .let { samples[it].speed.inMetersPerSecond }
 }
 
-/** A local cursor is the only durable acquisition state: no server identity is part of it. */
+/** A local cursor is the only durable acquisition state. */
 internal data class HealthConnectCursor(val token: String)
 
 internal interface HealthConnectCursorRepository {
@@ -396,7 +586,14 @@ internal class HealthConnectSyncCoordinator(
     private val cursor: HealthConnectCursorRepository,
     private val reconcile: suspend (provider: String, observation: HealthConnectObservation) -> LocalHealthConnectPersistenceResult,
     private val now: () -> Instant = Instant::now,
+    private val maximumChangePages: Int = MAX_HEALTH_CONNECT_CHANGE_PAGES_PER_SYNC,
+    private val maximumChanges: Int = MAX_HEALTH_CONNECT_CHANGES_PER_SYNC,
 ) {
+    init {
+        require(maximumChangePages > 0)
+        require(maximumChanges > 0)
+    }
+
     suspend fun sync(): HealthSyncResult = try {
         when (gateway.availability()) {
             HealthConnectAvailability.Unavailable -> HealthSyncResult.Unavailable
@@ -405,6 +602,11 @@ internal class HealthConnectSyncCoordinator(
         }
     } catch (_: SecurityException) {
         HealthSyncResult.PermissionRequired
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: HealthConnectSourceLimitException) {
+        cursor.markNeedsAttention()
+        HealthSyncResult.NeedsAttention
     } catch (_: Exception) {
         HealthSyncResult.Retryable
     }
@@ -412,20 +614,50 @@ internal class HealthConnectSyncCoordinator(
     private suspend fun syncAvailable(): HealthSyncResult {
         if (!gateway.hasPermissions()) return HealthSyncResult.PermissionRequired
         var resetAttempted = false
-        var current = cursor.load() ?: bootstrap() ?: return HealthSyncResult.NeedsAttention
+        val storedCursor = cursor.load()
+        var fullWindowRefreshed = storedCursor == null
+        var current = storedCursor ?: bootstrap() ?: return HealthSyncResult.NeedsAttention
+        val seenChangeTokens = mutableSetOf(current.token)
+        var changePages = 0
+        var sourceChanges = 0
         while (true) {
+            changePages += 1
+            if (changePages > maximumChangePages) {
+                throw HealthConnectSourceLimitException(
+                    "Health Connect change log exceeded its bounded page limit.",
+                )
+            }
             val batch = gateway.changes(current.token)
             if (batch.expired) {
                 if (resetAttempted) return HealthSyncResult.Retryable
                 resetAttempted = true
                 cursor.clear()
                 current = bootstrap() ?: return HealthSyncResult.NeedsAttention
+                seenChangeTokens.clear()
+                seenChangeTokens += current.token
+                changePages = 0
+                sourceChanges = 0
+                fullWindowRefreshed = true
                 continue
             }
+            if (batch.sourceChangeCount < 0 || batch.sourceChangeCount > maximumChanges - sourceChanges) {
+                throw HealthConnectSourceLimitException(
+                    "Health Connect change log exceeded its bounded record limit.",
+                )
+            }
+            if (batch.hasMore && !seenChangeTokens.add(batch.nextToken)) {
+                throw HealthConnectSourceLimitException(
+                    "Health Connect repeated a change-log token.",
+                )
+            }
+            sourceChanges += batch.sourceChangeCount
             // Metric records have no session foreign key. Re-read the bounded window so a metric
             // edit becomes an idempotent local session upsert rather than stale derived data.
-            if (batch.metricChanged && !persist(batch = gateway.initialRuns(now().minus(30, ChronoUnit.DAYS)))) {
-                return HealthSyncResult.NeedsAttention
+            if (batch.metricChanged && !fullWindowRefreshed) {
+                if (!persist(batch = gateway.initialRuns(now().minus(30, ChronoUnit.DAYS)))) {
+                    return HealthSyncResult.NeedsAttention
+                }
+                fullWindowRefreshed = true
             }
             if (!persist(batch.upserts) || !persistDeletes(batch.deletes)) return HealthSyncResult.NeedsAttention
             current = HealthConnectCursor(batch.nextToken)
@@ -446,9 +678,14 @@ internal class HealthConnectSyncCoordinator(
 
     private suspend fun persist(batch: List<HealthConnectRun>): Boolean {
         for (run in batch) {
-            val accepted = runCatching {
+            val result = try {
                 reconcile(HEALTH_CONNECT_PROVIDER, run.toObservation())
-            }.getOrNull() is LocalHealthConnectPersistenceResult.Applied
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            val accepted = result is LocalHealthConnectPersistenceResult.Applied
             if (!accepted) {
                 cursor.markNeedsAttention()
                 return false
@@ -502,6 +739,7 @@ internal class HealthConnectSyncCoordinator(
                 )
             },
             routeSourcePointCount = routeSourcePointCount,
+            routeObserved = routeObserved,
         )
     }
 

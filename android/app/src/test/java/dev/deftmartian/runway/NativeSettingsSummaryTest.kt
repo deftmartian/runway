@@ -35,4 +35,22 @@ class NativeSettingsSummaryTest {
             importConnectionSummary(NativeImportConnection.Attention("Grant activity access in Health Connect")),
         )
     }
+
+    @Test
+    fun `route discard is destructive only when changing away from retained routes`() {
+        assertEquals(
+            true,
+            routePrivacyChangeDeletesStoredRoutes(
+                NativeRoutePrivacy.KeepPrivate,
+                NativeRoutePrivacy.Discard,
+            ),
+        )
+        assertEquals(
+            false,
+            routePrivacyChangeDeletesStoredRoutes(
+                NativeRoutePrivacy.Discard,
+                NativeRoutePrivacy.Discard,
+            ),
+        )
+    }
 }

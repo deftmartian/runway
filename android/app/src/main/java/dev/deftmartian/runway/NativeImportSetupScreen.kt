@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +33,12 @@ internal enum class NativeImportDialog {
     RouteConsent,
 }
 
+internal enum class NativeImportSection(val initialItemIndex: Int) {
+    Overview(0),
+    Folder(2),
+    HealthConnect(3),
+}
+
 internal data class NativeImportSettingsUiState(
     val oneOffStatus: String = "",
     val folderStatus: String = "",
@@ -52,6 +59,7 @@ internal data class NativeImportSettingsUiState(
 @Composable
 internal fun NativeImportSetupScreen(
     state: NativeImportSettingsUiState,
+    initialSection: NativeImportSection = NativeImportSection.Overview,
     onPickOneOffGpx: () -> Unit,
     onChooseFolder: () -> Unit,
     onDisconnectFolder: () -> Unit,
@@ -64,8 +72,11 @@ internal fun NativeImportSetupScreen(
     onDismissDialog: () -> Unit,
     onConfirmDialog: (NativeImportDialog) -> Unit,
 ) {
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialSection.initialItemIndex,
+    )
     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-        NativeList(loading = false) {
+        NativeList(loading = false, state = listState) {
             item {
                 ScreenIntro(
                     stringResource(R.string.folder_screen_title),
@@ -150,6 +161,11 @@ internal fun NativeImportSetupScreen(
                                 ),
                             )
                         }
+                        Text(
+                            stringResource(R.string.folder_background_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     state.lastFolderCheck.takeIf(String::isNotBlank)?.let {
                         Text(
@@ -199,6 +215,11 @@ internal fun NativeImportSetupScreen(
                                         ),
                                     )
                                 }
+                                Text(
+                                    stringResource(R.string.health_connect_background_note),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
