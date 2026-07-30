@@ -1,0 +1,4 @@
+No interface changes.
+
+- Republish the standalone Android cutover with a stable hosted-device release gate.
+- Keep background work out of the critical application startup path.
