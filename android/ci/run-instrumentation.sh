@@ -14,13 +14,35 @@ compile_package() {
   local timeout_seconds="${2:-180}"
   local output_file="$RUNNER_TEMP/package-compile-${package_name//./-}.txt"
   local compile_status
+  local attempt=1
 
-  set +e
-  run_bounded "$timeout_seconds" adb -s "$serial" shell cmd package compile \
-    -m speed -f "$package_name" 2>&1 | tee "$output_file"
-  compile_status="${PIPESTATUS[0]}"
-  set -e
-  if [ "$compile_status" -ne 0 ]; then
+  : >"$output_file"
+  while [ "$attempt" -le 2 ]; do
+    echo "attempt $attempt" | tee -a "$output_file"
+    set +e
+    run_bounded "$timeout_seconds" adb -s "$serial" shell cmd package compile \
+      -m speed -f "$package_name" 2>&1 | tee -a "$output_file"
+    compile_status="${PIPESTATUS[0]}"
+    set -e
+    if [ "$compile_status" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$attempt" -eq 1 ] && grep -Fq 'Failure calling service package: Broken pipe' "$output_file"; then
+      echo "::warning title=Package service restarted::$package_name compilation will retry once after package-manager readiness."
+      local package_service_ready=false
+      for _ in {1..15}; do
+        if run_bounded 10 adb -s "$serial" shell pm path "$package_name" >/dev/null 2>&1; then
+          package_service_ready=true
+          break
+        fi
+        sleep 2
+      done
+      if [ "$package_service_ready" = true ]; then
+        attempt=$((attempt + 1))
+        continue
+      fi
+    fi
+
     local output_tail
     output_tail="$(
       tail -n 12 "$output_file" |
@@ -30,7 +52,7 @@ compile_package() {
     )"
     echo "::error title=Package compilation failed::$package_name exited with status $compile_status. Output: $output_tail"
     return "$compile_status"
-  fi
+  done
 }
 
 report_instrumentation_failure() {
