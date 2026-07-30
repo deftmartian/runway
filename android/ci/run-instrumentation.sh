@@ -11,11 +11,12 @@ run_bounded() {
 
 compile_package() {
   local package_name="$1"
+  local timeout_seconds="${2:-180}"
   local output_file="$RUNNER_TEMP/package-compile-${package_name//./-}.txt"
   local compile_status
 
   set +e
-  run_bounded 180 adb -s "$serial" shell cmd package compile \
+  run_bounded "$timeout_seconds" adb -s "$serial" shell cmd package compile \
     -m speed -f "$package_name" 2>&1 | tee "$output_file"
   compile_status="${PIPESTATUS[0]}"
   set -e
@@ -92,7 +93,7 @@ run_bounded 120 adb -s "$serial" install -r -t \
 # Hosted emulators can spend long enough compiling Compose and test dex on first process start to
 # trigger Android's startup ANR before AndroidJUnitRunner reaches a test. Compile the installed
 # packages up front; the device tests still execute the production APK and fail on test errors.
-compile_package dev.deftmartian.runway.debug
+compile_package dev.deftmartian.runway.debug 600
 compile_package dev.deftmartian.runway.debug.test
 
 set +e
