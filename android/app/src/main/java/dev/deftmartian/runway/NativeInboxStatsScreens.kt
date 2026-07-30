@@ -99,13 +99,12 @@ internal fun InboxScreen(
                         HealthConnectChangeCard(change, actionPending, onAction)
                     }
                 }
-                items(
-                    reviewActivities,
-                    key = { it.id.orEmpty() },
-                ) { activity ->
+                if (reviewActivities.isNotEmpty()) {
+                    item { SectionLabel("Runs to review") }
+                }
+                items(reviewActivities, key = { it.id.orEmpty() }) { activity ->
                     ActivityCard(
                         activity = activity,
-                        title = "Needs review",
                         actions = {
                             Button(
                                 onClick = {

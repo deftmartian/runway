@@ -125,7 +125,7 @@ internal fun HeartRatePrivacyDialog(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Text(
-                        "Choose whether imported activities keep heart-rate values. Heart-rate zones in your training profile are separate.",
+                        "Choose whether imported runs keep heart-rate data. Training-profile zones are separate.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -134,17 +134,23 @@ internal fun HeartRatePrivacyDialog(
                         "Discard imported heart-rate values",
                         selection == NativeHeartRatePrivacy.Discard,
                     ) { selection = NativeHeartRatePrivacy.Discard }
+                }
+                item {
                     Text(
-                        "Keep distance, duration, cadence, and elevation without heart-rate values.",
+                        "Distance, duration, cadence, and elevation remain.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+                item {
                     ChoiceRow(
                         "Keep imported heart-rate values privately",
                         selection == NativeHeartRatePrivacy.KeepPrivate,
                     ) { selection = NativeHeartRatePrivacy.KeepPrivate }
+                }
+                item {
                     Text(
-                        "Keep summaries and detailed samples only in local runway storage.",
+                        "Summaries and samples stay in private local storage.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )

@@ -67,7 +67,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
     @Test
     fun capturesInboxInLightTheme() =
         capture("inbox-light", darkTheme = false, inboxState()) {
-            compose.onNodeWithText("Needs review").assertIsDisplayed()
+            compose.onNodeWithText("Runs to review").assertIsDisplayed()
             compose.onNodeWithText("Plan decisions").assertIsDisplayed()
         }
 
