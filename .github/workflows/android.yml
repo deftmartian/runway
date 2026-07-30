@@ -119,7 +119,7 @@ jobs:
           arch: x86_64
           profile: pixel_2
           cores: 2
-          ram-size: 2048M
+          ram-size: 4096M
           emulator-port: 5554
           emulator-boot-timeout: 600
           force-avd-creation: true
