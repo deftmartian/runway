@@ -116,105 +116,35 @@ jobs:
           test -c /dev/kvm
           test -r /dev/kvm
           test -w /dev/kvm
-      - name: Create fresh Android Virtual Device
-        run: |
-          echo 'no' | avdmanager create avd --force --name runway-ci \
-            --package 'system-images;android-35;aosp_atd;x86_64' --device pixel_2
       - name: Package instrumentation APKs before starting the emulator
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict
           :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
       - name: Run instrumentation tests on a serial emulator
-        run: |
-          set -euo pipefail
-          serial='emulator-5554'
-          emulator_log="$RUNNER_TEMP/runway-emulator.log"
-          adb start-server
-          "$ANDROID_HOME/emulator/emulator" -avd runway-ci -no-window -no-audio -no-boot-anim \
-            -port 5554 -accel on -gpu swiftshader_indirect -no-snapshot -no-metrics \
-            -memory 2048 -cores 2 >"$emulator_log" 2>&1 &
-          emulator_pid="$!"
-          collect_diagnostics() {
-            status="$?"
-            if [ "$status" -ne 0 ]; then
-              adb devices -l >"$RUNNER_TEMP/adb-devices.txt" 2>&1 || true
-              adb -s "$serial" logcat -d >"$RUNNER_TEMP/emulator-logcat.txt" 2>&1 || true
-              adb -s "$serial" shell pm list packages \
-                >"$RUNNER_TEMP/emulator-packages.txt" 2>&1 || true
-            fi
-            kill "$emulator_pid" 2>/dev/null || true
-            exit "$status"
-          }
-          trap collect_diagnostics EXIT
-          for _ in $(seq 1 150); do
-            if [ "$(adb -s "$serial" get-state 2>/dev/null || true)" = 'device' ]; then
-              break
-            fi
-            if ! kill -0 "$emulator_pid" 2>/dev/null; then
-              cat "$emulator_log"
-              exit 1
-            fi
-            sleep 2
-          done
-          [ "$(adb -s "$serial" get-state 2>/dev/null || true)" = 'device' ] || {
-            cat "$emulator_log"
-            exit 1
-          }
-          for _ in $(seq 1 180); do
-            if [ "$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')" = '1' ]; then
-              break
-            fi
-            if ! kill -0 "$emulator_pid" 2>/dev/null; then
-              cat "$emulator_log"
-              exit 1
-            fi
-            sleep 2
-          done
-          [ "$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')" = '1' ] || {
-            cat "$emulator_log"
-            exit 1
-          }
-          adb -s "$serial" shell input keyevent 82
-          for package_name in \
-            dev.deftmartian.runway.debug \
-            dev.deftmartian.runway.debug.test \
-            dev.deftmartian.runway.data.test
-          do
-            adb -s "$serial" uninstall "$package_name" >/dev/null 2>&1 || true
-          done
-          adb -s "$serial" install -r -t android/app/build/outputs/apk/debug/app-debug.apk
-          adb -s "$serial" install -r -t \
-            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-          set +e
-          adb -s "$serial" shell am instrument -w -r \
-            dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner \
-            2>&1 | tee "$RUNNER_TEMP/app-instrumentation.txt"
-          app_status="${PIPESTATUS[0]}"
-          set -e
-          [ "$app_status" -eq 0 ] || exit "$app_status"
-          grep -q '^OK (' "$RUNNER_TEMP/app-instrumentation.txt"
-          ! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
-            "$RUNNER_TEMP/app-instrumentation.txt"
-          adb -s "$serial" install -r -t \
-            android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
-          set +e
-          adb -s "$serial" shell am instrument -w -r \
-            dev.deftmartian.runway.data.test/androidx.test.runner.AndroidJUnitRunner \
-            2>&1 | tee "$RUNNER_TEMP/data-instrumentation.txt"
-          data_status="${PIPESTATUS[0]}"
-          set -e
-          [ "$data_status" -eq 0 ] || exit "$data_status"
-          grep -q '^OK (' "$RUNNER_TEMP/data-instrumentation.txt"
-          ! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' \
-            "$RUNNER_TEMP/data-instrumentation.txt"
+        uses: ReactiveCircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          ram-size: 2048M
+          emulator-port: 5554
+          emulator-boot-timeout: 600
+          force-avd-creation: true
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+            -camera-back none
+          script: bash android/ci/run-instrumentation.sh
       - name: Upload instrumentation diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-instrumentation-diagnostics
           path: |
-            ${{ runner.temp }}/runway-emulator.log
             ${{ runner.temp }}/adb-devices.txt
             ${{ runner.temp }}/emulator-logcat.txt
             ${{ runner.temp }}/emulator-packages.txt
