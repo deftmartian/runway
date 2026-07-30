@@ -22,10 +22,10 @@ report_instrumentation_failure() {
       sed 's/%/%25/g'
   )"
   device_tail="$(
-    run_bounded 20 adb -s "$serial" logcat -d -t 500 2>/dev/null |
+    run_bounded 20 adb -s "$serial" logcat -b all -d -t 2000 2>/dev/null |
       grep -E \
-        'AndroidRuntime|FATAL EXCEPTION|Fatal signal|crash_dump|TestRunner|dev\.deftmartian\.runway' |
-      tail -n 24 |
+        'ANR in|am_anr|failed to complete startup|ActivityManager.*(ANR|Killing|crash)|AndroidRuntime|FATAL EXCEPTION|Fatal signal|crash_dump|TestRunner|lowmemorykiller|lmkd' |
+      tail -n 30 |
       tr '\r\n' '  ' |
       cut -c 1-1800 |
       sed 's/%/%25/g'
@@ -42,7 +42,12 @@ collect_diagnostics() {
   if [ "$status" -ne 0 ]; then
     adb devices -l >"$RUNNER_TEMP/adb-devices.txt" 2>&1 || true
     adb -s "$serial" logcat -d >"$RUNNER_TEMP/emulator-logcat.txt" 2>&1 || true
+    adb -s "$serial" logcat -b events -d >"$RUNNER_TEMP/emulator-events.txt" 2>&1 || true
     adb -s "$serial" shell pm list packages >"$RUNNER_TEMP/emulator-packages.txt" 2>&1 || true
+    adb -s "$serial" shell dumpsys activity lastanr \
+      >"$RUNNER_TEMP/emulator-last-anr.txt" 2>&1 || true
+    adb -s "$serial" shell dumpsys meminfo dev.deftmartian.runway.debug \
+      >"$RUNNER_TEMP/emulator-app-meminfo.txt" 2>&1 || true
   fi
   exit "$status"
 }
