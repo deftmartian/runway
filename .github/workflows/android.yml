@@ -17,9 +17,47 @@ env:
   GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g
 
 jobs:
+  changes:
+    name: classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.scope.outputs.android }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether Android verification is required
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          android=true
+          if [ "$GITHUB_REF_TYPE" != tag ] &&
+            [ -n "${BASE_SHA:-}" ] &&
+            [[ ! "$BASE_SHA" =~ ^0+$ ]] &&
+            git cat-file -e "${BASE_SHA}^{commit}"
+          then
+            git diff --check "$BASE_SHA" "$GITHUB_SHA"
+            if git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
+              .github/workflows/android.yml \
+              android/app android/data android/domain android/ci android/fdroid android/gradle \
+              android/gradlew android/gradlew.bat android/build.gradle.kts \
+              android/settings.gradle.kts android/gradle.properties android/lint.xml
+            then
+              android=false
+            fi
+          else
+            git show --check --format= "$GITHUB_SHA"
+          fi
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+
   unit:
     name: unit
-    if: github.ref_type != 'tag'
+    needs: changes
+    if: github.ref_type != 'tag' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -48,7 +86,8 @@ jobs:
 
   lint:
     name: lint
-    if: github.ref_type != 'tag'
+    needs: changes
+    if: github.ref_type != 'tag' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -71,7 +110,8 @@ jobs:
 
   package:
     name: package and androidTest compile
-    if: github.ref_type != 'tag'
+    needs: changes
+    if: github.ref_type != 'tag' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -94,6 +134,8 @@ jobs:
 
   instrumentation:
     name: instrumentation
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
@@ -168,6 +210,7 @@ jobs:
 
   release-build:
     name: unsigned release candidate
+    needs: changes
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 35

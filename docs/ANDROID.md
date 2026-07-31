@@ -17,6 +17,8 @@ android/gradlew -p android --no-daemon --max-workers=1 connectedDebugAndroidTest
 
 The second command needs an emulator or connected device. Run only one Gradle or emulator-heavy workload at a time on constrained development hosts.
 
+Pull requests and main-branch pushes that change Android source, build tooling, packaging metadata, or the Android workflow run the full hosted verification matrix. Documentation-only changes keep a lightweight classification check; release tags always run the complete build, device-test, signing, and publication path.
+
 ## Android capabilities
 
 - Native Compose Calendar, Inbox, Stats, History, and Settings.
