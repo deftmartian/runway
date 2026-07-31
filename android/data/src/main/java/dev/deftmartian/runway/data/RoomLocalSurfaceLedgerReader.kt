@@ -2,9 +2,13 @@ package dev.deftmartian.runway.data
 
 import androidx.room.withTransaction
 import dev.deftmartian.runway.domain.ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS
+import dev.deftmartian.runway.domain.StandalonePlanRules
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+
+internal const val MAX_INBOX_PLAN_WORKOUTS =
+    StandalonePlanRules.MAX_PLAN_WEEKS * StandalonePlanRules.MAX_VISIBLE_WORKOUTS_PER_WEEK
 
 /**
  * Bounded Room reader for the standalone surfaces.
@@ -62,19 +66,57 @@ class RoomLocalSurfaceLedgerReader(
     }
 
     override suspend fun inbox(limits: LocalSurfaceReadLimits): LocalInboxLedgerSlice =
+        inboxPage(limits, LocalInboxPagingCursor())
+
+    override suspend fun inboxPage(
+        limits: LocalSurfaceReadLimits,
+        cursor: LocalInboxPagingCursor,
+    ): LocalInboxLedgerSlice =
         database.withTransaction {
             val profile = database.profileSettingsDao().get()
             val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
             val todayEpochDay = todayEpochDay(timeZone)
             val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
-            val review = reviewWindow(limits.inboxActivities)
-            val pendingExtras = database.activityLedgerDao()
-                .acceptedUnlinkedExtrasWithPendingPlanChange(limits.inboxActivities + 1)
-            val pendingLinkedActivities = database.activityLedgerDao()
-                .acceptedLinkedActivitiesWithPendingPlanChange(limits.inboxActivities + 1)
+            val pageLimit = limits.inboxActivities + 1
+            val activityDao = database.activityLedgerDao()
+            val reviewRows = if (cursor.review.exhausted) emptyList() else activityDao.actionableReviewActivitiesPage(
+                cursor.review.occurredAtEpochMillis, cursor.review.activityId, pageLimit,
+            )
+            val pendingExtras = if (cursor.acceptedExtra.exhausted) emptyList() else activityDao
+                .acceptedUnlinkedExtrasWithPendingPlanChangePage(
+                    cursor.acceptedExtra.occurredAtEpochMillis, cursor.acceptedExtra.activityId, pageLimit,
+                )
+            val pendingLinkedActivities = if (cursor.acceptedLinked.exhausted) emptyList() else activityDao
+                .acceptedLinkedActivitiesWithPendingPlanChangePage(
+                    cursor.acceptedLinked.occurredAtEpochMillis, cursor.acceptedLinked.activityId, pageLimit,
+                )
             val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
                 .let { planSlices(it, limits, MAX_INBOX_PLAN_WORKOUTS).firstOrNull() }
-            val reviewEpochDays = review.items.map { activity ->
+            val directFeedbackRows = if (cursor.directFeedback.exhausted) emptyList() else activityDao
+                .pendingDirectWorkoutFeedbackPage(
+                    cursor.directFeedback.recordedAtEpochMillis,
+                    cursor.directFeedback.feedbackId,
+                    pageLimit,
+                )
+            val healthMappings = if (cursor.healthConnect.exhausted) emptyList() else database.importLedgerDao()
+                .pendingHealthConnectMappingsPage(
+                    cursor.healthConnect.observedAtEpochMillis,
+                    cursor.healthConnect.mappingId,
+                    pageLimit,
+                )
+            val reviewItems = reviewRows.take(limits.inboxActivities)
+            val extraItems = pendingExtras.take(limits.inboxActivities)
+            val linkedItems = pendingLinkedActivities.take(limits.inboxActivities)
+            val directFeedbackItems = directFeedbackRows.take(limits.inboxActivities)
+            val healthItems = healthMappings.take(limits.inboxActivities)
+            val nextPage = LocalInboxPagingCursor(
+                review = reviewCursor(cursor.review, reviewRows, limits.inboxActivities),
+                acceptedExtra = reviewCursor(cursor.acceptedExtra, pendingExtras, limits.inboxActivities),
+                acceptedLinked = reviewCursor(cursor.acceptedLinked, pendingLinkedActivities, limits.inboxActivities),
+                directFeedback = feedbackCursor(cursor.directFeedback, directFeedbackRows, limits.inboxActivities),
+                healthConnect = healthCursor(cursor.healthConnect, healthMappings, limits.inboxActivities),
+            )
+            val reviewEpochDays = reviewItems.map { activity ->
                 Instant.ofEpochMilli(activity.occurredAtEpochMillis)
                     .atZone(ZoneId.of(timeZone))
                     .toLocalDate()
@@ -97,31 +139,21 @@ class RoomLocalSurfaceLedgerReader(
                     compareBy(WorkoutEntity::currentScheduledEpochDay)
                         .thenBy(WorkoutEntity::workoutId),
                 )
-                .take(MAX_LINK_CANDIDATES)
                 .toList()
             val linkCandidateIds = linkCandidates.mapTo(mutableSetOf(), WorkoutEntity::workoutId)
             val linkCandidateBlocks = activePlan?.workoutBlocks.orEmpty()
                 .filter { it.workoutId in linkCandidateIds }
             val linkCandidateBlockIds = linkCandidateBlocks.mapTo(mutableSetOf(), WorkoutBlockEntity::blockId)
-            val pendingWorkoutFeedbackWindow = activePlan
-                ?.let { pendingDirectWorkoutFeedback(it, limits.inboxActivities + 1) }
-                .orEmpty()
-            val pendingHealthConnectWindow = pendingHealthConnect(limits.inboxActivities + 1)
+            val pendingWorkoutFeedback = pendingDirectWorkoutFeedback(activePlan, directFeedbackItems)
+            val pendingHealthConnect = pendingHealthConnect(healthItems)
             LocalInboxLedgerSlice(
-                reviewCount = review.visibleCount,
-                reviewCountIsExact = review.isExact,
-                hasMore =
-                    review.visibleCount > review.items.size ||
-                        pendingExtras.size > limits.inboxActivities ||
-                        pendingLinkedActivities.size > limits.inboxActivities ||
-                        pendingWorkoutFeedbackWindow.size > limits.inboxActivities ||
-                        pendingHealthConnectWindow.size > limits.inboxActivities,
+                reviewCount = activityDao.actionableReviewActivityCount(),
+                reviewCountIsExact = true,
+                hasMore = !nextPage.exhausted,
                 activities = enrichLinkedInboxConsequences(
                     activitySlices(
                         (
-                            review.items +
-                                pendingExtras.take(limits.inboxActivities) +
-                                pendingLinkedActivities.take(limits.inboxActivities)
+                            reviewItems + extraItems + linkedItems
                             )
                         .distinctBy(ActivityEntity::activityId)
                         .sortedWith(
@@ -131,15 +163,16 @@ class RoomLocalSurfaceLedgerReader(
                     ),
                     activePlan,
                 ),
-                pendingWorkoutFeedback = pendingWorkoutFeedbackWindow.take(limits.inboxActivities),
+                pendingWorkoutFeedback = pendingWorkoutFeedback,
                 linkCandidates = linkCandidates,
                 linkCandidateBlocks = linkCandidateBlocks,
                 linkCandidateSegments = activePlan?.workoutSegments.orEmpty()
                     .filter { it.blockId in linkCandidateBlockIds },
-                pendingHealthConnect = pendingHealthConnectWindow.take(limits.inboxActivities),
+                pendingHealthConnect = pendingHealthConnect,
                 timeZone = timeZone,
                 todayEpochDay = todayEpochDay,
                 phaseReview = phaseReview(activePlan, profile, availability, todayEpochDay),
+                nextPage = nextPage.takeUnless(LocalInboxPagingCursor::exhausted),
             )
         }
 
@@ -169,62 +202,56 @@ class RoomLocalSurfaceLedgerReader(
     }
 
     private fun pendingDirectWorkoutFeedback(
-        activePlan: LocalPlanLedgerSlice,
-        limit: Int,
+        activePlan: LocalPlanLedgerSlice?,
+        feedbackRows: List<WorkoutFeedbackEntity>,
     ): List<LocalPendingWorkoutFeedbackLedgerSlice> {
+        if (activePlan == null || feedbackRows.isEmpty()) return emptyList()
         val workouts = activePlan.workouts.associateBy(WorkoutEntity::workoutId)
         val consequences = activePlan.workoutConsequences
             .associateBy(WorkoutFeedbackConsequenceEntity::feedbackId)
         val options = activePlan.workoutConsequenceOptions
             .groupBy(WorkoutFeedbackConsequenceOptionEntity::feedbackId)
-        return activePlan.feedback
-            .asSequence()
-            .filter { it.sourceActivityId == null }
-            .mapNotNull { feedback ->
-                val workout = workouts[feedback.workoutId] ?: return@mapNotNull null
-                val consequence = consequences[feedback.feedbackId] ?: return@mapNotNull null
-                if (!consequence.planChangeAvailable || consequence.appliedDecision != null) {
-                    return@mapNotNull null
-                }
-                LocalPendingWorkoutFeedbackLedgerSlice(
-                    feedback = feedback,
-                    workout = workout,
-                    consequence = consequence,
-                    consequenceOptions = options[feedback.feedbackId].orEmpty(),
-                )
+        return feedbackRows.mapNotNull { feedback ->
+            val workout = workouts[feedback.workoutId] ?: return@mapNotNull null
+            val consequence = consequences[feedback.feedbackId] ?: return@mapNotNull null
+            if (!consequence.planChangeAvailable || consequence.appliedDecision != null) {
+                return@mapNotNull null
             }
-            .sortedWith(
-                compareByDescending<LocalPendingWorkoutFeedbackLedgerSlice> {
-                    it.feedback.recordedAtEpochMillis
-                }.thenByDescending { it.feedback.feedbackId },
+            LocalPendingWorkoutFeedbackLedgerSlice(
+                feedback = feedback,
+                workout = workout,
+                consequence = consequence,
+                consequenceOptions = options[feedback.feedbackId].orEmpty(),
             )
-            .take(limit)
-            .toList()
+        }
     }
 
     override suspend fun stats(limits: LocalSurfaceReadLimits): LocalStatsLedgerSlice =
         database.withTransaction {
             val profile = database.profileSettingsDao().get()
             val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+            val zone = ZoneId.of(timeZone)
             val todayEpochDay = todayEpochDay(timeZone)
             val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
-            val planWindow = surfacePlans(limits.historyPlans + 1)
-            val activityWindow = database.activityLedgerDao().acceptedActivitiesInRange(
-                fromInclusive = Long.MIN_VALUE,
-                toExclusive = Long.MAX_VALUE,
-                limit = limits.statsActivities + 1,
-            )
+            val activePlans = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
             val plans = planSlices(
-                planWindow.take(limits.historyPlans),
+                activePlans,
                 limits,
                 limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
             )
+            val linkedActivities = acceptedLinkedActivitiesForPlans(plans)
+            val latestUnlinkedSignal = plans.firstOrNull()
+                ?.let { latestUnlinkedSignalForPlan(it, zone, todayEpochDay) }
+            val statsActivities = (
+                linkedActivities +
+                    listOfNotNull(latestUnlinkedSignal)
+                ).distinctBy(ActivityEntity::activityId)
             LocalStatsLedgerSlice(
                 plans = plans,
-                activities = activitySlices(activityWindow.take(limits.statsActivities)),
+                activities = activitySlices(statsActivities),
                 profileExists = profile != null,
-                hasMorePlans = planWindow.size > limits.historyPlans,
-                hasMoreActivities = activityWindow.size > limits.statsActivities,
+                hasMorePlans = false,
+                hasMoreActivities = false,
                 timeZone = timeZone,
                 todayEpochDay = todayEpochDay,
                 phaseReview = phaseReview(
@@ -234,32 +261,70 @@ class RoomLocalSurfaceLedgerReader(
                     todayEpochDay,
                 ),
                 profile = profile,
+                recordedAggregates = exactRecordedAggregates(),
+                weekActualAggregates = exactWeekActualAggregates(plans, zone),
             )
         }
 
-    override suspend fun history(limits: LocalSurfaceReadLimits): LocalHistoryLedgerSlice =
+    override suspend fun history(
+        limits: LocalSurfaceReadLimits,
+        planOffset: Int,
+        activityOffset: Int,
+    ): LocalHistoryLedgerSlice =
         database.withTransaction {
+            require(planOffset >= 0)
+            require(activityOffset >= 0)
             val profile = database.profileSettingsDao().get()
             val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+            val zone = ZoneId.of(timeZone)
             val todayEpochDay = todayEpochDay(timeZone)
             val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS).map { it.dayOfWeek }
-            val planWindow = surfacePlans(limits.historyPlans + 1)
-            val activityWindow = database.activityLedgerDao().acceptedActivitiesInRange(
-                fromInclusive = Long.MIN_VALUE,
-                toExclusive = Long.MAX_VALUE,
-                limit = limits.historyActivities + 1,
+            val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
+            val pastPlanWindow = database.goalPlanDao().historyPastPlansPage(
+                limit = limits.historyPlans + 1,
+                offset = planOffset,
             )
             val plans = planSlices(
-                planWindow.take(limits.historyPlans),
+                activePlan + pastPlanWindow.take(limits.historyPlans),
                 limits,
                 limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
                 includeHistoryAudit = true,
             )
+            val linkedActivities = acceptedLinkedActivitiesForPlans(plans)
+            val unlinkedWindow = database.activityLedgerDao().acceptedUnlinkedActivitiesPage(
+                limit = limits.historyActivities + 1,
+                offset = activityOffset,
+            )
+            val unlinkedPage = unlinkedWindow.take(limits.historyActivities)
+            val outsidePlanActivities = if (unlinkedPage.isEmpty()) {
+                emptyList()
+            } else {
+                val epochDays = unlinkedPage.associateWith { activity ->
+                    Instant.ofEpochMilli(activity.occurredAtEpochMillis)
+                        .atZone(zone)
+                        .toLocalDate()
+                        .toEpochDay()
+                }
+                val assignmentCandidates = loadAssignmentCandidates(
+                    requireNotNull(epochDays.values.minOrNull()),
+                    requireNotNull(epochDays.values.maxOrNull()),
+                )
+                unlinkedPage.filter { activity ->
+                    val assignment = bestAssignment(
+                        epochDay = requireNotNull(epochDays[activity]),
+                        candidates = assignmentCandidates,
+                    )
+                    assignment == null
+                }
+            }
             LocalHistoryLedgerSlice(
                 plans = plans,
-                activities = activitySlices(activityWindow.take(limits.historyActivities)),
-                hasMorePlans = planWindow.size > limits.historyPlans,
-                hasMoreActivities = activityWindow.size > limits.historyActivities,
+                activities = activitySlices(
+                    (linkedActivities + outsidePlanActivities)
+                        .distinctBy(ActivityEntity::activityId),
+                ),
+                hasMorePlans = pastPlanWindow.size > limits.historyPlans,
+                hasMoreActivities = unlinkedWindow.size > limits.historyActivities,
                 timeZone = timeZone,
                 todayEpochDay = todayEpochDay,
                 phaseReview = phaseReview(
@@ -268,8 +333,65 @@ class RoomLocalSurfaceLedgerReader(
                     availability,
                     todayEpochDay,
                 ),
+                nextPlanOffset = if (pastPlanWindow.size > limits.historyPlans) {
+                    planOffset + limits.historyPlans
+                } else {
+                    null
+                },
+                nextActivityOffset = if (unlinkedWindow.size > limits.historyActivities) {
+                    activityOffset + limits.historyActivities
+                } else {
+                    null
+                },
+                weekActualAggregates = exactWeekActualAggregates(plans, zone),
             )
         }
+
+    override suspend fun historyPlan(
+        planId: String,
+        limits: LocalSurfaceReadLimits,
+    ): LocalHistoryLedgerSlice? = database.withTransaction {
+        require(planId.isNotBlank())
+        val plan = database.goalPlanDao().plan(planId)
+            ?.takeIf { it.state in setOf("active", "completed", "archived") }
+            ?: return@withTransaction null
+        val profile = database.profileSettingsDao().get()
+        val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
+        val zone = ZoneId.of(timeZone)
+        val todayEpochDay = todayEpochDay(timeZone)
+        val availability = database.profileSettingsDao()
+            .availabilityDays(limit = MAX_AVAILABILITY_DAYS)
+            .map { it.dayOfWeek }
+        val plans = planSlices(
+            plans = listOf(plan),
+            limits = limits,
+            workoutLimitPerPlan = limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
+            includeHistoryAudit = true,
+        )
+        val unlinkedContext = assignedUnlinkedContextForPlan(
+            plan = plans.single(),
+            zone = zone,
+            limit = minOf(limits.historyActivities, MAX_PLAN_CONTEXT_ITEMS),
+        )
+        LocalHistoryLedgerSlice(
+            plans = plans,
+            activities = activitySlices(
+                (acceptedLinkedActivitiesForPlans(plans) + unlinkedContext)
+                    .distinctBy(ActivityEntity::activityId),
+            ),
+            hasMorePlans = false,
+            hasMoreActivities = false,
+            timeZone = timeZone,
+            todayEpochDay = todayEpochDay,
+            phaseReview = phaseReview(
+                plans.firstOrNull { it.plan.state == "active" },
+                profile,
+                availability,
+                todayEpochDay,
+            ),
+            weekActualAggregates = exactWeekActualAggregates(plans, zone),
+        )
+    }
 
     override suspend fun settings(limits: LocalSurfaceReadLimits): LocalSettingsLedgerSlice =
         database.withTransaction {
@@ -438,22 +560,316 @@ class RoomLocalSurfaceLedgerReader(
         }
     }
 
-    private suspend fun surfacePlans(limit: Int): List<PlanEntity> {
-        return database.goalPlanDao().plansByStates(
-            states = listOf("active", "completed", "archived"),
-            limit = limit,
-        )
+    private suspend fun acceptedLinkedActivitiesForPlans(
+        plans: List<LocalPlanLedgerSlice>,
+    ): List<ActivityEntity> {
+        val workoutIds = plans.flatMap { plan ->
+            plan.workouts.map(WorkoutEntity::workoutId)
+        }
+        return workoutIds.distinct().chunked(MAX_SQLITE_IN_IDS).flatMap { ids ->
+            val count = database.activityLedgerDao()
+                .acceptedActivityCountLinkedToWorkouts(ids)
+            require(count <= ids.size) {
+                "The local ledger contains more than one accepted activity for a workout."
+            }
+            database.activityLedgerDao().acceptedActivitiesLinkedToWorkouts(ids, count)
+                .also { rows ->
+                    check(rows.size == count) {
+                        "The linked activity ledger changed during the surface read."
+                    }
+                }
+        }
     }
 
-    private suspend fun reviewWindow(limit: Int): ReviewWindow {
-        val dao = database.activityLedgerDao()
-        val count = dao.activityCountByReviewState("review")
-        val rows = dao.activitiesByReviewState("review", limit)
-        return ReviewWindow(
-            items = rows,
-            visibleCount = count,
-            isExact = true,
+    private suspend fun exactRecordedAggregates(): List<LocalRecordedAggregateLedgerRow> {
+        val rows = database.activityLedgerDao().acceptedStatsAggregates() +
+            database.activityLedgerDao().directFeedbackStatsAggregates()
+        return rows
+            .groupBy { storedProvenance(it.provenance) }
+            .map { (provenance, grouped) ->
+                LocalRecordedAggregateLedgerRow(
+                    provenance = provenance,
+                    runs = grouped.sumOf(StoredStatsAggregateRow::runs),
+                    distanceMeters = grouped.sumOf(StoredStatsAggregateRow::distanceMeters),
+                    durationSeconds = grouped.sumOf(StoredStatsAggregateRow::durationSeconds),
+                    longestRunMeters = grouped.mapNotNull(StoredStatsAggregateRow::longestRunMeters)
+                        .maxOrNull(),
+                    pairedDistanceMeters =
+                        grouped.sumOf(StoredStatsAggregateRow::pairedDistanceMeters),
+                    pairedDurationSeconds =
+                        grouped.sumOf(StoredStatsAggregateRow::pairedDurationSeconds),
+                    heartRateDurationSeconds =
+                        grouped.sumOf(StoredStatsAggregateRow::heartRateDurationSeconds),
+                    heartRateBeatsSeconds =
+                        grouped.sumOf(StoredStatsAggregateRow::heartRateBeatsSeconds),
+                )
+            }
+            .sortedBy { it.provenance.ordinal }
+    }
+
+    private suspend fun assignedUnlinkedContextForPlan(
+        plan: LocalPlanLedgerSlice,
+        zone: ZoneId,
+        limit: Int,
+    ): List<ActivityEntity> {
+        if (plan.weeks.isEmpty() || limit <= 0) return emptyList()
+        val fromEpochDay = plan.weeks.minOf(PlanWeekEntity::startEpochDay)
+        val throughEpochDay = plan.weeks.maxOf { it.startEpochDay + 6 }
+        val assignmentCandidates = loadAssignmentCandidates(
+            fromEpochDay,
+            throughEpochDay,
         )
+        val fromInclusive = LocalDate.ofEpochDay(fromEpochDay)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
+        val toExclusive = LocalDate.ofEpochDay(throughEpochDay + 1)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
+        val selected = mutableListOf<ActivityEntity>()
+        var beforeEpochMillis = toExclusive
+        var beforeActivityId = HIGH_CURSOR_ACTIVITY_ID
+        do {
+            val page = database.activityLedgerDao().acceptedUnlinkedActivitiesPageInRange(
+                fromInclusive = fromInclusive,
+                toExclusive = toExclusive,
+                beforeEpochMillis = beforeEpochMillis,
+                beforeActivityId = beforeActivityId,
+                limit = PLAN_CONTEXT_SCAN_PAGE_SIZE,
+            )
+            page.forEach { activity ->
+                val epochDay = Instant.ofEpochMilli(activity.occurredAtEpochMillis)
+                    .atZone(zone)
+                    .toLocalDate()
+                    .toEpochDay()
+                if (
+                    bestAssignment(epochDay, assignmentCandidates)?.planId ==
+                    plan.plan.planId
+                ) {
+                    selected += activity
+                }
+            }
+            page.lastOrNull()?.let {
+                beforeEpochMillis = it.occurredAtEpochMillis
+                beforeActivityId = it.activityId
+            }
+        } while (
+            selected.size < limit &&
+            page.size == PLAN_CONTEXT_SCAN_PAGE_SIZE
+        )
+        return selected.take(limit)
+    }
+
+    private suspend fun latestUnlinkedSignalForPlan(
+        plan: LocalPlanLedgerSlice,
+        zone: ZoneId,
+        todayEpochDay: Long,
+    ): ActivityEntity? {
+        val recentStart = todayEpochDay - 28
+        val eligibleDays = plan.weeks
+            .asSequence()
+            .flatMap { week -> (week.startEpochDay..week.startEpochDay + 6).asSequence() }
+            .filter { it in recentStart..todayEpochDay }
+            .distinct()
+            .sorted()
+            .toList()
+        return contiguousRanges(eligibleDays)
+            .mapNotNull { range ->
+                database.activityLedgerDao().latestAcceptedUnlinkedExtraInRange(
+                    fromInclusive = LocalDate.ofEpochDay(range.first)
+                        .atStartOfDay(zone)
+                        .toInstant()
+                        .toEpochMilli(),
+                    toExclusive = LocalDate.ofEpochDay(range.last + 1)
+                        .atStartOfDay(zone)
+                        .toInstant()
+                        .toEpochMilli(),
+                )
+            }
+            .maxWithOrNull(
+                compareBy<ActivityEntity>(
+                    ActivityEntity::occurredAtEpochMillis,
+                    ActivityEntity::updatedAtEpochMillis,
+                    ActivityEntity::activityId,
+                ),
+            )
+    }
+
+    private suspend fun exactWeekActualAggregates(
+        plans: List<LocalPlanLedgerSlice>,
+        zone: ZoneId,
+    ): List<LocalWeekActualAggregateLedgerRow> {
+        if (plans.isEmpty()) return emptyList()
+        val displayedWeeks = plans.flatMap { plan ->
+            plan.weeks.map { week -> week.weekId to (plan.plan.planId to week) }
+        }.toMap()
+        if (displayedWeeks.isEmpty()) return emptyList()
+        val weekIds = displayedWeeks.keys.toList()
+        val linkedByWeek = weekIds.chunked(MAX_SQLITE_IN_IDS).flatMap { ids ->
+            database.activityLedgerDao().acceptedLinkedAggregatesForWeeks(ids)
+        }.associate { it.weekId to it.toLoadAggregate() }
+        val directByWeek = weekIds.chunked(MAX_SQLITE_IN_IDS).flatMap { ids ->
+            database.activityLedgerDao().directFeedbackAggregatesForWeeks(ids)
+        }.associate { it.weekId to it.toLoadAggregate() }
+
+        val fromEpochDay = displayedWeeks.values.minOf { it.second.startEpochDay }
+        val throughEpochDay = displayedWeeks.values.maxOf { it.second.startEpochDay + 6 }
+        val assignmentCandidates = loadAssignmentCandidates(
+            fromEpochDay,
+            throughEpochDay,
+        )
+
+        val unlinkedByWeek = mutableMapOf<String, StoredLoadAggregateRow>()
+        val fromInclusive = LocalDate.ofEpochDay(fromEpochDay)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
+        val toExclusive = LocalDate.ofEpochDay(throughEpochDay + 1)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
+        var beforeEpochMillis = toExclusive
+        var beforeActivityId = HIGH_CURSOR_ACTIVITY_ID
+        do {
+            val page = database.activityLedgerDao().acceptedUnlinkedStatsPage(
+                fromInclusive = fromInclusive,
+                toExclusive = toExclusive,
+                beforeEpochMillis = beforeEpochMillis,
+                beforeActivityId = beforeActivityId,
+                limit = UNLINKED_STATS_PAGE_SIZE,
+            )
+            page.forEach { activity ->
+                val epochDay = Instant.ofEpochMilli(activity.occurredAtEpochMillis)
+                    .atZone(zone)
+                    .toLocalDate()
+                    .toEpochDay()
+                val assignment = bestAssignment(epochDay, assignmentCandidates)
+                val weekId = assignment?.weekId
+                    ?.takeIf(displayedWeeks::containsKey)
+                    ?: return@forEach
+                unlinkedByWeek[weekId] =
+                    unlinkedByWeek.getOrDefault(weekId, emptyStoredLoadAggregate()) +
+                    activity.toLoadAggregate()
+            }
+            page.lastOrNull()?.let {
+                beforeEpochMillis = it.occurredAtEpochMillis
+                beforeActivityId = it.activityId
+            }
+        } while (page.size == UNLINKED_STATS_PAGE_SIZE)
+
+        return displayedWeeks.map { (weekId, owner) ->
+            val linked = linkedByWeek[weekId] ?: emptyStoredLoadAggregate()
+            val direct = directByWeek[weekId] ?: emptyStoredLoadAggregate()
+            val unlinked = unlinkedByWeek[weekId] ?: emptyStoredLoadAggregate()
+            val total = linked + unlinked + direct
+            LocalWeekActualAggregateLedgerRow(
+                planId = owner.first,
+                weekId = weekId,
+                activityRuns = linked.runs + unlinked.runs,
+                unlinkedRuns = unlinked.runs,
+                distanceMeters = total.distanceMeters,
+                durationSeconds = total.durationSeconds,
+                longestRunMeters = total.longestRunMeters,
+                pairedDistanceMeters = total.pairedDistanceMeters,
+                pairedDurationSeconds = total.pairedDurationSeconds,
+                heartRateDurationSeconds = total.heartRateDurationSeconds,
+                heartRateBeatsSeconds = total.heartRateBeatsSeconds,
+                painFlags = total.painFlags,
+                hardFlags = total.hardFlags,
+            )
+        }
+    }
+
+    private suspend fun loadAssignmentCandidates(
+        fromEpochDay: Long,
+        throughEpochDay: Long,
+    ): List<StoredPlanWeekAssignmentCandidate> {
+        val candidates = mutableListOf<StoredPlanWeekAssignmentCandidate>()
+        var offset = 0
+        do {
+            val page = database.goalPlanDao().planWeekAssignmentCandidates(
+                fromEpochDay = fromEpochDay,
+                throughEpochDay = throughEpochDay,
+                limit = ASSIGNMENT_CANDIDATE_PAGE_SIZE,
+                offset = offset,
+            )
+            candidates += page
+            offset += page.size
+        } while (page.size == ASSIGNMENT_CANDIDATE_PAGE_SIZE)
+        return candidates
+    }
+
+    private fun bestAssignment(
+        epochDay: Long,
+        candidates: List<StoredPlanWeekAssignmentCandidate>,
+    ): StoredPlanWeekAssignmentCandidate? = candidates
+        .asSequence()
+        .filter {
+            epochDay in it.startEpochDay..(it.startEpochDay + 6)
+        }
+        .maxWithOrNull(
+            compareBy<StoredPlanWeekAssignmentCandidate>(
+                { it.planState == "active" },
+                StoredPlanWeekAssignmentCandidate::planStartEpochDay,
+                StoredPlanWeekAssignmentCandidate::planId,
+            ),
+        )
+
+    private fun storedProvenance(value: String): LocalPlanProvenance = when (value) {
+        "active" -> LocalPlanProvenance.ACTIVE
+        "completed" -> LocalPlanProvenance.COMPLETED
+        "archived" -> LocalPlanProvenance.ARCHIVED
+        "unlinked" -> LocalPlanProvenance.UNLINKED
+        else -> LocalPlanProvenance.OTHER
+    }
+
+    private fun contiguousRanges(days: List<Long>): List<LongRange> {
+        if (days.isEmpty()) return emptyList()
+        val ranges = mutableListOf<LongRange>()
+        var start = days.first()
+        var end = start
+        days.drop(1).forEach { day ->
+            if (day == end + 1) {
+                end = day
+            } else {
+                ranges += start..end
+                start = day
+                end = day
+            }
+        }
+        ranges += start..end
+        return ranges
+    }
+
+    private fun reviewCursor(
+        previous: LocalInboxActivityCursor,
+        rows: List<ActivityEntity>,
+        pageSize: Int,
+    ): LocalInboxActivityCursor {
+        if (previous.exhausted || rows.size <= pageSize) return previous.copy(exhausted = true)
+        val last = requireNotNull(rows.getOrNull(pageSize - 1))
+        return LocalInboxActivityCursor(last.occurredAtEpochMillis, last.activityId)
+    }
+
+    private fun feedbackCursor(
+        previous: LocalInboxFeedbackCursor,
+        rows: List<WorkoutFeedbackEntity>,
+        pageSize: Int,
+    ): LocalInboxFeedbackCursor {
+        if (previous.exhausted || rows.size <= pageSize) return previous.copy(exhausted = true)
+        val last = requireNotNull(rows.getOrNull(pageSize - 1))
+        return LocalInboxFeedbackCursor(last.recordedAtEpochMillis, last.feedbackId)
+    }
+
+    private fun healthCursor(
+        previous: LocalInboxHealthConnectCursor,
+        rows: List<HealthConnectMappingEntity>,
+        pageSize: Int,
+    ): LocalInboxHealthConnectCursor {
+        if (previous.exhausted || rows.size <= pageSize) return previous.copy(exhausted = true)
+        val last = requireNotNull(rows.getOrNull(pageSize - 1))
+        return LocalInboxHealthConnectCursor(last.lastObservedAtEpochMillis, last.mappingId)
     }
 
     private suspend fun activitySlices(
@@ -489,10 +905,14 @@ class RoomLocalSurfaceLedgerReader(
         }
     }
 
-    private suspend fun pendingHealthConnect(limit: Int): List<LocalHealthConnectPendingReadModel> {
-        val importDao = database.importLedgerDao()
-        val mappings = importDao.pendingHealthConnectMappings(limit)
+    private suspend fun pendingHealthConnect(limit: Int): List<LocalHealthConnectPendingReadModel> =
+        pendingHealthConnect(database.importLedgerDao().pendingHealthConnectMappings(limit))
+
+    private suspend fun pendingHealthConnect(
+        mappings: List<HealthConnectMappingEntity>,
+    ): List<LocalHealthConnectPendingReadModel> {
         if (mappings.isEmpty()) return emptyList()
+        val importDao = database.importLedgerDao()
         val mappingIds = mappings.map(HealthConnectMappingEntity::mappingId)
         val proposed = importDao.pendingHealthConnectObservations(mappingIds, mappingIds.size)
             .associateBy(HealthConnectPendingObservationEntity::mappingId)
@@ -603,12 +1023,6 @@ class RoomLocalSurfaceLedgerReader(
     private fun todayEpochDay(timeZone: String): Long =
         Instant.ofEpochMilli(nowEpochMillis()).atZone(ZoneId.of(timeZone)).toLocalDate().toEpochDay()
 
-    private data class ReviewWindow(
-        val items: List<ActivityEntity>,
-        val visibleCount: Int,
-        val isExact: Boolean,
-    )
-
     private companion object {
         const val MAX_ACTIVE_PLANS = 2
         const val MAX_CURRENT_GOALS = 2
@@ -617,12 +1031,15 @@ class RoomLocalSurfaceLedgerReader(
         const val MAX_LIFECYCLE_EVENTS = 50
         const val MAX_SUMMARY_WARNINGS_PER_PLAN = 16
         const val MAX_HISTORY_ADJUSTMENT_ROWS_PER_PLAN = 128
-        const val MAX_INBOX_PLAN_WORKOUTS = 1_024
-        const val MAX_LINK_CANDIDATES = 128
         const val MAX_PENDING_HEALTH_CONNECT = 50
         const val MAX_CONSEQUENCE_OPTIONS = 8
         const val MAX_UNDO_ADJUSTMENTS_PER_WORKOUT = 8
         const val MAX_PHASE_ACTIVITIES = 512
+        const val ASSIGNMENT_CANDIDATE_PAGE_SIZE = 512
+        const val UNLINKED_STATS_PAGE_SIZE = 512
+        const val PLAN_CONTEXT_SCAN_PAGE_SIZE = 128
+        const val MAX_PLAN_CONTEXT_ITEMS = 50
+        const val HIGH_CURSOR_ACTIVITY_ID = "\uFFFF"
         // These are read caps, not schema limits. They bound a large history read.
         const val MAX_BLOCKS_PER_WORKOUT_ACROSS_VERSIONS = 200
         const val MAX_SEGMENTS_PER_BLOCK = 100
@@ -652,4 +1069,69 @@ internal suspend fun <Id, Row> chunkedSqliteIdRead(
         remaining -= minOf(rows.size, remaining)
     }
     return output
+}
+
+private fun emptyStoredLoadAggregate(): StoredLoadAggregateRow =
+    StoredLoadAggregateRow(
+        runs = 0,
+        distanceMeters = 0,
+        durationSeconds = 0,
+        longestRunMeters = null,
+        pairedDistanceMeters = 0,
+        pairedDurationSeconds = 0,
+        heartRateDurationSeconds = 0,
+        heartRateBeatsSeconds = 0,
+        painFlags = 0,
+        hardFlags = 0,
+    )
+
+private operator fun StoredLoadAggregateRow.plus(
+    other: StoredLoadAggregateRow,
+): StoredLoadAggregateRow = StoredLoadAggregateRow(
+    runs = runs + other.runs,
+    distanceMeters = distanceMeters + other.distanceMeters,
+    durationSeconds = durationSeconds + other.durationSeconds,
+    longestRunMeters = listOfNotNull(longestRunMeters, other.longestRunMeters).maxOrNull(),
+    pairedDistanceMeters = pairedDistanceMeters + other.pairedDistanceMeters,
+    pairedDurationSeconds = pairedDurationSeconds + other.pairedDurationSeconds,
+    heartRateDurationSeconds = heartRateDurationSeconds + other.heartRateDurationSeconds,
+    heartRateBeatsSeconds = heartRateBeatsSeconds + other.heartRateBeatsSeconds,
+    painFlags = painFlags + other.painFlags,
+    hardFlags = hardFlags + other.hardFlags,
+)
+
+private fun StoredWeekLoadAggregateRow.toLoadAggregate(): StoredLoadAggregateRow =
+    StoredLoadAggregateRow(
+        runs = runs,
+        distanceMeters = distanceMeters,
+        durationSeconds = durationSeconds,
+        longestRunMeters = longestRunMeters,
+        pairedDistanceMeters = pairedDistanceMeters,
+        pairedDurationSeconds = pairedDurationSeconds,
+        heartRateDurationSeconds = heartRateDurationSeconds,
+        heartRateBeatsSeconds = heartRateBeatsSeconds,
+        painFlags = painFlags,
+        hardFlags = hardFlags,
+    )
+
+private fun StoredUnlinkedActivityStatsRow.toLoadAggregate(): StoredLoadAggregateRow {
+    val paired = (distanceMeters ?: 0) > 0 && (durationSeconds ?: 0) > 0
+    val hasHeartRate = averageHeartRateBpm != null && (durationSeconds ?: 0) > 0
+    return StoredLoadAggregateRow(
+        runs = 1,
+        distanceMeters = (distanceMeters ?: 0).toLong(),
+        durationSeconds = (durationSeconds ?: 0).toLong(),
+        longestRunMeters = distanceMeters,
+        pairedDistanceMeters = if (paired) requireNotNull(distanceMeters).toLong() else 0,
+        pairedDurationSeconds = if (paired) requireNotNull(durationSeconds).toLong() else 0,
+        heartRateDurationSeconds =
+            if (hasHeartRate) requireNotNull(durationSeconds).toLong() else 0,
+        heartRateBeatsSeconds = if (hasHeartRate) {
+            requireNotNull(averageHeartRateBpm).toLong() * requireNotNull(durationSeconds)
+        } else {
+            0
+        },
+        painFlags = if (pain == true) 1 else 0,
+        hardFlags = if (feltHard == true) 1 else 0,
+    )
 }

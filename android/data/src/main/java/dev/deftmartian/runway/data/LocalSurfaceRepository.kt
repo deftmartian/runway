@@ -233,6 +233,37 @@ data class LocalInboxReadModel(
     val timeZone: String = ZoneId.systemDefault().id,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
+    val nextPage: LocalInboxPagingCursor? = null,
+)
+
+/** One independent, descending keyset per Inbox decision source. */
+data class LocalInboxPagingCursor(
+    val review: LocalInboxActivityCursor = LocalInboxActivityCursor(),
+    val acceptedExtra: LocalInboxActivityCursor = LocalInboxActivityCursor(),
+    val acceptedLinked: LocalInboxActivityCursor = LocalInboxActivityCursor(),
+    val directFeedback: LocalInboxFeedbackCursor = LocalInboxFeedbackCursor(),
+    val healthConnect: LocalInboxHealthConnectCursor = LocalInboxHealthConnectCursor(),
+) {
+    val exhausted: Boolean get() = review.exhausted && acceptedExtra.exhausted && acceptedLinked.exhausted &&
+        directFeedback.exhausted && healthConnect.exhausted
+}
+
+data class LocalInboxActivityCursor(
+    val occurredAtEpochMillis: Long? = null,
+    val activityId: String? = null,
+    val exhausted: Boolean = false,
+)
+
+data class LocalInboxFeedbackCursor(
+    val recordedAtEpochMillis: Long? = null,
+    val feedbackId: String? = null,
+    val exhausted: Boolean = false,
+)
+
+data class LocalInboxHealthConnectCursor(
+    val observedAtEpochMillis: Long? = null,
+    val mappingId: String? = null,
+    val exhausted: Boolean = false,
 )
 
 data class LocalPendingWorkoutFeedbackReadModel(
@@ -286,6 +317,34 @@ data class LocalRecordedTotalsReadModel(
     val runs: Int,
     val distanceMeters: Int,
     val durationSeconds: Int,
+)
+
+data class LocalRecordedAggregateLedgerRow(
+    val provenance: LocalPlanProvenance,
+    val runs: Long,
+    val distanceMeters: Long,
+    val durationSeconds: Long,
+    val longestRunMeters: Int?,
+    val pairedDistanceMeters: Long,
+    val pairedDurationSeconds: Long,
+    val heartRateDurationSeconds: Long,
+    val heartRateBeatsSeconds: Long,
+)
+
+data class LocalWeekActualAggregateLedgerRow(
+    val planId: String,
+    val weekId: String,
+    val activityRuns: Long,
+    val unlinkedRuns: Long,
+    val distanceMeters: Long,
+    val durationSeconds: Long,
+    val longestRunMeters: Int?,
+    val pairedDistanceMeters: Long,
+    val pairedDurationSeconds: Long,
+    val heartRateDurationSeconds: Long,
+    val heartRateBeatsSeconds: Long,
+    val painFlags: Long,
+    val hardFlags: Long,
 )
 
 data class LocalStatsReadModel(
@@ -345,6 +404,7 @@ data class LocalHistoryWeekReadModel(
     val isTaperWeek: Boolean,
     val workouts: List<LocalHistoryWorkoutReadModel>,
     val extraActivities: List<LocalActivityReadModel> = emptyList(),
+    val extraActivityContextIsComplete: Boolean = true,
 )
 
 data class LocalHistoryAdjustmentReadModel(
@@ -388,6 +448,8 @@ data class LocalHistoryReadModel(
     val unlinkedActivities: List<LocalActivityReadModel>,
     val hasMorePlans: Boolean,
     val hasMoreActivities: Boolean,
+    val nextPlanOffset: Int? = null,
+    val nextActivityOffset: Int? = null,
     val timeZone: String = ZoneId.systemDefault().id,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
@@ -533,6 +595,7 @@ data class LocalInboxLedgerSlice(
     val timeZone: String = ZoneId.systemDefault().id,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
+    val nextPage: LocalInboxPagingCursor? = null,
 )
 
 data class LocalStatsLedgerSlice(
@@ -545,6 +608,8 @@ data class LocalStatsLedgerSlice(
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val profile: ProfileSettingsEntity? = null,
+    val recordedAggregates: List<LocalRecordedAggregateLedgerRow> = emptyList(),
+    val weekActualAggregates: List<LocalWeekActualAggregateLedgerRow> = emptyList(),
 )
 
 data class LocalHistoryLedgerSlice(
@@ -555,6 +620,9 @@ data class LocalHistoryLedgerSlice(
     val timeZone: String = ZoneId.systemDefault().id,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
+    val nextPlanOffset: Int? = null,
+    val nextActivityOffset: Int? = null,
+    val weekActualAggregates: List<LocalWeekActualAggregateLedgerRow> = emptyList(),
 )
 
 data class LocalSettingsLedgerSlice(
@@ -576,8 +644,20 @@ interface LocalSurfaceLedgerReader {
     ): LocalCalendarLedgerSlice
 
     suspend fun inbox(limits: LocalSurfaceReadLimits): LocalInboxLedgerSlice
+    suspend fun inboxPage(
+        limits: LocalSurfaceReadLimits,
+        cursor: LocalInboxPagingCursor,
+    ): LocalInboxLedgerSlice = inbox(limits)
     suspend fun stats(limits: LocalSurfaceReadLimits): LocalStatsLedgerSlice
-    suspend fun history(limits: LocalSurfaceReadLimits): LocalHistoryLedgerSlice
+    suspend fun history(
+        limits: LocalSurfaceReadLimits,
+        planOffset: Int = 0,
+        activityOffset: Int = 0,
+    ): LocalHistoryLedgerSlice
+    suspend fun historyPlan(
+        planId: String,
+        limits: LocalSurfaceReadLimits,
+    ): LocalHistoryLedgerSlice?
     suspend fun settings(limits: LocalSurfaceReadLimits): LocalSettingsLedgerSlice
     suspend fun activityEvidence(
         activityId: String,
@@ -595,17 +675,20 @@ class LocalSurfaceRepository(
         return LocalSurfaceMappers.calendar(ledger.calendar(fromEpochDay, throughEpochDay, limits))
     }
 
-    suspend fun inbox(
-        activityLimit: Int = limits.inboxActivities,
-    ): LocalInboxReadModel = LocalSurfaceMappers.inbox(
-        ledger.inbox(limits.copy(inboxActivities = activityLimit)),
+    suspend fun inbox(cursor: LocalInboxPagingCursor): LocalInboxReadModel = LocalSurfaceMappers.inbox(
+        ledger.inboxPage(limits, cursor),
     )
     suspend fun stats(): LocalStatsReadModel = LocalSurfaceMappers.stats(ledger.stats(limits))
     suspend fun history(
-        planLimit: Int = limits.historyPlans,
+        planOffset: Int = 0,
+        activityOffset: Int = 0,
     ): LocalHistoryReadModel = LocalSurfaceMappers.history(
-        ledger.history(limits.copy(historyPlans = planLimit)),
+        ledger.history(limits, planOffset, activityOffset),
     )
+    suspend fun historyPlan(planId: String): LocalHistoryReadModel? {
+        require(planId.isNotBlank())
+        return ledger.historyPlan(planId, limits)?.let(LocalSurfaceMappers::history)
+    }
     suspend fun settings(): LocalSettingsReadModel = LocalSurfaceMappers.settings(ledger.settings(limits))
     suspend fun activityEvidence(activityId: String): LocalActivityReadModel? {
         require(activityId.isNotBlank())
@@ -777,6 +860,7 @@ object LocalSurfaceMappers {
         timeZone = slice.timeZone,
         todayEpochDay = slice.todayEpochDay,
         phaseReview = slice.phaseReview,
+        nextPage = slice.nextPage,
     )
 
     fun stats(slice: LocalStatsLedgerSlice): LocalStatsReadModel {
@@ -791,6 +875,9 @@ object LocalSurfaceMappers {
                 keySelector = { it.plan.plan.planId to it.week.weekId },
                 valueTransform = AcceptedWeekAssignment::activity,
             )
+        val exactWeekActuals = slice.weekActualAggregates.associateBy {
+            it.planId to it.weekId
+        }
         val weeks = slice.plans.flatMap { plan ->
             val feedbackByWorkout = plan.feedback.associateBy(WorkoutFeedbackEntity::workoutId)
             plan.weeks.map { week ->
@@ -813,6 +900,7 @@ object LocalSurfaceMappers {
                     .filter { it.averageHeartRateBpm != null && (it.durationSeconds ?: 0) > 0 }
                 val acceptedFeedback = acceptedRows.mapNotNull(LocalActivityLedgerSlice::feedback)
                 val heartRateDurationSeconds = heartRateRows.sumOf { requireNotNull(it.durationSeconds) }
+                val exactActual = exactWeekActuals[plan.plan.planId to week.weekId]
                 val workoutCompleted: (WorkoutEntity) -> Boolean = { workout ->
                     workout.currentStatus in setOf("done", "shortened", "completed", "overrun") ||
                         acceptedByWorkout.containsKey(workout.workoutId) ||
@@ -827,11 +915,19 @@ object LocalSurfaceMappers {
                     startEpochDay = week.startEpochDay,
                     generated = loads(workouts.map { it.generatedDistanceMeters to it.generatedDurationSeconds }),
                     current = loads(workouts.map { it.currentDistanceMeters to it.currentDurationSeconds }),
-                    actual = loads(actualLoads),
+                    actual = exactActual?.let {
+                        LocalLoadReadModel(
+                            distanceMeters = it.distanceMeters.toSurfaceInt("week distance"),
+                            durationSeconds = it.durationSeconds.toSurfaceInt("week duration"),
+                        )
+                    } ?: loads(actualLoads),
                     plannedRuns = workouts.count { it.currentWorkoutType != "rest" },
                     completedRuns = workouts.count {
                         it.currentWorkoutType != "rest" && workoutCompleted(it)
-                    } + unlinkedRows.size,
+                    } + (
+                        exactActual?.unlinkedRuns?.toSurfaceInt("unlinked week run count")
+                            ?: unlinkedRows.size
+                        ),
                     missedRuns = workouts.count {
                         it.currentWorkoutType != "rest" &&
                             !workoutCompleted(it) &&
@@ -843,19 +939,39 @@ object LocalSurfaceMappers {
                                         )
                                 )
                     },
-                    painFlags =
-                        acceptedFeedback.count(ActivityFeedbackEntity::pain) +
-                            directFeedback.count(WorkoutFeedbackEntity::pain),
-                    hardFlags =
-                        acceptedFeedback.count(ActivityFeedbackEntity::feltHard) +
-                            directFeedback.count(WorkoutFeedbackEntity::feltHard),
-                    weightedPaceSecondsPerKilometre = paceLoads
+                    painFlags = exactActual?.painFlags?.toSurfaceInt("week pain flag count")
+                        ?: (
+                            acceptedFeedback.count(ActivityFeedbackEntity::pain) +
+                                directFeedback.count(WorkoutFeedbackEntity::pain)
+                            ),
+                    hardFlags = exactActual?.hardFlags?.toSurfaceInt("week hard flag count")
+                        ?: (
+                            acceptedFeedback.count(ActivityFeedbackEntity::feltHard) +
+                                directFeedback.count(WorkoutFeedbackEntity::feltHard)
+                            ),
+                    weightedPaceSecondsPerKilometre = exactActual?.let {
+                        if (it.pairedDistanceMeters > 0 && it.pairedDurationSeconds > 0) {
+                            it.pairedDurationSeconds.toDouble() * 1_000 /
+                                it.pairedDistanceMeters
+                        } else {
+                            null
+                        }
+                    } ?: paceLoads
                         .takeIf { it.isNotEmpty() }
                         ?.let { loads ->
                             loads.sumOf { requireNotNull(it.second) }.toDouble() * 1_000 /
                                 loads.sumOf { requireNotNull(it.first) }
                         },
-                    durationWeightedHeartRateBpm = heartRateRows
+                    durationWeightedHeartRateBpm = exactActual?.let {
+                        if (it.heartRateDurationSeconds > 0) {
+                            (
+                                it.heartRateBeatsSeconds.toDouble() /
+                                    it.heartRateDurationSeconds
+                                ).roundToInt()
+                        } else {
+                            null
+                        }
+                    } ?: heartRateRows
                         .takeIf { it.isNotEmpty() && heartRateDurationSeconds > 0 }
                         ?.let { rows ->
                             (
@@ -906,39 +1022,98 @@ object LocalSurfaceMappers {
                 .toList()
         }
         val recordedEvidence = acceptedEvidence + directFeedbackEvidence
-        val totals = recordedEvidence
-            .groupBy(RecordedStatsEvidence::provenance)
-            .map { (origin, rows) ->
+        val totals = if (slice.recordedAggregates.isNotEmpty()) {
+            slice.recordedAggregates.map { row ->
                 LocalRecordedTotalsReadModel(
-                    provenance = origin,
-                    runs = rows.size,
-                    distanceMeters = rows.sumOf { it.distanceMeters ?: 0 },
-                    durationSeconds = rows.sumOf { it.durationSeconds ?: 0 },
+                    provenance = row.provenance,
+                    runs = row.runs.toSurfaceInt("recorded run count"),
+                    distanceMeters = row.distanceMeters.toSurfaceInt("recorded distance"),
+                    durationSeconds = row.durationSeconds.toSurfaceInt("recorded duration"),
                 )
             }
-            .sortedBy { it.provenance.ordinal }
+        } else {
+            recordedEvidence
+                .groupBy(RecordedStatsEvidence::provenance)
+                .map { (origin, rows) ->
+                    LocalRecordedTotalsReadModel(
+                        provenance = origin,
+                        runs = rows.size,
+                        distanceMeters = rows.sumOf { it.distanceMeters ?: 0 },
+                        durationSeconds = rows.sumOf { it.durationSeconds ?: 0 },
+                    )
+                }
+        }.sortedBy { it.provenance.ordinal }
         val paired = recordedEvidence
             .filter { (it.distanceMeters ?: 0) > 0 && (it.durationSeconds ?: 0) > 0 }
         val heartRate = accepted.map { it.activity }
             .filter { it.averageHeartRateBpm != null && (it.durationSeconds ?: 0) > 0 }
+        val exactRuns = slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::runs)
+        val exactDistance = slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::distanceMeters)
+        val exactDuration = slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::durationSeconds)
+        val exactPairedDistance =
+            slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::pairedDistanceMeters)
+        val exactPairedDuration =
+            slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::pairedDurationSeconds)
+        val exactHeartRateDuration =
+            slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::heartRateDurationSeconds)
+        val exactHeartRateBeats =
+            slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::heartRateBeatsSeconds)
         return LocalStatsReadModel(
             weeks = weeks.sortedWith(compareBy(LocalWeekStatsReadModel::startEpochDay, LocalWeekStatsReadModel::weekOrdinal)),
             profileExists = slice.profileExists,
             recordedTotals = totals,
-            totalRuns = recordedEvidence.size,
-            totalDistanceMeters = recordedEvidence.sumOf { it.distanceMeters ?: 0 },
-            totalDurationSeconds = recordedEvidence.sumOf { it.durationSeconds ?: 0 },
-            longestRunMeters = recordedEvidence.mapNotNull(RecordedStatsEvidence::distanceMeters).maxOrNull(),
-            weightedPaceSecondsPerKilometre = paired
-                .takeIf { it.isNotEmpty() }
-                ?.let { rows -> rows.sumOf { requireNotNull(it.durationSeconds) }.toDouble() * 1_000 / rows.sumOf { requireNotNull(it.distanceMeters) } },
-            durationWeightedHeartRateBpm = heartRate
-                .takeIf { it.isNotEmpty() }
-                ?.let { rows ->
+            totalRuns = if (slice.recordedAggregates.isNotEmpty()) {
+                exactRuns.toSurfaceInt("total run count")
+            } else {
+                recordedEvidence.size
+            },
+            totalDistanceMeters = if (slice.recordedAggregates.isNotEmpty()) {
+                exactDistance.toSurfaceInt("total distance")
+            } else {
+                recordedEvidence.sumOf { it.distanceMeters ?: 0 }
+            },
+            totalDurationSeconds = if (slice.recordedAggregates.isNotEmpty()) {
+                exactDuration.toSurfaceInt("total duration")
+            } else {
+                recordedEvidence.sumOf { it.durationSeconds ?: 0 }
+            },
+            longestRunMeters = if (slice.recordedAggregates.isNotEmpty()) {
+                slice.recordedAggregates.mapNotNull(LocalRecordedAggregateLedgerRow::longestRunMeters)
+                    .maxOrNull()
+            } else {
+                recordedEvidence.mapNotNull(RecordedStatsEvidence::distanceMeters).maxOrNull()
+            },
+            weightedPaceSecondsPerKilometre = if (slice.recordedAggregates.isNotEmpty()) {
+                if (exactPairedDistance > 0 && exactPairedDuration > 0) {
+                    exactPairedDuration.toDouble() * 1_000 / exactPairedDistance
+                } else {
+                    null
+                }
+            } else {
+                paired.takeIf { it.isNotEmpty() }?.let { rows ->
+                    rows.sumOf { requireNotNull(it.durationSeconds) }.toDouble() * 1_000 /
+                        rows.sumOf { requireNotNull(it.distanceMeters) }
+                }
+            },
+            durationWeightedHeartRateBpm = if (slice.recordedAggregates.isNotEmpty()) {
+                if (exactHeartRateDuration > 0) {
+                    (exactHeartRateBeats.toDouble() / exactHeartRateDuration).roundToInt()
+                } else {
+                    null
+                }
+            } else {
+                heartRate.takeIf { it.isNotEmpty() }?.let { rows ->
                     val seconds = rows.sumOf { requireNotNull(it.durationSeconds) }
-                    (rows.sumOf { requireNotNull(it.averageHeartRateBpm).toLong() * requireNotNull(it.durationSeconds) }.toDouble() / seconds).roundToInt()
-                },
-            isComplete = !slice.hasMorePlans && !slice.hasMoreActivities,
+                    (
+                        rows.sumOf {
+                            requireNotNull(it.averageHeartRateBpm).toLong() *
+                                requireNotNull(it.durationSeconds)
+                        }.toDouble() / seconds
+                        ).roundToInt()
+                }
+            },
+            isComplete = slice.recordedAggregates.isNotEmpty() ||
+                (!slice.hasMorePlans && !slice.hasMoreActivities),
             currentSignal = slice.plans
                 .firstOrNull { it.plan.state == "active" }
                 ?.let {
@@ -972,6 +1147,9 @@ object LocalSurfaceMappers {
         )
         val assignedUnlinkedActivityIds =
             unlinkedAssignments.mapTo(mutableSetOf()) { it.activity.activity.activityId }
+        val exactWeekActuals = slice.weekActualAggregates.associateBy {
+            it.planId to it.weekId
+        }
         val plans = slice.plans.map { plan ->
             val workoutIds = plan.workouts.mapTo(mutableSetOf(), WorkoutEntity::workoutId)
             val linked = accepted.filter { it.activity.linkedWorkoutId in workoutIds }
@@ -990,6 +1168,7 @@ object LocalSurfaceMappers {
                 }
                 val extraActivities =
                     unlinkedByPlanWeek[plan.plan.planId to week.weekId].orEmpty()
+                val exactActual = exactWeekActuals[plan.plan.planId to week.weekId]
                 val workoutRows = weekWorkouts.map { workout ->
                     val linkedResult = linkedByWorkout[workout.workoutId]?.singleOrNull()
                     val directResult = feedbackByWorkout[workout.workoutId]
@@ -1049,7 +1228,12 @@ object LocalSurfaceMappers {
                             it.currentDistanceMeters to it.currentDurationSeconds
                         },
                     ),
-                    actual = loads(
+                    actual = exactActual?.let {
+                        LocalLoadReadModel(
+                            it.distanceMeters.toSurfaceInt("history week distance"),
+                            it.durationSeconds.toSurfaceInt("history week duration"),
+                        )
+                    } ?: loads(
                         workoutRows.mapNotNull { workout ->
                             workout.result?.let {
                                 it.distanceMeters to it.durationSeconds
@@ -1063,11 +1247,17 @@ object LocalSurfaceMappers {
                     isTaperWeek = week.isTaperWeek,
                     workouts = workoutRows,
                     extraActivities = extraActivities.map(::activity),
+                    extraActivityContextIsComplete =
+                        exactActual == null ||
+                            exactActual.unlinkedRuns == extraActivities.size.toLong(),
                 )
             }
             val planExtraActivities = unlinkedAssignments
                 .filter { it.plan.plan.planId == plan.plan.planId }
                 .map(AcceptedWeekAssignment::activity)
+            val exactPlanActuals = plan.weeks.mapNotNull {
+                exactWeekActuals[plan.plan.planId to it.weekId]
+            }
             val workoutCompleted: (WorkoutEntity) -> Boolean = { workout ->
                 workout.currentStatus in setOf("done", "shortened", "completed", "overrun") ||
                     linked.any { row -> row.activity.linkedWorkoutId == workout.workoutId } ||
@@ -1100,14 +1290,33 @@ object LocalSurfaceMappers {
                 },
                 completedRuns = plan.workouts.count {
                     it.currentWorkoutType != "rest" && workoutCompleted(it)
-                } + planExtraActivities.size,
-                actual = loads(
-                    linked.map { it.activity.distanceMeters to it.activity.durationSeconds } +
-                        direct.map { it.completedDistanceMeters to it.completedDurationSeconds } +
-                        planExtraActivities.map {
-                            it.activity.distanceMeters to it.activity.durationSeconds
-                        },
-                ),
+                } + (
+                    exactPlanActuals
+                        .sumOf(LocalWeekActualAggregateLedgerRow::unlinkedRuns)
+                        .takeIf { exactPlanActuals.isNotEmpty() }
+                        ?.toSurfaceInt("history plan unlinked run count")
+                        ?: planExtraActivities.size
+                    ),
+                actual = if (exactPlanActuals.isNotEmpty()) {
+                    LocalLoadReadModel(
+                        exactPlanActuals
+                            .sumOf(LocalWeekActualAggregateLedgerRow::distanceMeters)
+                            .toSurfaceInt("history plan distance"),
+                        exactPlanActuals
+                            .sumOf(LocalWeekActualAggregateLedgerRow::durationSeconds)
+                            .toSurfaceInt("history plan duration"),
+                    )
+                } else {
+                    loads(
+                        linked.map { it.activity.distanceMeters to it.activity.durationSeconds } +
+                            direct.map {
+                                it.completedDistanceMeters to it.completedDurationSeconds
+                            } +
+                            planExtraActivities.map {
+                                it.activity.distanceMeters to it.activity.durationSeconds
+                            },
+                    )
+                },
                 lifecycle = plan.lifecycle.sortedByDescending { it.occurredAtEpochMillis }.map(::lifecycle),
                 adjustments = plan.historyAdjustments
                     .map { row ->
@@ -1156,12 +1365,17 @@ object LocalSurfaceMappers {
                         !workoutCompleted(it) &&
                         it.currentStatus == "skipped"
                 },
-                painFlags =
+                painFlags = if (exactPlanActuals.isNotEmpty()) {
+                    exactPlanActuals
+                        .sumOf(LocalWeekActualAggregateLedgerRow::painFlags)
+                        .toSurfaceInt("history plan pain flag count")
+                } else {
                     linked.mapNotNull(LocalActivityLedgerSlice::feedback)
                         .count(ActivityFeedbackEntity::pain) +
                         direct.count(WorkoutFeedbackEntity::pain) +
                         planExtraActivities.mapNotNull(LocalActivityLedgerSlice::feedback)
-                            .count(ActivityFeedbackEntity::pain),
+                            .count(ActivityFeedbackEntity::pain)
+                },
             )
         }
         return LocalHistoryReadModel(
@@ -1176,6 +1390,8 @@ object LocalSurfaceMappers {
                 .map(::activity),
             hasMorePlans = slice.hasMorePlans,
             hasMoreActivities = slice.hasMoreActivities,
+            nextPlanOffset = slice.nextPlanOffset,
+            nextActivityOffset = slice.nextActivityOffset,
             timeZone = slice.timeZone,
             todayEpochDay = slice.todayEpochDay,
             phaseReview = slice.phaseReview,
@@ -1615,6 +1831,13 @@ object LocalSurfaceMappers {
         "repeat_prescription" -> "repeat the prescription"
         "rebalance_week" -> "rebalance the week"
         else -> value.replace('_', ' ')
+    }
+
+    private fun Long.toSurfaceInt(label: String): Int {
+        require(this in Int.MIN_VALUE..Int.MAX_VALUE) {
+            "$label exceeds the current local surface range."
+        }
+        return toInt()
     }
 
     private fun knownRisk(value: String): Boolean =

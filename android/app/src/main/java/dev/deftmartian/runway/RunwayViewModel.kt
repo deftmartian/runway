@@ -37,6 +37,7 @@ import dev.deftmartian.runway.data.SexForEstimate
 import dev.deftmartian.runway.data.HeartRateSettingsSource
 import dev.deftmartian.runway.data.LocalHeartRateProfile
 import dev.deftmartian.runway.data.LocalHealthContext
+import dev.deftmartian.runway.data.LocalInboxPagingCursor
 import dev.deftmartian.runway.domain.PlanDecision
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectPendingResolutionResult
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectDuplicateDecision
@@ -178,12 +179,8 @@ internal class RunwayViewModel(
         ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
         ?: YearMonth.now()
     private var calendarMonthWasSelected = savedStateHandle.contains(SAVED_CALENDAR_MONTH)
-    private var historyPlanLimit = savedStateHandle.get<Int>(SAVED_HISTORY_LIMIT)
-        ?.coerceIn(HISTORY_PAGE_SIZE, MAX_HISTORY_PLANS)
-        ?: HISTORY_PAGE_SIZE
-    private var inboxActivityLimit = savedStateHandle.get<Int>(SAVED_INBOX_LIMIT)
-        ?.coerceIn(INBOX_PAGE_SIZE, MAX_INBOX_ACTIVITIES)
-        ?: INBOX_PAGE_SIZE
+    private var historyPlanOffset = 0
+    private var historyActivityOffset = 0
     private var loadGeneration = 0L
     private var surfaceLoadJob: Job? = null
     private var history: LocalHistoryReadModel? = null
@@ -205,6 +202,14 @@ internal class RunwayViewModel(
     fun selectDestination(destination: NativeDestination) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         if (ready.destination == destination && ready.surface.hasContent) return
+        if (
+            destination == NativeDestination.History &&
+            ready.destination == NativeDestination.HistoryDetail
+        ) {
+            historyPlanOffset = 0
+            historyActivityOffset = 0
+            history = null
+        }
         savedStateHandle[SAVED_DESTINATION] = destination.name
         if (destination != NativeDestination.HistoryDetail) {
             savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
@@ -238,18 +243,15 @@ internal class RunwayViewModel(
     fun loadMoreHistory() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         val payload = (ready.surface as? NativeSurface.History)?.payload ?: return
-        if (payload.history?.nextOffset == null || ready.loading) return
-        if (historyPlanLimit >= MAX_HISTORY_PLANS) {
-            mutableState.value = ready.copy(
-                notice = NativeNotice(
-                    "The oldest plans are outside this on-device history window.",
-                    isError = true,
-                ),
-            )
+        val page = payload.history ?: return
+        if (
+            (page.nextOffset == null && page.nextActivityOffset == null) ||
+            ready.loading
+        ) {
             return
         }
-        historyPlanLimit = (historyPlanLimit + HISTORY_PAGE_SIZE).coerceAtMost(MAX_HISTORY_PLANS)
-        savedStateHandle[SAVED_HISTORY_LIMIT] = historyPlanLimit
+        page.nextOffset?.let { historyPlanOffset = it }
+        page.nextActivityOffset?.let { historyActivityOffset = it }
         mutableState.value = ready.copy(loading = true, notice = null)
         load(NativeDestination.History)
     }
@@ -257,35 +259,23 @@ internal class RunwayViewModel(
     fun loadMoreInbox() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         val payload = (ready.surface as? NativeSurface.Inbox)?.payload ?: return
+        val nextPage = payload.nextPage ?: return
         if (!payload.hasMore || ready.loading) return
-        if (inboxActivityLimit >= MAX_INBOX_ACTIVITIES) {
-            mutableState.value = ready.copy(
-                notice = NativeNotice(
-                    "The oldest Inbox items are outside this on-device window.",
-                    isError = true,
-                ),
-            )
-            return
-        }
-        inboxActivityLimit = (inboxActivityLimit + INBOX_PAGE_SIZE)
-            .coerceAtMost(MAX_INBOX_ACTIVITIES)
-        savedStateHandle[SAVED_INBOX_LIMIT] = inboxActivityLimit
         mutableState.value = ready.copy(loading = true, notice = null)
-        load(NativeDestination.Inbox)
+        load(NativeDestination.Inbox, inboxPagingCursor = nextPage, appendInbox = true)
     }
 
     fun openHistoryDetail(planId: String) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         val detail = history?.let { surfaceLoader.cachedHistoryDetail(it, planId) }
-        if (detail != null) {
-            savedStateHandle[SAVED_DESTINATION] = NativeDestination.HistoryDetail.name
-            savedStateHandle[SAVED_HISTORY_PLAN_ID] = planId
-        }
+        savedStateHandle[SAVED_DESTINATION] = NativeDestination.HistoryDetail.name
+        savedStateHandle[SAVED_HISTORY_PLAN_ID] = planId
         mutableState.value = ready.copy(
-            surface = detail ?: ready.surface,
-            loading = false,
-            notice = if (detail == null) NativeNotice("That local plan record is no longer available.", true) else null,
+            surface = detail ?: NativeSurface.HistoryDetail(null),
+            loading = true,
+            notice = null,
         )
+        load(NativeDestination.HistoryDetail)
     }
 
     fun loadActivityTrace(activityId: String) {
@@ -341,6 +331,11 @@ internal class RunwayViewModel(
     fun refresh() {
         val destination = (mutableState.value as? RunwayUiState.Ready)?.destination
             ?: restoredDestination()
+        if (destination == NativeDestination.History) {
+            historyPlanOffset = 0
+            historyActivityOffset = 0
+            history = null
+        }
         load(destination)
     }
 
@@ -1334,7 +1329,11 @@ internal class RunwayViewModel(
         ).joinToString(" · ").ifBlank { "Planned run" }
     }
 
-    private fun load(destination: NativeDestination) {
+    private fun load(
+        destination: NativeDestination,
+        inboxPagingCursor: LocalInboxPagingCursor = LocalInboxPagingCursor(),
+        appendInbox: Boolean = false,
+    ) {
         val generation = ++loadGeneration
         val previous = mutableState.value as? RunwayUiState.Ready
         if (previous != null) {
@@ -1351,8 +1350,10 @@ internal class RunwayViewModel(
                         historyPlanId = savedStateHandle[SAVED_HISTORY_PLAN_ID],
                         previousHistoryDetail =
                             previous?.surface as? NativeSurface.HistoryDetail,
-                        historyPlanLimit = historyPlanLimit,
-                        inboxActivityLimit = inboxActivityLimit,
+                        historyPlanOffset = historyPlanOffset,
+                        historyActivityOffset = historyActivityOffset,
+                        previousHistory = history,
+                        inboxPagingCursor = inboxPagingCursor,
                     ),
                 )
                 val checkedNow = !retentionRepairChecked
@@ -1378,7 +1379,9 @@ internal class RunwayViewModel(
                 loaded.history?.let { history = it }
                 savedStateHandle[SAVED_DESTINATION] = loaded.surface.destination.name
                 val current = mutableState.value as? RunwayUiState.Ready
-                val loadedSurface = loaded.surface.withRetentionRepair(retentionRepair)
+                val loadedSurface = loaded.surface.withRetentionRepair(retentionRepair).let { surface ->
+                    if (appendInbox) appendInboxSurface(previous?.surface, surface) else surface
+                }
                 val merged = mergeLoadedSurface(current, previous, loadedSurface)
                 mutableState.value = if (!checkedNow || persistedRepair == null) {
                     merged
@@ -1458,13 +1461,7 @@ internal class RunwayViewModel(
         const val SAVED_DESTINATION = "runway.destination"
         const val SAVED_HISTORY_PLAN_ID = "runway.history.plan-id"
         const val SAVED_CALENDAR_MONTH = "runway.calendar.month"
-        const val SAVED_HISTORY_LIMIT = "runway.history.limit"
-        const val SAVED_INBOX_LIMIT = "runway.inbox.limit"
         const val SAVED_RESTART_AFTER_RESTORE = "runway.restore.restart-required"
-        const val HISTORY_PAGE_SIZE = 50
-        const val INBOX_PAGE_SIZE = 50
-        const val MAX_HISTORY_PLANS = 400
-        const val MAX_INBOX_ACTIVITIES = 1_000
     }
 }
 
@@ -1544,3 +1541,21 @@ internal fun mergeLoadedSurface(
         surface = surface,
         loading = false,
     )
+
+internal fun appendInboxSurface(previous: NativeSurface?, page: NativeSurface): NativeSurface {
+    val existing = previous as? NativeSurface.Inbox ?: return page
+    val incoming = page as? NativeSurface.Inbox ?: return page
+    val before = existing.payload ?: return page
+    val next = incoming.payload ?: return page
+    return NativeSurface.Inbox(
+        before.copy(
+            candidates = (before.candidates + next.candidates).distinctBy(NativeWorkout::id),
+            activities = (before.activities + next.activities).distinctBy(NativeActivity::id),
+            workoutDecisions = (before.workoutDecisions + next.workoutDecisions).distinctBy(NativeWorkoutFeedback::id),
+            healthConnectChanges = (before.healthConnectChanges + next.healthConnectChanges)
+                .distinctBy(NativeHealthConnectChange::mappingId),
+            hasMore = next.hasMore,
+            nextPage = next.nextPage,
+        ),
+    )
+}

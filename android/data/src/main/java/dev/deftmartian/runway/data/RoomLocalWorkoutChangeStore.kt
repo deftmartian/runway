@@ -144,7 +144,7 @@ class RoomLocalWorkoutChangeStore(
 
         fun storedReferences(workoutId: String, version: String): List<StoredWorkoutSourceReference> =
             referencesByWorkoutAndVersion[workoutId to version].orEmpty().map {
-                StoredWorkoutSourceReference(it.sourceName, it.sourceUrl, it.sourceLocator)
+                StoredWorkoutSourceReference(it.sourceName, it.sourceLocator)
             }
 
         return workouts.map { workout ->
@@ -177,7 +177,7 @@ class RoomLocalWorkoutChangeStore(
 
     private suspend fun references(effectId: String, state: String): List<StoredWorkoutSourceReference> =
         database.adjustmentDao().effectSourceReferenceSnapshots(effectId, state, MAX_REFERENCES).map {
-            StoredWorkoutSourceReference(it.sourceName, it.sourceUrl, it.sourceLocator)
+            StoredWorkoutSourceReference(it.sourceName, it.sourceLocator)
         }
 
     private suspend fun replaceVersion(

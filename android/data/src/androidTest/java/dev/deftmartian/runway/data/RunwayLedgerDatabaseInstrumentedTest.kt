@@ -171,7 +171,7 @@ class RunwayLedgerDatabaseInstrumentedTest {
             }.isFailure,
         )
         database.goalPlanDao().savePlanSourceReference(
-            PlanSourceReferenceEntity("plan-source-1", plan.planId, 0, "NHS Couch to 5K", "https://example.test/source", "week 1"),
+            PlanSourceReferenceEntity("plan-source-1", plan.planId, 0, "NHS Couch to 5K", "week 1"),
         )
         database.goalPlanDao().saveLifecycleEvent(
             PlanLifecycleEventEntity("lifecycle-1", plan.planId, "created", now, 0, 0, null),
@@ -183,7 +183,7 @@ class RunwayLedgerDatabaseInstrumentedTest {
             WorkoutSegmentEntity("segment-1", "block-1", 0, "run", null, 300),
         )
         database.goalPlanDao().saveWorkoutSourceReference(
-            WorkoutSourceReferenceEntity("workout-source-1", workout.workoutId, "current", 0, "Plan source", null, "week 1"),
+            WorkoutSourceReferenceEntity("workout-source-1", workout.workoutId, "current", 0, "Plan source", "week 1"),
         )
 
         val activity = ActivityEntity(

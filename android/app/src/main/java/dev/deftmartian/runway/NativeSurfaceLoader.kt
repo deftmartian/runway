@@ -4,6 +4,7 @@ import android.app.Application
 import dev.deftmartian.runway.data.LocalCalendarReadModel
 import dev.deftmartian.runway.data.LocalHistoryReadModel
 import dev.deftmartian.runway.data.LocalInboxReadModel
+import dev.deftmartian.runway.data.LocalInboxPagingCursor
 import dev.deftmartian.runway.data.LocalSettingsReadModel
 import dev.deftmartian.runway.data.LocalStatsReadModel
 import kotlinx.coroutines.CancellationException
@@ -19,8 +20,10 @@ internal data class SurfaceLoadRequest(
     val calendarMonthWasSelected: Boolean,
     val historyPlanId: String?,
     val previousHistoryDetail: NativeSurface.HistoryDetail?,
-    val historyPlanLimit: Int,
-    val inboxActivityLimit: Int,
+    val historyPlanOffset: Int,
+    val historyActivityOffset: Int,
+    val previousHistory: LocalHistoryReadModel?,
+    val inboxPagingCursor: LocalInboxPagingCursor = LocalInboxPagingCursor(),
 )
 
 internal data class SurfaceLoadResult(
@@ -50,7 +53,7 @@ internal class NativeSurfaceLoader(
             when (request.destination) {
                 NativeDestination.Calendar -> loadCalendar(request)
                 NativeDestination.Inbox -> SurfaceLoadResult(
-                    NativeSurface.Inbox(reads.inbox(request.inboxActivityLimit).toNativeInbox()),
+                    NativeSurface.Inbox(reads.inbox(request.inboxPagingCursor).toNativeInbox()),
                     request.calendarMonth,
                 )
                 NativeDestination.Stats -> SurfaceLoadResult(
@@ -58,7 +61,17 @@ internal class NativeSurfaceLoader(
                     request.calendarMonth,
                 )
                 NativeDestination.History -> {
-                    val history = reads.history(request.historyPlanLimit)
+                    val page = reads.history(
+                        request.historyPlanOffset,
+                        request.historyActivityOffset,
+                    )
+                    val history = request.previousHistory
+                        ?.takeIf {
+                            request.historyPlanOffset > 0 ||
+                                request.historyActivityOffset > 0
+                        }
+                        ?.merge(page)
+                        ?: page
                     SurfaceLoadResult(
                         NativeSurface.History(history.toNativeHistory()),
                         request.calendarMonth,
@@ -130,7 +143,8 @@ internal class NativeSurfaceLoader(
                 request.calendarMonth,
             )
         }
-        val history = reads.history(request.historyPlanLimit)
+        val history = reads.historyPlan(planId)
+            ?: error("That local plan record is no longer available.")
         val item = history.plans.firstOrNull { it.planId == planId }
             ?: error("That local plan record is no longer available.")
         return SurfaceLoadResult(
@@ -149,9 +163,10 @@ internal class NativeSurfaceLoader(
 internal interface NativeSurfaceReads {
     suspend fun profileTimeZone(): String?
     suspend fun calendar(month: YearMonth): LocalCalendarReadModel
-    suspend fun inbox(limit: Int): LocalInboxReadModel
+    suspend fun inbox(cursor: LocalInboxPagingCursor): LocalInboxReadModel
     suspend fun stats(): LocalStatsReadModel
-    suspend fun history(limit: Int): LocalHistoryReadModel
+    suspend fun history(planOffset: Int, activityOffset: Int): LocalHistoryReadModel
+    suspend fun historyPlan(planId: String): LocalHistoryReadModel?
     suspend fun settings(): LocalSettingsReadModel
     fun folderImportStatus(): NativeImportConnection
     suspend fun healthConnectStatus(pendingChangeCount: Int): NativeImportConnection
@@ -172,12 +187,17 @@ private class RunwayNativeSurfaceReads(
             month.atEndOfMonth().toEpochDay(),
         )
 
-    override suspend fun inbox(limit: Int): LocalInboxReadModel = services.surfaces.inbox(limit)
+    override suspend fun inbox(cursor: LocalInboxPagingCursor): LocalInboxReadModel = services.surfaces.inbox(cursor)
 
     override suspend fun stats(): LocalStatsReadModel = services.surfaces.stats()
 
-    override suspend fun history(limit: Int): LocalHistoryReadModel =
-        services.surfaces.history(limit)
+    override suspend fun history(
+        planOffset: Int,
+        activityOffset: Int,
+    ): LocalHistoryReadModel = services.surfaces.history(planOffset, activityOffset)
+
+    override suspend fun historyPlan(planId: String): LocalHistoryReadModel? =
+        services.surfaces.historyPlan(planId)
 
     override suspend fun settings(): LocalSettingsReadModel = services.surfaces.settings()
 
@@ -218,3 +238,11 @@ private class RunwayNativeSurfaceReads(
         }
     }
 }
+
+private fun LocalHistoryReadModel.merge(
+    page: LocalHistoryReadModel,
+): LocalHistoryReadModel = page.copy(
+    plans = (plans + page.plans).distinctBy { it.planId },
+    unlinkedActivities = (unlinkedActivities + page.unlinkedActivities)
+        .distinctBy { it.activityId },
+)

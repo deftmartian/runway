@@ -187,7 +187,6 @@ data class PlanSourceReferenceEntity(
     val planId: String,
     val ordinal: Int,
     val sourceName: String,
-    val sourceUrl: String?,
     val sourceLocator: String?,
 )
 
@@ -324,7 +323,6 @@ data class WorkoutSourceReferenceEntity(
     val prescriptionVersion: String,
     val ordinal: Int,
     val sourceName: String,
-    val sourceUrl: String?,
     val sourceLocator: String?,
 )
 
@@ -735,7 +733,6 @@ data class AdjustmentEffectSourceReferenceSnapshotEntity(
     val snapshotState: String,
     val ordinal: Int,
     val sourceName: String,
-    val sourceUrl: String?,
     val sourceLocator: String?,
 )
 

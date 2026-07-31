@@ -155,7 +155,6 @@ object GeneratedPlanPersistenceMapper {
                     planId = metadata.planId,
                     ordinal = ordinal,
                     sourceName = source,
-                    sourceUrl = null,
                     sourceLocator = source,
                 )
             },
@@ -168,7 +167,6 @@ object GeneratedPlanPersistenceMapper {
                             prescriptionVersion = version,
                             ordinal = ordinal,
                             sourceName = source,
-                            sourceUrl = null,
                             sourceLocator = source,
                         )
                     }

@@ -24,7 +24,6 @@ private const val AFTER = "after"
 
 data class StoredWorkoutSourceReference(
     val sourceName: String,
-    val sourceUrl: String?,
     val sourceLocator: String?,
 )
 
@@ -620,7 +619,7 @@ object LocalWorkoutChangeMapper {
         proposal.sourceRefs.map { locator ->
             existing.firstOrNull {
                 it.sourceLocator == locator || it.sourceName == locator
-            } ?: StoredWorkoutSourceReference(locator, null, locator)
+            } ?: StoredWorkoutSourceReference(locator, locator)
         }
 
     private inline fun <reified T : Enum<T>> enumValue(value: String?): T =
@@ -875,7 +874,6 @@ class LocalWorkoutChangePersistenceMapper(
                 prescriptionVersion = version,
                 ordinal = ordinal,
                 sourceName = source.sourceName,
-                sourceUrl = source.sourceUrl,
                 sourceLocator = source.sourceLocator,
             )
         }
@@ -954,7 +952,6 @@ class LocalWorkoutChangePersistenceMapper(
                 snapshotState = state,
                 ordinal = ordinal,
                 sourceName = reference.sourceName,
-                sourceUrl = reference.sourceUrl,
                 sourceLocator = reference.sourceLocator,
             )
         }

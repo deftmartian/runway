@@ -300,6 +300,170 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
     }
 
     @Test
+    fun inboxKeysetPagesCrossTheFormerThousandItemWindowWithoutDuplicates() = runBlocking {
+        val ids = (0..1_000).map { index -> "review-${index.toString().padStart(4, '0')}" }
+        ids.forEach { id ->
+            database.activityLedgerDao().saveActivity(activity(id, occurredAt = 1, reviewState = "review"))
+        }
+        val reader = RoomLocalSurfaceLedgerReader(database)
+        val limits = LocalSurfaceReadLimits(inboxActivities = 50)
+        var cursor = LocalInboxPagingCursor()
+        val seen = mutableListOf<String>()
+        do {
+            val page = reader.inboxPage(limits, cursor)
+            seen += page.activities.map { it.activity.activityId }
+            cursor = page.nextPage ?: break
+        } while (true)
+
+        assertEquals(ids.size, reader.calendar(0, 30, limits).pendingDecisionCount)
+        assertEquals(ids.size, seen.size)
+        assertEquals(ids.size, seen.distinct().size)
+        assertEquals(ids.sortedDescending(), seen)
+    }
+
+    @Test
+    fun statsAggregatesRemainExactBeyondTheFormerActivityWindowAndOnRerun() = runBlocking {
+        repeat(513) { index ->
+            database.activityLedgerDao().saveActivity(
+                activity(
+                    id = "accepted-${index.toString().padStart(3, '0')}",
+                    occurredAt = index.toLong(),
+                ),
+            )
+        }
+        val reader = RoomLocalSurfaceLedgerReader(database)
+        val limits = LocalSurfaceReadLimits(statsActivities = 1)
+
+        val first = LocalSurfaceMappers.stats(reader.stats(limits))
+        val rerun = LocalSurfaceMappers.stats(reader.stats(limits))
+
+        assertTrue(first.isComplete)
+        assertEquals(513, first.totalRuns)
+        assertEquals(513 * 2_000, first.totalDistanceMeters)
+        assertEquals(513 * 900, first.totalDurationSeconds)
+        assertEquals(first, rerun)
+    }
+
+    @Test
+    fun historyPagesPastFiftyPlansAndKeepsOldLinkedResultsIndependentOfActivityPage() =
+        runBlocking {
+            database.profileSettingsDao().save(profile())
+            repeat(51) { index ->
+                val suffix = index.toString().padStart(3, '0')
+                val goal = GoalEntity(
+                    goalId = "history-goal-$suffix",
+                    title = "Goal $suffix",
+                    targetDateEpochDay = null,
+                    state = "archived",
+                    createdAtEpochMillis = index.toLong(),
+                    updatedAtEpochMillis = index.toLong(),
+                    kind = "distance",
+                    startMode = "established",
+                    raceDistanceMeters = null,
+                    priority = "finish_healthy",
+                )
+                val plan = PlanEntity(
+                    planId = "history-plan-$suffix",
+                    goalId = goal.goalId,
+                    phaseType = "distance",
+                    state = "archived",
+                    startEpochDay = index * 10L,
+                    endEpochDay = index * 10L + 6,
+                    createdAtEpochMillis = index.toLong(),
+                    updatedAtEpochMillis = index.toLong(),
+                    archivedAtEpochMillis = index.toLong(),
+                )
+                val week = PlanWeekEntity(
+                    weekId = "history-week-$suffix",
+                    planId = plan.planId,
+                    ordinal = 1,
+                    startEpochDay = plan.startEpochDay,
+                    generatedLoadMeters = 2_000,
+                )
+                val workout = workout(
+                    id = "history-workout-$suffix",
+                    planId = plan.planId,
+                    weekId = week.weekId,
+                    day = plan.startEpochDay,
+                )
+                database.goalPlanDao().saveGoal(goal)
+                database.goalPlanDao().createPlanGraph(plan, listOf(week), listOf(workout))
+                if (index == 0) {
+                    database.activityLedgerDao().saveActivity(
+                        activity(
+                            id = "old-linked-result",
+                            occurredAt = epochMillisAtDay(plan.startEpochDay),
+                            linkedWorkoutId = workout.workoutId,
+                        ),
+                    )
+                    database.activityLedgerDao().saveActivity(
+                        activity(
+                            id = "old-plan-extra",
+                            occurredAt = epochMillisAtDay(plan.startEpochDay + 1),
+                        ),
+                    )
+                }
+            }
+            repeat(513) { index ->
+                database.activityLedgerDao().saveActivity(
+                    activity(
+                        id = "outside-$index",
+                        occurredAt = epochMillisAtDay(10_000 + index.toLong()),
+                    ),
+                )
+            }
+            val reader = RoomLocalSurfaceLedgerReader(database)
+            val limits = LocalSurfaceReadLimits(historyPlans = 50, historyActivities = 512)
+
+            val firstPage = reader.history(limits)
+            val olderPage = reader.history(
+                limits = limits,
+                planOffset = requireNotNull(firstPage.nextPlanOffset),
+                activityOffset = requireNotNull(firstPage.nextActivityOffset),
+            )
+            val rerun = reader.history(
+                limits = limits,
+                planOffset = 50,
+                activityOffset = 512,
+            )
+            val mapped = LocalSurfaceMappers.history(olderPage)
+            val detail = LocalSurfaceMappers.history(
+                requireNotNull(reader.historyPlan("history-plan-000", limits)),
+            )
+
+            assertEquals(50, firstPage.plans.size)
+            assertEquals(listOf("history-plan-000"), olderPage.plans.map { it.plan.planId })
+            assertEquals(
+                "old-linked-result",
+                olderPage.activities.single { it.activity.linkedWorkoutId != null }
+                    .activity.activityId,
+            )
+            assertTrue(
+                mapped.plans.single().weeks.single().workouts.single().result != null,
+            )
+            assertEquals(1, mapped.unlinkedActivities.size)
+            assertTrue(
+                mapped.unlinkedActivities.none { it.activityId == "old-plan-extra" },
+            )
+            assertEquals(
+                listOf("old-plan-extra"),
+                detail.plans.single().weeks.single().extraActivities
+                    .map { it.activityId },
+            )
+            assertTrue(
+                detail.plans.single().weeks.single().extraActivityContextIsComplete,
+            )
+            assertEquals(
+                olderPage.plans.map { it.plan.planId },
+                rerun.plans.map { it.plan.planId },
+            )
+            assertEquals(
+                olderPage.activities.map { it.activity.activityId },
+                rerun.activities.map { it.activity.activityId },
+            )
+        }
+
+    @Test
     fun settingsExposeOnePendingGoalForAnExplicitReplacementJourney() = runBlocking {
         database.profileSettingsDao().save(profile())
         database.goalPlanDao().saveGoal(

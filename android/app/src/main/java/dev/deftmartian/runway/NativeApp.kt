@@ -199,7 +199,12 @@ private fun NativeProductShell(
                     state.notice?.let { Notice(it.message, it.isError) }
                     when (val surface = state.surface) {
                         is NativeSurface.Setup ->
-                            SetupScreen(surface.payload, state.actionPending, onAction)
+                            SetupScreen(
+                                payload = surface.payload,
+                                actionPending = state.actionPending,
+                                onAction = onAction,
+                                onRestoreBackup = onRestoreBackup,
+                            )
                         is NativeSurface.Calendar -> CalendarScreen(
                             payload = surface.payload,
                             loading = state.loading,

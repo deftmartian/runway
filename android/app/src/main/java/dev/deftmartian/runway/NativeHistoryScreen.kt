@@ -180,7 +180,7 @@ internal fun HistoryScreen(
                 }
             }
         }
-        if (history?.nextOffset != null) {
+        if (history?.nextOffset != null || history?.nextActivityOffset != null) {
             item {
                 OutlinedButton(
                     onClick = onLoadMore,
@@ -188,7 +188,7 @@ internal fun HistoryScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.small,
                 ) {
-                    Text(if (loading) "Loading…" else "Load earlier plans")
+                    Text(if (loading) "Loading…" else "Load earlier history")
                 }
             }
         }

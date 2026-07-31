@@ -27,8 +27,9 @@ Calendar, Inbox, Stats, History, and Settings keep the current decision, unresol
 
 - GPX files are parsed locally; original input bytes are discarded after intake.
 - GPX and optional read-only Health Connect imports enter the Inbox before they can affect completed totals or future decisions.
-- Fresh profiles discard imported route and heart-rate detail unless private on-device retention is enabled. Switching back to discard permanently clears the corresponding retained and pending import data.
-- Backup and export are explicit plaintext files written to the location chosen in Android's document picker. They can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.
+- A selected GPX folder is scanned when runway returns to the foreground; Android background scans are best-effort, not a continuous folder watch.
+- Route and imported heart-rate retention have separate controls. Fresh profiles discard both; switching either control back to discard permanently clears only that type's retained and pending import data.
+- Backup and export are explicit plaintext files written to the location chosen in Android's document picker. Create a backup before moving to or resetting a phone, then restore it into runway on the replacement device. These files can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.
 
 See [Security and privacy](docs/SECURITY.md) for the full trust boundary and data controls.
 

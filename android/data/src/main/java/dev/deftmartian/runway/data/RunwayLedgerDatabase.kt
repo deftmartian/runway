@@ -63,7 +63,7 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
         const val DATABASE_NAME = "runway-ledger.db"
         const val SCHEMA_VERSION = 3
         /** Room's schema identity for [SCHEMA_VERSION], also recorded in the exported schema JSON. */
-        const val SCHEMA_IDENTITY_HASH = "f895ba21fcf3c915f22e242087c0263b"
+        const val SCHEMA_IDENTITY_HASH = "e07bbca67f5da673e81167f32b14d51a"
 
         fun create(context: Context): RunwayLedgerDatabase = Room.databaseBuilder(
             context.applicationContext,

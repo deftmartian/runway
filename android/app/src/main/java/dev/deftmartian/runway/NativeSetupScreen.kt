@@ -54,6 +54,7 @@ internal fun SetupScreen(
     payload: NativeOnboardingPayload?,
     actionPending: Boolean,
     onAction: (MobileCommand) -> Unit,
+    onRestoreBackup: () -> Unit,
 ) {
     val initial = payload?.initialValues
     var step by rememberSaveable { mutableIntStateOf(goalStep) }
@@ -79,6 +80,7 @@ internal fun SetupScreen(
     var injuryNotes by rememberSaveable { mutableStateOf(initial?.injuryNotes.orEmpty()) }
     var confirmReplace by rememberSaveable { mutableStateOf(false) }
     var confirmConcentrated by rememberSaveable { mutableStateOf(false) }
+    var confirmingRestore by rememberSaveable { mutableStateOf(false) }
     var choosingTargetDate by rememberSaveable { mutableStateOf(false) }
     var choosingTimeZone by rememberSaveable { mutableStateOf(false) }
     var healthContextExpanded by rememberSaveable {
@@ -211,6 +213,17 @@ internal fun SetupScreen(
                             goalIssue?.let { ValidationText(it) }
                             ChoiceRow("Finish healthy", priority == "finish_healthy") { priority = "finish_healthy" }
                             ChoiceRow("Build consistency", priority == "consistency") { priority = "consistency" }
+                        }
+                    }
+                }
+                if (payload?.currentGoal == null) {
+                    item {
+                        TextButton(
+                            onClick = { confirmingRestore = true },
+                            enabled = !actionPending,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Restore a backup instead")
                         }
                     }
                 }
@@ -430,6 +443,15 @@ internal fun SetupScreen(
                 choosingTimeZone = false
             },
         )
+    }
+    if (confirmingRestore) {
+        RestoreBackupDialog(
+            actionPending = actionPending,
+            onDismiss = { confirmingRestore = false },
+        ) {
+            confirmingRestore = false
+            onRestoreBackup()
+        }
     }
 }
 

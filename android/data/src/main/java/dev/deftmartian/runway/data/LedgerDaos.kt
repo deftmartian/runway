@@ -8,6 +8,63 @@ import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
+data class StoredStatsAggregateRow(
+    val provenance: String,
+    val runs: Long,
+    val distanceMeters: Long,
+    val durationSeconds: Long,
+    val longestRunMeters: Int?,
+    val pairedDistanceMeters: Long,
+    val pairedDurationSeconds: Long,
+    val heartRateDurationSeconds: Long,
+    val heartRateBeatsSeconds: Long,
+)
+
+data class StoredLoadAggregateRow(
+    val runs: Long,
+    val distanceMeters: Long,
+    val durationSeconds: Long,
+    val longestRunMeters: Int?,
+    val pairedDistanceMeters: Long,
+    val pairedDurationSeconds: Long,
+    val heartRateDurationSeconds: Long,
+    val heartRateBeatsSeconds: Long,
+    val painFlags: Long,
+    val hardFlags: Long,
+)
+
+data class StoredWeekLoadAggregateRow(
+    val weekId: String,
+    val runs: Long,
+    val distanceMeters: Long,
+    val durationSeconds: Long,
+    val longestRunMeters: Int?,
+    val pairedDistanceMeters: Long,
+    val pairedDurationSeconds: Long,
+    val heartRateDurationSeconds: Long,
+    val heartRateBeatsSeconds: Long,
+    val painFlags: Long,
+    val hardFlags: Long,
+)
+
+data class StoredPlanWeekAssignmentCandidate(
+    val planId: String,
+    val weekId: String,
+    val startEpochDay: Long,
+    val planState: String,
+    val planStartEpochDay: Long,
+)
+
+data class StoredUnlinkedActivityStatsRow(
+    val activityId: String,
+    val occurredAtEpochMillis: Long,
+    val distanceMeters: Int?,
+    val durationSeconds: Int?,
+    val averageHeartRateBpm: Int?,
+    val pain: Boolean?,
+    val feltHard: Boolean?,
+)
+
 @Dao
 interface ProfileSettingsDao {
     @Query("SELECT * FROM profile_settings WHERE singletonId = :singletonId")
@@ -130,8 +187,41 @@ abstract class GoalPlanDao {
     @Query("SELECT * FROM plans WHERE state = :state ORDER BY startEpochDay DESC LIMIT :limit")
     abstract fun observePlansByState(state: String, limit: Int): Flow<List<PlanEntity>>
 
-    @Query("SELECT * FROM plans WHERE state IN (:states) ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
-    abstract suspend fun plansByStates(states: List<String>, limit: Int): List<PlanEntity>
+    @Query(
+        """
+        SELECT * FROM plans
+        WHERE state IN ('completed', 'archived')
+        ORDER BY
+            COALESCE(completedAtEpochMillis, archivedAtEpochMillis, updatedAtEpochMillis) DESC,
+            planId DESC
+        LIMIT :limit OFFSET :offset
+        """,
+    )
+    abstract suspend fun historyPastPlansPage(limit: Int, offset: Int): List<PlanEntity>
+
+    @Query(
+        """
+        SELECT
+            plan_week.planId,
+            plan_week.weekId,
+            plan_week.startEpochDay,
+            stored_plan.state AS planState,
+            stored_plan.startEpochDay AS planStartEpochDay
+        FROM plan_weeks AS plan_week
+        INNER JOIN plans AS stored_plan ON stored_plan.planId = plan_week.planId
+        WHERE stored_plan.state IN ('active', 'completed', 'archived')
+          AND plan_week.startEpochDay <= :throughEpochDay
+          AND (plan_week.startEpochDay + 6) >= :fromEpochDay
+        ORDER BY plan_week.startEpochDay, stored_plan.planId, plan_week.ordinal
+        LIMIT :limit OFFSET :offset
+        """,
+    )
+    abstract suspend fun planWeekAssignmentCandidates(
+        fromEpochDay: Long,
+        throughEpochDay: Long,
+        limit: Int,
+        offset: Int,
+    ): List<StoredPlanWeekAssignmentCandidate>
 
     @Query("SELECT * FROM plans WHERE state = 'active' ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
     abstract suspend fun activePlans(limit: Int): List<PlanEntity>
@@ -352,6 +442,38 @@ interface ActivityLedgerDao {
     @Query("SELECT * FROM activities WHERE reviewState = :reviewState ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     suspend fun activitiesByReviewState(reviewState: String, limit: Int): List<ActivityEntity>
 
+    @Query(
+        """
+        SELECT review_activity.* FROM activities AS review_activity
+        WHERE review_activity.reviewState = 'review'
+          AND NOT EXISTS (
+              SELECT 1 FROM health_connect_mappings AS duplicate_mapping
+              WHERE duplicate_mapping.activityId = review_activity.activityId
+                AND duplicate_mapping.duplicateCandidateActivityId IS NOT NULL
+          )
+          AND (:beforeOccurredAt IS NULL OR review_activity.occurredAtEpochMillis < :beforeOccurredAt
+            OR (review_activity.occurredAtEpochMillis = :beforeOccurredAt
+                AND review_activity.activityId < :beforeActivityId))
+        ORDER BY review_activity.occurredAtEpochMillis DESC, review_activity.activityId DESC LIMIT :limit
+        """,
+    )
+    suspend fun actionableReviewActivitiesPage(
+        beforeOccurredAt: Long?, beforeActivityId: String?, limit: Int,
+    ): List<ActivityEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM activities AS review_activity
+        WHERE review_activity.reviewState = 'review'
+          AND NOT EXISTS (
+              SELECT 1 FROM health_connect_mappings AS duplicate_mapping
+              WHERE duplicate_mapping.activityId = review_activity.activityId
+                AND duplicate_mapping.duplicateCandidateActivityId IS NOT NULL
+          )
+        """,
+    )
+    suspend fun actionableReviewActivityCount(): Int
+
     @Query("SELECT COUNT(*) FROM activities WHERE reviewState = :reviewState")
     suspend fun activityCountByReviewState(reviewState: String): Int
 
@@ -453,6 +575,23 @@ interface ActivityLedgerDao {
     )
     suspend fun acceptedUnlinkedExtrasWithPendingPlanChange(limit: Int): List<ActivityEntity>
 
+    @Query(
+        """
+        SELECT activity.*
+        FROM activities AS activity
+        INNER JOIN activity_consequences AS consequence ON consequence.activityId = activity.activityId
+        WHERE activity.reviewState = 'accepted' AND activity.linkedWorkoutId IS NULL
+          AND activity.extraPlanImpactConfirmed = 1 AND consequence.planChangeAvailable = 1
+          AND consequence.appliedDecision IS NULL AND consequence.resolvedAtEpochMillis IS NULL
+          AND (:beforeOccurredAt IS NULL OR activity.occurredAtEpochMillis < :beforeOccurredAt
+            OR (activity.occurredAtEpochMillis = :beforeOccurredAt AND activity.activityId < :beforeActivityId))
+        ORDER BY activity.occurredAtEpochMillis DESC, activity.activityId DESC LIMIT :limit
+        """,
+    )
+    suspend fun acceptedUnlinkedExtrasWithPendingPlanChangePage(
+        beforeOccurredAt: Long?, beforeActivityId: String?, limit: Int,
+    ): List<ActivityEntity>
+
     /** Linked activity outcomes use workout-feedback consequences rather than activity consequences. */
     @Query(
         """
@@ -477,6 +616,26 @@ interface ActivityLedgerDao {
     )
     suspend fun acceptedLinkedActivitiesWithPendingPlanChange(limit: Int): List<ActivityEntity>
 
+    @Query(
+        """
+        SELECT activity.*
+        FROM activities AS activity
+        INNER JOIN workout_feedback AS feedback ON feedback.sourceActivityId = activity.activityId
+        INNER JOIN workout_feedback_consequences AS consequence ON consequence.feedbackId = feedback.feedbackId
+        INNER JOIN workouts AS workout ON workout.workoutId = feedback.workoutId
+        INNER JOIN plans AS active_plan ON active_plan.planId = workout.planId
+        WHERE activity.reviewState = 'accepted' AND activity.linkedWorkoutId IS NOT NULL
+          AND active_plan.state = 'active' AND consequence.planChangeAvailable = 1
+          AND consequence.appliedDecision IS NULL
+          AND (:beforeOccurredAt IS NULL OR activity.occurredAtEpochMillis < :beforeOccurredAt
+            OR (activity.occurredAtEpochMillis = :beforeOccurredAt AND activity.activityId < :beforeActivityId))
+        ORDER BY activity.occurredAtEpochMillis DESC, activity.activityId DESC LIMIT :limit
+        """,
+    )
+    suspend fun acceptedLinkedActivitiesWithPendingPlanChangePage(
+        beforeOccurredAt: Long?, beforeActivityId: String?, limit: Int,
+    ): List<ActivityEntity>
+
     @Query("SELECT * FROM activities WHERE occurredAtEpochMillis >= :fromInclusive AND occurredAtEpochMillis < :toExclusive ORDER BY occurredAtEpochMillis DESC LIMIT :limit")
     suspend fun activitiesInRange(
         fromInclusive: Long,
@@ -491,6 +650,260 @@ interface ActivityLedgerDao {
         limit: Int,
         acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
     ): List<ActivityEntity>
+
+    @Query(
+        """
+        SELECT * FROM activities
+        WHERE reviewState = :acceptedState
+          AND linkedWorkoutId IS NULL
+        ORDER BY occurredAtEpochMillis DESC, activityId DESC
+        LIMIT :limit OFFSET :offset
+        """,
+    )
+    suspend fun acceptedUnlinkedActivitiesPage(
+        limit: Int,
+        offset: Int,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): List<ActivityEntity>
+
+    @Query(
+        """
+        SELECT * FROM activities
+        WHERE reviewState = :acceptedState
+          AND linkedWorkoutId IS NULL
+          AND occurredAtEpochMillis >= :fromInclusive
+          AND occurredAtEpochMillis < :toExclusive
+          AND (
+              occurredAtEpochMillis < :beforeEpochMillis
+              OR (
+                  occurredAtEpochMillis = :beforeEpochMillis
+                  AND activityId < :beforeActivityId
+              )
+          )
+        ORDER BY occurredAtEpochMillis DESC, activityId DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun acceptedUnlinkedActivitiesPageInRange(
+        fromInclusive: Long,
+        toExclusive: Long,
+        beforeEpochMillis: Long,
+        beforeActivityId: String,
+        limit: Int,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): List<ActivityEntity>
+
+    @Query(
+        """
+        SELECT * FROM activities
+        WHERE reviewState = :acceptedState
+          AND linkedWorkoutId IS NULL
+          AND extraPlanImpactConfirmed = 1
+          AND occurredAtEpochMillis >= :fromInclusive
+          AND occurredAtEpochMillis < :toExclusive
+        ORDER BY occurredAtEpochMillis DESC, updatedAtEpochMillis DESC, activityId DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun latestAcceptedUnlinkedExtraInRange(
+        fromInclusive: Long,
+        toExclusive: Long,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): ActivityEntity?
+
+    @Query(
+        """
+        SELECT * FROM activities
+        WHERE reviewState = :acceptedState
+          AND linkedWorkoutId IN (:workoutIds)
+        ORDER BY linkedWorkoutId, occurredAtEpochMillis DESC, activityId DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun acceptedActivitiesLinkedToWorkouts(
+        workoutIds: List<String>,
+        limit: Int,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): List<ActivityEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM activities
+        WHERE reviewState = :acceptedState
+          AND linkedWorkoutId IN (:workoutIds)
+        """,
+    )
+    suspend fun acceptedActivityCountLinkedToWorkouts(
+        workoutIds: List<String>,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): Int
+
+    @Query(
+        """
+        SELECT
+            CASE
+                WHEN activity.linkedWorkoutId IS NULL THEN 'unlinked'
+                ELSE COALESCE(stored_plan.state, 'other')
+            END AS provenance,
+            COUNT(*) AS runs,
+            COALESCE(SUM(COALESCE(activity.distanceMeters, 0)), 0) AS distanceMeters,
+            COALESCE(SUM(COALESCE(activity.durationSeconds, 0)), 0) AS durationSeconds,
+            MAX(activity.distanceMeters) AS longestRunMeters,
+            COALESCE(SUM(CASE
+                WHEN activity.distanceMeters > 0 AND activity.durationSeconds > 0
+                THEN activity.distanceMeters ELSE 0 END), 0) AS pairedDistanceMeters,
+            COALESCE(SUM(CASE
+                WHEN activity.distanceMeters > 0 AND activity.durationSeconds > 0
+                THEN activity.durationSeconds ELSE 0 END), 0) AS pairedDurationSeconds,
+            COALESCE(SUM(CASE
+                WHEN activity.averageHeartRateBpm IS NOT NULL AND activity.durationSeconds > 0
+                THEN activity.durationSeconds ELSE 0 END), 0) AS heartRateDurationSeconds,
+            COALESCE(SUM(CASE
+                WHEN activity.averageHeartRateBpm IS NOT NULL AND activity.durationSeconds > 0
+                THEN CAST(activity.averageHeartRateBpm AS INTEGER) * activity.durationSeconds
+                ELSE 0 END), 0) AS heartRateBeatsSeconds
+        FROM activities AS activity
+        LEFT JOIN workouts AS workout ON workout.workoutId = activity.linkedWorkoutId
+        LEFT JOIN plans AS stored_plan ON stored_plan.planId = workout.planId
+        WHERE activity.reviewState = :acceptedState
+        GROUP BY provenance
+        ORDER BY provenance
+        """,
+    )
+    suspend fun acceptedStatsAggregates(
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): List<StoredStatsAggregateRow>
+
+    @Query(
+        """
+        SELECT
+            COALESCE(stored_plan.state, 'other') AS provenance,
+            COUNT(*) AS runs,
+            COALESCE(SUM(COALESCE(feedback.completedDistanceMeters, 0)), 0) AS distanceMeters,
+            COALESCE(SUM(COALESCE(feedback.completedDurationSeconds, 0)), 0) AS durationSeconds,
+            MAX(feedback.completedDistanceMeters) AS longestRunMeters,
+            COALESCE(SUM(CASE
+                WHEN feedback.completedDistanceMeters > 0 AND feedback.completedDurationSeconds > 0
+                THEN feedback.completedDistanceMeters ELSE 0 END), 0) AS pairedDistanceMeters,
+            COALESCE(SUM(CASE
+                WHEN feedback.completedDistanceMeters > 0 AND feedback.completedDurationSeconds > 0
+                THEN feedback.completedDurationSeconds ELSE 0 END), 0) AS pairedDurationSeconds,
+            0 AS heartRateDurationSeconds,
+            0 AS heartRateBeatsSeconds
+        FROM workout_feedback AS feedback
+        INNER JOIN workouts AS workout ON workout.workoutId = feedback.workoutId
+        LEFT JOIN plans AS stored_plan ON stored_plan.planId = workout.planId
+        WHERE feedback.sourceActivityId IS NULL
+          AND feedback.completionState IN ('done', 'shortened', 'completed', 'overrun')
+        GROUP BY provenance
+        ORDER BY provenance
+        """,
+    )
+    suspend fun directFeedbackStatsAggregates(): List<StoredStatsAggregateRow>
+
+    @Query(
+        """
+        SELECT
+            workout.weekId AS weekId,
+            COUNT(*) AS runs,
+            COALESCE(SUM(COALESCE(activity.distanceMeters, 0)), 0) AS distanceMeters,
+            COALESCE(SUM(COALESCE(activity.durationSeconds, 0)), 0) AS durationSeconds,
+            MAX(activity.distanceMeters) AS longestRunMeters,
+            COALESCE(SUM(CASE
+                WHEN activity.distanceMeters > 0 AND activity.durationSeconds > 0
+                THEN activity.distanceMeters ELSE 0 END), 0) AS pairedDistanceMeters,
+            COALESCE(SUM(CASE
+                WHEN activity.distanceMeters > 0 AND activity.durationSeconds > 0
+                THEN activity.durationSeconds ELSE 0 END), 0) AS pairedDurationSeconds,
+            COALESCE(SUM(CASE
+                WHEN activity.averageHeartRateBpm IS NOT NULL AND activity.durationSeconds > 0
+                THEN activity.durationSeconds ELSE 0 END), 0) AS heartRateDurationSeconds,
+            COALESCE(SUM(CASE
+                WHEN activity.averageHeartRateBpm IS NOT NULL AND activity.durationSeconds > 0
+                THEN CAST(activity.averageHeartRateBpm AS INTEGER) * activity.durationSeconds
+                ELSE 0 END), 0) AS heartRateBeatsSeconds,
+            COALESCE(SUM(CASE WHEN feedback.pain = 1 THEN 1 ELSE 0 END), 0) AS painFlags,
+            COALESCE(SUM(CASE WHEN feedback.feltHard = 1 THEN 1 ELSE 0 END), 0) AS hardFlags
+        FROM activities AS activity
+        INNER JOIN workouts AS workout ON workout.workoutId = activity.linkedWorkoutId
+        LEFT JOIN activity_feedback AS feedback ON feedback.activityId = activity.activityId
+        WHERE activity.reviewState = :acceptedState
+          AND workout.weekId IN (:weekIds)
+        GROUP BY workout.weekId
+        ORDER BY workout.weekId
+        """,
+    )
+    suspend fun acceptedLinkedAggregatesForWeeks(
+        weekIds: List<String>,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): List<StoredWeekLoadAggregateRow>
+
+    @Query(
+        """
+        SELECT
+            workout.weekId AS weekId,
+            COUNT(*) AS runs,
+            COALESCE(SUM(COALESCE(feedback.completedDistanceMeters, 0)), 0) AS distanceMeters,
+            COALESCE(SUM(COALESCE(feedback.completedDurationSeconds, 0)), 0) AS durationSeconds,
+            MAX(feedback.completedDistanceMeters) AS longestRunMeters,
+            COALESCE(SUM(CASE
+                WHEN feedback.completedDistanceMeters > 0 AND feedback.completedDurationSeconds > 0
+                THEN feedback.completedDistanceMeters ELSE 0 END), 0) AS pairedDistanceMeters,
+            COALESCE(SUM(CASE
+                WHEN feedback.completedDistanceMeters > 0 AND feedback.completedDurationSeconds > 0
+                THEN feedback.completedDurationSeconds ELSE 0 END), 0) AS pairedDurationSeconds,
+            0 AS heartRateDurationSeconds,
+            0 AS heartRateBeatsSeconds,
+            COALESCE(SUM(CASE WHEN feedback.pain = 1 THEN 1 ELSE 0 END), 0) AS painFlags,
+            COALESCE(SUM(CASE WHEN feedback.feltHard = 1 THEN 1 ELSE 0 END), 0) AS hardFlags
+        FROM workout_feedback AS feedback
+        INNER JOIN workouts AS workout ON workout.workoutId = feedback.workoutId
+        WHERE workout.weekId IN (:weekIds)
+          AND feedback.sourceActivityId IS NULL
+          AND feedback.completionState IN ('done', 'shortened', 'completed', 'overrun')
+        GROUP BY workout.weekId
+        ORDER BY workout.weekId
+        """,
+    )
+    suspend fun directFeedbackAggregatesForWeeks(
+        weekIds: List<String>,
+    ): List<StoredWeekLoadAggregateRow>
+
+    @Query(
+        """
+        SELECT
+            activity.activityId,
+            activity.occurredAtEpochMillis,
+            activity.distanceMeters,
+            activity.durationSeconds,
+            activity.averageHeartRateBpm,
+            feedback.pain,
+            feedback.feltHard
+        FROM activities AS activity
+        LEFT JOIN activity_feedback AS feedback ON feedback.activityId = activity.activityId
+        WHERE activity.reviewState = :acceptedState
+          AND activity.linkedWorkoutId IS NULL
+          AND activity.occurredAtEpochMillis >= :fromInclusive
+          AND activity.occurredAtEpochMillis < :toExclusive
+          AND (
+              activity.occurredAtEpochMillis < :beforeEpochMillis
+              OR (
+                  activity.occurredAtEpochMillis = :beforeEpochMillis
+                  AND activity.activityId < :beforeActivityId
+              )
+          )
+        ORDER BY activity.occurredAtEpochMillis DESC, activity.activityId DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun acceptedUnlinkedStatsPage(
+        fromInclusive: Long,
+        toExclusive: Long,
+        beforeEpochMillis: Long,
+        beforeActivityId: String,
+        limit: Int,
+        acceptedState: String = ACTIVITY_REVIEW_STATE_ACCEPTED,
+    ): List<StoredUnlinkedActivityStatsRow>
 
     @Query(
         """
@@ -598,6 +1011,23 @@ interface ActivityLedgerDao {
     suspend fun workoutFeedbackForPlans(
         planIds: List<String>,
         limit: Int,
+    ): List<WorkoutFeedbackEntity>
+
+    @Query(
+        """
+        SELECT feedback.* FROM workout_feedback AS feedback
+        INNER JOIN workout_feedback_consequences AS consequence ON consequence.feedbackId = feedback.feedbackId
+        INNER JOIN workouts AS workout ON workout.workoutId = feedback.workoutId
+        INNER JOIN plans AS stored_plan ON stored_plan.planId = workout.planId
+        WHERE feedback.sourceActivityId IS NULL AND stored_plan.state = 'active'
+          AND consequence.planChangeAvailable = 1 AND consequence.appliedDecision IS NULL
+          AND (:beforeRecordedAt IS NULL OR feedback.recordedAtEpochMillis < :beforeRecordedAt
+            OR (feedback.recordedAtEpochMillis = :beforeRecordedAt AND feedback.feedbackId < :beforeFeedbackId))
+        ORDER BY feedback.recordedAtEpochMillis DESC, feedback.feedbackId DESC LIMIT :limit
+        """,
+    )
+    suspend fun pendingDirectWorkoutFeedbackPage(
+        beforeRecordedAt: Long?, beforeFeedbackId: String?, limit: Int,
     ): List<WorkoutFeedbackEntity>
 
     @Query("SELECT * FROM route_samples WHERE activityId = :activityId ORDER BY ordinal LIMIT :limit")
@@ -1075,6 +1505,19 @@ abstract class ImportLedgerDao {
         """,
     )
     abstract suspend fun pendingHealthConnectMappings(limit: Int): List<HealthConnectMappingEntity>
+
+    @Query(
+        """
+        SELECT * FROM health_connect_mappings
+        WHERE (correctionPending = 1 OR deletePending = 1 OR duplicateCandidateActivityId IS NOT NULL)
+          AND (:beforeObservedAt IS NULL OR lastObservedAtEpochMillis < :beforeObservedAt
+            OR (lastObservedAtEpochMillis = :beforeObservedAt AND mappingId < :beforeMappingId))
+        ORDER BY lastObservedAtEpochMillis DESC, mappingId DESC LIMIT :limit
+        """,
+    )
+    abstract suspend fun pendingHealthConnectMappingsPage(
+        beforeObservedAt: Long?, beforeMappingId: String?, limit: Int,
+    ): List<HealthConnectMappingEntity>
 
     @Query("SELECT * FROM health_connect_pending_observations WHERE mappingId IN (:mappingIds) LIMIT :limit")
     abstract suspend fun pendingHealthConnectObservations(

@@ -90,6 +90,46 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     @Test
+    fun firstRunCanRestoreABackupBeforeCreatingLocalData() {
+        var restoreRequested = false
+        compose.setContent {
+            RunwayTheme {
+                RunwayNativeApp(
+                    state = RunwayUiState.Ready(
+                        surface = NativeSurface.Setup(
+                            NativeOnboardingPayload(
+                                initialValues = null,
+                                minimumTargetDate = null,
+                                minimumCalibrationTargetDate = null,
+                                minimumFoundationTargetDate = null,
+                                maximumTargetDate = null,
+                                currentGoal = null,
+                            ),
+                        ),
+                        loading = false,
+                    ),
+                    onDestinationSelected = {}, onCalendarMonthSelected = {},
+                    onLoadMoreHistory = {}, onLoadMoreInbox = {}, onLoadActivityTrace = {},
+                    onOpenHistoryDetail = {}, onRetryOpen = {}, onAction = {},
+                    onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {}, onDismissPlanDecisionPreview = {},
+                    onOpenFolder = {}, onImportGpx = {}, onOpenHealthConnect = {},
+                    onCreateBackup = {}, onRestoreBackup = { restoreRequested = true },
+                    onExportData = {}, onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
+                    onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseAllData = {}, onAcknowledgeRetentionRepair = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Restore a backup instead").performClick()
+        compose.onNodeWithText("Replace local runway data?").assertIsDisplayed()
+        compose.onNodeWithText("Choose backup").performClick()
+        compose.runOnIdle { assertTrue(restoreRequested) }
+    }
+
+    @Test
     fun completedSetupWithoutAnActivePlanOffersANewPlanInsteadOfSetupRecovery() {
         compose.setContent {
             var destination by remember { mutableStateOf(NativeDestination.Calendar) }

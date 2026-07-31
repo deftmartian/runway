@@ -191,13 +191,31 @@ internal fun SettingsScreen(
         }
         item {
             SettingsRail("Data") {
-                SettingsActionRow("Backup", "Save a complete copy before moving or resetting this phone", "Create", !actionPending) {
+                SettingsActionRow(
+                    "Backup",
+                    "Save a complete copy before moving or resetting this phone",
+                    "Create",
+                    !actionPending,
+                    stackAction = true,
+                ) {
                     confirmingBackup = true
                 }
-                SettingsActionRow("Restore", "Replace everything in runway with a complete backup", "Restore", !actionPending) {
+                SettingsActionRow(
+                    "Restore",
+                    "Replace everything in runway with a complete backup",
+                    "Restore",
+                    !actionPending,
+                    stackAction = true,
+                ) {
                     confirmingRestore = true
                 }
-                SettingsActionRow("Export", "Create a readable copy of your training history", "Export", !actionPending) {
+                SettingsActionRow(
+                    "Export",
+                    "Create a readable copy of your training history",
+                    "Export",
+                    !actionPending,
+                    stackAction = true,
+                ) {
                     confirmingExport = true
                 }
             }
@@ -210,6 +228,7 @@ internal fun SettingsScreen(
                     "Remove",
                     !actionPending,
                     destructive = true,
+                    stackAction = true,
                 ) {
                     confirmingImportedErase = true
                 }
@@ -219,6 +238,7 @@ internal fun SettingsScreen(
                     "Reset",
                     !actionPending,
                     destructive = true,
+                    stackAction = true,
                 ) {
                     confirmingErase = true
                 }
@@ -289,10 +309,7 @@ internal fun SettingsScreen(
         }
     }
     if (confirmingRestore) {
-        LocalDocumentDialog(
-            title = "Replace local runway data?",
-            message = "Restoring a backup replaces every plan, activity, preference, and private note currently in runway. Folder and Health Connect imports are disconnected before restore and must be enabled again. The app restarts after a successful restore.",
-            actionLabel = "Choose backup",
+        RestoreBackupDialog(
             actionPending = actionPending,
             onDismiss = { confirmingRestore = false },
         ) {
@@ -348,6 +365,22 @@ internal fun SettingsScreen(
 }
 
 @Composable
+internal fun RestoreBackupDialog(
+    actionPending: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    LocalDocumentDialog(
+        title = "Replace local runway data?",
+        message = "Restoring a backup replaces every plan, activity, preference, and private note currently in runway. Folder and Health Connect imports are disconnected before restore and must be enabled again. The app restarts after a successful restore.",
+        actionLabel = "Choose backup",
+        actionPending = actionPending,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
 private fun LocalDocumentDialog(
     title: String,
     message: String,
@@ -381,6 +414,7 @@ private fun LocalDocumentDialog(
     actionLabel: String,
     enabled: Boolean,
     destructive: Boolean = false,
+    stackAction: Boolean = false,
     onClick: () -> Unit,
 ) {
     val actionColor = when {
@@ -395,7 +429,7 @@ private fun LocalDocumentDialog(
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(vertical = 4.dp),
     ) {
-        if (usesStackedSettingsActionRow(maxWidth.value, LocalDensity.current.fontScale)) {
+        if (stackAction || usesStackedSettingsActionRow(maxWidth.value, LocalDensity.current.fontScale)) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(2.dp),

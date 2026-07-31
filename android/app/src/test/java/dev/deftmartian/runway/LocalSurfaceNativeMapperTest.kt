@@ -183,6 +183,21 @@ class LocalSurfaceNativeMapperTest {
     }
 
     @Test
+    fun `history keeps activity paging reachable after plan paging ends`() {
+        val native = LocalHistoryReadModel(
+            plans = emptyList(),
+            unlinkedActivities = emptyList(),
+            hasMorePlans = false,
+            hasMoreActivities = true,
+            nextPlanOffset = null,
+            nextActivityOffset = 512,
+        ).toNativeHistory()
+
+        assertEquals(null, native.history?.nextOffset)
+        assertEquals(512, native.history?.nextActivityOffset)
+    }
+
+    @Test
     fun `history detail projection carries auditable effect and reversal`() {
         val native = LocalPlanHistoryReadModel(
             planId = "plan",

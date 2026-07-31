@@ -1,5 +1,7 @@
 package dev.deftmartian.runway
 
+import dev.deftmartian.runway.data.LocalInboxPagingCursor
+
 /** Local presentation records for the native training ledger. */
 
 internal data class NativeOnboardingPayload(
@@ -27,6 +29,7 @@ internal data class NativeReviewPayload(
     val workoutDecisions: List<NativeWorkoutFeedback> = emptyList(),
     val healthConnectChanges: List<NativeHealthConnectChange> = emptyList(),
     val hasMore: Boolean = false,
+    val nextPage: LocalInboxPagingCursor? = null,
 )
 
 internal data class NativeHealthConnectChange(
@@ -101,6 +104,7 @@ internal data class NativeHistoryWeek(
     val targetDurationSeconds: Double?, val risk: String?, val isDownWeek: Boolean?, val isTaper: Boolean?,
     val workouts: List<NativeHistoryWorkout>,
     val extraActivities: List<NativeActivity> = emptyList(),
+    val extraActivityContextIsComplete: Boolean = true,
 )
 internal data class NativeHistoryWorkout(
     val id: String?,
@@ -385,7 +389,12 @@ internal data class NativeWeekSummary(
     val averagePaceSecondsPerKm: Double?,
     val averageHeartRate: Int?,
 )
-internal data class NativePlanHistoryPage(val items: List<NativePlanHistoryItem>, val nextOffset: Int?, val today: String?)
+internal data class NativePlanHistoryPage(
+    val items: List<NativePlanHistoryItem>,
+    val nextOffset: Int?,
+    val nextActivityOffset: Int? = null,
+    val today: String?,
+)
 internal data class NativePlanHistoryItem(
     val plan: NativePlan?,
     val goal: NativeGoalSummary?,

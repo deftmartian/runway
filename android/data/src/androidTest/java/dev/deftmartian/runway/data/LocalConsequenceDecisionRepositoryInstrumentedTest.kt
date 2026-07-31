@@ -139,7 +139,6 @@ class LocalConsequenceDecisionRepositoryInstrumentedTest {
                     prescriptionVersion = "current",
                     ordinal = 0,
                     sourceName = "Training source",
-                    sourceUrl = null,
                     sourceLocator = "source-locator",
                 ),
             ),

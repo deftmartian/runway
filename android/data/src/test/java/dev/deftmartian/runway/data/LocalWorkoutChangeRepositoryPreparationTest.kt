@@ -20,7 +20,7 @@ class LocalWorkoutChangeRepositoryPreparationTest {
     @Test
     fun `edit preview is deterministic explicit and maps exact before after history`() {
         val current = distance("week-1", today.plusDays(2), 5_000, "Current source")
-        val stored = stored("workout-1", current, generated = current, sourceUrl = "https://source.test")
+        val stored = stored("workout-1", current, generated = current)
         val proposed = current.copy(targetDistanceMeters = 10_000, reason = "Explicit edit")
         val request = LocalWorkoutChangeRequest.Edit(stored.entity.workoutId, proposed)
         val preparer = LocalWorkoutChangePreparer()
@@ -38,9 +38,13 @@ class LocalWorkoutChangeRepositoryPreparationTest {
         assertEquals("week-1", persisted.effectWeekTransitions.single().newWeekId)
         assertEquals(5_000, persisted.effects.single().previousDistanceMeters)
         assertEquals(10_000, persisted.effects.single().newDistanceMeters)
-        assertTrue(persisted.sourceReferenceSnapshots.any {
-            it.snapshotState == "before" && it.sourceUrl == "https://source.test"
-        })
+        assertTrue(
+            persisted.sourceReferenceSnapshots.any {
+                it.snapshotState == "before" &&
+                    it.sourceName == "source-key" &&
+                    it.sourceLocator == "source-key"
+            },
+        )
         assertEquals(10_000, persisted.mutations.single().workout.currentDistanceMeters)
     }
 
@@ -99,7 +103,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
             id = "timed-1",
             current = timed,
             generated = timed,
-            sourceUrl = "https://source.test/timed",
         )
 
         val roundTrip = LocalWorkoutChangeMapper.currentProposal(stored)
@@ -286,11 +289,10 @@ class LocalWorkoutChangeRepositoryPreparationTest {
         id: String,
         current: WorkoutProposal,
         generated: WorkoutProposal = current,
-        sourceUrl: String? = null,
     ): StoredWorkout {
         fun blocks(proposal: WorkoutProposal) = LocalWorkoutChangeMapper.blocks(proposal)
         val refs = current.sourceRefs.map {
-            StoredWorkoutSourceReference(it, sourceUrl, it)
+            StoredWorkoutSourceReference(it, it)
         }
         return StoredWorkout(
             entity = WorkoutEntity(
@@ -324,7 +326,7 @@ class LocalWorkoutChangeRepositoryPreparationTest {
             generatedBlocks = blocks(generated),
             currentBlocks = blocks(current),
             generatedSourceReferences = generated.sourceRefs.map {
-                StoredWorkoutSourceReference(it, sourceUrl, it)
+                StoredWorkoutSourceReference(it, it)
             },
             currentSourceReferences = refs,
         )

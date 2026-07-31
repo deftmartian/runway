@@ -405,7 +405,6 @@ class LocalConsequenceDecisionRepository(
                         snapshotState = snapshotState,
                         ordinal = referenceOrdinal,
                         sourceName = reference.sourceName,
-                        sourceUrl = reference.sourceUrl,
                         sourceLocator = reference.sourceLocator,
                     ),
                 )

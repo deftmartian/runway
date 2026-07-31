@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "f895ba21fcf3c915f22e242087c0263b",
+    "identityHash": "e07bbca67f5da673e81167f32b14d51a",
     "entities": [
       {
         "tableName": "profile_settings",
@@ -642,7 +642,7 @@
       },
       {
         "tableName": "plan_source_references",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`referenceId` TEXT NOT NULL, `planId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `sourceUrl` TEXT, `sourceLocator` TEXT, PRIMARY KEY(`referenceId`), FOREIGN KEY(`planId`) REFERENCES `plans`(`planId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`referenceId` TEXT NOT NULL, `planId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `sourceLocator` TEXT, PRIMARY KEY(`referenceId`), FOREIGN KEY(`planId`) REFERENCES `plans`(`planId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "referenceId",
@@ -667,11 +667,6 @@
             "columnName": "sourceName",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "sourceUrl",
-            "columnName": "sourceUrl",
-            "affinity": "TEXT"
           },
           {
             "fieldPath": "sourceLocator",
@@ -1163,7 +1158,7 @@
       },
       {
         "tableName": "workout_source_references",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`referenceId` TEXT NOT NULL, `workoutId` TEXT NOT NULL, `prescriptionVersion` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `sourceUrl` TEXT, `sourceLocator` TEXT, PRIMARY KEY(`referenceId`), FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`workoutId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`referenceId` TEXT NOT NULL, `workoutId` TEXT NOT NULL, `prescriptionVersion` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `sourceLocator` TEXT, PRIMARY KEY(`referenceId`), FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`workoutId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "referenceId",
@@ -1194,11 +1189,6 @@
             "columnName": "sourceName",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "sourceUrl",
-            "columnName": "sourceUrl",
-            "affinity": "TEXT"
           },
           {
             "fieldPath": "sourceLocator",
@@ -2724,7 +2714,7 @@
       },
       {
         "tableName": "adjustment_effect_source_reference_snapshots",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sourceReferenceSnapshotId` TEXT NOT NULL, `effectId` TEXT NOT NULL, `snapshotState` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `sourceUrl` TEXT, `sourceLocator` TEXT, PRIMARY KEY(`sourceReferenceSnapshotId`), FOREIGN KEY(`effectId`) REFERENCES `adjustment_workout_effects`(`effectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sourceReferenceSnapshotId` TEXT NOT NULL, `effectId` TEXT NOT NULL, `snapshotState` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `sourceLocator` TEXT, PRIMARY KEY(`sourceReferenceSnapshotId`), FOREIGN KEY(`effectId`) REFERENCES `adjustment_workout_effects`(`effectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "sourceReferenceSnapshotId",
@@ -2755,11 +2745,6 @@
             "columnName": "sourceName",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "sourceUrl",
-            "columnName": "sourceUrl",
-            "affinity": "TEXT"
           },
           {
             "fieldPath": "sourceLocator",
@@ -3682,7 +3667,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f895ba21fcf3c915f22e242087c0263b')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e07bbca67f5da673e81167f32b14d51a')"
     ]
   }
 }

@@ -26,6 +26,44 @@ object RunwayLedgerMigrations {
         """
     const val CREATE_PLAN_SETUP_RECEIPTS_GOAL_INDEX_SQL =
         "CREATE INDEX index_plan_setup_receipts_goalId ON plan_setup_receipts (goalId)"
+    private const val CREATE_PLAN_SOURCE_REFERENCES_V3_SQL =
+        """
+        CREATE TABLE plan_source_references_v3 (
+            referenceId TEXT NOT NULL,
+            planId TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            sourceName TEXT NOT NULL,
+            sourceLocator TEXT,
+            PRIMARY KEY(referenceId),
+            FOREIGN KEY(planId) REFERENCES plans(planId) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """
+    private const val CREATE_WORKOUT_SOURCE_REFERENCES_V3_SQL =
+        """
+        CREATE TABLE workout_source_references_v3 (
+            referenceId TEXT NOT NULL,
+            workoutId TEXT NOT NULL,
+            prescriptionVersion TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            sourceName TEXT NOT NULL,
+            sourceLocator TEXT,
+            PRIMARY KEY(referenceId),
+            FOREIGN KEY(workoutId) REFERENCES workouts(workoutId) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """
+    private const val CREATE_ADJUSTMENT_EFFECT_SOURCE_REFERENCE_SNAPSHOTS_V3_SQL =
+        """
+        CREATE TABLE adjustment_effect_source_reference_snapshots_v3 (
+            sourceReferenceSnapshotId TEXT NOT NULL,
+            effectId TEXT NOT NULL,
+            snapshotState TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            sourceName TEXT NOT NULL,
+            sourceLocator TEXT,
+            PRIMARY KEY(sourceReferenceSnapshotId),
+            FOREIGN KEY(effectId) REFERENCES adjustment_workout_effects(effectId) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """
 
     const val ROUTE_RETENTION_REPAIR_KEY = "privacy_retention_repair_v3_route"
     const val HEART_RATE_RETENTION_REPAIR_KEY = "privacy_retention_repair_v3_heart_rate"
@@ -33,6 +71,51 @@ object RunwayLedgerMigrations {
     private val v2ToV3Sql = listOf(
         CREATE_PLAN_SETUP_RECEIPTS_SQL,
         CREATE_PLAN_SETUP_RECEIPTS_GOAL_INDEX_SQL,
+        CREATE_PLAN_SOURCE_REFERENCES_V3_SQL,
+        """
+        INSERT INTO plan_source_references_v3 (
+            referenceId, planId, ordinal, sourceName, sourceLocator
+        )
+        SELECT referenceId, planId, ordinal, sourceName, sourceLocator
+        FROM plan_source_references
+        """,
+        "DROP TABLE plan_source_references",
+        "ALTER TABLE plan_source_references_v3 RENAME TO plan_source_references",
+        """
+        CREATE UNIQUE INDEX index_plan_source_references_planId_ordinal
+        ON plan_source_references (planId, ordinal)
+        """,
+        CREATE_WORKOUT_SOURCE_REFERENCES_V3_SQL,
+        """
+        INSERT INTO workout_source_references_v3 (
+            referenceId, workoutId, prescriptionVersion, ordinal, sourceName, sourceLocator
+        )
+        SELECT referenceId, workoutId, prescriptionVersion, ordinal, sourceName, sourceLocator
+        FROM workout_source_references
+        """,
+        "DROP TABLE workout_source_references",
+        "ALTER TABLE workout_source_references_v3 RENAME TO workout_source_references",
+        """
+        CREATE UNIQUE INDEX index_workout_source_references_workoutId_prescriptionVersion_ordinal
+        ON workout_source_references (workoutId, prescriptionVersion, ordinal)
+        """,
+        CREATE_ADJUSTMENT_EFFECT_SOURCE_REFERENCE_SNAPSHOTS_V3_SQL,
+        """
+        INSERT INTO adjustment_effect_source_reference_snapshots_v3 (
+            sourceReferenceSnapshotId, effectId, snapshotState, ordinal, sourceName, sourceLocator
+        )
+        SELECT sourceReferenceSnapshotId, effectId, snapshotState, ordinal, sourceName, sourceLocator
+        FROM adjustment_effect_source_reference_snapshots
+        """,
+        "DROP TABLE adjustment_effect_source_reference_snapshots",
+        """
+        ALTER TABLE adjustment_effect_source_reference_snapshots_v3
+        RENAME TO adjustment_effect_source_reference_snapshots
+        """,
+        """
+        CREATE UNIQUE INDEX index_adjustment_effect_source_reference_snapshots_effectId_snapshotState_ordinal
+        ON adjustment_effect_source_reference_snapshots (effectId, snapshotState, ordinal)
+        """,
         """
         INSERT OR REPLACE INTO app_metadata (key, value, updatedAtEpochMillis)
         SELECT '$ROUTE_RETENTION_REPAIR_KEY', 'restored_private', 0

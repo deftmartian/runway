@@ -156,6 +156,12 @@ private fun HistoryWeekRecord(
                 HistoryWorkoutRecord(workout, cutoffDate, planClosed)
             }
             week.extraActivities.forEach { activity -> HistoryExtraActivityRecord(activity) }
+            if (!week.extraActivityContextIsComplete) {
+                Text(
+                    "Some extra runs are included in the totals but are not listed here.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

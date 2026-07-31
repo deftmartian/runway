@@ -4,6 +4,7 @@ import dev.deftmartian.runway.data.LocalAboutReadModel
 import dev.deftmartian.runway.data.LocalCalendarReadModel
 import dev.deftmartian.runway.data.LocalHistoryReadModel
 import dev.deftmartian.runway.data.LocalInboxReadModel
+import dev.deftmartian.runway.data.LocalInboxPagingCursor
 import dev.deftmartian.runway.data.LocalLoadReadModel
 import dev.deftmartian.runway.data.LocalPlanHistoryReadModel
 import dev.deftmartian.runway.data.LocalPlanPhase
@@ -57,7 +58,7 @@ class NativeSurfaceLoaderTest {
     }
 
     @Test
-    fun `history detail returns the loaded history cache and honors its limit`() = runBlocking {
+    fun `history detail uses a direct bounded plan read`() = runBlocking {
         val reads = FakeSurfaceReads(
             history = history("plan-1"),
         )
@@ -65,13 +66,13 @@ class NativeSurfaceLoaderTest {
             request(
                 destination = NativeDestination.HistoryDetail,
                 historyPlanId = "plan-1",
-                historyPlanLimit = 123,
+                historyPlanOffset = 100,
             ),
         )
 
         assertEquals(NativeDestination.HistoryDetail, result.surface.destination)
         assertSame(reads.history, result.history)
-        assertEquals(123, reads.lastHistoryLimit)
+        assertEquals("plan-1", reads.lastHistoryPlanId)
     }
 
     private fun loader(reads: FakeSurfaceReads) =
@@ -81,15 +82,16 @@ class NativeSurfaceLoaderTest {
         destination: NativeDestination,
         historyPlanId: String? = null,
         previousHistoryDetail: NativeSurface.HistoryDetail? = null,
-        historyPlanLimit: Int = 50,
+        historyPlanOffset: Int = 0,
     ) = SurfaceLoadRequest(
         destination = destination,
         calendarMonth = YearMonth.of(2026, 7),
         calendarMonthWasSelected = true,
         historyPlanId = historyPlanId,
         previousHistoryDetail = previousHistoryDetail,
-        historyPlanLimit = historyPlanLimit,
-        inboxActivityLimit = 50,
+        historyPlanOffset = historyPlanOffset,
+        historyActivityOffset = 0,
+        previousHistory = null,
     )
 
     private fun emptyCalendar(
@@ -134,11 +136,11 @@ class NativeSurfaceLoaderTest {
         val history: LocalHistoryReadModel = history("plan-1"),
     ) : NativeSurfaceReads {
         var settingsReads = 0
-        var lastHistoryLimit: Int? = null
+        var lastHistoryPlanId: String? = null
 
         override suspend fun profileTimeZone(): String = "America/Halifax"
         override suspend fun calendar(month: YearMonth): LocalCalendarReadModel = calendar
-        override suspend fun inbox(limit: Int) = LocalInboxReadModel(
+        override suspend fun inbox(cursor: LocalInboxPagingCursor) = LocalInboxReadModel(
             reviewCount = 0,
             reviewCountIsExact = true,
             hasMore = false,
@@ -156,9 +158,13 @@ class NativeSurfaceLoaderTest {
             durationWeightedHeartRateBpm = null,
             isComplete = true,
         )
-        override suspend fun history(limit: Int): LocalHistoryReadModel {
-            lastHistoryLimit = limit
-            return history
+        override suspend fun history(planOffset: Int, activityOffset: Int): LocalHistoryReadModel =
+            history
+        override suspend fun historyPlan(planId: String): LocalHistoryReadModel? {
+            lastHistoryPlanId = planId
+            return history.takeIf { model ->
+                model.plans.any { it.planId == planId }
+            }
         }
         override suspend fun settings(): LocalSettingsReadModel {
             settingsReads += 1

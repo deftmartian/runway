@@ -105,6 +105,7 @@ internal fun LocalInboxReadModel.toNativeInbox(): NativeReviewPayload {
             )
         },
         hasMore = hasMore,
+        nextPage = nextPage,
     )
 }
 
@@ -138,7 +139,7 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                 plannedRuns = activePlannedRuns,
                 completedRuns = activeCompletedRuns,
                 missedRuns = activeWeeks.sumOf { it.missedRuns },
-                skippedRuns = 0,
+                skippedRuns = activeWeeks.sumOf { it.skippedRuns },
                 painFlags = activeWeeks.sumOf { it.painFlags },
                 completedDistanceMeters = activeWeeks.sumOf { it.actual.distanceMeters ?: 0 }.toDouble(),
             ),
@@ -242,7 +243,8 @@ internal fun LocalHistoryReadModel.toNativeHistory() = NativeHistoryPayload(
     onboardingRequired = false,
     history = NativePlanHistoryPage(
         items = plans.map { it.toNativeHistoryItem(timeZone) },
-        nextOffset = if (hasMorePlans) plans.size else null,
+        nextOffset = nextPlanOffset,
+        nextActivityOffset = nextActivityOffset,
         today = LocalDate.ofEpochDay(todayEpochDay).toString(),
     ),
     activeItem = plans.firstOrNull { it.state.name == "ACTIVE" }?.toNativeHistoryItem(timeZone),
@@ -366,6 +368,8 @@ internal fun LocalPlanHistoryReadModel.toNativeHistoryDetail(
                     extraActivities = week.extraActivities.map {
                         it.toNativeActivity(ZoneId.of(timeZone))
                     },
+                    extraActivityContextIsComplete =
+                        week.extraActivityContextIsComplete,
                 )
             },
         ),

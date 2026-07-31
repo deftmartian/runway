@@ -3,6 +3,7 @@ package dev.deftmartian.runway.data
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -257,6 +258,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     ) VALUES ('repair-activity', 0, 0, 145, 1)
                     """.trimIndent(),
                 )
+                seedV2SourceReferences("ledger")
                 close()
             }
 
@@ -290,6 +292,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     ),
                     LocalPrivacyRepository(upgraded).pendingRetentionRepairNotice(),
                 )
+                assertV2SourceReferencesPreserved(upgraded, "ledger")
                 assertEquals(3, upgraded.openHelper.writableDatabase.version)
             } finally {
                 upgraded.close()
@@ -312,6 +315,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     1,
                     reopened.activityLedgerDao().routeSamples("repair-activity", 10).size,
                 )
+                assertV2SourceReferencesPreserved(reopened, "ledger")
                 LocalPrivacyRepository(reopened).acknowledgeRetentionRepairNotice()
                 assertNull(
                     LocalPrivacyRepository(reopened).pendingRetentionRepairNotice(),
@@ -343,6 +347,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 )
                 """.trimIndent(),
             )
+            seedV2SourceReferences("restore")
             close()
         }
 
@@ -367,6 +372,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 "v2 backup",
                 requireNotNull(restored.profileSettingsDao().get()).privateNotes,
             )
+            assertV2SourceReferencesPreserved(restored, "restore")
             assertEquals(3, restored.openHelper.writableDatabase.version)
         } finally {
             restored.close()
@@ -406,6 +412,150 @@ class RunwayLedgerMigrationInstrumentedTest {
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals(RunwayLedgerMigrations.V2_IDENTITY_HASH, cursor.getString(0))
+            }
+        }
+    }
+
+    private fun SupportSQLiteDatabase.seedV2SourceReferences(prefix: String) {
+        execSQL(
+            """
+            INSERT INTO goals (
+                goalId, title, targetDateEpochDay, state, createdAtEpochMillis,
+                updatedAtEpochMillis, kind, startMode, raceDistanceMeters, priority
+            ) VALUES (
+                '$prefix-goal', 'Source migration goal', 22000, 'active', 1700000000000,
+                1700000000000, 'race', 'established', 5000, 'finish_healthy'
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO plans (
+                planId, goalId, phaseType, state, startEpochDay,
+                createdAtEpochMillis, updatedAtEpochMillis
+            ) VALUES (
+                '$prefix-plan', '$prefix-goal', 'race', 'active', 21000,
+                1700000000000, 1700000000000
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO plan_weeks (
+                weekId, planId, ordinal, startEpochDay, isDownWeek, isTaperWeek
+            ) VALUES ('$prefix-week', '$prefix-plan', 0, 21000, 0, 0)
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO workouts (
+                workoutId, planId, weekId, position, updatedAtEpochMillis,
+                generatedScheduledEpochDay, currentScheduledEpochDay,
+                generatedWorkoutType, currentWorkoutType,
+                generatedPrescriptionKind, currentPrescriptionKind, currentStatus
+            ) VALUES (
+                '$prefix-workout', '$prefix-plan', '$prefix-week', 0, 1700000000000,
+                21001, 21001,
+                'easy', 'easy',
+                'distance', 'distance', 'planned'
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO plan_adjustments (
+                adjustmentId, planId, workoutId, adjustmentType, state,
+                affectedWorkoutCount, createdAtEpochMillis
+            ) VALUES (
+                '$prefix-adjustment', '$prefix-plan', '$prefix-workout', 'edit', 'applied',
+                1, 1700000000000
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO adjustment_effect_groups (
+                groupId, adjustmentId, ordinal, effectType
+            ) VALUES ('$prefix-group', '$prefix-adjustment', 0, 'workout')
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO adjustment_workout_effects (
+                effectId, groupId, workoutId, ordinal
+            ) VALUES ('$prefix-effect', '$prefix-group', '$prefix-workout', 0)
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO plan_source_references (
+                referenceId, planId, ordinal, sourceName, sourceUrl, sourceLocator
+            ) VALUES (
+                '$prefix-plan-reference', '$prefix-plan', 0, 'Plan source',
+                'https://v2.example/plan', 'plan-locator'
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO workout_source_references (
+                referenceId, workoutId, prescriptionVersion, ordinal,
+                sourceName, sourceUrl, sourceLocator
+            ) VALUES (
+                '$prefix-workout-reference', '$prefix-workout', 'current', 0,
+                'Workout source', 'https://v2.example/workout', 'workout-locator'
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO adjustment_effect_source_reference_snapshots (
+                sourceReferenceSnapshotId, effectId, snapshotState, ordinal,
+                sourceName, sourceUrl, sourceLocator
+            ) VALUES (
+                '$prefix-snapshot-reference', '$prefix-effect', 'before', 0,
+                'Snapshot source', 'https://v2.example/snapshot', 'snapshot-locator'
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private suspend fun assertV2SourceReferencesPreserved(
+        database: RunwayLedgerDatabase,
+        prefix: String,
+    ) {
+        val planReference = database.goalPlanDao()
+            .planSourceReferences("$prefix-plan", 10)
+            .single()
+        assertEquals("$prefix-plan-reference", planReference.referenceId)
+        assertEquals("Plan source", planReference.sourceName)
+        assertEquals("plan-locator", planReference.sourceLocator)
+
+        val workoutReference = database.goalPlanDao()
+            .workoutSourceReferences("$prefix-workout", "current", 10)
+            .single()
+        assertEquals("$prefix-workout-reference", workoutReference.referenceId)
+        assertEquals("Workout source", workoutReference.sourceName)
+        assertEquals("workout-locator", workoutReference.sourceLocator)
+
+        val snapshotReference = database.adjustmentDao()
+            .effectSourceReferenceSnapshots("$prefix-effect", "before", 10)
+            .single()
+        assertEquals("$prefix-snapshot-reference", snapshotReference.sourceReferenceSnapshotId)
+        assertEquals("Snapshot source", snapshotReference.sourceName)
+        assertEquals("snapshot-locator", snapshotReference.sourceLocator)
+
+        listOf(
+            "plan_source_references",
+            "workout_source_references",
+            "adjustment_effect_source_reference_snapshots",
+        ).forEach { table ->
+            database.openHelper.writableDatabase.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                val columns = buildList {
+                    while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+                }
+                assertTrue("sourceUrl must be removed from $table", "sourceUrl" !in columns)
             }
         }
     }
