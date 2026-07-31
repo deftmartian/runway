@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -90,7 +89,10 @@ internal fun ActivityDetailSheet(
             )
 
             if (activity.reviewState == "review") {
-                Text("Review")
+                Text("How did this run feel?", fontWeight = FontWeight.SemiBold)
+                CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
+                CheckRow("Pain during or after this run", pain) { pain = it }
+                Text("Where does this run belong?", fontWeight = FontWeight.SemiBold)
                 Text(
                     "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -101,7 +103,14 @@ internal fun ActivityDetailSheet(
                     linkCandidates.forEach { workout ->
                         OutlinedButton(
                             onClick = {
-                                onAction(LinkActivityCommand(activity.id.orEmpty(), workout.id.orEmpty()))
+                                onAction(
+                                    LinkActivityCommand(
+                                        activityId = activity.id.orEmpty(),
+                                        workoutId = workout.id.orEmpty(),
+                                        feltHard = feltHard,
+                                        pain = pain,
+                                    ),
+                                )
                             },
                             enabled = !actionPending && activity.id != null && workout.id != null,
                             modifier = Modifier.fillMaxWidth(),
@@ -111,10 +120,18 @@ internal fun ActivityDetailSheet(
                     }
                 }
                 Button(
-                    onClick = { onAction(ConfirmActivityExtraCommand(activity.id.orEmpty())) },
+                    onClick = {
+                        onAction(
+                            ConfirmActivityExtraCommand(
+                                activityId = activity.id.orEmpty(),
+                                feltHard = feltHard,
+                                pain = pain,
+                            ),
+                        )
+                    },
                     enabled = !actionPending && activity.id != null,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Count as extra training") }
+                ) { Text("Count as an extra run") }
             } else if (!activity.workoutId.isNullOrBlank()) {
                 OutlinedButton(
                     onClick = { onAction(UnlinkActivityCommand(activity.id.orEmpty())) },
@@ -122,18 +139,34 @@ internal fun ActivityDetailSheet(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Unlink from planned run") }
                 Text("Unlinking returns this run to Inbox review. It stops counting until you accept a new role.")
+            } else if (
+                activity.extraPlanImpactConfirmed == true &&
+                    activity.consequence?.appliedDecision == null
+            ) {
+                OutlinedButton(
+                    onClick = { onAction(ReturnExtraActivityToReviewCommand(activity.id.orEmpty())) },
+                    enabled = !actionPending && activity.id != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Return extra run to review") }
+                Text(
+                    "This keeps the recorded run and feedback, but stops counting it in actual " +
+                        "totals and removes its unapplied plan options until you choose its role again.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
-            Text("Correct recorded feedback")
-            CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
-            CheckRow("Pain during or after this run", pain) { pain = it }
-            OutlinedButton(
-                onClick = {
-                    onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard, pain))
-                },
-                enabled = !actionPending && activity.id != null,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save feedback correction") }
+            if (activity.reviewState != "review") {
+                Text("Correct recorded feedback", fontWeight = FontWeight.SemiBold)
+                CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
+                CheckRow("Pain during or after this run", pain) { pain = it }
+                OutlinedButton(
+                    onClick = {
+                        onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard, pain))
+                    },
+                    enabled = !actionPending && activity.id != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save feedback correction") }
+            }
 
             TextButton(
                 onClick = { confirmDelete = true },
@@ -142,17 +175,18 @@ internal fun ActivityDetailSheet(
         }
     }
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete this run?") },
-            text = { Text("This removes the run from runway and cannot be undone.") },
-            confirmButton = {
-                Button(onClick = {
-                    confirmDelete = false
-                    onAction(DeleteActivityCommand(activity.id.orEmpty()))
-                }, enabled = !actionPending) { Text("Delete") }
+        DestructiveConfirmationDialog(
+            title = "Delete this run?",
+            message =
+                "This deletes the run and any saved route or heart-rate data. If it was imported, " +
+                    "runway will not import the same source record again. This cannot be undone.",
+            confirmLabel = "Delete run",
+            actionPending = actionPending,
+            onDismiss = { confirmDelete = false },
+            onConfirm = {
+                confirmDelete = false
+                onAction(DeleteActivityCommand(activity.id.orEmpty()))
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
     }
 }

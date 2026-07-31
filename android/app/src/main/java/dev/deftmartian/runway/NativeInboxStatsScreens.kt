@@ -515,11 +515,11 @@ private fun StatsAssessment(history: NativeTrainingHistory?) {
         } else {
             nativeLoadAssessment(signal.risk)
         }
-        SettingCard("Current assessment") {
-            SettingRow("Assessment", assessment.label)
-            if (signal.reasons.isEmpty()) {
-                Text(assessment.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
+        SettingCard("Current status") {
+            Text(assessment.label, style = MaterialTheme.typography.titleMedium)
+            Text(assessment.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (signal.reasons.isNotEmpty()) {
+                Text("Reasons", style = MaterialTheme.typography.labelLarge)
                 signal.reasons.forEach {
                     Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -49,7 +49,7 @@ Onboarding is a focused setup flow, not a sixth destination.
 
 ## Imports and privacy
 
-Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Intake is review-first. A candidate can be linked to a planned workout within three calendar days, counted as extra work, have its feedback corrected, or be deleted before it affects actual totals or future decisions.
+Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Intake is review-first. A candidate can be linked to a planned workout within three calendar days, counted as extra work, have its feedback recorded with that choice, or be deleted. An accepted unlinked run can return to review while its plan consequence remains unapplied; once a plan decision has been applied, that decision must be reversed through its own visible boundary first.
 
 GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data.
 

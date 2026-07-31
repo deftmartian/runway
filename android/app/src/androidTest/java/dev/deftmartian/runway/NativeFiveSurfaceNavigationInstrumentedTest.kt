@@ -82,8 +82,8 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Build revision"))
         compose.onNodeWithText("Build revision").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("This phone only"))
-        compose.onNodeWithText("This phone only").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Stored on this device"))
+        compose.onNodeWithText("Stored on this device").assertIsDisplayed()
     }
 
     private fun assertSurface(label: String, marker: String) {

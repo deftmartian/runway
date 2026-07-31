@@ -848,8 +848,19 @@ internal class RunwayViewModel(
                 pain = command.pain,
             ),
         ).message()
-        is LinkActivityCommand -> services.activityReview.link(command.activityId, command.workoutId).message()
-        is ConfirmActivityExtraCommand -> services.activityReview.confirmAsExtra(command.activityId).message()
+        is LinkActivityCommand -> services.activityReview.link(
+            activityId = command.activityId,
+            workoutId = command.workoutId,
+            feltHard = command.feltHard,
+            pain = command.pain,
+        ).message()
+        is ConfirmActivityExtraCommand -> services.activityReview.confirmAsExtra(
+            activityId = command.activityId,
+            feltHard = command.feltHard,
+            pain = command.pain,
+        ).message()
+        is ReturnExtraActivityToReviewCommand ->
+            services.activityReview.returnExtraToReview(command.activityId).message()
         is UpdateActivityFeedbackCommand -> services.activityReview.updateFeedback(command.activityId, command.feltHard, command.pain).message()
         is UnlinkActivityCommand -> services.activityReview.unlink(command.activityId).message()
         is DeleteActivityCommand -> services.activityReview.delete(command.activityId).message()
@@ -1213,6 +1224,7 @@ internal class RunwayViewModel(
         is LocalActivityReviewResult.Deleted,
         is LocalActivityReviewResult.FeedbackUpdated,
         is LocalActivityReviewResult.Linked,
+        is LocalActivityReviewResult.ReturnedToReview,
         is LocalActivityReviewResult.Unlinked,
         -> "Saved to your local training log."
     }
@@ -1364,6 +1376,7 @@ internal class RunwayViewModel(
         is LinkActivityCommand,
         is UnlinkActivityCommand,
         is ConfirmActivityExtraCommand,
+        is ReturnExtraActivityToReviewCommand,
         is UpdateActivityFeedbackCommand,
         is DeleteActivityCommand,
         is ResolveHealthConnectRecordCommand,

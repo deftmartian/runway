@@ -103,9 +103,20 @@ internal data class NativeHistoryWeek(
     val extraActivities: List<NativeActivity> = emptyList(),
 )
 internal data class NativeHistoryWorkout(
-    val id: String?, val scheduledDate: String?, val type: String?, val status: String?,
-    val prescriptionKind: String?, val targetDistanceMeters: Double?, val targetDurationSeconds: Double?,
-    val purpose: String?, val isRemoved: Boolean?, val result: NativeHistoryResult?,
+    val id: String?,
+    val status: String?,
+    val generated: NativeHistoryPrescription,
+    val current: NativeHistoryPrescription,
+    val isRemoved: Boolean?,
+    val result: NativeHistoryResult?,
+)
+internal data class NativeHistoryPrescription(
+    val scheduledDate: String?,
+    val type: String?,
+    val prescriptionKind: String?,
+    val targetDistanceMeters: Double?,
+    val targetDurationSeconds: Double?,
+    val purpose: String?,
     val intervalStructure: TimedIntervalStructureDto? = null,
 )
 internal data class NativeHistoryResult(

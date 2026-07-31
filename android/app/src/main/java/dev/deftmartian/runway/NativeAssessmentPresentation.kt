@@ -7,7 +7,7 @@ internal data class NativeAssessmentPresentation(
 
 internal fun nativeRampAssessment(risk: String?): NativeAssessmentPresentation = when (risk) {
     "conservative" -> NativeAssessmentPresentation(
-        "Within default",
+        "Within runway’s conservative default",
         "The calculated increase stays within runway’s default ramp.",
     )
     "moderate" -> NativeAssessmentPresentation(
@@ -27,7 +27,7 @@ internal fun nativeRampAssessment(risk: String?): NativeAssessmentPresentation =
 
 internal fun nativeLoadAssessment(risk: String?): NativeAssessmentPresentation = when (risk) {
     "conservative" -> NativeAssessmentPresentation(
-        "Within default",
+        "Within runway’s conservative default",
         "This change stays within runway’s default load-change range.",
     )
     "moderate" -> NativeAssessmentPresentation(

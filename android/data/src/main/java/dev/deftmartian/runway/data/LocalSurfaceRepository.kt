@@ -321,9 +321,12 @@ data class LocalRecordedResultReadModel(
 
 data class LocalHistoryWorkoutReadModel(
     val workoutId: String,
-    val scheduledEpochDay: Long,
     val status: String,
+    val generatedScheduledEpochDay: Long,
+    val currentScheduledEpochDay: Long,
+    val generated: LocalPrescriptionReadModel,
     val current: LocalPrescriptionReadModel,
+    val isRemoved: Boolean,
     val result: LocalRecordedResultReadModel?,
     val consequence: LocalConsequenceReadModel? = null,
 )
@@ -974,11 +977,11 @@ object LocalSurfaceMappers {
                 .groupBy { requireNotNull(it.activity.linkedWorkoutId) }
             val historyWeeks = plan.weeks.map { week ->
                 val weekWorkouts = plan.workouts
-                    .filter {
-                        it.weekId == week.weekId &&
-                            it.currentStatus != WORKOUT_STATE_TOMBSTONED
-                    }
+                    .filter { it.weekId == week.weekId }
                     .sortedBy { it.position }
+                val currentWeekWorkouts = weekWorkouts.filter {
+                    it.currentStatus != WORKOUT_STATE_TOMBSTONED
+                }
                 val extraActivities =
                     unlinkedByPlanWeek[plan.plan.planId to week.weekId].orEmpty()
                 val workoutRows = weekWorkouts.map { workout ->
@@ -987,14 +990,22 @@ object LocalSurfaceMappers {
                         ?.takeIf { it.sourceActivityId == null }
                     LocalHistoryWorkoutReadModel(
                         workoutId = workout.workoutId,
-                        scheduledEpochDay = workout.currentScheduledEpochDay,
                         status = workout.currentStatus,
+                        generatedScheduledEpochDay = workout.generatedScheduledEpochDay,
+                        currentScheduledEpochDay = workout.currentScheduledEpochDay,
+                        generated = prescription(
+                            workout,
+                            generated = true,
+                            blocks = plan.workoutBlocks,
+                            segments = plan.workoutSegments,
+                        ),
                         current = prescription(
                             workout,
                             generated = false,
                             blocks = plan.workoutBlocks,
                             segments = plan.workoutSegments,
                         ),
+                        isRemoved = workout.currentStatus == WORKOUT_STATE_TOMBSTONED,
                         result = linkedResult?.let {
                             LocalRecordedResultReadModel(
                                 source = it.activity.source,
@@ -1028,7 +1039,7 @@ object LocalSurfaceMappers {
                         week.generatedLoadDurationSeconds,
                     ),
                     current = loads(
-                        weekWorkouts.map {
+                        currentWeekWorkouts.map {
                             it.currentDistanceMeters to it.currentDurationSeconds
                         },
                     ),

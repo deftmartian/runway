@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -35,105 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.util.Locale
-
-@Composable
-internal fun ActivityReviewDialog(
-    activity: NativeActivity,
-    candidates: List<NativeWorkout>,
-    actionPending: Boolean,
-    errorMessage: String?,
-    onDismiss: () -> Unit,
-    onAction: (MobileCommand) -> Unit,
-) {
-    var harderThanExpected by rememberSaveable(activity.feltHard) {
-        mutableStateOf(activity.feltHard == true)
-    }
-    var painDuringOrAfter by rememberSaveable(activity.pain) {
-        mutableStateOf(activity.pain == true)
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Where does this run belong?") },
-        text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                errorMessage?.let { message ->
-                    item { Notice(message, isError = true) }
-                }
-                item {
-                    ActivityCard(activity)
-                }
-                item {
-                    CheckRow("This run felt harder than expected", harderThanExpected) {
-                        harderThanExpected = it
-                    }
-                    CheckRow("Pain during or after this run", painDuringOrAfter) {
-                        painDuringOrAfter = it
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            onAction(
-                                UpdateActivityFeedbackCommand(
-                                    activityId = activity.id.orEmpty(),
-                                    feltHard = harderThanExpected,
-                                    pain = painDuringOrAfter,
-                                ),
-                            )
-                        },
-                        enabled = !actionPending,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Save how it felt")
-                    }
-                }
-                if (candidates.isNotEmpty()) {
-                    item { Text("Match to a planned run", fontWeight = FontWeight.SemiBold) }
-                    items(candidates, key = { it.id.orEmpty() }) { workout ->
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    LinkActivityCommand(
-                                        activityId = activity.id.orEmpty(),
-                                        workoutId = workout.id.orEmpty(),
-                                    ),
-                                )
-                            },
-                            enabled = !actionPending,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                "${workout.scheduledDate.orEmpty()} · " +
-                                    workout.purpose.orEmpty().ifBlank { "Planned run" },
-                            )
-                        }
-                    }
-                }
-                item {
-                    Button(
-                        onClick = {
-                            onAction(ConfirmActivityExtraCommand(activity.id.orEmpty()))
-                        },
-                        enabled = !actionPending,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Count as an extra run")
-                    }
-                }
-                item {
-                    TextButton(
-                        onClick = {
-                            onAction(DeleteActivityCommand(activity.id.orEmpty()))
-                        },
-                        enabled = !actionPending,
-                    ) {
-                        Text("Delete imported activity")
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
 
 @Composable
 internal fun WorkoutPreviewDialog(
@@ -217,6 +116,7 @@ internal fun FeedbackOutcomeCard(
     onDecision: (String) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
+    var confirmingDelete by rememberSaveable(feedback.id) { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Recorded result", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -237,11 +137,25 @@ internal fun FeedbackOutcomeCard(
                 ConsequenceChoices(it, actionPending, onDecision)
             }
             onDelete?.let {
-                TextButton(onClick = it, enabled = !actionPending) {
+                TextButton(onClick = { confirmingDelete = true }, enabled = !actionPending) {
                     Text("Remove saved result")
                 }
             }
         }
+    }
+    if (confirmingDelete && onDelete != null) {
+        DestructiveConfirmationDialog(
+            title = "Remove saved result?",
+            message =
+                "This removes the saved result and effort report. The planned workout remains unchanged. This cannot be undone.",
+            confirmLabel = "Remove result",
+            actionPending = actionPending,
+            onDismiss = { confirmingDelete = false },
+            onConfirm = {
+                confirmingDelete = false
+                onDelete()
+            },
+        )
     }
 }
 

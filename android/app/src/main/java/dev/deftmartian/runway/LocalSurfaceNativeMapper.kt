@@ -11,6 +11,7 @@ import dev.deftmartian.runway.data.LocalPhaseReviewReadModel
 import dev.deftmartian.runway.data.LocalPlanHistoryReadModel
 import dev.deftmartian.runway.data.LocalPlanProvenance
 import dev.deftmartian.runway.data.LocalPlanState
+import dev.deftmartian.runway.data.LocalPrescriptionReadModel
 import dev.deftmartian.runway.data.LocalSettingsReadModel
 import dev.deftmartian.runway.data.LocalStatsReadModel
 import dev.deftmartian.runway.data.LocalTimedIntervalStructureReadModel
@@ -342,16 +343,14 @@ internal fun LocalPlanHistoryReadModel.toNativeHistoryDetail(
                     workouts = week.workouts.map { workout ->
                         NativeHistoryWorkout(
                             id = workout.workoutId,
-                            scheduledDate = LocalDate.ofEpochDay(workout.scheduledEpochDay).toString(),
-                            type = workout.current.workoutType,
                             status = workout.status,
-                            prescriptionKind = workout.current.prescriptionKind,
-                            targetDistanceMeters = workout.current.load.distanceMeters?.toDouble(),
-                            targetDurationSeconds = workout.current.load.durationSeconds?.toDouble(),
-                            purpose = workout.current.purpose,
-                            isRemoved = false,
-                            intervalStructure = workout.current.intervalStructure
-                                ?.toNativeIntervalStructure(),
+                            generated = workout.generated.toNativeHistoryPrescription(
+                                scheduledEpochDay = workout.generatedScheduledEpochDay,
+                            ),
+                            current = workout.current.toNativeHistoryPrescription(
+                                scheduledEpochDay = workout.currentScheduledEpochDay,
+                            ),
+                            isRemoved = workout.isRemoved,
                             result = workout.result?.let {
                                 NativeHistoryResult(
                                     source = it.source,
@@ -372,6 +371,18 @@ internal fun LocalPlanHistoryReadModel.toNativeHistoryDetail(
         ),
     )
 }
+
+private fun LocalPrescriptionReadModel.toNativeHistoryPrescription(
+    scheduledEpochDay: Long,
+) = NativeHistoryPrescription(
+    scheduledDate = LocalDate.ofEpochDay(scheduledEpochDay).toString(),
+    type = workoutType,
+    prescriptionKind = prescriptionKind,
+    targetDistanceMeters = load.distanceMeters?.toDouble(),
+    targetDurationSeconds = load.durationSeconds?.toDouble(),
+    purpose = purpose,
+    intervalStructure = intervalStructure?.toNativeIntervalStructure(),
+)
 
 private fun LocalPlanHistoryReadModel.toNativeHistoryItem(timeZone: String) = NativePlanHistoryItem(
     plan = NativePlan(

@@ -3,6 +3,8 @@ package dev.deftmartian.runway
 import dev.deftmartian.runway.data.LocalLoadReadModel
 import dev.deftmartian.runway.data.LocalCurrentSignalReadModel
 import dev.deftmartian.runway.data.LocalHealthNoticeReadModel
+import dev.deftmartian.runway.data.LocalHistoryWeekReadModel
+import dev.deftmartian.runway.data.LocalHistoryWorkoutReadModel
 import dev.deftmartian.runway.data.LocalHistoryAdjustmentReadModel
 import dev.deftmartian.runway.data.LocalHistoryReadModel
 import dev.deftmartian.runway.data.LocalPlanPhase
@@ -17,6 +19,7 @@ import dev.deftmartian.runway.data.LocalWeekStatsReadModel
 import dev.deftmartian.runway.data.LocalWorkoutAdjustmentReadModel
 import dev.deftmartian.runway.data.LocalWorkoutReadModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalSurfaceNativeMapperTest {
@@ -200,6 +203,68 @@ class LocalSurfaceNativeMapperTest {
         assertEquals("Changed my mind", change.reversalReason)
         assertEquals(4_500.0, change.newState?.targetDistanceMeters)
         assertEquals("1970-01-01", detail.cutoffDate)
+    }
+
+    @Test
+    fun `history detail preserves generated current and removed workout prescriptions`() {
+        val generated = timedPrescription(warmup = 300, repetitions = 4, runSeconds = 120)
+        val current = timedPrescription(warmup = 120, repetitions = 3, runSeconds = 90).copy(
+            workoutType = "recovery",
+            purpose = "Moved after a hard day",
+        )
+        val plan = LocalPlanHistoryReadModel(
+            planId = "plan",
+            goalId = "goal",
+            goalTitle = "5K plan",
+            state = LocalPlanState.ARCHIVED,
+            phase = LocalPlanPhase.DISTANCE,
+            startEpochDay = 20_000,
+            endEpochDay = 20_030,
+            completedAtEpochMillis = null,
+            archivedAtEpochMillis = 2_000,
+            plannedRuns = 1,
+            completedRuns = 0,
+            actual = LocalLoadReadModel(null, null),
+            lifecycle = emptyList(),
+            weeks = listOf(
+                LocalHistoryWeekReadModel(
+                    weekId = "week",
+                    ordinal = 1,
+                    startEpochDay = 20_000,
+                    generated = LocalLoadReadModel(null, 1_000),
+                    current = LocalLoadReadModel(null, 750),
+                    actual = LocalLoadReadModel(null, null),
+                    riskAssessment = null,
+                    isDownWeek = false,
+                    isTaperWeek = false,
+                    workouts = listOf(
+                        LocalHistoryWorkoutReadModel(
+                            workoutId = "removed",
+                            status = "tombstoned",
+                            generatedScheduledEpochDay = 20_001,
+                            currentScheduledEpochDay = 20_003,
+                            generated = generated,
+                            current = current,
+                            isRemoved = true,
+                            result = null,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val workout = requireNotNull(plan.toNativeHistoryDetail("UTC", 20_040).detail)
+            .weeks.single().workouts.single()
+
+        assertTrue(workout.isRemoved == true)
+        assertEquals("2024-10-05", workout.generated.scheduledDate)
+        assertEquals("2024-10-07", workout.current.scheduledDate)
+        assertEquals("easy", workout.generated.type)
+        assertEquals("recovery", workout.current.type)
+        assertEquals("Run/walk", workout.generated.purpose)
+        assertEquals("Moved after a hard day", workout.current.purpose)
+        assertEquals(4, workout.generated.intervalStructure?.blocks?.single()?.repetitions)
+        assertEquals(3, workout.current.intervalStructure?.blocks?.single()?.repetitions)
     }
 
     private fun timedPrescription(

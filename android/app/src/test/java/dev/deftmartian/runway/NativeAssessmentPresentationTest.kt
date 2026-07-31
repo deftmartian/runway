@@ -13,6 +13,18 @@ class NativeAssessmentPresentationTest {
     }
 
     @Test
+    fun `conservative labels name runway rather than implying a universal assessment`() {
+        assertEquals(
+            "Within runway’s conservative default",
+            nativeRampAssessment("conservative").label,
+        )
+        assertEquals(
+            "Within runway’s conservative default",
+            nativeLoadAssessment("conservative").label,
+        )
+    }
+
+    @Test
     fun `recorded outcomes use the consequence rather than raw load arithmetic`() {
         assertEquals("Pain review", nativeConsequenceAssessment("pain_reported", "unsafe").label)
         assertEquals(

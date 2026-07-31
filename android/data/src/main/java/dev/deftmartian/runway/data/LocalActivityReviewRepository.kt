@@ -32,7 +32,12 @@ class LocalActivityReviewRepository(
     private val database: RunwayLedgerDatabase,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
-    suspend fun link(activityId: String, workoutId: String): LocalActivityReviewResult =
+    suspend fun link(
+        activityId: String,
+        workoutId: String,
+        feltHard: Boolean? = null,
+        pain: Boolean? = null,
+    ): LocalActivityReviewResult =
         database.withTransaction {
             val activityDao = database.activityLedgerDao()
             val planDao = database.goalPlanDao()
@@ -79,6 +84,16 @@ class LocalActivityReviewRepository(
             }
 
             val now = nowEpochMillis()
+            val existingFeedback = activityDao.activityFeedback(activity.activityId)
+            val feedback = ActivityFeedbackEntity(
+                feedbackId = "activity-feedback-${activity.activityId}",
+                activityId = activity.activityId,
+                feltHard = feltHard ?: existingFeedback?.feltHard ?: false,
+                pain = pain ?: existingFeedback?.pain ?: false,
+                notes = existingFeedback?.notes,
+                recordedAtEpochMillis = now,
+            )
+            activityDao.saveFeedback(feedback)
             val accepted = activity.copy(
                 reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
                 linkedWorkoutId = workout.workoutId,
@@ -90,13 +105,17 @@ class LocalActivityReviewRepository(
             val consequence = recordLinkedOutcome(
                 activity = accepted,
                 workout = workout,
-                feedback = activityDao.activityFeedback(activity.activityId),
+                feedback = feedback,
                 now = now,
             )
             LocalActivityReviewResult.Linked(activity.activityId, workout.workoutId, consequence)
         }
 
-    suspend fun confirmAsExtra(activityId: String): LocalActivityReviewResult =
+    suspend fun confirmAsExtra(
+        activityId: String,
+        feltHard: Boolean? = null,
+        pain: Boolean? = null,
+    ): LocalActivityReviewResult =
         database.withTransaction {
             val dao = database.activityLedgerDao()
             val activity = dao.activity(activityId)
@@ -109,6 +128,16 @@ class LocalActivityReviewRepository(
             val zone = profile.timeZone.asZone()
                 ?: return@withTransaction rejected(LocalActivityReviewIssue.PROFILE_NOT_CONFIGURED)
             val now = nowEpochMillis()
+            val existingFeedback = dao.activityFeedback(activity.activityId)
+            val feedback = ActivityFeedbackEntity(
+                feedbackId = "activity-feedback-${activity.activityId}",
+                activityId = activity.activityId,
+                feltHard = feltHard ?: existingFeedback?.feltHard ?: false,
+                pain = pain ?: existingFeedback?.pain ?: false,
+                notes = existingFeedback?.notes,
+                recordedAtEpochMillis = now,
+            )
+            dao.saveFeedback(feedback)
             val accepted = activity.copy(
                 reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
                 linkedWorkoutId = null,
@@ -119,10 +148,46 @@ class LocalActivityReviewRepository(
             dao.saveActivity(accepted)
             val consequence = recordExtraOutcome(
                 activity = accepted,
-                feedback = dao.activityFeedback(activity.activityId),
+                feedback = feedback,
                 profileZone = zone,
             )
             LocalActivityReviewResult.AcceptedExtra(activity.activityId, consequence)
+        }
+
+    /**
+     * Returns an accepted, unlinked extra activity to Review without losing its factual record.
+     * A claimed consequence or persisted adjustment is immutable plan history and must be reversed
+     * through its own boundary before this role can change.
+     */
+    suspend fun returnExtraToReview(activityId: String): LocalActivityReviewResult =
+        database.withTransaction {
+            val dao = database.activityLedgerDao()
+            val activity = dao.activity(activityId)
+                ?: return@withTransaction rejected(LocalActivityReviewIssue.ACTIVITY_NOT_FOUND)
+            if (
+                activity.reviewState != ACTIVITY_REVIEW_STATE_ACCEPTED ||
+                activity.linkedWorkoutId != null ||
+                !activity.extraPlanImpactConfirmed
+            ) {
+                return@withTransaction rejected(LocalActivityReviewIssue.ACTIVITY_NOT_ACCEPTED_EXTRA)
+            }
+            if (
+                dao.activityConsequence(activityId)?.appliedDecision != null ||
+                database.adjustmentDao().appliedAdjustmentCountForActivity(activityId) > 0
+            ) {
+                return@withTransaction rejected(LocalActivityReviewIssue.DERIVED_PLAN_CHANGE_REQUIRES_REVERSAL)
+            }
+            dao.clearActivityConsequenceOptions(activityId)
+            dao.clearUnappliedActivityConsequence(activityId)
+            dao.saveActivity(
+                activity.copy(
+                    reviewState = REVIEW_STATE,
+                    acceptedAtEpochMillis = null,
+                    extraPlanImpactConfirmed = false,
+                    updatedAtEpochMillis = nowEpochMillis(),
+                ),
+            )
+            LocalActivityReviewResult.ReturnedToReview(activityId)
         }
 
     suspend fun updateFeedback(
@@ -419,6 +484,8 @@ sealed interface LocalActivityReviewResult {
         val returnedToReview: Boolean,
     ) : LocalActivityReviewResult
 
+    data class ReturnedToReview(val activityId: String) : LocalActivityReviewResult
+
     data class Deleted(val activityId: String) : LocalActivityReviewResult
     data class Rejected(val issue: LocalActivityReviewIssue) : LocalActivityReviewResult
 }
@@ -426,6 +493,7 @@ sealed interface LocalActivityReviewResult {
 enum class LocalActivityReviewIssue {
     ACTIVITY_NOT_FOUND,
     ACTIVITY_ALREADY_RESOLVED,
+    ACTIVITY_NOT_ACCEPTED_EXTRA,
     ACTIVITY_NOT_LINKED,
     WORKOUT_NOT_FOUND,
     PLAN_NOT_FOUND,

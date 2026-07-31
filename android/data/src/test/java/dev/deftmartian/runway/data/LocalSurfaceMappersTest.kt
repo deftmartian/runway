@@ -181,6 +181,38 @@ class LocalSurfaceMappersTest {
     }
 
     @Test
+    fun `history keeps a removed workout with generated and former current prescriptions`() {
+        val day = LocalDate.parse("2026-07-30").toEpochDay()
+        val removed = workout("removed", day, generatedDistance = 5_000, currentDistance = 3_000).copy(
+            currentStatus = "tombstoned",
+            currentScheduledEpochDay = day + 2,
+            currentWorkoutType = "recovery",
+            currentPurpose = "Moved after a hard day",
+        )
+
+        val history = LocalSurfaceMappers.history(
+            LocalHistoryLedgerSlice(
+                plans = listOf(planSlice(workouts = listOf(removed))),
+                activities = emptyList(),
+                hasMorePlans = false,
+                hasMoreActivities = false,
+                timeZone = "UTC",
+                todayEpochDay = day,
+            ),
+        ).plans.single().weeks.single()
+
+        val workout = history.workouts.single()
+        assertTrue(workout.isRemoved)
+        assertEquals(day, workout.generatedScheduledEpochDay)
+        assertEquals(day + 2, workout.currentScheduledEpochDay)
+        assertEquals(5_000, workout.generated.load.distanceMeters)
+        assertEquals(3_000, workout.current.load.distanceMeters)
+        assertEquals("recovery", workout.current.workoutType)
+        assertEquals("Moved after a hard day", workout.current.purpose)
+        assertNull(history.current.distanceMeters)
+    }
+
+    @Test
     fun `stats use accepted paired evidence and retain active archived and unlinked provenance`() {
         val activeWorkout = workout("active-run", 10, generatedDistance = 6_000, currentDistance = 5_000)
         val archivedWorkout = workout("archived-run", 3, planId = "archived-plan", weekId = "archived-week", generatedDistance = 10_000, currentDistance = 10_000)

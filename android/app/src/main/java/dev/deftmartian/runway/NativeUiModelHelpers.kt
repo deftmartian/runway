@@ -26,26 +26,15 @@ internal fun placeCalendarActivities(
             workout.id?.takeIf(String::isNotBlank)?.let { id -> id to workout }
         }
         .toMap()
-    val workoutsByDate = workouts
-        .filter { !it.id.isNullOrBlank() && !it.scheduledDate.isNullOrBlank() }
-        .groupBy { it.scheduledDate.orEmpty() }
     val placed = linkedMapOf<String, MutableList<NativeActivity>>()
     val unplaced = mutableListOf<NativeActivity>()
 
     activities.forEach { activity ->
         val linkedId = activity.workoutId?.takeIf(workoutsById::containsKey)
-        val activityDate = activity.occurredDate.orEmpty()
-            .ifBlank { activity.activityDate.orEmpty() }
-        val dateMatch = workoutsByDate[activityDate]
-            ?.let { candidates ->
-                candidates.firstOrNull { it.type == "rest" } ?: candidates.firstOrNull()
-            }
-            ?.id
-        val workoutId = linkedId ?: dateMatch
-        if (workoutId.isNullOrBlank()) {
+        if (linkedId == null) {
             unplaced += activity
         } else {
-            placed.getOrPut(workoutId) { mutableListOf() } += activity
+            placed.getOrPut(linkedId) { mutableListOf() } += activity
         }
     }
 

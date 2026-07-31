@@ -189,6 +189,7 @@ private fun HistoryWorkoutRecord(
 ) {
     val result = workout.result
     val state = workoutStateLabel(workout, cutoffDate, planClosed)
+    val displayPrescription = workout.current
     val emphasis = when {
         result?.pain == true -> LedgerEmphasis.Danger
         result?.feltHard == true || state == "Short" || state == "Missed" || state == "Skipped" -> LedgerEmphasis.Review
@@ -199,20 +200,31 @@ private fun HistoryWorkoutRecord(
     LedgerSurface {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("${workout.scheduledDate.orDash()} · ${workoutTypeLabel(workout.type)}", fontWeight = FontWeight.SemiBold)
-                workout.purpose?.takeIf(String::isNotBlank)?.let {
+                Text(
+                    "${displayPrescription.scheduledDate.orDash()} · ${workoutTypeLabel(displayPrescription.type)}",
+                    fontWeight = FontWeight.SemiBold,
+                )
+                displayPrescription.purpose?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             LedgerState(state, emphasis)
         }
-        MeasurementReadout(
-            if (workout.type == "rest") "Schedule" else "Planned",
-            if (workout.type == "rest") "Recovery" else weekMeasurement(workout.targetDistanceMeters, workout.targetDurationSeconds),
-            LedgerEmphasis.Planned,
-        )
-        formatTimedStructure(workout.intervalStructure)?.let { detail ->
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (workout.isRemoved == true) {
+            HistoryPrescriptionRecord("Generated", workout.generated)
+            if (workout.generated != workout.current) {
+                HistoryPrescriptionRecord("Before removal", workout.current)
+            }
+            Text(
+                "Removed from the current plan",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else if (workout.generated == workout.current) {
+            HistoryPrescriptionRecord("Planned", workout.current)
+        } else {
+            HistoryPrescriptionRecord("Generated", workout.generated)
+            HistoryPrescriptionRecord("Current", workout.current)
         }
         result?.let {
             MeasurementReadout(
@@ -231,6 +243,33 @@ private fun HistoryWorkoutRecord(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun HistoryPrescriptionRecord(
+    label: String,
+    prescription: NativeHistoryPrescription,
+) {
+    Text(
+        "$label · ${prescription.scheduledDate.orDash()} · ${workoutTypeLabel(prescription.type)}",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    prescription.purpose?.takeIf(String::isNotBlank)?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    MeasurementReadout(
+        if (prescription.type == "rest") "$label schedule" else label,
+        if (prescription.type == "rest") {
+            "Recovery"
+        } else {
+            weekMeasurement(prescription.targetDistanceMeters, prescription.targetDurationSeconds)
+        },
+        LedgerEmphasis.Planned,
+    )
+    formatTimedStructure(prescription.intervalStructure)?.let { detail ->
+        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -276,16 +315,19 @@ private fun workoutStateLabel(
     planClosed: Boolean,
 ): String = when {
     workout.isRemoved == true -> "Removed"
-    workout.type == "rest" -> "Rest"
+    workout.current.type == "rest" -> "Rest"
     workout.status == "done" -> "Completed"
     workout.status == "shortened" -> "Short"
     workout.status == "skipped" -> "Skipped"
-    workout.status == "planned" && cutoffDate != null && workout.scheduledDate != null && workout.scheduledDate < cutoffDate -> "Missed"
+    workout.status == "planned" &&
+        cutoffDate != null &&
+        workout.current.scheduledDate != null &&
+        workout.current.scheduledDate < cutoffDate -> "Missed"
     planClosed &&
         workout.status == "planned" &&
         cutoffDate != null &&
-        workout.scheduledDate != null &&
-        workout.scheduledDate >= cutoffDate -> "Not reached"
+        workout.current.scheduledDate != null &&
+        workout.current.scheduledDate >= cutoffDate -> "Not reached"
     else -> "Planned"
 }
 private fun workoutTypeLabel(type: String?): String = when (type) {

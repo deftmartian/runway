@@ -63,14 +63,25 @@ class NativeUiModelHelpersTest {
     }
 
     @Test
-    fun `calendar places an unplanned run beside its rest prescription without hiding either`() {
+    fun `calendar leaves an unlinked same-day run outside the planned workout`() {
         val rest = workout(id = "rest-1", date = "2026-07-29", type = "rest")
         val run = activity(id = "activity-1", date = "2026-07-29")
 
         val placement = placeCalendarActivities(listOf(rest), listOf(run))
 
-        assertEquals(listOf("activity-1"), placement.byWorkoutId["rest-1"]?.map { it.id })
-        assertEquals(emptyList<NativeActivity>(), placement.unplaced)
+        assertEquals(null, placement.byWorkoutId["rest-1"])
+        assertEquals(listOf("activity-1"), placement.unplaced.map { it.id })
+    }
+
+    @Test
+    fun `calendar leaves an activity with an unknown workout link outside planned workouts`() {
+        val planned = workout(id = "run-1", date = "2026-07-29", type = "easy")
+        val run = activity(id = "activity-1", date = "2026-07-29", workoutId = "removed-run")
+
+        val placement = placeCalendarActivities(listOf(planned), listOf(run))
+
+        assertEquals(emptyMap<String, List<NativeActivity>>(), placement.byWorkoutId)
+        assertEquals(listOf("activity-1"), placement.unplaced.map { it.id })
     }
 
     @Test

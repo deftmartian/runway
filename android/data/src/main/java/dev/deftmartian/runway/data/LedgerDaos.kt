@@ -192,6 +192,13 @@ abstract class GoalPlanDao {
         limit: Int,
     ): List<WorkoutEntity>
 
+    /** History keeps removed workouts so the original recommendation remains auditable. */
+    @Query("SELECT * FROM workouts WHERE planId IN (:planIds) ORDER BY planId, currentScheduledEpochDay, position LIMIT :limit")
+    abstract suspend fun historyWorkoutsForPlans(
+        planIds: List<String>,
+        limit: Int,
+    ): List<WorkoutEntity>
+
     @Query("SELECT * FROM workouts WHERE planId = :planId ORDER BY currentScheduledEpochDay, position LIMIT :limit")
     abstract suspend fun allWorkoutsForPlan(planId: String, limit: Int): List<WorkoutEntity>
 
@@ -653,6 +660,10 @@ interface ActivityLedgerDao {
 
     @Query("DELETE FROM activity_consequence_options WHERE activityId = :activityId")
     suspend fun clearActivityConsequenceOptions(activityId: String)
+
+    /** Only used while returning an unapplied extra activity to the explicit Review boundary. */
+    @Query("DELETE FROM activity_consequences WHERE activityId = :activityId AND appliedDecision IS NULL")
+    suspend fun clearUnappliedActivityConsequence(activityId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertRouteSamples(samples: List<RouteSampleEntity>)

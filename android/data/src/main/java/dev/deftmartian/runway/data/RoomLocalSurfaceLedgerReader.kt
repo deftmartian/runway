@@ -341,9 +341,13 @@ class RoomLocalSurfaceLedgerReader(
         } else {
             emptyMap()
         }
-        val workouts = dao.visibleWorkoutsForPlans(
-            planIds,
-            limit = plans.size * workoutLimitPerPlan,
+        val workoutLimit = plans.size * workoutLimitPerPlan
+        val workouts = (
+            if (includeHistoryAudit) {
+                dao.historyWorkoutsForPlans(planIds, limit = workoutLimit)
+            } else {
+                dao.visibleWorkoutsForPlans(planIds, limit = workoutLimit)
+            }
         ).groupBy(WorkoutEntity::planId)
         val visibleWorkoutIds = workouts.values.flatten().map(WorkoutEntity::workoutId)
         val undoableAdjustments = if (undoTodayEpochDay == null || visibleWorkoutIds.isEmpty()) {

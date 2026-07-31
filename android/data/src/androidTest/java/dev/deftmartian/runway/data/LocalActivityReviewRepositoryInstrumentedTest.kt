@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +76,93 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         assertEquals("keep_plan", stored.appliedDecision)
         assertEquals(1_000L, stored.resolvedAtEpochMillis)
         assertNotNull(database.activityLedgerDao().activityFeedback("accepted"))
+    }
+
+    @Test
+    fun linkPersistsReviewFeedbackInTheSameAcceptanceTransaction() = runBlocking {
+        database.activityLedgerDao().saveActivity(
+            activity("linked-now", reviewState = "review", occurredAtEpochMillis = epochMillis(today)),
+        )
+        seedLinkableWorkout("linked-workout", today)
+
+        val result = LocalActivityReviewRepository(database, nowEpochMillis = { now }).link(
+            activityId = "linked-now",
+            workoutId = "linked-workout",
+            feltHard = true,
+            pain = true,
+        )
+
+        check(result is LocalActivityReviewResult.Linked)
+        val feedback = requireNotNull(database.activityLedgerDao().activityFeedback("linked-now"))
+        assertEquals(true, feedback.feltHard)
+        assertEquals(true, feedback.pain)
+        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+    }
+
+    @Test
+    fun extraAcceptancePersistsReviewFeedbackAndCanReturnToReviewBeforeAPlanChange() = runBlocking {
+        database.activityLedgerDao().saveActivity(
+            activity("extra-now", reviewState = "review", occurredAtEpochMillis = epochMillis(today)),
+        )
+        val repository = LocalActivityReviewRepository(database, nowEpochMillis = { now })
+
+        val accepted = repository.confirmAsExtra("extra-now", feltHard = true, pain = true)
+
+        check(accepted is LocalActivityReviewResult.AcceptedExtra)
+        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).feltHard)
+        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
+        assertNotNull(database.activityLedgerDao().activityConsequence("extra-now"))
+        database.activityLedgerDao().saveActivityConsequenceOption(
+            ActivityConsequenceOptionEntity("extra-now", "keep_plan"),
+        )
+
+        val returned = repository.returnExtraToReview("extra-now")
+
+        check(returned is LocalActivityReviewResult.ReturnedToReview)
+        val activity = requireNotNull(database.activityLedgerDao().activity("extra-now"))
+        assertEquals("review", activity.reviewState)
+        assertFalse(activity.extraPlanImpactConfirmed)
+        assertNull(activity.acceptedAtEpochMillis)
+        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
+        assertNull(database.activityLedgerDao().activityConsequence("extra-now"))
+        assertEquals(emptyList<ActivityConsequenceOptionEntity>(), database.activityLedgerDao().activityConsequenceOptions("extra-now", 10))
+
+        val rerun = repository.returnExtraToReview("extra-now")
+
+        check(rerun is LocalActivityReviewResult.Rejected)
+        assertEquals(LocalActivityReviewIssue.ACTIVITY_NOT_ACCEPTED_EXTRA, rerun.issue)
+        assertEquals("review", requireNotNull(database.activityLedgerDao().activity("extra-now")).reviewState)
+        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
+    }
+
+    @Test
+    fun appliedExtraConsequenceCannotReturnToReview() = runBlocking {
+        database.activityLedgerDao().saveActivity(
+            activity("applied-extra", reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED, extraConfirmed = true),
+        )
+        database.activityLedgerDao().saveActivityConsequence(
+            ActivityConsequenceEntity(
+                activityId = "applied-extra",
+                classification = "extra_activity",
+                distanceDifferenceMeters = 2_000,
+                durationDifferenceSeconds = null,
+                actualLoadMeters = 2_000,
+                assessment = "conservative",
+                recommendedDecision = "keep_plan",
+                resolvedAtEpochMillis = 1_000,
+                deviation = "unplanned",
+                loadMetric = "distance",
+                risk = "conservative",
+                appliedDecision = "keep_plan",
+            ),
+        )
+
+        val result = LocalActivityReviewRepository(database, nowEpochMillis = { now })
+            .returnExtraToReview("applied-extra")
+
+        check(result is LocalActivityReviewResult.Rejected)
+        assertEquals(LocalActivityReviewIssue.DERIVED_PLAN_CHANGE_REQUIRES_REVERSAL, result.issue)
+        assertEquals(ACTIVITY_REVIEW_STATE_ACCEPTED, requireNotNull(database.activityLedgerDao().activity("applied-extra")).reviewState)
     }
 
     @Test

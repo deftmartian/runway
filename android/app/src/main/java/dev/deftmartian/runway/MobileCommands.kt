@@ -60,6 +60,8 @@ internal data class RecordManualRunCommand(
 internal data class LinkActivityCommand(
     val activityId: String,
     val workoutId: String,
+    val feltHard: Boolean? = null,
+    val pain: Boolean? = null,
 ) : MobileCommand {
     override val action = "link_activity"
 }
@@ -68,8 +70,16 @@ internal data class UnlinkActivityCommand(val activityId: String) : MobileComman
     override val action = "unlink_activity"
 }
 
-internal data class ConfirmActivityExtraCommand(val activityId: String) : MobileCommand {
+internal data class ConfirmActivityExtraCommand(
+    val activityId: String,
+    val feltHard: Boolean? = null,
+    val pain: Boolean? = null,
+) : MobileCommand {
     override val action = "confirm_activity_extra"
+}
+
+internal data class ReturnExtraActivityToReviewCommand(val activityId: String) : MobileCommand {
+    override val action = "return_extra_activity_to_review"
 }
 
 internal data class UpdateActivityFeedbackCommand(

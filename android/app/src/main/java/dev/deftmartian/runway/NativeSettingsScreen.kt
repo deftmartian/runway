@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -203,7 +202,11 @@ internal fun SettingsScreen(
                 SettingsValueRow("Version", state.appVersion, monospace = true)
                 val buildRevision = normalizedBuildRevision(state.sourceCommit)
                 SettingsValueRow("Build revision", shortBuildRevision(buildRevision), monospace = true)
-                SettingsValueRow("Data location", "This phone only")
+                SettingsValueRow("App data", "Stored on this device")
+                SettingsValueRow(
+                    "Copies you create",
+                    "Saved to the Android document location you choose",
+                )
             }
         }
     }
@@ -249,7 +252,7 @@ internal fun SettingsScreen(
     if (confirmingBackup) {
         LocalDocumentDialog(
             title = "Create a complete backup?",
-            message = "The backup is not encrypted. It can contain training history, private notes, route data, and heart-rate data. Store it somewhere you trust.",
+            message = "The backup is not encrypted. It can contain training history, private notes, route data, and heart-rate data. Choose an Android document destination you trust; its provider may store it on this device or in cloud-backed storage.",
             actionLabel = "Choose location",
             actionPending = actionPending,
             onDismiss = { confirmingBackup = false },
@@ -273,7 +276,7 @@ internal fun SettingsScreen(
     if (confirmingExport) {
         LocalDocumentDialog(
             title = "Export training history?",
-            message = "The readable export is not encrypted. It omits detailed route and heart-rate samples, but still contains private training history and notes.",
+            message = "The readable export is not encrypted. It omits detailed route and heart-rate samples, but still contains private training history and notes. Choose an Android document destination you trust; its provider may store it on this device or in cloud-backed storage.",
             actionLabel = "Choose location",
             actionPending = actionPending,
             onDismiss = { confirmingExport = false },
@@ -283,52 +286,36 @@ internal fun SettingsScreen(
         }
     }
     if (confirmingErase) {
-        AlertDialog(
-            onDismissRequest = { confirmingErase = false },
-            title = { Text("Reset runway?") },
-            text = { Text("This removes plans, activities, imported files, and private health context from this phone. It cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        callbacks.onEraseAllData()
-                        confirmingErase = false
-                    },
-                    enabled = !actionPending,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ),
-                ) {
-                    Text("Reset runway")
-                }
+        DestructiveConfirmationDialog(
+            title = "Reset runway?",
+            message =
+                "This removes plans, activities, imported files, and private health context " +
+                    "from this phone. This cannot be undone.",
+            confirmLabel = "Reset runway",
+            actionPending = actionPending,
+            onDismiss = { confirmingErase = false },
+            onConfirm = {
+                callbacks.onEraseAllData()
+                confirmingErase = false
             },
-            dismissButton = { TextButton(onClick = { confirmingErase = false }) { Text("Cancel") } },
         )
     }
     if (confirmingImportedErase) {
-        AlertDialog(
-            onDismissRequest = { confirmingImportedErase = false },
-            title = { Text("Remove imported runs?") },
-            text = {
-                Text(
-                    "This permanently removes activity data imported from GPX files and Health Connect, including retained route and heart-rate samples. " +
-                        "Manual entries, plans, preferences, and recorded plan adjustments stay. Folder access and Health Connect permissions will be disconnected after removal. This cannot be undone.",
-                )
+        DestructiveConfirmationDialog(
+            title = "Remove imported runs?",
+            message =
+                "This permanently removes activity data imported from GPX files and Health " +
+                    "Connect, including retained route and heart-rate samples. Manual entries, " +
+                    "plans, preferences, and recorded plan adjustments stay. Folder access and " +
+                    "Health Connect permissions will be disconnected after removal. This cannot " +
+                    "be undone.",
+            confirmLabel = "Remove imported runs",
+            actionPending = actionPending,
+            onDismiss = { confirmingImportedErase = false },
+            onConfirm = {
+                callbacks.onEraseImportedActivityData()
+                confirmingImportedErase = false
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        callbacks.onEraseImportedActivityData()
-                        confirmingImportedErase = false
-                    },
-                    enabled = !actionPending,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ),
-                ) { Text("Remove imported runs") }
-            },
-            dismissButton = { TextButton(onClick = { confirmingImportedErase = false }) { Text("Cancel") } },
         )
     }
 }

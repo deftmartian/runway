@@ -237,9 +237,14 @@ internal fun CalendarScreen(
                     onOpenNext = { openDay(decision.nextDate) },
                     onOpenReview = { openDay(decision.reviewDate) },
                     onOpenInbox = { onDestinationSelected(NativeDestination.Inbox) },
+                )
+            }
+            item {
+                CalendarSecondaryPlanActions(
+                    actionPending = actionPending,
+                    hasActivePlan = payload.hasActivePlan,
                     onRecordRun = { showManualRun = true },
                     onChangeGoal = { onDestinationSelected(NativeDestination.Setup) },
-                    hasActivePlan = payload.hasActivePlan,
                 )
             }
         }
@@ -454,9 +459,6 @@ private fun CalendarDecisionCard(
     onOpenNext: () -> Unit,
     onOpenReview: () -> Unit,
     onOpenInbox: () -> Unit,
-    onRecordRun: () -> Unit,
-    onChangeGoal: () -> Unit,
-    hasActivePlan: Boolean,
 ) {
     val missedRunStatus =
         "${summary.reviewCount} missed run${if (summary.reviewCount == 1) "" else "s"}"
@@ -616,32 +618,40 @@ private fun CalendarDecisionCard(
                     }
                 }
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(
-                    onClick = onRecordRun,
-                    enabled = !actionPending,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text("Add run manually")
-                }
-                TextButton(
-                    onClick = onChangeGoal,
-                    enabled = !actionPending,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(if (hasActivePlan) "Change goal" else "Build plan")
-                }
-            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarSecondaryPlanActions(
+    actionPending: Boolean,
+    hasActivePlan: Boolean,
+    onRecordRun: () -> Unit,
+    onChangeGoal: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Plan actions",
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextButton(
+                onClick = onRecordRun,
+                enabled = !actionPending,
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small,
+            ) { Text("Add run manually") }
+            TextButton(
+                onClick = onChangeGoal,
+                enabled = !actionPending,
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small,
+            ) { Text(if (hasActivePlan) "Change goal" else "Build plan") }
         }
     }
 }

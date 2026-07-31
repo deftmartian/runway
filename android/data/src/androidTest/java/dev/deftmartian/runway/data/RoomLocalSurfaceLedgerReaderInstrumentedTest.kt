@@ -256,6 +256,36 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
     }
 
     @Test
+    fun historyIncludesRemovedWorkoutsWithoutReturningThemToTheLiveCalendar() = runBlocking {
+        val today = 1_000L
+        database.profileSettingsDao().save(profile())
+        val goal = GoalEntity(
+            "audit-goal", "Goal", null, "active", 1, 1,
+            "distance", "established", null, "finish_healthy",
+        )
+        val plan = PlanEntity("audit-plan", goal.goalId, "distance", "active", today, today + 14, 1, 1)
+        val week = PlanWeekEntity("audit-week", plan.planId, 1, today, 4_000)
+        val kept = workout("kept-run", plan.planId, week.weekId, today)
+        val removed = workout("removed-run", plan.planId, week.weekId, today + 2).copy(
+            currentStatus = "tombstoned",
+            tombstonedAtEpochMillis = 5_000,
+        )
+        database.goalPlanDao().saveGoal(goal)
+        database.goalPlanDao().createPlanGraph(plan, listOf(week), listOf(kept, removed))
+        val now = LocalDate.ofEpochDay(today).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+        val reader = RoomLocalSurfaceLedgerReader(database, nowEpochMillis = { now })
+
+        val history = reader.history(LocalSurfaceReadLimits())
+        val calendar = reader.calendar(today, today + 30, LocalSurfaceReadLimits())
+
+        assertEquals(
+            listOf("kept-run", "removed-run"),
+            history.plans.single().workouts.map(WorkoutEntity::workoutId),
+        )
+        assertEquals(listOf("kept-run"), calendar.plans.single().workouts.map(WorkoutEntity::workoutId))
+    }
+
+    @Test
     fun settingsExposeOnePendingGoalForAnExplicitReplacementJourney() = runBlocking {
         database.profileSettingsDao().save(profile())
         database.goalPlanDao().saveGoal(
