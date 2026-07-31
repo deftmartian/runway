@@ -41,6 +41,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.UUID
 
 private const val goalStep = 0
 private const val startingPointStep = 1
@@ -89,6 +90,10 @@ internal fun SetupScreen(
                 injuryNotes.isNotBlank(),
         )
     }
+    val setupOperationScope = payload?.currentGoal?.id.orEmpty()
+    val setupOperationId = rememberSaveable(setupOperationScope) { UUID.randomUUID().toString() }
+    val setupOccurredAtEpochMillis =
+        rememberSaveable(setupOperationScope) { System.currentTimeMillis() }
     val listState = rememberLazyListState()
 
     LaunchedEffect(step) {
@@ -148,6 +153,8 @@ internal fun SetupScreen(
                 recentInjury = recentInjury, currentPain = currentPain, recurringPain = recurringPain,
                 medicalRestriction = medicalRestriction, injuryNotes = injuryNotes,
                 confirmConcentratedSchedule = confirmConcentrated, confirmReplace = confirmReplace,
+                operationId = setupOperationId,
+                occurredAtEpochMillis = setupOccurredAtEpochMillis,
             ))
         }
     }

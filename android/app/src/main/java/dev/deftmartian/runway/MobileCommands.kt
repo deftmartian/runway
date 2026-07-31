@@ -28,6 +28,10 @@ internal data class CreatePlanCommand(
     val injuryNotes: String,
     val confirmConcentratedSchedule: Boolean,
     val confirmReplace: Boolean,
+    /** Stable for one submitted setup attempt; a later setup receives a new identity. */
+    val operationId: String,
+    /** Stable audit time for the operation, including a retry after process recreation. */
+    val occurredAtEpochMillis: Long,
 ) : MobileCommand {
     override val action = "create_plan"
 }

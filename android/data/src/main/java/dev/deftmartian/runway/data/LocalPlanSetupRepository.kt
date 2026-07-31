@@ -18,11 +18,38 @@ class LocalPlanSetupRepository(
 
         return database.withTransaction {
             val plans = database.goalPlanDao()
-            val currentGoalCount = plans.currentGoalIds(CURRENT_STATE_QUERY_LIMIT).size
-            val activePlanCount = plans.activePlanIds(ACTIVE_STATE_QUERY_LIMIT).size
+            val candidate = request.candidate
+            val candidatePlanId = (candidate as? LocalPlanCandidate.Generated)?.graph?.plan?.planId
+            database.planSetupReceiptDao().receipt(request.operationId)?.let { receipt ->
+                if (receipt.operationFingerprint != request.operationFingerprint) {
+                    return@withTransaction LocalPlanSetupResult.Rejected(
+                        LocalPlanSetupError.OPERATION_ID_REUSED,
+                    )
+                }
+                if (
+                    receipt.goalId != candidate.goal.goalId ||
+                    receipt.planId != candidatePlanId ||
+                    !plans.goalExists(receipt.goalId) ||
+                    (receipt.planId != null && !plans.planExists(receipt.planId))
+                ) {
+                    return@withTransaction LocalPlanSetupResult.Rejected(
+                        LocalPlanSetupError.OPERATION_RECEIPT_INVALID,
+                    )
+                }
+                return@withTransaction LocalPlanSetupResult.AlreadyCreated(
+                    receipt.goalId,
+                    receipt.planId,
+                )
+            }
+
+            val currentGoalIds = plans.currentGoalIds(CURRENT_STATE_QUERY_LIMIT)
+            val activePlanIds = plans.activePlanIds(ACTIVE_STATE_QUERY_LIMIT)
+            val currentGoalCount = currentGoalIds.size
+            val activePlanCount = activePlanIds.size
             if (currentGoalCount > 1 || activePlanCount > 1) {
                 return@withTransaction LocalPlanSetupResult.Rejected(LocalPlanSetupError.CURRENT_STATE_LIMIT_EXCEEDED)
             }
+
             if ((currentGoalCount > 0 || activePlanCount > 0) && !request.confirmReplaceCurrent) {
                 return@withTransaction LocalPlanSetupResult.ReplacementConfirmationRequired(
                     currentGoalCount = currentGoalCount,
@@ -30,8 +57,6 @@ class LocalPlanSetupRepository(
                 )
             }
 
-            val candidate = request.candidate
-            val candidatePlanId = (candidate as? LocalPlanCandidate.Generated)?.graph?.plan?.planId
             if (plans.goalExists(candidate.goal.goalId) ||
                 (candidatePlanId != null && plans.planExists(candidatePlanId))
             ) {
@@ -44,7 +69,11 @@ class LocalPlanSetupRepository(
                 plans.archiveCurrentGoals(request.archiveAtEpochMillis)
             }
 
-            database.profileSettingsDao().replaceOnboardingInputs(request.profile, request.availabilityDays)
+            val profiles = database.profileSettingsDao()
+            profiles.replaceOnboardingInputs(
+                request.profile.preservingLocalPreferencesFrom(profiles.get()),
+                request.availabilityDays,
+            )
             (candidate as? LocalPlanCandidate.Generated)?.graph?.let { graph ->
                 plans.saveGoal(graph.goal)
                 plans.createPlanGraph(graph.plan, graph.weeks, graph.workouts, graph.planSummaryWarnings)
@@ -52,11 +81,19 @@ class LocalPlanSetupRepository(
                 for (block in graph.blocks) plans.saveBlock(block)
                 for (segment in graph.segments) plans.saveSegment(segment)
                 for (reference in graph.workoutSourceReferences) plans.saveWorkoutSourceReference(reference)
-                LocalPlanSetupResult.Created(graph.goal.goalId, graph.plan.planId)
             } ?: run {
                 plans.saveGoal(candidate.goal)
-                LocalPlanSetupResult.Created(candidate.goal.goalId, planId = null)
             }
+            database.planSetupReceiptDao().insert(
+                PlanSetupReceiptEntity(
+                    operationId = request.operationId,
+                    operationFingerprint = request.operationFingerprint,
+                    goalId = candidate.goal.goalId,
+                    planId = candidatePlanId,
+                    committedAtEpochMillis = request.archiveAtEpochMillis,
+                ),
+            )
+            LocalPlanSetupResult.Created(candidate.goal.goalId, candidatePlanId)
         }
     }
 
@@ -67,7 +104,33 @@ class LocalPlanSetupRepository(
     }
 }
 
+/**
+ * Setup owns schedule, baseline, time-zone, and health-context inputs. Settings owns privacy and
+ * heart-rate configuration, so creating or replacing a plan must not reset those explicit choices.
+ */
+internal fun ProfileSettingsEntity.preservingLocalPreferencesFrom(
+    existing: ProfileSettingsEntity?,
+): ProfileSettingsEntity = existing?.let {
+    copy(
+        routeDataMode = it.routeDataMode,
+        heartRateDataMode = it.heartRateDataMode,
+        heartRateSettingsSource = it.heartRateSettingsSource,
+        maxHeartRateBpm = it.maxHeartRateBpm,
+        zone2FloorBpm = it.zone2FloorBpm,
+        zone3FloorBpm = it.zone3FloorBpm,
+        zone4FloorBpm = it.zone4FloorBpm,
+        zone5FloorBpm = it.zone5FloorBpm,
+        experienceLevel = it.experienceLevel,
+        sexForEstimates = it.sexForEstimates,
+        ageYears = it.ageYears,
+    )
+} ?: this
+
 data class LocalPlanSetupRequest(
+    /** Stable for one form submission, including retries after process recreation. */
+    val operationId: String,
+    /** SHA-256 of normalized setup fields, excluding confirmation and attempt time. */
+    val operationFingerprint: String,
     val profile: ProfileSettingsEntity,
     val availabilityDays: List<Int>,
     val candidate: LocalPlanCandidate,
@@ -90,6 +153,7 @@ sealed interface LocalPlanCandidate {
 
 sealed interface LocalPlanSetupResult {
     data class Created(val goalId: String, val planId: String?) : LocalPlanSetupResult
+    data class AlreadyCreated(val goalId: String, val planId: String?) : LocalPlanSetupResult
     data class ReplacementConfirmationRequired(
         val currentGoalCount: Int,
         val activePlanCount: Int,
@@ -106,6 +170,8 @@ enum class LocalPlanSetupError {
     GENERATED_GRAPH_MUST_USE_ACTIVE_STATE,
     IDENTITY_ALREADY_EXISTS,
     CURRENT_STATE_LIMIT_EXCEEDED,
+    OPERATION_ID_REUSED,
+    OPERATION_RECEIPT_INVALID,
 }
 
 /** Pure, side-effect-free gate used before opening a Room transaction. */
@@ -118,7 +184,12 @@ object LocalPlanSetupPreparation {
         if (request.availabilityDays.distinct().size != request.availabilityDays.size ||
             request.availabilityDays.any { it !in 0..6 }
         ) return Invalid(LocalPlanSetupError.INVALID_AVAILABILITY)
-        if (request.archiveAtEpochMillis < 0 || !validId(request.candidate.goal.goalId)) {
+        if (
+            request.archiveAtEpochMillis < 0 ||
+            !validId(request.operationId) ||
+            !SHA_256.matches(request.operationFingerprint) ||
+            !validId(request.candidate.goal.goalId)
+        ) {
             return Invalid(LocalPlanSetupError.INVALID_IDENTITY)
         }
 
@@ -153,4 +224,5 @@ object LocalPlanSetupPreparation {
     }
 
     private fun validId(value: String): Boolean = value.isNotBlank() && value.length <= 256
+    private val SHA_256 = Regex("[0-9a-f]{64}")
 }

@@ -226,7 +226,7 @@ internal fun CalendarScreen(
         }
         submittedDialogAction = null
     }
-    NativeList(loading) {
+    NativeList(loading, horizontalContentPadding = 8.dp) {
         item { ScreenContext("Your plan and completed runs by date.") }
         if (payload != null && payload.onboardingRequired != true) {
             item {

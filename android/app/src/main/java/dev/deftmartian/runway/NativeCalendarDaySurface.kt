@@ -63,56 +63,65 @@ internal fun CalendarMonthLedger(
     }
     val horizontalScroll = rememberScrollState()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val minimumGridWidth = 344.dp
-        val gridWidth = if (maxWidth < minimumGridWidth) minimumGridWidth else maxWidth
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(horizontalScroll),
-        ) {
-            Column(
-                modifier = Modifier.width(gridWidth),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+        val needsHorizontalScroll = calendarGridNeedsHorizontalScroll(maxWidth.value)
+        val gridWidth = if (needsHorizontalScroll) CalendarMinimumGridWidth else maxWidth
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (needsHorizontalScroll) {
+                Text(
+                    "Swipe horizontally to see all seven days.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(horizontalScroll),
             ) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    dayLabels.forEach { day ->
-                        Text(
-                            day.take(3),
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
+                Column(
+                    modifier = Modifier.width(gridWidth),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        dayLabels.forEach { day ->
+                            Text(
+                                day.take(3),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
-                }
-                cells.chunked(7).forEach { week ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(1.dp),
-                    ) {
-                        week.forEach { date ->
-                            if (date == null) {
-                                Text(
-                                    "",
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 68.dp),
-                                )
-                            } else {
-                                val dateValue = date.toString()
-                                val dayWorkouts = workoutsByDate[dateValue].orEmpty()
-                                val dayActivities = activitiesByDate[dateValue].orEmpty()
-                                CalendarDayCell(
-                                    date = date,
-                                    isToday = dateValue == today,
-                                    isSelected = dateValue == selectedDay,
-                                    workouts = dayWorkouts,
-                                    activities = dayActivities,
-                                    feedbackByWorkout = feedbackByWorkout,
-                                    onClick = { onDaySelected(dateValue) },
-                                    modifier = Modifier.weight(1f),
-                                )
+                    cells.chunked(7).forEach { week ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        ) {
+                            week.forEach { date ->
+                                if (date == null) {
+                                    Text(
+                                        "",
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 68.dp),
+                                    )
+                                } else {
+                                    val dateValue = date.toString()
+                                    val dayWorkouts = workoutsByDate[dateValue].orEmpty()
+                                    val dayActivities = activitiesByDate[dateValue].orEmpty()
+                                    CalendarDayCell(
+                                        date = date,
+                                        isToday = dateValue == today,
+                                        isSelected = dateValue == selectedDay,
+                                        workouts = dayWorkouts,
+                                        activities = dayActivities,
+                                        feedbackByWorkout = feedbackByWorkout,
+                                        onClick = { onDaySelected(dateValue) },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
                             }
                         }
                     }
@@ -121,6 +130,11 @@ internal fun CalendarMonthLedger(
         }
     }
 }
+
+internal val CalendarMinimumGridWidth = 344.dp
+
+internal fun calendarGridNeedsHorizontalScroll(availableWidthDp: Float): Boolean =
+    availableWidthDp < CalendarMinimumGridWidth.value
 
 @Composable
 private fun CalendarDayCell(

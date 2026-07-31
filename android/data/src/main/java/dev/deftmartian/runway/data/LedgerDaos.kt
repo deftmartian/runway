@@ -1152,8 +1152,20 @@ interface AppMetadataDao {
     @Query("SELECT * FROM app_metadata WHERE key = :key")
     suspend fun value(key: String): AppMetadataEntity?
 
+    @Query("DELETE FROM app_metadata WHERE key = :key")
+    suspend fun delete(key: String): Int
+
     @Query("DELETE FROM app_metadata")
     suspend fun clear()
+}
+
+@Dao
+interface PlanSetupReceiptDao {
+    @Query("SELECT * FROM plan_setup_receipts WHERE operationId = :operationId")
+    suspend fun receipt(operationId: String): PlanSetupReceiptEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(receipt: PlanSetupReceiptEntity)
 }
 
 @Dao

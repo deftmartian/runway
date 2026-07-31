@@ -225,13 +225,15 @@ internal object StandaloneOnboardingPersistenceMapper {
     fun map(
         command: CreatePlanCommand,
         outcome: StandaloneOnboardingOutcome,
-        operationId: String,
-        occurredAtEpochMillis: Long,
     ): LocalPlanSetupRequest {
-        require(operationId.isNotBlank()) { "operationId must not be blank" }
-        require(occurredAtEpochMillis >= 0) { "occurredAtEpochMillis must not be negative" }
+        require(command.operationId.isNotBlank()) { "operationId must not be blank" }
+        require(command.occurredAtEpochMillis >= 0) {
+            "occurredAtEpochMillis must not be negative"
+        }
         require(outcome !is StandaloneOnboardingOutcome.Invalid) { "Cannot persist invalid onboarding" }
 
+        val operationId = command.operationId
+        val occurredAtEpochMillis = command.occurredAtEpochMillis
         val metadata = when (outcome) {
             is StandaloneOnboardingOutcome.Planned -> outcome.metadata
             is StandaloneOnboardingOutcome.PendingGoal -> outcome.metadata
@@ -274,6 +276,8 @@ internal object StandaloneOnboardingPersistenceMapper {
             is StandaloneOnboardingOutcome.Invalid -> error("unreachable")
         }
         return LocalPlanSetupRequest(
+            operationId = operationId,
+            operationFingerprint = setupFingerprint(command),
             profile = profile,
             availabilityDays = command.availability,
             candidate = candidate,
@@ -343,6 +347,51 @@ internal object StandaloneOnboardingPersistenceMapper {
         GoalPriority.CONSISTENCY -> "consistency"
     }
     private fun kilometersToMeters(value: Double): Int = kotlin.math.floor(value * 1000 + .5).toInt()
+
+    /**
+     * Versioned, length-prefixed encoding prevents delimiter ambiguity. Confirmation to replace an
+     * existing plan and attempt time are deliberately excluded: they may change between a blocked
+     * first submit and the exact committed retry without changing the requested plan.
+     */
+    private fun setupFingerprint(command: CreatePlanCommand): String {
+        val fields = listOf(
+            "runway-plan-setup-v1",
+            command.goalKind.normalizedToken(),
+            command.startMode.normalizedToken(),
+            command.raceDistance.normalizedToken(),
+            command.targetDate.trim(),
+            command.priority.normalizedToken(),
+            command.currentWeeklyDistanceKm.normalizedDecimal(),
+            command.currentRunsPerWeek.normalizedWhole(),
+            command.longestRecentRunKm.normalizedDecimal(),
+            command.calibrationDurationMinutes.normalizedWhole(),
+            command.availability.distinct().sorted().joinToString(","),
+            command.preferredLongRunDay.normalizedWhole(),
+            command.timeZone.trim(),
+            command.recentInjury.flag(),
+            command.currentPain.flag(),
+            command.recurringPain.flag(),
+            command.medicalRestriction.flag(),
+            command.injuryNotes.trim(),
+            command.confirmConcentratedSchedule.flag(),
+        )
+        val canonical = buildString {
+            fields.forEach { value ->
+                val bytes = value.toByteArray(StandardCharsets.UTF_8)
+                append(bytes.size).append(':').append(value)
+            }
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun String.normalizedToken(): String = trim().lowercase()
+    private fun String.normalizedWhole(): String = trim().toIntOrNull()?.toString() ?: trim()
+    private fun String.normalizedDecimal(): String =
+        trim().toBigDecimalOrNull()?.stripTrailingZeros()?.toPlainString() ?: trim()
+    private fun Boolean.flag(): String = if (this) "1" else "0"
+
     private fun stableId(prefix: String, operationId: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(operationId.toByteArray(StandardCharsets.UTF_8))

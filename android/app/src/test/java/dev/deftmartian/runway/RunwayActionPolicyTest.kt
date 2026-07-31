@@ -1,5 +1,6 @@
 package dev.deftmartian.runway
 
+import dev.deftmartian.runway.data.RetentionRepairNotice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -103,5 +104,45 @@ class RunwayActionPolicyTest {
         )
         assertTrue(trainingExportMessage(setOf("activities")).contains("limited to 2,000 rows"))
         assertTrue(trainingExportMessage(setOf("activities")).contains("Use Backup"))
+    }
+
+    @Test
+    fun `retention repair notice states preserved data consequence and next action`() {
+        val message = RetentionRepairNotice(
+            routeModeRestored = true,
+            heartRateModeRestored = true,
+        ).message()
+
+        assertTrue(message.contains("private route and heart-rate data"))
+        assertTrue(message.contains("restored to Keep private"))
+        assertTrue(message.contains("Review Privacy in Settings"))
+        assertTrue(
+            RetentionRepairNotice(
+                routeModeRestored = true,
+                heartRateModeRestored = false,
+            ).settingsMessage().contains("kept the data"),
+        )
+    }
+
+    @Test
+    fun `retention repair remains on settings until explicit acknowledgement`() {
+        val repair = RetentionRepairNotice(
+            routeModeRestored = true,
+            heartRateModeRestored = false,
+        )
+        val settings = NativeSurface.Settings(NativeSettingsState())
+
+        assertEquals(
+            repair,
+            (settings.withRetentionRepair(repair) as NativeSurface.Settings)
+                .payload
+                ?.retentionRepair,
+        )
+        assertEquals(
+            null,
+            (settings.withRetentionRepair(null) as NativeSurface.Settings)
+                .payload
+                ?.retentionRepair,
+        )
     }
 }

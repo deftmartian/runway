@@ -41,7 +41,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { 2_000 })
             .updateFeedback("review", feltHard = false, pain = true)
 
-        assertTrueFeedbackUpdated(result)
+        assertFalse(assertFeedbackUpdated(result).appliedDecisionPreserved)
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
         assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("review")).pain)
     }
@@ -71,7 +71,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { 2_000 })
             .updateFeedback("accepted", feltHard = true, pain = false)
 
-        assertTrueFeedbackUpdated(result)
+        assertEquals(true, assertFeedbackUpdated(result).appliedDecisionPreserved)
         val stored = requireNotNull(database.activityLedgerDao().activityConsequence("accepted"))
         assertEquals("keep_plan", stored.appliedDecision)
         assertEquals(1_000L, stored.resolvedAtEpochMillis)
@@ -179,7 +179,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { now })
             .updateFeedback("old-accepted", feltHard = false, pain = true)
 
-        assertTrueFeedbackUpdated(result)
+        assertFalse(assertFeedbackUpdated(result).appliedDecisionPreserved)
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
         assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("old-accepted")).pain)
     }
@@ -230,8 +230,11 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
     }
 
-    private fun assertTrueFeedbackUpdated(result: LocalActivityReviewResult) {
+    private fun assertFeedbackUpdated(
+        result: LocalActivityReviewResult,
+    ): LocalActivityReviewResult.FeedbackUpdated {
         check(result is LocalActivityReviewResult.FeedbackUpdated)
+        return result
     }
 
     private fun profile() = ProfileSettingsEntity(

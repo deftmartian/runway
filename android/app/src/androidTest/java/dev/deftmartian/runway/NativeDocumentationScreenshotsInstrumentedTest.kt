@@ -131,6 +131,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                         onHealthContextChanged = {},
                         onEraseImportedActivityData = {},
                         onEraseAllData = {},
+                        onAcknowledgeRetentionRepair = {},
                     )
                 }
             }

@@ -228,7 +228,11 @@ class LocalActivityReviewRepository(
         // Preserve an already applied consequence as immutable decision history. Recalculating it
         // would clear its claim and make a second future-plan mutation possible from one activity.
         if (alreadyApplied) {
-            return@withTransaction LocalActivityReviewResult.FeedbackUpdated(activity.activityId, null)
+            return@withTransaction LocalActivityReviewResult.FeedbackUpdated(
+                activityId = activity.activityId,
+                consequence = null,
+                appliedDecisionPreserved = true,
+            )
         }
 
         val consequence = when {
@@ -247,7 +251,11 @@ class LocalActivityReviewRepository(
             }
             else -> null
         }
-        LocalActivityReviewResult.FeedbackUpdated(activity.activityId, consequence)
+        LocalActivityReviewResult.FeedbackUpdated(
+            activityId = activity.activityId,
+            consequence = consequence,
+            appliedDecisionPreserved = false,
+        )
     }
 
     suspend fun unlink(activityId: String): LocalActivityReviewResult = database.withTransaction {
@@ -477,6 +485,7 @@ sealed interface LocalActivityReviewResult {
     data class FeedbackUpdated(
         val activityId: String,
         val consequence: Consequence?,
+        val appliedDecisionPreserved: Boolean,
     ) : LocalActivityReviewResult
 
     data class Unlinked(

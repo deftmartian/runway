@@ -41,6 +41,7 @@ internal fun RoutePrivacyDialog(
 ) {
     var selection by rememberSaveable { mutableStateOf(current) }
     val deletesStoredRoutes = routePrivacyChangeDeletesStoredRoutes(current, selection)
+    val selectionChanged = routePrivacySelectionChanged(current, selection)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Route privacy") },
@@ -86,7 +87,7 @@ internal fun RoutePrivacyDialog(
         confirmButton = {
             Button(
                 onClick = { onSubmit(selection) },
-                enabled = !actionPending,
+                enabled = !actionPending && selectionChanged,
                 colors =
                     if (deletesStoredRoutes) {
                         ButtonDefaults.buttonColors(
@@ -109,6 +110,11 @@ internal fun routePrivacyChangeDeletesStoredRoutes(
     selected: NativeRoutePrivacy,
 ): Boolean = current == NativeRoutePrivacy.KeepPrivate && selected == NativeRoutePrivacy.Discard
 
+internal fun routePrivacySelectionChanged(
+    current: NativeRoutePrivacy,
+    selected: NativeRoutePrivacy,
+): Boolean = current != selected
+
 @Composable
 internal fun HeartRatePrivacyDialog(
     current: NativeHeartRatePrivacy,
@@ -119,6 +125,7 @@ internal fun HeartRatePrivacyDialog(
     var selection by rememberSaveable { mutableStateOf(current) }
     val deletesStoredHeartRate =
         heartRatePrivacyChangeDeletesStoredData(current, selection)
+    val selectionChanged = heartRatePrivacySelectionChanged(current, selection)
     AlertDialog(
         modifier = Modifier.testTag("heart-rate-privacy-dialog"),
         onDismissRequest = onDismiss,
@@ -171,7 +178,7 @@ internal fun HeartRatePrivacyDialog(
         confirmButton = {
             Button(
                 onClick = { onSubmit(selection) },
-                enabled = !actionPending,
+                enabled = !actionPending && selectionChanged,
                 colors = if (deletesStoredHeartRate) {
                     ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
@@ -194,6 +201,11 @@ internal fun heartRatePrivacyChangeDeletesStoredData(
 ): Boolean =
     current == NativeHeartRatePrivacy.KeepPrivate &&
         selected == NativeHeartRatePrivacy.Discard
+
+internal fun heartRatePrivacySelectionChanged(
+    current: NativeHeartRatePrivacy,
+    selected: NativeHeartRatePrivacy,
+): Boolean = current != selected
 
 @Composable
 internal fun HealthContextDialog(

@@ -1,9 +1,18 @@
 package dev.deftmartian.runway
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeSettingsSummaryTest {
+    @Test
+    fun `settings actions stack before narrow or enlarged text becomes cramped`() {
+        assertFalse(usesStackedSettingsActionRow(328f, 1f))
+        assertTrue(usesStackedSettingsActionRow(299f, 1f))
+        assertTrue(usesStackedSettingsActionRow(328f, 1.3f))
+    }
+
     @Test
     fun `current pain remains visible in the standalone settings summary`() {
         assertEquals(
@@ -90,6 +99,20 @@ class NativeSettingsSummaryTest {
                 NativeRoutePrivacy.Discard,
             ),
         )
+        assertEquals(
+            false,
+            routePrivacySelectionChanged(
+                NativeRoutePrivacy.Discard,
+                NativeRoutePrivacy.Discard,
+            ),
+        )
+        assertEquals(
+            true,
+            routePrivacySelectionChanged(
+                NativeRoutePrivacy.Discard,
+                NativeRoutePrivacy.KeepPrivate,
+            ),
+        )
     }
 
     @Test
@@ -106,6 +129,20 @@ class NativeSettingsSummaryTest {
             heartRatePrivacyChangeDeletesStoredData(
                 NativeHeartRatePrivacy.Discard,
                 NativeHeartRatePrivacy.Discard,
+            ),
+        )
+        assertEquals(
+            false,
+            heartRatePrivacySelectionChanged(
+                NativeHeartRatePrivacy.Discard,
+                NativeHeartRatePrivacy.Discard,
+            ),
+        )
+        assertEquals(
+            true,
+            heartRatePrivacySelectionChanged(
+                NativeHeartRatePrivacy.Discard,
+                NativeHeartRatePrivacy.KeepPrivate,
             ),
         )
     }

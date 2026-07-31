@@ -16,6 +16,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.deftmartian.runway.data.RetentionRepairNotice
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,6 +55,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onHeartRatePrivacyChanged = {},
                     onHeartRateChanged = {}, onHealthContextChanged = {}, onEraseImportedActivityData = {},
                     onEraseAllData = {},
+                    onAcknowledgeRetentionRepair = {},
                 )
             }
         }
@@ -166,6 +169,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onHealthContextChanged = {},
                     onEraseImportedActivityData = {},
                     onEraseAllData = {},
+                    onAcknowledgeRetentionRepair = {},
                 )
             }
         }
@@ -206,6 +210,58 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Build a plan before scheduling future runs.")
             .assertIsDisplayed()
         compose.onAllNodesWithText("Add a run here").assertCountEquals(0)
+    }
+
+    @Test
+    fun repairedPrivacyModesRemainVisibleUntilTheRunnerDismissesTheNote() {
+        var acknowledged = false
+        compose.setContent {
+            RunwayTheme {
+                RunwayNativeApp(
+                    state = RunwayUiState.Ready(
+                        surface = NativeSurface.Settings(
+                            NativeSettingsState(
+                                retentionRepair = RetentionRepairNotice(
+                                    routeModeRestored = true,
+                                    heartRateModeRestored = true,
+                                ),
+                            ),
+                        ),
+                        loading = false,
+                    ),
+                    onDestinationSelected = {},
+                    onCalendarMonthSelected = {},
+                    onLoadMoreHistory = {},
+                    onLoadMoreInbox = {},
+                    onLoadActivityTrace = {},
+                    onOpenHistoryDetail = {},
+                    onRetryOpen = {},
+                    onAction = {},
+                    onApplyWorkoutPreview = {},
+                    onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {},
+                    onDismissPlanDecisionPreview = {},
+                    onOpenFolder = {},
+                    onImportGpx = {},
+                    onOpenHealthConnect = {},
+                    onCreateBackup = {},
+                    onRestoreBackup = {},
+                    onExportData = {},
+                    onTimeZoneChanged = {},
+                    onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {},
+                    onHeartRateChanged = {},
+                    onHealthContextChanged = {},
+                    onEraseImportedActivityData = {},
+                    onEraseAllData = {},
+                    onAcknowledgeRetentionRepair = { acknowledged = true },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Privacy settings restored").assertIsDisplayed()
+        compose.onNodeWithText("Dismiss note").performClick()
+        compose.runOnIdle { assertTrue(acknowledged) }
     }
 
     private fun assertSurface(label: String, marker: String) {

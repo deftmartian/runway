@@ -944,3 +944,27 @@ data class AppMetadataEntity(
     val value: String,
     val updatedAtEpochMillis: Long,
 )
+
+/**
+ * Durable proof that one setup operation committed. The fingerprint binds a UI operation identity
+ * to the exact normalized setup form; it is not inferred from goal dates or generated row IDs.
+ */
+@Entity(
+    tableName = "plan_setup_receipts",
+    foreignKeys = [
+        ForeignKey(
+            entity = GoalEntity::class,
+            parentColumns = ["goalId"],
+            childColumns = ["goalId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["goalId"])],
+)
+data class PlanSetupReceiptEntity(
+    @PrimaryKey val operationId: String,
+    val operationFingerprint: String,
+    val goalId: String,
+    val planId: String?,
+    val committedAtEpochMillis: Long,
+)

@@ -93,6 +93,8 @@ class LocalPlanSetupPreparationTest {
         candidate: LocalPlanCandidate,
         availabilityDays: List<Int> = listOf(1, 3, 6),
     ) = LocalPlanSetupRequest(
+        operationId = "test-operation",
+        operationFingerprint = "a".repeat(64),
         profile = profile(),
         availabilityDays = availabilityDays,
         candidate = candidate,

@@ -15,13 +15,20 @@ enum class HeartRateDataMode(val storageValue: String) {
 
 sealed interface RouteDataModeUpdate {
     data class Updated(val mode: RouteDataMode) : RouteDataModeUpdate
+    data class Unchanged(val mode: RouteDataMode) : RouteDataModeUpdate
     data object ProfileNotConfigured : RouteDataModeUpdate
 }
 
 sealed interface HeartRateDataModeUpdate {
     data class Updated(val mode: HeartRateDataMode) : HeartRateDataModeUpdate
+    data class Unchanged(val mode: HeartRateDataMode) : HeartRateDataModeUpdate
     data object ProfileNotConfigured : HeartRateDataModeUpdate
 }
+
+data class RetentionRepairNotice(
+    val routeModeRestored: Boolean,
+    val heartRateModeRestored: Boolean,
+)
 
 /**
  * Owns the privacy boundary for route retention.
@@ -39,6 +46,9 @@ class LocalPrivacyRepository(
             val profileDao = database.profileSettingsDao()
             val profile = profileDao.get() ?: return@withTransaction RouteDataModeUpdate.ProfileNotConfigured
 
+            if (profile.routeDataMode == mode.storageValue) {
+                return@withTransaction RouteDataModeUpdate.Unchanged(mode)
+            }
             if (mode == RouteDataMode.Discard) {
                 database.activityLedgerDao().markAllRouteTracesDiscarded()
                 database.activityLedgerDao().clearAllRouteSamples()
@@ -63,6 +73,9 @@ class LocalPrivacyRepository(
             val profileDao = database.profileSettingsDao()
             val profile = profileDao.get() ?: return@withTransaction HeartRateDataModeUpdate.ProfileNotConfigured
 
+            if (profile.heartRateDataMode == mode.storageValue) {
+                return@withTransaction HeartRateDataModeUpdate.Unchanged(mode)
+            }
             if (mode == HeartRateDataMode.Discard) {
                 database.activityLedgerDao().markAllHeartRateDataDiscarded()
                 database.activityLedgerDao().clearAllHeartRateSamples()
@@ -77,4 +90,21 @@ class LocalPrivacyRepository(
             )
             HeartRateDataModeUpdate.Updated(mode)
         }
+
+    suspend fun pendingRetentionRepairNotice(): RetentionRepairNotice? {
+        val metadata = database.appMetadataDao()
+        val route = metadata.value(RunwayLedgerMigrations.ROUTE_RETENTION_REPAIR_KEY) != null
+        val heartRate =
+            metadata.value(RunwayLedgerMigrations.HEART_RATE_RETENTION_REPAIR_KEY) != null
+        return if (route || heartRate) RetentionRepairNotice(route, heartRate) else null
+    }
+
+    suspend fun acknowledgeRetentionRepairNotice() {
+        database.withTransaction {
+            database.appMetadataDao().delete(RunwayLedgerMigrations.ROUTE_RETENTION_REPAIR_KEY)
+            database.appMetadataDao().delete(
+                RunwayLedgerMigrations.HEART_RATE_RETENTION_REPAIR_KEY,
+            )
+        }
+    }
 }

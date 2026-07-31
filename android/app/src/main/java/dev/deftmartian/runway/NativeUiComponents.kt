@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 internal fun NativeList(
     loading: Boolean,
     state: LazyListState = rememberLazyListState(),
+    horizontalContentPadding: Dp = 16.dp,
     bottomContentPadding: Dp = 18.dp,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
@@ -62,9 +63,9 @@ internal fun NativeList(
                 .fillMaxWidth()
                 .fillMaxHeight(),
             contentPadding = PaddingValues(
-                start = 16.dp,
+                start = horizontalContentPadding,
                 top = 18.dp,
-                end = 16.dp,
+                end = horizontalContentPadding,
                 bottom = bottomContentPadding,
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),

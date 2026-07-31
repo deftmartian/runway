@@ -32,6 +32,7 @@ import dev.deftmartian.runway.data.RouteDataMode
 import dev.deftmartian.runway.data.RouteDataModeUpdate
 import dev.deftmartian.runway.data.HeartRateDataMode
 import dev.deftmartian.runway.data.HeartRateDataModeUpdate
+import dev.deftmartian.runway.data.RetentionRepairNotice
 import dev.deftmartian.runway.data.SexForEstimate
 import dev.deftmartian.runway.data.HeartRateSettingsSource
 import dev.deftmartian.runway.data.LocalHeartRateProfile
@@ -186,6 +187,8 @@ internal class RunwayViewModel(
     private var loadGeneration = 0L
     private var surfaceLoadJob: Job? = null
     private var history: LocalHistoryReadModel? = null
+    private var retentionRepairChecked = false
+    private var retentionRepair: RetentionRepairNotice? = null
 
     val state: StateFlow<RunwayUiState> = mutableState.asStateFlow()
     val restartAfterRestore: StateFlow<Boolean> =
@@ -508,6 +511,35 @@ internal class RunwayViewModel(
         }
     }
 
+    fun acknowledgeRetentionRepair() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending || retentionRepair == null) return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            val result = localResult {
+                withContext(Dispatchers.IO) {
+                    services.privacy.acknowledgeRetentionRepairNotice()
+                }
+            }
+            val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
+            result.onSuccess {
+                retentionRepair = null
+                mutableState.value = current.copy(
+                    surface = current.surface.withRetentionRepair(null),
+                    actionPending = false,
+                )
+            }.onFailure {
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(
+                        "The privacy note could not be dismissed. The restored settings remain unchanged.",
+                        true,
+                    ),
+                )
+            }
+        }
+    }
+
     fun updateHeartRate(value: NativeHeartRateProfile) = mutateSetting {
         if (value.source == NativeHeartRateSource.NotConfigured) {
             services.profile.clearHeartRateProfile()
@@ -549,7 +581,12 @@ internal class RunwayViewModel(
                     }
                 }
             }
-                .onSuccess { mutableState.value = RunwayUiState.Loading; load(NativeDestination.Setup) }
+                .onSuccess {
+                    retentionRepair = null
+                    retentionRepairChecked = true
+                    mutableState.value = RunwayUiState.Loading
+                    load(NativeDestination.Setup)
+                }
                 .onFailure { error ->
                     val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
                     mutableState.value = current.copy(
@@ -1188,17 +1225,13 @@ internal class RunwayViewModel(
             }
             throw IllegalArgumentException(detail)
         }
-        val operation =
-            "setup:${command.goalKind}:${command.targetDate}:${command.timeZone}:" +
-                command.availability.sorted()
         val request = StandaloneOnboardingPersistenceMapper.map(
             command,
             outcome,
-            operation,
-            System.currentTimeMillis(),
         )
         return when (val result = services.planSetup.setUp(request)) {
             is LocalPlanSetupResult.Created -> "Your local plan is ready."
+            is LocalPlanSetupResult.AlreadyCreated -> "Your local plan is ready."
             is LocalPlanSetupResult.ReplacementConfirmationRequired ->
                 throw IllegalStateException(
                     "An existing local plan remains. Confirm replacing it to archive the prior " +
@@ -1220,9 +1253,14 @@ internal class RunwayViewModel(
             throw IllegalStateException(
                 "Review was rejected: ${issue.name.lowercase().replace('_', ' ')}",
             )
+        is LocalActivityReviewResult.FeedbackUpdated ->
+            if (appliedDecisionPreserved) {
+                "Feedback corrected. The earlier plan choice remains in History and was not recalculated."
+            } else {
+                "Saved to your local training log."
+            }
         is LocalActivityReviewResult.AcceptedExtra,
         is LocalActivityReviewResult.Deleted,
-        is LocalActivityReviewResult.FeedbackUpdated,
         is LocalActivityReviewResult.Linked,
         is LocalActivityReviewResult.ReturnedToReview,
         is LocalActivityReviewResult.Unlinked,
@@ -1305,7 +1343,7 @@ internal class RunwayViewModel(
         surfaceLoadJob?.cancel()
         surfaceLoadJob = viewModelScope.launch {
             val result = localResult {
-                surfaceLoader.load(
+                val loaded = surfaceLoader.load(
                     SurfaceLoadRequest(
                         destination = destination,
                         calendarMonth = calendarMonth,
@@ -1317,9 +1355,22 @@ internal class RunwayViewModel(
                         inboxActivityLimit = inboxActivityLimit,
                     ),
                 )
+                val checkedNow = !retentionRepairChecked
+                val persistedRepair = if (checkedNow) {
+                    withContext(Dispatchers.IO) {
+                        services.privacy.pendingRetentionRepairNotice()
+                    }
+                } else {
+                    retentionRepair
+                }
+                Triple(loaded, persistedRepair, checkedNow)
             }
-            result.onSuccess { loaded ->
+            result.onSuccess { (loaded, persistedRepair, checkedNow) ->
                 if (generation != loadGeneration) return@onSuccess
+                if (checkedNow) {
+                    retentionRepairChecked = true
+                    retentionRepair = persistedRepair
+                }
                 calendarMonth = loaded.calendarMonth
                 if (destination == NativeDestination.Calendar) {
                     savedStateHandle[SAVED_CALENDAR_MONTH] = calendarMonth.toString()
@@ -1327,7 +1378,13 @@ internal class RunwayViewModel(
                 loaded.history?.let { history = it }
                 savedStateHandle[SAVED_DESTINATION] = loaded.surface.destination.name
                 val current = mutableState.value as? RunwayUiState.Ready
-                mutableState.value = mergeLoadedSurface(current, previous, loaded.surface)
+                val loadedSurface = loaded.surface.withRetentionRepair(retentionRepair)
+                val merged = mergeLoadedSurface(current, previous, loadedSurface)
+                mutableState.value = if (!checkedNow || persistedRepair == null) {
+                    merged
+                } else {
+                    merged.copy(notice = NativeNotice(persistedRepair.message()))
+                }
             }.onFailure {
                 if (generation != loadGeneration) return@onFailure
                 val current = mutableState.value as? RunwayUiState.Ready
@@ -1354,12 +1411,14 @@ internal class RunwayViewModel(
 
     private fun requireRoutePrivacyUpdate(result: RouteDataModeUpdate) = when (result) {
         is RouteDataModeUpdate.Updated -> Unit
+        is RouteDataModeUpdate.Unchanged -> Unit
         RouteDataModeUpdate.ProfileNotConfigured ->
             throw IllegalStateException("Local setup is not complete.")
     }
 
     private fun requireHeartRatePrivacyUpdate(result: HeartRateDataModeUpdate) = when (result) {
         is HeartRateDataModeUpdate.Updated -> Unit
+        is HeartRateDataModeUpdate.Unchanged -> Unit
         HeartRateDataModeUpdate.ProfileNotConfigured ->
             throw IllegalStateException("Local setup is not complete.")
     }
@@ -1426,6 +1485,37 @@ internal fun activityEvidenceRequestIsCurrent(
 ): Boolean =
     requestGeneration == currentGeneration &&
         requestDestination == currentDestination
+
+internal fun RetentionRepairNotice.message(): String = when {
+    routeModeRestored && heartRateModeRestored ->
+        "Runway found private route and heart-rate data retained by an earlier setup. " +
+            "Both privacy settings were restored to Keep private. Review Privacy in Settings."
+    routeModeRestored ->
+        "Runway found private route data retained by an earlier setup. Route privacy was " +
+            "restored to Keep private. Review Privacy in Settings."
+    else ->
+        "Runway found private heart-rate data retained by an earlier setup. Heart-rate privacy " +
+            "was restored to Keep private. Review Privacy in Settings."
+}
+
+internal fun RetentionRepairNotice.settingsMessage(): String = when {
+    routeModeRestored && heartRateModeRestored ->
+        "An earlier setup left private route and heart-rate data in storage while both settings " +
+            "said Discard. Runway kept the data and restored both settings to Keep private."
+    routeModeRestored ->
+        "An earlier setup left private route data in storage while Route privacy said Discard. " +
+            "Runway kept the data and restored the setting to Keep private."
+    else ->
+        "An earlier setup left private heart-rate data in storage while Heart-rate privacy said " +
+            "Discard. Runway kept the data and restored the setting to Keep private."
+}
+
+internal fun NativeSurface.withRetentionRepair(
+    repair: RetentionRepairNotice?,
+): NativeSurface = when (this) {
+    is NativeSurface.Settings -> copy(payload = payload?.copy(retentionRepair = repair))
+    else -> this
+}
 
 internal fun RunwayUiState.Ready.withoutActiveEvidenceRequests(): RunwayUiState.Ready =
     if (activityEvidenceLoading.isEmpty()) {

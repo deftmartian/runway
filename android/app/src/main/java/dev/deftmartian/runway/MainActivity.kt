@@ -85,6 +85,8 @@ class MainActivity : ComponentActivity() {
                     onHealthContextChanged = runwayViewModel::updateHealthContext,
                     onEraseImportedActivityData = runwayViewModel::eraseImportedActivityData,
                     onEraseAllData = runwayViewModel::eraseAllData,
+                    onAcknowledgeRetentionRepair =
+                        runwayViewModel::acknowledgeRetentionRepair,
                 )
             }
         }

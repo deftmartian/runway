@@ -108,16 +108,20 @@ class StandaloneOnboardingAdapterTest {
             command(startMode = "calibration", targetDate = "2026-03-15", availability = listOf(2, 6)) to "calibration",
         )
         cases.forEachIndexed { index, (command, phase) ->
-            val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
-            val request = StandaloneOnboardingPersistenceMapper.map(command, outcome, "setup-$index", 1234)
+            val operation = command.copy(
+                operationId = "setup-$index",
+                occurredAtEpochMillis = 1234,
+            )
+            val outcome = StandaloneOnboardingAdapter.adapt(operation, utcNow)
+            val request = StandaloneOnboardingPersistenceMapper.map(operation, outcome)
             val generated = request.candidate as LocalPlanCandidate.Generated
 
             assertEquals(phase, generated.graph.plan.phaseType)
             assertEquals("active", generated.graph.goal.state)
-            assertEquals(command.confirmReplace, request.confirmReplaceCurrent)
-            assertEquals(command.availability, request.availabilityDays)
+            assertEquals(operation.confirmReplace, request.confirmReplaceCurrent)
+            assertEquals(operation.availability, request.availabilityDays)
             assertEquals(1234, request.archiveAtEpochMillis)
-            assertEquals(request, StandaloneOnboardingPersistenceMapper.map(command, outcome, "setup-$index", 1234))
+            assertEquals(request, StandaloneOnboardingPersistenceMapper.map(operation, outcome))
         }
     }
 
@@ -129,9 +133,13 @@ class StandaloneOnboardingAdapterTest {
             currentRunsPerWeek = "",
             longestRecentRunKm = "",
             currentPain = true,
-        ).copy(confirmReplace = true)
+        ).copy(
+            confirmReplace = true,
+            operationId = "blocked-operation",
+            occurredAtEpochMillis = 5678,
+        )
         val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
-        val request = StandaloneOnboardingPersistenceMapper.map(command, outcome, "blocked-operation", 5678)
+        val request = StandaloneOnboardingPersistenceMapper.map(command, outcome)
         val pending = request.candidate as LocalPlanCandidate.Pending
 
         assertEquals("pending", pending.goal.state)
@@ -145,8 +153,14 @@ class StandaloneOnboardingAdapterTest {
     @Test fun `persistence profile keeps established baseline and operation ids differ`() {
         val command = command(startMode = "established", targetDate = "2026-04-01")
         val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
-        val first = StandaloneOnboardingPersistenceMapper.map(command, outcome, "one", 999)
-        val second = StandaloneOnboardingPersistenceMapper.map(command, outcome, "two", 999)
+        val first = StandaloneOnboardingPersistenceMapper.map(
+            command.copy(operationId = "one", occurredAtEpochMillis = 999),
+            outcome,
+        )
+        val second = StandaloneOnboardingPersistenceMapper.map(
+            command.copy(operationId = "two", occurredAtEpochMillis = 999),
+            outcome,
+        )
         val firstGraph = (first.candidate as LocalPlanCandidate.Generated).graph
         val secondGraph = (second.candidate as LocalPlanCandidate.Generated).graph
 
@@ -162,6 +176,40 @@ class StandaloneOnboardingAdapterTest {
         assertNotEquals(firstGraph.plan.planId, secondGraph.plan.planId)
     }
 
+    @Test fun `setup fingerprint binds form semantics but excludes confirmation and attempt time`() {
+        val command = command(startMode = "established", targetDate = "2026-04-01")
+        val outcome = StandaloneOnboardingAdapter.adapt(command, utcNow)
+        val initial = StandaloneOnboardingPersistenceMapper.map(command, outcome)
+        val confirmed = command.copy(
+            confirmReplace = true,
+            occurredAtEpochMillis = command.occurredAtEpochMillis + 1_000,
+        )
+        val equivalentNumber = command.copy(currentWeeklyDistanceKm = "12.0")
+        val edited = command.copy(currentWeeklyDistanceKm = "13")
+
+        assertEquals(
+            initial.operationFingerprint,
+            StandaloneOnboardingPersistenceMapper.map(
+                confirmed,
+                StandaloneOnboardingAdapter.adapt(confirmed, utcNow),
+            ).operationFingerprint,
+        )
+        assertEquals(
+            initial.operationFingerprint,
+            StandaloneOnboardingPersistenceMapper.map(
+                equivalentNumber,
+                StandaloneOnboardingAdapter.adapt(equivalentNumber, utcNow),
+            ).operationFingerprint,
+        )
+        assertNotEquals(
+            initial.operationFingerprint,
+            StandaloneOnboardingPersistenceMapper.map(
+                edited,
+                StandaloneOnboardingAdapter.adapt(edited, utcNow),
+            ).operationFingerprint,
+        )
+    }
+
     private fun command(
         goalKind: String = "race",
         startMode: String,
@@ -173,5 +221,27 @@ class StandaloneOnboardingAdapterTest {
         longestRecentRunKm: String = "8",
         timeZone: String = "UTC",
         currentPain: Boolean = false,
-    ) = CreatePlanCommand(goalKind, startMode, raceDistance, targetDate, "finish_healthy", currentWeeklyDistanceKm, currentRunsPerWeek, longestRecentRunKm, "20", availability, "6", timeZone, false, currentPain, false, false, "", false, false)
+    ) = CreatePlanCommand(
+        goalKind,
+        startMode,
+        raceDistance,
+        targetDate,
+        "finish_healthy",
+        currentWeeklyDistanceKm,
+        currentRunsPerWeek,
+        longestRecentRunKm,
+        "20",
+        availability,
+        "6",
+        timeZone,
+        false,
+        currentPain,
+        false,
+        false,
+        "",
+        false,
+        false,
+        "test-setup-operation",
+        1234,
+    )
 }

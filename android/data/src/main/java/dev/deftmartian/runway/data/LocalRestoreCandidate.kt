@@ -7,8 +7,8 @@ import java.io.FileInputStream
 /**
  * Validates and, when necessary, upgrades a user-selected Runway backup before installation.
  *
- * Only exact released Room identities are accepted. The same immutable migration used when Room
- * opens an installed v1 ledger upgrades a v1 backup; a second preparation is intentionally a
+ * Only exact released Room identities are accepted. The same immutable migrations used when Room
+ * opens an installed ledger upgrade a released backup; a second preparation is intentionally a
  * no-op.
  */
 internal object LocalRestoreCandidate {
@@ -21,8 +21,13 @@ internal object LocalRestoreCandidate {
                     inspection.identityHash == RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH -> null
                 inspection.version == 1 &&
                     inspection.identityHash == RunwayLedgerMigrations.V1_IDENTITY_HASH -> {
-                    migrateV1ToV2(candidate)
-                    currentSchemaError(candidate)
+                    migrationError(candidate, fromVersion = 1)
+                        ?: currentSchemaError(candidate)
+                }
+                inspection.version == 2 &&
+                    inspection.identityHash == RunwayLedgerMigrations.V2_IDENTITY_HASH -> {
+                    migrationError(candidate, fromVersion = 2)
+                        ?: currentSchemaError(candidate)
                 }
                 else -> unsupportedLineageMessage(inspection)
             }
@@ -43,7 +48,7 @@ internal object LocalRestoreCandidate {
         }
     }
 
-    private fun migrateV1ToV2(candidate: File) {
+    private fun migrateToCurrent(candidate: File, fromVersion: Int) {
         SQLiteDatabase.openDatabase(
             candidate.path,
             null,
@@ -51,7 +56,10 @@ internal object LocalRestoreCandidate {
         ).use { platformDatabase ->
             platformDatabase.beginTransaction()
             try {
-                platformDatabase.execSQL(RunwayLedgerMigrations.V1_TO_V2_SQL)
+                if (fromVersion == 1) {
+                    platformDatabase.execSQL(RunwayLedgerMigrations.V1_TO_V2_SQL)
+                }
+                RunwayLedgerMigrations.applyV2ToV3(platformDatabase::execSQL)
                 platformDatabase.execSQL(
                     "UPDATE room_master_table SET identity_hash = ? WHERE id = 42",
                     arrayOf(RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH),
@@ -63,6 +71,13 @@ internal object LocalRestoreCandidate {
             }
         }
     }
+
+    private fun migrationError(candidate: File, fromVersion: Int): String? =
+        runCatching {
+            migrateToCurrent(candidate, fromVersion)
+        }.exceptionOrNull()?.let {
+            "This backup could not be upgraded safely. The original file was not installed."
+        }
 
     private fun inspect(candidate: File): Inspection =
         try {

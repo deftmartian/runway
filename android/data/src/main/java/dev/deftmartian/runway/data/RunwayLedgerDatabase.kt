@@ -44,8 +44,9 @@ import androidx.room.RoomDatabase
         HealthConnectPendingHeartRateSampleEntity::class,
         ImportDigestEntity::class,
         AppMetadataEntity::class,
+        PlanSetupReceiptEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class RunwayLedgerDatabase : RoomDatabase() {
@@ -55,18 +56,22 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
     abstract fun adjustmentDao(): AdjustmentDao
     abstract fun importLedgerDao(): ImportLedgerDao
     abstract fun appMetadataDao(): AppMetadataDao
+    abstract fun planSetupReceiptDao(): PlanSetupReceiptDao
     abstract fun maintenanceDao(): LedgerMaintenanceDao
 
     companion object {
         const val DATABASE_NAME = "runway-ledger.db"
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
         /** Room's schema identity for [SCHEMA_VERSION], also recorded in the exported schema JSON. */
-        const val SCHEMA_IDENTITY_HASH = "f91a86620eddb116d9e3fdea5af998bc"
+        const val SCHEMA_IDENTITY_HASH = "f895ba21fcf3c915f22e242087c0263b"
 
         fun create(context: Context): RunwayLedgerDatabase = Room.databaseBuilder(
             context.applicationContext,
             RunwayLedgerDatabase::class.java,
             DATABASE_NAME,
-        ).addMigrations(RunwayLedgerMigrations.V1_TO_V2).build()
+        ).addMigrations(
+            RunwayLedgerMigrations.V1_TO_V2,
+            RunwayLedgerMigrations.V2_TO_V3,
+        ).build()
     }
 }

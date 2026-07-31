@@ -64,6 +64,7 @@ internal fun RunwayNativeApp(
     onHealthContextChanged: (NativeHealthContext) -> Unit,
     onEraseImportedActivityData: () -> Unit,
     onEraseAllData: () -> Unit,
+    onAcknowledgeRetentionRepair: () -> Unit,
 ) = when (state) {
     RunwayUiState.Loading -> LoadingScreen()
     is RunwayUiState.Failed -> FailureScreen(state.message, onRetryOpen)
@@ -93,6 +94,7 @@ internal fun RunwayNativeApp(
         onHealthContextChanged = onHealthContextChanged,
         onEraseImportedActivityData = onEraseImportedActivityData,
         onEraseAllData = onEraseAllData,
+        onAcknowledgeRetentionRepair = onAcknowledgeRetentionRepair,
     )
 }
 
@@ -150,6 +152,7 @@ private fun NativeProductShell(
     onHealthContextChanged: (NativeHealthContext) -> Unit,
     onEraseImportedActivityData: () -> Unit,
     onEraseAllData: () -> Unit,
+    onAcknowledgeRetentionRepair: () -> Unit,
 ) {
     val parent = state.surface.navigationParent()
     BackHandler(enabled = parent != null) { parent?.let(onDestinationSelected) }
@@ -262,6 +265,8 @@ private fun NativeProductShell(
                                 onExportData = onExportData,
                                 onEraseImportedActivityData = onEraseImportedActivityData,
                                 onEraseAllData = onEraseAllData,
+                                onAcknowledgeRetentionRepair =
+                                    onAcknowledgeRetentionRepair,
                             ),
                         )
                         is NativeSurface.HistoryDetail ->

@@ -157,6 +157,13 @@ internal fun ActivityDetailSheet(
 
             if (activity.reviewState != "review") {
                 Text("Correct recorded feedback", fontWeight = FontWeight.SemiBold)
+                if (activity.consequence?.appliedDecision != null) {
+                    Text(
+                        "This updates the run record. It does not undo or recalculate the plan " +
+                            "choice already applied from the earlier feedback.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
                 CheckRow("Pain during or after this run", pain) { pain = it }
                 OutlinedButton(

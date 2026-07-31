@@ -78,6 +78,7 @@ class RunwayLedgerDatabaseInstrumentedTest {
                     "health_connect_pending_heart_rate_samples",
                     "import_digests",
                     "app_metadata",
+                    "plan_setup_receipts",
                 ),
             ),
         )

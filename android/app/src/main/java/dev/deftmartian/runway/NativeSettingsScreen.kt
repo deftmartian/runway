@@ -1,6 +1,8 @@
 package dev.deftmartian.runway
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,11 +22,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import dev.deftmartian.runway.data.RetentionRepairNotice
 
 /** The persisted values and capability summaries that the standalone Settings screen needs. */
 internal data class NativeSettingsState(
@@ -37,6 +41,7 @@ internal data class NativeSettingsState(
     val healthConnectImport: NativeImportConnection = NativeImportConnection.NotConnected,
     val appVersion: String = BuildConfig.VERSION_NAME,
     val sourceCommit: String = BuildConfig.SOURCE_COMMIT,
+    val retentionRepair: RetentionRepairNotice? = null,
 )
 
 internal enum class NativeRoutePrivacy(val summary: String) {
@@ -94,6 +99,7 @@ internal data class NativeSettingsCallbacks(
     val onExportData: () -> Unit,
     val onEraseImportedActivityData: () -> Unit,
     val onEraseAllData: () -> Unit,
+    val onAcknowledgeRetentionRepair: () -> Unit,
 )
 
 @Composable
@@ -115,6 +121,27 @@ internal fun SettingsScreen(
 
     NativeList(loading = false) {
         item { ScreenContext("Private training preferences and local data.") }
+        state.retentionRepair?.let { repair ->
+            item {
+                SettingCard("Privacy settings restored") {
+                    Text(
+                        repair.settingsMessage(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            onClick = callbacks.onAcknowledgeRetentionRepair,
+                            enabled = !actionPending,
+                        ) {
+                            Text("Dismiss note")
+                        }
+                    }
+                }
+            }
+        }
         item {
             SettingsRail("Training") {
                 SettingsActionRow("Time zone", state.timeZone.ifBlank { "Not set" }, "Change", !actionPending) {
@@ -355,25 +382,57 @@ private fun LocalDocumentDialog(
     enabled: Boolean,
     destructive: Boolean = false,
     onClick: () -> Unit,
-) = Row(
-    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(vertical = 4.dp),
-    verticalAlignment = Alignment.CenterVertically,
 ) {
-    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    val actionColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
+        destructive -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
     }
-    Text(
-        actionLabel,
-        Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
-        color = when {
-            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
-            destructive -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.primary
-        },
-        style = MaterialTheme.typography.labelLarge,
-    )
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) {
+        if (usesStackedSettingsActionRow(maxWidth.value, LocalDensity.current.fontScale)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(label, style = MaterialTheme.typography.labelLarge)
+                Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    actionLabel,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    color = actionColor,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(label, style = MaterialTheme.typography.labelLarge)
+                    Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    actionLabel,
+                    Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+                    color = actionColor,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
 }
+
+internal fun usesStackedSettingsActionRow(availableWidthDp: Float, fontScale: Float): Boolean =
+    availableWidthDp < 300f || fontScale > 1.15f
 
 @Composable private fun SettingsValueRow(label: String, value: String, monospace: Boolean = false) = Column(
     Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 8.dp),
