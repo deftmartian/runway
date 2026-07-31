@@ -29,6 +29,8 @@ Defaults are recommendations, not constraints. The runner can change available d
 
 If health context blocks plan generation, runway keeps the pending goal visible so the runner can return to it or explicitly replace it. A pending or active goal is never archived as a side effect of merely opening setup.
 
+Finishing or archiving a plan leaves the training profile and recorded history intact. That is a deliberate no-active-plan state, not unfinished onboarding: Calendar and Stats keep the record visible and offer a new plan, while future workouts remain unavailable until a plan exists.
+
 ## Generated, current, actual
 
 - **Generated** is the original conservative recommendation.
