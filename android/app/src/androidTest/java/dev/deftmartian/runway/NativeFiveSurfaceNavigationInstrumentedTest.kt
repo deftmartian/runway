@@ -73,6 +73,8 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         selectSurface("Settings")
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Privacy"))
         compose.onNodeWithText("Privacy").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Heart-rate privacy"))
+        compose.onNodeWithText("Heart-rate privacy").assertIsDisplayed()
         compose.onNodeWithText("Heart-rate privacy").performClick()
         compose.onNodeWithTag("heart-rate-privacy-dialog").assertIsDisplayed()
         compose.onNodeWithText("Discard imported heart-rate values").performClick()
