@@ -28,9 +28,6 @@ import dev.deftmartian.runway.data.LocalPhaseReviewResult
 import dev.deftmartian.runway.data.LocalPlanLifecycleResult
 import dev.deftmartian.runway.data.LocalWorkoutChangeRequest
 import dev.deftmartian.runway.data.ApplyLocalWorkoutChangeCommand
-import dev.deftmartian.runway.domain.WorkoutProposal
-import dev.deftmartian.runway.domain.WorkoutType
-import dev.deftmartian.runway.domain.PrescriptionKind
 import dev.deftmartian.runway.data.RouteDataMode
 import dev.deftmartian.runway.data.RouteDataModeUpdate
 import dev.deftmartian.runway.data.HeartRateDataMode
@@ -39,7 +36,6 @@ import dev.deftmartian.runway.data.SexForEstimate
 import dev.deftmartian.runway.data.HeartRateSettingsSource
 import dev.deftmartian.runway.data.LocalHeartRateProfile
 import dev.deftmartian.runway.data.LocalHealthContext
-import dev.deftmartian.runway.domain.FeedbackStatus
 import dev.deftmartian.runway.domain.PlanDecision
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectPendingResolutionResult
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectDuplicateDecision
@@ -292,12 +288,25 @@ internal class RunwayViewModel(
     fun loadActivityTrace(activityId: String) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         if (activityId in ready.activityEvidenceLoading) return
+        val requestGeneration = loadGeneration
+        val requestDestination = ready.destination
         mutableState.value = ready.copy(activityEvidenceLoading = ready.activityEvidenceLoading + activityId)
         viewModelScope.launch {
             val result = localResult {
                 withContext(Dispatchers.IO) { services.surfaces.activityEvidence(activityId) }
             }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
+            if (
+                !activityEvidenceRequestIsCurrent(
+                    requestGeneration = requestGeneration,
+                    requestDestination = requestDestination,
+                    currentGeneration = loadGeneration,
+                    currentDestination = current.destination,
+                ) ||
+                activityId !in current.activityEvidenceLoading
+            ) {
+                return@launch
+            }
             mutableState.value = result.fold(
                 onSuccess = { evidence ->
                     if (evidence == null) {
@@ -820,14 +829,14 @@ internal class RunwayViewModel(
         is RecordFeedbackCommand -> services.trainingMutations.recordWorkoutFeedback(
             LocalWorkoutFeedbackCommand(
                 workoutId = command.workoutId,
-                status = feedbackStatus(command.status),
+                status = command.status,
                 completedDistanceMeters =
                     command.completedDistanceKm?.let { (it * 1000).toInt() },
                 completedDurationSeconds =
                     command.completedDurationMinutes?.let { (it * 60).toInt() },
                 feltHard = command.feltHard,
                 pain = command.pain,
-                skipChoice = planDecision(command.choice),
+                skipChoice = null,
             ),
         ).message()
         is RecordManualRunCommand -> services.trainingMutations.recordManualRun(
@@ -1113,7 +1122,7 @@ internal class RunwayViewModel(
             is PreviewWorkoutEditCommand -> {
                 val workout = selected(command.workoutId)
                 require(workout.planId == active.planId) { "Only workouts in the active plan can be changed." }
-                Triple(active.planId, LocalWorkoutChangeRequest.Edit(command.workoutId, command.mutation.toProposal(workout.weekId), rebalanceCompatibleWeek = command.mutation.rebalance), stableId("edit:${command.workoutId}:${command.mutation}"))
+                Triple(active.planId, LocalWorkoutChangeRequest.Edit(command.workoutId, command.mutation.toWorkoutProposal(workout.weekId), rebalanceCompatibleWeek = command.mutation.rebalance), stableId("edit:${command.workoutId}:${command.mutation}"))
             }
             is PreviewWorkoutRemovalCommand -> {
                 val workout = selected(command.workoutId)
@@ -1131,7 +1140,7 @@ internal class RunwayViewModel(
                     .firstOrNull { date.toEpochDay() in it.startEpochDay..(it.startEpochDay + 6) }
                     ?: error("Choose a date within the active plan.")
                 val id = "added-${stableId("add:${active.planId}:${command.mutation}")}".take(128)
-                Triple(active.planId, LocalWorkoutChangeRequest.Add(id, command.mutation.toProposal(week.weekId), rebalanceCompatibleWeek = command.mutation.rebalance), stableId("add:${active.planId}:${command.mutation}"))
+                Triple(active.planId, LocalWorkoutChangeRequest.Add(id, command.mutation.toWorkoutProposal(week.weekId), rebalanceCompatibleWeek = command.mutation.rebalance), stableId("add:${active.planId}:${command.mutation}"))
             }
             else -> error("This is not a workout change request.")
         }
@@ -1192,12 +1201,6 @@ internal class RunwayViewModel(
         }
     }
 
-    private fun feedbackStatus(value: String) = when (value.lowercase()) {
-        "skipped" -> FeedbackStatus.SKIPPED
-        "shortened" -> FeedbackStatus.SHORTENED
-        else -> FeedbackStatus.DONE
-    }
-
     private fun planDecision(value: String): PlanDecision? =
         runCatching { PlanDecision.valueOf(value.uppercase()) }.getOrNull()
 
@@ -1233,31 +1236,6 @@ internal class RunwayViewModel(
         OneOffGpxImportOutcome.TooLarge -> "That GPX file is too large to import on this phone."
         OneOffGpxImportOutcome.Rejected -> "That file could not be read as a GPX activity."
     }
-
-    private fun WorkoutMutation.toProposal(weekId: String): WorkoutProposal {
-        val type = when (type.lowercase()) {
-            "long" -> WorkoutType.LONG
-            "recovery" -> WorkoutType.RECOVERY
-            "rest" -> WorkoutType.REST
-            else -> WorkoutType.EASY
-        }
-        val kind = when (prescriptionKind.lowercase()) {
-            "timed" -> PrescriptionKind.TIMED
-            "rest" -> PrescriptionKind.REST
-            else -> PrescriptionKind.DISTANCE
-        }
-        return WorkoutProposal(
-            weekId = weekId, scheduledDate = LocalDate.parse(scheduledDate), type = type,
-            prescriptionKind = kind, targetDistanceMeters = targetDistanceMeters,
-            targetDurationSeconds = targetDurationSeconds, intervalStructure = intervalStructure?.toDomain(),
-            intensity = intensity, purpose = purpose, reason = userReason,
-        )
-    }
-
-    private fun TimedIntervalStructureDto.toDomain() = dev.deftmartian.runway.domain.TimedIntervalStructure(
-        warmupSeconds ?: 0, cooldownSeconds ?: 0,
-        blocks.map { block -> dev.deftmartian.runway.domain.RunWalkBlock(requireNotNull(block.repetitions), block.segments.map { segment -> dev.deftmartian.runway.domain.PrescriptionSegment(if (segment.kind == "walk") dev.deftmartian.runway.domain.SegmentKind.WALK else dev.deftmartian.runway.domain.SegmentKind.RUN, requireNotNull(segment.durationSeconds)) }) },
-    )
 
     private suspend fun localToday(): LocalDate {
         val zone = services.trainingContext.profile()?.timeZone
@@ -1309,6 +1287,9 @@ internal class RunwayViewModel(
     private fun load(destination: NativeDestination) {
         val generation = ++loadGeneration
         val previous = mutableState.value as? RunwayUiState.Ready
+        if (previous != null) {
+            mutableState.value = previous.withoutActiveEvidenceRequests()
+        }
         surfaceLoadJob?.cancel()
         surfaceLoadJob = viewModelScope.launch {
             val result = localResult {
@@ -1422,6 +1403,22 @@ internal suspend fun <T> localResult(block: suspend () -> T): Result<T> =
         throw error
     } catch (error: Exception) {
         Result.failure(error)
+    }
+
+internal fun activityEvidenceRequestIsCurrent(
+    requestGeneration: Long,
+    requestDestination: NativeDestination,
+    currentGeneration: Long,
+    currentDestination: NativeDestination,
+): Boolean =
+    requestGeneration == currentGeneration &&
+        requestDestination == currentDestination
+
+internal fun RunwayUiState.Ready.withoutActiveEvidenceRequests(): RunwayUiState.Ready =
+    if (activityEvidenceLoading.isEmpty()) {
+        this
+    } else {
+        copy(activityEvidenceLoading = emptySet())
     }
 
 internal fun trainingExportMessage(truncatedTables: Set<String>): String =

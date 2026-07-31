@@ -27,6 +27,7 @@ Use one Gradle build at a time on constrained hosts. A green compile or unit sui
 - Keep imported activities in Review until the runner accepts, links, changes, or deletes them.
 - Keep Room schema changes explicit. A new unreleased schema may be corrected; released schemas need an upgrade path and an idempotence test.
 - Keep repository boundaries typed and bounded. Do not route new UI behavior through JSON payloads or network-shaped models.
+- Name each instrumentation source and its matching top-level class `*Test.kt`. CI passes an explicit class list to the runner and rejects Java, helper-only, or differently named instrumentation sources instead of silently skipping them.
 - Back new training behavior with reliable sources in `docs/TRAINING_SOURCES.md`; do not add medical claims.
 - Do not commit private GPX/FIT/TCX files, backups, route coordinates, health data, signing keys, passwords, or machine-specific paths.
 - Treat plaintext backup and export files as sensitive. The default `runway-training-export*.json` name is ignored, but renamed exports are still private and must not be committed. Do not invent cryptography.

@@ -94,7 +94,7 @@ class LocalConsequenceDecisionRepository(
                 planId = planId,
                 workoutId = current.originWorkout?.workoutId,
                 sourceActivityId = source.sourceId.takeIf { source.kind == LocalDecisionSourceKind.Activity },
-                adjustmentType = ready.decision.storageValue,
+                adjustmentType = ready.decision.toStorageValue(),
                 state = "applied",
                 measuredLoadSharePercent = null,
                 projectedRampPercent = null,
@@ -135,7 +135,7 @@ class LocalConsequenceDecisionRepository(
             PlanDecisionEntity(
                 decisionId = decisionId,
                 adjustmentId = adjustmentId,
-                decisionType = ready.decision.storageValue,
+                decisionType = ready.decision.toStorageValue(),
                 affectedWorkoutCount = ready.changes.size,
                 effectiveFromEpochDay = ready.changes.minOfOrNull { it.after.currentScheduledEpochDay },
                 decidedAtEpochMillis = appliedAtEpochMillis,
@@ -259,7 +259,7 @@ class LocalConsequenceDecisionRepository(
     }
 
     private suspend fun sourceOffersDecision(source: LocalDecisionSource, decision: PlanDecision): Boolean {
-        val value = decision.storageValue
+        val value = decision.toStorageValue()
         val dao = database.activityLedgerDao()
         return when (source.kind) {
             LocalDecisionSourceKind.WorkoutFeedback ->
@@ -271,9 +271,16 @@ class LocalConsequenceDecisionRepository(
 
     private suspend fun claimSource(source: LocalDecisionSource, decision: PlanDecision, now: Long): Boolean = when (source.kind) {
         LocalDecisionSourceKind.WorkoutFeedback ->
-            database.activityLedgerDao().claimWorkoutFeedbackConsequence(source.sourceId, decision.storageValue) == 1
+            database.activityLedgerDao().claimWorkoutFeedbackConsequence(
+                source.sourceId,
+                decision.toStorageValue(),
+            ) == 1
         LocalDecisionSourceKind.Activity ->
-            database.activityLedgerDao().claimActivityConsequence(source.sourceId, decision.storageValue, now) == 1
+            database.activityLedgerDao().claimActivityConsequence(
+                source.sourceId,
+                decision.toStorageValue(),
+                now,
+            ) == 1
     }
 
     private fun effect(
@@ -427,11 +434,11 @@ private fun WorkoutFeedbackConsequenceEntity.toCanonicalConsequence(
     options: List<WorkoutFeedbackConsequenceOptionEntity>,
 ): Consequence? {
     val metric = loadMetric() ?: return null
-    val parsedOptions = options.mapNotNull { it.decision.toPlanDecision() }.toSet()
+    val parsedOptions = options.mapNotNull { it.decision.toStoredPlanDecision() }.toSet()
     val kind = classification?.toConsequenceKind() ?: return null
     val deviation = deviation?.toDeviation() ?: return null
     val risk = risk?.toRisk() ?: return null
-    val recommended = recommendedDecision?.toPlanDecision() ?: return null
+    val recommended = recommendedDecision?.toStoredPlanDecision() ?: return null
     if (recommended !in parsedOptions || appliedDecision != null) return null
     val difference = when (metric) {
         LoadMetric.DISTANCE -> distanceDifferenceMeters ?: 0
@@ -468,22 +475,20 @@ internal fun ActivityConsequenceEntity.matches(
         deviation == consequence.deviation.name.lowercase() &&
         loadMetric == consequence.metric.name.lowercase() &&
         risk == consequence.risk.name.lowercase() &&
-        recommendedDecision == consequence.recommendedDecision.storageValue &&
+        recommendedDecision == consequence.recommendedDecision.toStorageValue() &&
         comparisonStatus == consequence.comparisonStatus &&
         planChangeAvailable == consequence.planChangeAvailable &&
         actualLoadMeters == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DISTANCE } &&
         actualLoadDurationSeconds == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DURATION } &&
         distanceDifferenceMeters == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DISTANCE } &&
         durationDifferenceSeconds == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DURATION } &&
-        options.mapNotNull { it.decision.toPlanDecision() }.toSet() == consequence.options
+        options.mapNotNull { it.decision.toStoredPlanDecision() }.toSet() == consequence.options
 
 private fun WorkoutFeedbackConsequenceEntity.loadMetric(): LoadMetric? = loadMetric?.toLoadMetric()
 private fun String.toLoadMetric(): LoadMetric? = enumValues<LoadMetric>().firstOrNull { it.name.equals(this, ignoreCase = true) }
 private fun String.toConsequenceKind(): ConsequenceKind? = enumValues<ConsequenceKind>().firstOrNull { it.name.equals(this, ignoreCase = true) }
 private fun String.toDeviation(): Deviation? = enumValues<Deviation>().firstOrNull { it.name.equals(this, ignoreCase = true) }
 private fun String.toRisk(): Risk? = enumValues<Risk>().firstOrNull { it.name.equals(this, ignoreCase = true) }
-private fun String.toPlanDecision(): PlanDecision? = enumValues<PlanDecision>().firstOrNull { it.storageValue == this }
-
 private fun List<WorkoutEntity>.canonicalDistanceLoad(): Int = sumOf { workout ->
     workout.currentDistanceMeters?.takeIf {
         workout.currentStatus != WORKOUT_STATE_TOMBSTONED && workout.currentWorkoutType != "rest"
@@ -502,12 +507,3 @@ sealed interface LocalConsequenceDecisionPersistenceResult {
     data object AlreadyApplied : LocalConsequenceDecisionPersistenceResult
     data class Rejected(val issue: LocalDecisionIssue) : LocalConsequenceDecisionPersistenceResult
 }
-
-private val PlanDecision.storageValue: String
-    get() = when (this) {
-        PlanDecision.KEEP_PLAN -> "keep_plan"
-        PlanDecision.REDUCE_NEXT -> "reduce_next"
-        PlanDecision.NEXT_REST -> "next_rest"
-        PlanDecision.REPEAT_PRESCRIPTION -> "repeat_prescription"
-        PlanDecision.REBALANCE_WEEK -> "rebalance_week"
-    }

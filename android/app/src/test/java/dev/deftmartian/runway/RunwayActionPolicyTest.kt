@@ -51,6 +51,51 @@ class RunwayActionPolicyTest {
     }
 
     @Test
+    fun `activity evidence may publish only for the active surface generation`() {
+        assertTrue(
+            activityEvidenceRequestIsCurrent(
+                requestGeneration = 4,
+                requestDestination = NativeDestination.History,
+                currentGeneration = 4,
+                currentDestination = NativeDestination.History,
+            ),
+        )
+        assertEquals(
+            false,
+            activityEvidenceRequestIsCurrent(
+                requestGeneration = 4,
+                requestDestination = NativeDestination.History,
+                currentGeneration = 5,
+                currentDestination = NativeDestination.History,
+            ),
+        )
+        assertEquals(
+            false,
+            activityEvidenceRequestIsCurrent(
+                requestGeneration = 4,
+                requestDestination = NativeDestination.History,
+                currentGeneration = 4,
+                currentDestination = NativeDestination.Stats,
+            ),
+        )
+    }
+
+    @Test
+    fun `starting a surface reload releases evidence requests from the old generation`() {
+        val ready =
+            RunwayUiState.Ready(
+                surface = NativeSurface.History(null),
+                loading = false,
+                activityEvidenceLoading = setOf("activity-1"),
+            )
+
+        val reloading = ready.withoutActiveEvidenceRequests()
+
+        assertEquals(emptySet<String>(), reloading.activityEvidenceLoading)
+        assertTrue(reloading === reloading.withoutActiveEvidenceRequests())
+    }
+
+    @Test
     fun `readable export reports when its bounded sections were truncated`() {
         assertEquals(
             "Readable training history exported.",

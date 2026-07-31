@@ -12,7 +12,7 @@ runway is a standalone Android application. Its persisted state, planning, activ
 | `:data` | Room schema, transactions, typed repositories, local import persistence, backup/export validation, and Health Connect persistence. |
 | `:app` | Compose UI, navigation, lifecycle, Storage Access Framework, share intents, Health Connect permission/sync orchestration, and WorkManager scheduling. |
 
-The application service wiring is intentionally small and explicit. UI code consumes typed local read models and calls typed commands; it must not depend on JSON payloads or network-shaped state.
+The application service wiring is intentionally small and explicit. UI code consumes typed local read models and calls typed commands; it must not depend on JSON payloads or network-shaped state. Persisted enum values use explicit codecs, and unknown values fail closed rather than becoming a plausible default.
 
 ## Ledger model
 

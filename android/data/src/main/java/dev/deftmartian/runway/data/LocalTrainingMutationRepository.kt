@@ -238,7 +238,7 @@ class LocalTrainingMutationRepository(
         dao.clearWorkoutFeedbackConsequenceOptions(feedbackId)
         consequence.options.forEach { decision ->
             dao.saveWorkoutFeedbackConsequenceOption(
-                WorkoutFeedbackConsequenceOptionEntity(feedbackId, decision.storageValue),
+                WorkoutFeedbackConsequenceOptionEntity(feedbackId, decision.toStorageValue()),
             )
         }
     }
@@ -374,15 +374,6 @@ private fun List<WorkoutEntity>.sumOfCurrentDuration() = sumOf { workout ->
     } ?: 0
 }
 
-private val PlanDecision.storageValue: String
-    get() = when (this) {
-        PlanDecision.KEEP_PLAN -> "keep_plan"
-        PlanDecision.REDUCE_NEXT -> "reduce_next"
-        PlanDecision.NEXT_REST -> "next_rest"
-        PlanDecision.REPEAT_PRESCRIPTION -> "repeat_prescription"
-        PlanDecision.REBALANCE_WEEK -> "rebalance_week"
-    }
-
 private fun Consequence.toWorkoutConsequence(
     feedbackId: String,
     currentWeekDistanceMeters: Int,
@@ -399,8 +390,8 @@ private fun Consequence.toWorkoutConsequence(
         projectedWeekLoadMeters = (currentWeekDistanceMeters + distanceAdjustment).coerceAtLeast(0),
         assessment = risk.name.lowercase(),
         recoveryConflictCount = 0,
-        recommendedDecision = recommendedDecision.storageValue,
-        nextWorkoutAction = recommendedDecision.storageValue,
+        recommendedDecision = recommendedDecision.toStorageValue(),
+        nextWorkoutAction = recommendedDecision.toStorageValue(),
         requiresExplicitConfirmation = recommendedDecision != PlanDecision.KEEP_PLAN,
         deviation = deviation.name.lowercase(),
         loadMetric = metric.name.lowercase(),
@@ -420,7 +411,7 @@ private fun Consequence.toActivityConsequence(activity: ActivityEntity) = Activi
     durationDifferenceSeconds = actualDifference.takeIf { metric == LoadMetric.DURATION },
     actualLoadMeters = activity.distanceMeters,
     assessment = risk.name.lowercase(),
-    recommendedDecision = recommendedDecision.storageValue,
+    recommendedDecision = recommendedDecision.toStorageValue(),
     resolvedAtEpochMillis = null,
     deviation = deviation.name.lowercase(),
     loadMetric = metric.name.lowercase(),

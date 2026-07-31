@@ -300,7 +300,7 @@ class LocalActivityReviewRepository(
         activityDao.clearWorkoutFeedbackConsequenceOptions(feedbackId)
         consequence.options.forEach { decision ->
             activityDao.saveWorkoutFeedbackConsequenceOption(
-                WorkoutFeedbackConsequenceOptionEntity(feedbackId, decision.storageValue),
+                WorkoutFeedbackConsequenceOptionEntity(feedbackId, decision.toStorageValue()),
             )
         }
         planDao.saveWorkout(workout.copy(currentStatus = completionState, updatedAtEpochMillis = now))
@@ -356,7 +356,7 @@ class LocalActivityReviewRepository(
         dao.clearActivityConsequenceOptions(activity.activityId)
         consequence.options.forEach { decision ->
             dao.saveActivityConsequenceOption(
-                ActivityConsequenceOptionEntity(activity.activityId, decision.storageValue),
+                ActivityConsequenceOptionEntity(activity.activityId, decision.toStorageValue()),
             )
         }
         if (feedback?.pain == true) markCurrentPainIfRecent(activity, nowEpochMillis())
@@ -475,13 +475,13 @@ private fun Consequence.toWorkoutEntity(
         projectedWeekLoadMeters = (currentWeekDistanceMeters + distanceAdjustment).coerceAtLeast(0),
         assessment = risk.name.lowercase(),
         recoveryConflictCount = 0,
-        recommendedDecision = recommendedDecision.storageValue,
-        nextWorkoutAction = recommendedDecision.storageValue,
+        recommendedDecision = recommendedDecision.toStorageValue(),
+        nextWorkoutAction = recommendedDecision.toStorageValue(),
         requiresExplicitConfirmation = recommendedDecision != PlanDecision.KEEP_PLAN,
         deviation = deviation.name.lowercase(),
         loadMetric = metric.name.lowercase(),
         risk = risk.name.lowercase(),
-        appliedDecision = appliedDecision?.storageValue,
+        appliedDecision = appliedDecision?.toStorageValue(),
         comparisonStatus = comparisonStatus,
         planChangeAvailable = planChangeAvailable,
         currentWeekLoadDurationSeconds = currentWeekDurationSeconds,
@@ -498,22 +498,13 @@ private fun Consequence.toActivityEntity(activity: ActivityEntity): ActivityCons
         durationDifferenceSeconds = actualDifference.takeIf { metric == LoadMetric.DURATION },
         actualLoadMeters = activity.distanceMeters,
         assessment = risk.name.lowercase(),
-        recommendedDecision = recommendedDecision.storageValue,
+        recommendedDecision = recommendedDecision.toStorageValue(),
         resolvedAtEpochMillis = appliedDecision?.let { activity.updatedAtEpochMillis },
         deviation = deviation.name.lowercase(),
         loadMetric = metric.name.lowercase(),
         risk = risk.name.lowercase(),
-        appliedDecision = appliedDecision?.storageValue,
+        appliedDecision = appliedDecision?.toStorageValue(),
         comparisonStatus = comparisonStatus,
         planChangeAvailable = planChangeAvailable,
         actualLoadDurationSeconds = activity.durationSeconds,
     )
-
-private val PlanDecision.storageValue: String
-    get() = when (this) {
-        PlanDecision.KEEP_PLAN -> "keep_plan"
-        PlanDecision.REDUCE_NEXT -> "reduce_next"
-        PlanDecision.NEXT_REST -> "next_rest"
-        PlanDecision.REPEAT_PRESCRIPTION -> "repeat_prescription"
-        PlanDecision.REBALANCE_WEEK -> "rebalance_week"
-    }

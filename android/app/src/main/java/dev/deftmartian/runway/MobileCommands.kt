@@ -1,5 +1,9 @@
 package dev.deftmartian.runway
 
+import dev.deftmartian.runway.domain.FeedbackStatus
+import dev.deftmartian.runway.domain.PrescriptionKind
+import dev.deftmartian.runway.domain.WorkoutType
+
 internal sealed interface MobileCommand {
     val action: String
 }
@@ -30,10 +34,9 @@ internal data class CreatePlanCommand(
 
 internal data class RecordFeedbackCommand(
     val workoutId: String,
-    val status: String,
+    val status: FeedbackStatus,
     val feltHard: Boolean,
     val pain: Boolean,
-    val choice: String = "skip_continue",
     val completedDistanceKm: Double? = null,
     val completedDurationMinutes: Double? = null,
 ) : MobileCommand {
@@ -119,8 +122,8 @@ internal data class PreviewPlanDecisionCommand(
 
 internal data class WorkoutMutation(
     val scheduledDate: String,
-    val type: String,
-    val prescriptionKind: String,
+    val type: WorkoutType,
+    val prescriptionKind: PrescriptionKind,
     val targetDistanceMeters: Int,
     val targetDurationSeconds: Int?,
     val intervalStructure: TimedIntervalStructureDto?,

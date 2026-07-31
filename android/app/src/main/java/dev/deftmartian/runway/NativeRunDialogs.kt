@@ -16,6 +16,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.deftmartian.runway.domain.FeedbackStatus
+import dev.deftmartian.runway.domain.PrescriptionKind
+import dev.deftmartian.runway.domain.WorkoutType
 import java.time.LocalDate
 import java.util.Locale
 
@@ -27,8 +30,15 @@ internal fun FeedbackDialog(
     onDismiss: () -> Unit,
     onSubmit: (RecordFeedbackCommand) -> Unit,
 ) {
-    val timed = workout.prescriptionKind == "timed"
-    var status by rememberSaveable { mutableStateOf("done") }
+    val prescriptionKind = workout.prescriptionKind.toPrescriptionKindOrNull()
+    val timed = prescriptionKind == PrescriptionKind.TIMED
+    val storedFormatIssue =
+        if (prescriptionKind == null || prescriptionKind == PrescriptionKind.REST) {
+            "This workout does not have a supported run prescription, so its result cannot be recorded."
+        } else {
+            null
+        }
+    var status by rememberSaveable { mutableStateOf(FeedbackStatus.DONE) }
     var distance by rememberSaveable {
         mutableStateOf(
             workout.targetDistanceMeters
@@ -50,15 +60,21 @@ internal fun FeedbackDialog(
     var harderThanExpected by rememberSaveable { mutableStateOf(false) }
     var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
     val measurementValid =
-        status == "skipped" ||
-            (timed && (duration.toDoubleOrNull() ?: 0.0) > 0) ||
-            (!timed && (distance.toDoubleOrNull() ?: 0.0) > 0)
+        storedFormatIssue == null &&
+            (
+                status == FeedbackStatus.SKIPPED ||
+                    (timed && (duration.toDoubleOrNull() ?: 0.0) > 0) ||
+                    (!timed && (distance.toDoubleOrNull() ?: 0.0) > 0)
+            )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Record this run") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 errorMessage?.let { message ->
+                    item { Notice(message, isError = true) }
+                }
+                storedFormatIssue?.let { message ->
                     item { Notice(message, isError = true) }
                 }
                 item {
@@ -68,10 +84,14 @@ internal fun FeedbackDialog(
                     )
                 }
                 item {
-                    ChoiceRow("I completed a run", status != "skipped") { status = "done" }
-                    ChoiceRow("I skipped this run", status == "skipped") { status = "skipped" }
+                    ChoiceRow("I completed a run", status != FeedbackStatus.SKIPPED) {
+                        status = FeedbackStatus.DONE
+                    }
+                    ChoiceRow("I skipped this run", status == FeedbackStatus.SKIPPED) {
+                        status = FeedbackStatus.SKIPPED
+                    }
                 }
-                if (status != "skipped") {
+                if (status != FeedbackStatus.SKIPPED) {
                     item {
                         NumberField(
                             if (timed) "Completed duration (minutes)" else "Completed distance (km)",
@@ -115,9 +135,17 @@ internal fun FeedbackDialog(
                             feltHard = harderThanExpected,
                             pain = painDuringOrAfter,
                             completedDistanceKm =
-                                if (status != "skipped" && !timed) distance.toDouble() else null,
+                                if (status != FeedbackStatus.SKIPPED && !timed) {
+                                    distance.toDouble()
+                                } else {
+                                    null
+                                },
                             completedDurationMinutes =
-                                if (status != "skipped" && timed) duration.toDouble() else null,
+                                if (status != FeedbackStatus.SKIPPED && timed) {
+                                    duration.toDouble()
+                                } else {
+                                    null
+                                },
                         ),
                     )
                 },
@@ -223,7 +251,7 @@ internal fun WorkoutAddDialog(
     onSubmit: (PreviewWorkoutAddCommand) -> Unit,
 ) {
     var scheduledDate by rememberSaveable { mutableStateOf(defaultDate) }
-    var type by rememberSaveable { mutableStateOf("easy") }
+    var type by rememberSaveable { mutableStateOf(WorkoutType.EASY) }
     var distance by rememberSaveable { mutableStateOf("") }
     var purpose by rememberSaveable { mutableStateOf("Easy aerobic run") }
     var reason by rememberSaveable { mutableStateOf("") }
@@ -257,7 +285,11 @@ internal fun WorkoutAddDialog(
                     )
                 }
                 item {
-                    listOf("easy" to "Easy", "long" to "Long", "recovery" to "Recovery")
+                    listOf(
+                        WorkoutType.EASY to "Easy",
+                        WorkoutType.LONG to "Long",
+                        WorkoutType.RECOVERY to "Recovery",
+                    )
                         .forEach { (value, label) ->
                             ChoiceRow(label, type == value) { type = value }
                         }
@@ -292,7 +324,7 @@ internal fun WorkoutAddDialog(
                             WorkoutMutation(
                                 scheduledDate = scheduledDate,
                                 type = type,
-                                prescriptionKind = "distance",
+                                prescriptionKind = PrescriptionKind.DISTANCE,
                                 targetDistanceMeters =
                                     (requireNotNull(distanceNumber) * 1_000).toInt(),
                                 targetDurationSeconds = null,
@@ -323,9 +355,11 @@ internal fun WorkoutEditDialog(
     onSubmit: (PreviewWorkoutEditCommand) -> Unit,
     onRemove: () -> Unit,
 ) {
-    val timed = workout.prescriptionKind == "timed"
+    val currentPrescriptionKind = workout.prescriptionKind.toPrescriptionKindOrNull()
+    val currentWorkoutType = workout.type.toWorkoutTypeOrNull()
+    val timed = currentPrescriptionKind == PrescriptionKind.TIMED
     var scheduledDate by rememberSaveable { mutableStateOf(workout.scheduledDate.orEmpty()) }
-    var type by rememberSaveable { mutableStateOf(workout.type.orEmpty().ifBlank { "easy" }) }
+    var type by rememberSaveable { mutableStateOf(currentWorkoutType) }
     var load by rememberSaveable {
         mutableStateOf(
             if (timed) {
@@ -347,9 +381,20 @@ internal fun WorkoutEditDialog(
     var reason by rememberSaveable { mutableStateOf("") }
     var rebalance by rememberSaveable { mutableStateOf(false) }
     val loadNumber = load.toDoubleOrNull()
-    val isRest = type == "rest"
+    val isRest = type == WorkoutType.REST
+    val storedFormatIssue =
+        when {
+            currentPrescriptionKind == null ->
+                "This workout has an unsupported stored prescription and cannot be changed."
+            currentWorkoutType == WorkoutType.RACE ->
+                "Race events are changed through goal setup."
+            type == null ->
+                "Choose a workout type before saving."
+            else -> null
+        }
     val valid =
         runCatching { LocalDate.parse(scheduledDate) }.isSuccess &&
+            storedFormatIssue == null &&
             (isRest || (loadNumber != null && loadNumber > 0)) &&
             purpose.trim().length >= 2
     AlertDialog(
@@ -358,6 +403,9 @@ internal fun WorkoutEditDialog(
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 errorMessage?.let { message ->
+                    item { Notice(message, isError = true) }
+                }
+                storedFormatIssue?.let { message ->
                     item { Notice(message, isError = true) }
                 }
                 item {
@@ -377,10 +425,10 @@ internal fun WorkoutEditDialog(
                 item {
                     Text("Workout type", style = MaterialTheme.typography.labelLarge)
                     listOf(
-                        "easy" to "Easy run",
-                        "long" to "Long run",
-                        "recovery" to "Recovery run",
-                        "rest" to "Rest",
+                        WorkoutType.EASY to "Easy run",
+                        WorkoutType.LONG to "Long run",
+                        WorkoutType.RECOVERY to "Recovery run",
+                        WorkoutType.REST to "Rest",
                     )
                         .forEach { (value, label) ->
                             ChoiceRow(label, type == value) { type = value }
@@ -433,9 +481,15 @@ internal fun WorkoutEditDialog(
                             workoutId = workout.id.orEmpty(),
                             mutation = WorkoutMutation(
                                 scheduledDate = scheduledDate,
-                                type = type,
+                                type = requireNotNull(type),
                                 prescriptionKind =
-                                    if (isRest) "rest" else if (timed) "timed" else "distance",
+                                    if (isRest) {
+                                        PrescriptionKind.REST
+                                    } else if (timed) {
+                                        PrescriptionKind.TIMED
+                                    } else {
+                                        PrescriptionKind.DISTANCE
+                                    },
                                 targetDistanceMeters =
                                     if (isRest || timed) 0
                                     else (requireNotNull(loadNumber) * 1_000).toInt(),
