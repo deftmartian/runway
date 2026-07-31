@@ -174,7 +174,7 @@ jobs:
           test -s android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           test -s android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
       - name: Run instrumentation tests on a serial emulator
-        uses: ReactiveCircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           target: default

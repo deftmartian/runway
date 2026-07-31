@@ -1,5 +1,6 @@
-Adds explicit route and heart-rate retention controls with a safe local database migration.
+Keeps completed setup and training history available when no plan is active.
 
-Hardens imports, restore, and background coordination.
+Explains invalid dates and run measurements directly beside the affected field.
 
-Cleans up navigation, settings, accessibility, and backup/export feedback.
+Hardens route and heart-rate privacy, imports, restore, background work, navigation, settings,
+accessibility, and backup/export feedback.
