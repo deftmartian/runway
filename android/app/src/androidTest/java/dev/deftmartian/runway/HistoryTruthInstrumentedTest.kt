@@ -1,9 +1,11 @@
 package dev.deftmartian.runway
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,12 +27,14 @@ class HistoryTruthInstrumentedTest {
         }
 
         val list = compose.onNode(hasScrollAction())
-        list.performScrollToNode(hasText("Generated", substring = true))
-        compose.onNode(hasText("Generated", substring = true)).assertIsDisplayed()
+        list.performScrollToNode(hasText("Generated · 2026-07-29 · Easy run"))
+        compose.onNodeWithText("Generated · 2026-07-29 · Easy run").assertIsDisplayed()
+        compose.onAllNodesWithText("2026-07-30 · Easy run").assertCountEquals(1)
         list.performScrollToNode(hasText("Current"))
         compose.onNodeWithText("Current").assertIsDisplayed()
         list.performScrollToNode(hasText("Before removal"))
         compose.onNodeWithText("Before removal").assertIsDisplayed()
+        compose.onAllNodesWithText("2026-08-02 · Easy run").assertCountEquals(1)
         list.performScrollToNode(hasText("Removed from the current plan"))
         compose.onNodeWithText("Removed from the current plan").assertIsDisplayed()
     }
@@ -75,9 +79,13 @@ class HistoryTruthInstrumentedTest {
     private fun historyWorkout(id: String, removed: Boolean) = NativeHistoryWorkout(
         id = id,
         status = if (removed) "tombstoned" else "planned",
-        generated = prescription("2026-07-29", 3_000.0, "Easy run"),
+        generated = prescription(
+            if (removed) "2026-08-01" else "2026-07-29",
+            3_000.0,
+            "Easy run",
+        ),
         current = prescription(
-            if (removed) "2026-07-31" else "2026-07-30",
+            if (removed) "2026-08-02" else "2026-07-30",
             if (removed) 2_000.0 else 2_500.0,
             if (removed) "Shortened before removal" else "Moved after a hard day",
         ),
