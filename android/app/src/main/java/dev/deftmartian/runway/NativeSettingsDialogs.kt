@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
@@ -119,16 +120,11 @@ internal fun HeartRatePrivacyDialog(
     val deletesStoredHeartRate =
         heartRatePrivacyChangeDeletesStoredData(current, selection)
     AlertDialog(
+        modifier = Modifier.testTag("heart-rate-privacy-dialog"),
         onDismissRequest = onDismiss,
         title = { Text("Heart-rate privacy") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    Text(
-                        "Choose whether imported runs keep heart-rate data. Training-profile zones are separate.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 item {
                     ChoiceRow(
                         "Discard imported heart-rate values",
@@ -151,6 +147,13 @@ internal fun HeartRatePrivacyDialog(
                 item {
                     Text(
                         "Summaries and samples stay in private local storage.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                item {
+                    Text(
+                        "Training-profile heart-rate zones are separate from imported run data.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
