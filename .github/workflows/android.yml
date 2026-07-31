@@ -112,7 +112,7 @@ jobs:
   package:
     name: package and androidTest compile
     needs: changes
-    if: github.ref_type != 'tag' && needs.changes.outputs.android == 'true'
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -131,12 +131,23 @@ jobs:
       - name: Package debug APK and compile instrumentation tests
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
-          --dependency-verification strict assembleDebug assembleDebugAndroidTest
+          --dependency-verification strict
+          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
+      - name: Upload instrumentation APKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: instrumentation-apks
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 1
 
   instrumentation:
     name: instrumentation
-    needs: changes
-    if: needs.changes.outputs.android == 'true'
+    needs: [changes, package]
+    if: needs.changes.outputs.android == 'true' && needs.package.result == 'success'
     runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
@@ -148,22 +159,20 @@ jobs:
           python3 android/ci/test_discover_instrumentation_tests.py
           python3 android/ci/discover-instrumentation-tests.py app >/dev/null
           python3 android/ci/discover-instrumentation-tests.py data >/dev/null
-      - uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: >-
             platforms;android-36 build-tools;36.0.0 platform-tools emulator
             system-images;android-35;default;x86_64
-      - name: Package instrumentation APKs before starting the emulator
-        run: >-
-          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
-          --dependency-verification strict
-          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: instrumentation-apks
+          path: android
+      - name: Verify downloaded instrumentation APKs
+        run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          test -s android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          test -s android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
       - name: Run instrumentation tests on a serial emulator
         uses: ReactiveCircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         with:
