@@ -38,7 +38,7 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
         }
     val nativeWorkouts = workouts.map(LocalWorkoutReadModel::toNativeWorkout)
     return NativeCalendarPayload(
-        onboardingRequired = activePlanId == null,
+        onboardingRequired = !profileExists && activePlanId == null,
         hasActivePlan = activePlanId != null,
         calendar = NativeCalendar(
             month = YearMonth.from(LocalDate.ofEpochDay(fromEpochDay)).toString(),
@@ -145,7 +145,7 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
         )
     }
     return NativeStatsPayload(
-        onboardingRequired = activePlanId == null,
+        onboardingRequired = !profileExists && activePlanId == null,
         active = activeItem,
         detail = NativePlanDetail(
             activeWeeks.map {

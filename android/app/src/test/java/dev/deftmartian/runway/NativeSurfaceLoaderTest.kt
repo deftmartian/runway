@@ -19,14 +19,25 @@ import java.time.YearMonth
 
 class NativeSurfaceLoaderTest {
     @Test
-    fun `calendar without an active plan redirects to populated setup`() = runBlocking {
+    fun `new profile without an active plan redirects to populated setup`() = runBlocking {
         val reads = FakeSurfaceReads(
-            calendar = emptyCalendar(activePlanId = null),
+            calendar = emptyCalendar(activePlanId = null, profileExists = false),
         )
         val result = loader(reads).load(request(NativeDestination.Calendar))
 
         assertEquals(NativeDestination.Setup, result.surface.destination)
         assertEquals(1, reads.settingsReads)
+    }
+
+    @Test
+    fun `established profile without an active plan keeps the calendar`() = runBlocking {
+        val reads = FakeSurfaceReads(
+            calendar = emptyCalendar(activePlanId = null, profileExists = true),
+        )
+        val result = loader(reads).load(request(NativeDestination.Calendar))
+
+        assertEquals(NativeDestination.Calendar, result.surface.destination)
+        assertEquals(0, reads.settingsReads)
     }
 
     @Test
@@ -81,10 +92,14 @@ class NativeSurfaceLoaderTest {
         inboxActivityLimit = 50,
     )
 
-    private fun emptyCalendar(activePlanId: String?) = LocalCalendarReadModel(
+    private fun emptyCalendar(
+        activePlanId: String?,
+        profileExists: Boolean = activePlanId != null,
+    ) = LocalCalendarReadModel(
         fromEpochDay = 0,
         throughEpochDay = 30,
         activePlanId = activePlanId,
+        profileExists = profileExists,
         pendingDecisionCount = 0,
         pendingDecisionCountIsExact = true,
         hasMoreActivities = false,
@@ -131,6 +146,7 @@ class NativeSurfaceLoaderTest {
         )
         override suspend fun stats() = LocalStatsReadModel(
             weeks = emptyList(),
+            profileExists = false,
             recordedTotals = emptyList(),
             totalRuns = 0,
             totalDistanceMeters = 0,

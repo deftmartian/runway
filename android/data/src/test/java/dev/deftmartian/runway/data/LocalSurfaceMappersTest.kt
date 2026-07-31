@@ -31,6 +31,7 @@ class LocalSurfaceMappersTest {
                 pendingDecisionCount = 1,
                 plans = listOf(plan),
                 activities = listOf(accepted, review),
+                profileExists = true,
             ),
         )
 
@@ -59,6 +60,7 @@ class LocalSurfaceMappersTest {
                 pendingDecisionCount = 0,
                 plans = listOf(planSlice(workouts = listOf(nextRun))),
                 activities = emptyList(),
+                profileExists = true,
                 todayEpochDay = LocalDate.parse("2026-07-30").toEpochDay(),
                 nextWorkout = nextRun,
             ),
@@ -104,6 +106,7 @@ class LocalSurfaceMappersTest {
                     ),
                 ),
                 activities = emptyList(),
+                profileExists = true,
             ),
         ).days.single().workouts.single()
 
@@ -138,6 +141,7 @@ class LocalSurfaceMappersTest {
                     ),
                 ),
                 activities = emptyList(),
+                profileExists = true,
             ),
         ).days.single().workouts.single()
 
@@ -158,6 +162,7 @@ class LocalSurfaceMappersTest {
             LocalStatsLedgerSlice(
                 plans = listOf(plan),
                 activities = emptyList(),
+                profileExists = true,
                 todayEpochDay = today,
             ),
         ).weeks.single()
@@ -252,7 +257,13 @@ class LocalSurfaceMappersTest {
             activity("ignored", "review", null, 100_000, 50_000, "2026-07-13T12:00:00Z", averageHeartRate = 220),
         )
 
-        val mapped = LocalSurfaceMappers.stats(LocalStatsLedgerSlice(listOf(active, archived), activities))
+        val mapped = LocalSurfaceMappers.stats(
+            LocalStatsLedgerSlice(
+                plans = listOf(active, archived),
+                activities = activities,
+                profileExists = true,
+            ),
+        )
 
         assertEquals(3, mapped.totalRuns)
         assertEquals(17_000, mapped.totalDistanceMeters)
@@ -350,7 +361,11 @@ class LocalSurfaceMappersTest {
         )
 
         val mapped = LocalSurfaceMappers.stats(
-            LocalStatsLedgerSlice(listOf(active, archived), listOf(linkedActivity)),
+            LocalStatsLedgerSlice(
+                plans = listOf(active, archived),
+                activities = listOf(linkedActivity),
+                profileExists = true,
+            ),
         )
 
         assertEquals(3, mapped.totalRuns)
@@ -419,6 +434,7 @@ class LocalSurfaceMappersTest {
             LocalStatsLedgerSlice(
                 plans = listOf(plan),
                 activities = listOf(extra),
+                profileExists = true,
                 timeZone = "UTC",
                 todayEpochDay = LocalDate.parse("2026-07-10").toEpochDay(),
                 profile = profile().copy(currentPain = true),
@@ -636,6 +652,7 @@ class LocalSurfaceMappersTest {
                 pendingDecisionCount = 0,
                 plans = listOf(plan),
                 activities = emptyList(),
+                profileExists = true,
                 todayEpochDay = day,
                 phaseReview = phase,
             ),

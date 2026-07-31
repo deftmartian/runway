@@ -86,6 +86,128 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Stored on this device").assertIsDisplayed()
     }
 
+    @Test
+    fun completedSetupWithoutAnActivePlanOffersANewPlanInsteadOfSetupRecovery() {
+        compose.setContent {
+            var destination by remember { mutableStateOf(NativeDestination.Calendar) }
+            val surface = when (destination) {
+                NativeDestination.Stats -> NativeSurface.Stats(
+                    NativeStatsPayload(
+                        onboardingRequired = false,
+                        active = null,
+                        detail = NativePlanDetail(emptyList()),
+                        history = NativeTrainingHistory(
+                            weeklySummaries = emptyList(),
+                            todayIso = "2026-07-31",
+                            currentSignal = null,
+                            hasAcceptedActivities = true,
+                            recordedSummary = NativeRecordedHistorySummary(
+                                totalRuns = 2,
+                                totalDistanceMeters = 7_000.0,
+                                totalDurationSeconds = 2_800.0,
+                                longestRunMeters = 4_000.0,
+                                currentPlanRuns = 0,
+                                currentPlanDistanceMeters = 0.0,
+                                archivedPlanRuns = 2,
+                                archivedPlanDistanceMeters = 7_000.0,
+                                unlinkedRuns = 0,
+                                unlinkedDistanceMeters = 0.0,
+                            ),
+                            heartRateSample = null,
+                        ),
+                        planTrace = emptyList(),
+                        planHistory = null,
+                        phaseReview = null,
+                    ),
+                )
+                else -> NativeSurface.Calendar(
+                    NativeCalendarPayload(
+                        onboardingRequired = false,
+                        hasActivePlan = false,
+                        calendar = NativeCalendar(
+                            month = "2026-07",
+                            today = "2026-07-31",
+                            previousMonth = "2026-06",
+                            nextMonth = "2026-08",
+                            workouts = emptyList(),
+                            activities = emptyList(),
+                            feedback = emptyList(),
+                        ),
+                        nextWorkout = null,
+                        activityCandidates = emptyList(),
+                    ),
+                )
+            }
+            RunwayTheme {
+                RunwayNativeApp(
+                    state = RunwayUiState.Ready(surface = surface, loading = false),
+                    onDestinationSelected = { destination = it },
+                    onCalendarMonthSelected = {},
+                    onLoadMoreHistory = {},
+                    onLoadMoreInbox = {},
+                    onLoadActivityTrace = {},
+                    onOpenHistoryDetail = {},
+                    onRetryOpen = {},
+                    onAction = {},
+                    onApplyWorkoutPreview = {},
+                    onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {},
+                    onDismissPlanDecisionPreview = {},
+                    onOpenFolder = {},
+                    onImportGpx = {},
+                    onOpenHealthConnect = {},
+                    onCreateBackup = {},
+                    onRestoreBackup = {},
+                    onExportData = {},
+                    onTimeZoneChanged = {},
+                    onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {},
+                    onHeartRateChanged = {},
+                    onHealthContextChanged = {},
+                    onEraseImportedActivityData = {},
+                    onEraseAllData = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Build plan").assertIsDisplayed()
+        compose.onAllNodesWithText("Continue setup").assertCountEquals(0)
+
+        selectSurface("Stats")
+        compose.onNodeWithText("Build plan").assertIsDisplayed()
+        compose.onAllNodesWithText("Continue setup").assertCountEquals(0)
+    }
+
+    @Test
+    fun futureDayWithoutAnActivePlanDoesNotOfferAnImpossibleWorkout() {
+        compose.setContent {
+            RunwayTheme {
+                CalendarDayDetailSheet(
+                    date = "2026-08-01",
+                    today = "2026-07-31",
+                    workouts = emptyList(),
+                    activities = emptyList(),
+                    feedbackByWorkout = emptyMap(),
+                    actionPending = false,
+                    onDismiss = {},
+                    onRecordFeedback = {},
+                    onEditWorkout = {},
+                    onResetWorkout = {},
+                    onUndoWorkout = {},
+                    onDeleteFeedback = {},
+                    onOpenActivity = {},
+                    onPlanDecision = {},
+                    canAddWorkout = false,
+                    onAddWorkout = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Build a plan before scheduling future runs.")
+            .assertIsDisplayed()
+        compose.onAllNodesWithText("Add a run here").assertCountEquals(0)
+    }
+
     private fun assertSurface(label: String, marker: String) {
         selectSurface(label)
         compose.onNodeWithText(marker).assertIsDisplayed()

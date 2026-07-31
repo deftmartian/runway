@@ -299,6 +299,7 @@ internal fun CalendarDayDetailSheet(
     onDeleteFeedback: (String) -> Unit,
     onOpenActivity: (NativeActivity) -> Unit,
     onPlanDecision: (PendingPlanDecision) -> Unit,
+    canAddWorkout: Boolean,
     onAddWorkout: () -> Unit,
 ) {
     val activityPlacement = placeCalendarActivities(workouts, activities)
@@ -320,7 +321,7 @@ internal fun CalendarDayDetailSheet(
             if (workouts.isEmpty() && activities.isEmpty()) {
                 Text("No scheduled or recorded work for this day.")
             }
-            if (date > today) {
+            if (date > today && canAddWorkout) {
                 OutlinedButton(
                     onClick = onAddWorkout,
                     enabled = !actionPending,
@@ -329,6 +330,12 @@ internal fun CalendarDayDetailSheet(
                 ) {
                     Text(if (workouts.any { it.type != "rest" }) "Add another run" else "Add a run here")
                 }
+            } else if (date > today) {
+                Text(
+                    "Build a plan before scheduling future runs.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             workouts.forEach { workout ->
                 val canRecord =

@@ -256,6 +256,20 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
     }
 
     @Test
+    fun profilePresenceRemainsVisibleWithoutAnActivePlan() = runBlocking {
+        val reader = RoomLocalSurfaceLedgerReader(database)
+        val limits = LocalSurfaceReadLimits()
+
+        assertFalse(reader.calendar(0, 30, limits).profileExists)
+        assertFalse(reader.stats(limits).profileExists)
+
+        database.profileSettingsDao().save(profile())
+
+        assertTrue(reader.calendar(0, 30, limits).profileExists)
+        assertTrue(reader.stats(limits).profileExists)
+    }
+
+    @Test
     fun historyIncludesRemovedWorkoutsWithoutReturningThemToTheLiveCalendar() = runBlocking {
         val today = 1_000L
         database.profileSettingsDao().save(profile())

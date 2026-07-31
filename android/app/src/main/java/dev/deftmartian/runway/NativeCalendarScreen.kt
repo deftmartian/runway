@@ -328,7 +328,15 @@ internal fun CalendarScreen(
                     )
                 }
                 if (workouts.isEmpty() && activities.isEmpty()) {
-                    item { EmptyCard("Nothing is scheduled in this month yet. Select a day to add a future run.") }
+                    item {
+                        EmptyCard(
+                            if (payload.hasActivePlan) {
+                                "Nothing is scheduled in this month yet. Select a day to add a future run."
+                            } else {
+                                "No plan is active. Recorded runs will still appear here."
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -443,6 +451,7 @@ internal fun CalendarScreen(
                 activity.id?.let(onLoadActivityTrace)
             },
             onPlanDecision = { pendingDecision = it },
+            canAddWorkout = payload?.hasActivePlan == true,
             onAddWorkout = {
                 showSelectedDay = false
                 addWorkoutDate = date

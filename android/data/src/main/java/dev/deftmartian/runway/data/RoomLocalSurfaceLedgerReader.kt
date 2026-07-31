@@ -54,6 +54,7 @@ class RoomLocalSurfaceLedgerReader(
             hasMoreActivities = activityWindow.size > limits.calendarActivities,
             plans = plans,
             activities = activitySlices(activityWindow.take(limits.calendarActivities)),
+            profileExists = profile != null,
             todayEpochDay = todayEpochDay,
             phaseReview = phaseReview(plans.firstOrNull(), profile, availability, todayEpochDay),
             nextWorkout = nextWorkout,
@@ -221,6 +222,7 @@ class RoomLocalSurfaceLedgerReader(
             LocalStatsLedgerSlice(
                 plans = plans,
                 activities = activitySlices(activityWindow.take(limits.statsActivities)),
+                profileExists = profile != null,
                 hasMorePlans = planWindow.size > limits.historyPlans,
                 hasMoreActivities = activityWindow.size > limits.statsActivities,
                 timeZone = timeZone,

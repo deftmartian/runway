@@ -96,6 +96,7 @@ class LocalSurfaceNativeMapperTest {
                     skippedRuns = 2,
                 ),
             ),
+            profileExists = true,
             recordedTotals = emptyList(),
             totalRuns = 2,
             totalDistanceMeters = 10_000,
@@ -126,6 +127,25 @@ class LocalSurfaceNativeMapperTest {
         assertEquals(151, week.averageHeartRate)
         assertEquals("unsafe", requireNotNull(native.history).currentSignal?.risk)
         assertEquals("Pain is present now", native.history.currentSignal?.healthNotice?.heading)
+    }
+
+    @Test
+    fun `stats keeps completed setup distinct from an active plan`() {
+        val native = LocalStatsReadModel(
+            weeks = emptyList(),
+            profileExists = true,
+            recordedTotals = emptyList(),
+            totalRuns = 0,
+            totalDistanceMeters = 0,
+            totalDurationSeconds = 0,
+            longestRunMeters = null,
+            weightedPaceSecondsPerKilometre = null,
+            durationWeightedHeartRateBpm = null,
+            isComplete = true,
+        ).toNativeStats()
+
+        assertEquals(false, native.onboardingRequired)
+        assertEquals(null, native.active)
     }
 
     @Test

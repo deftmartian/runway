@@ -210,6 +210,7 @@ data class LocalCalendarReadModel(
     val fromEpochDay: Long,
     val throughEpochDay: Long,
     val activePlanId: String?,
+    val profileExists: Boolean,
     val pendingDecisionCount: Int,
     val pendingDecisionCountIsExact: Boolean,
     val hasMoreActivities: Boolean,
@@ -289,6 +290,7 @@ data class LocalRecordedTotalsReadModel(
 
 data class LocalStatsReadModel(
     val weeks: List<LocalWeekStatsReadModel>,
+    val profileExists: Boolean,
     val recordedTotals: List<LocalRecordedTotalsReadModel>,
     val totalRuns: Int,
     val totalDistanceMeters: Int,
@@ -512,6 +514,7 @@ data class LocalCalendarLedgerSlice(
     val hasMoreActivities: Boolean = false,
     val plans: List<LocalPlanLedgerSlice>,
     val activities: List<LocalActivityLedgerSlice>,
+    val profileExists: Boolean,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val nextWorkout: WorkoutEntity? = null,
@@ -535,6 +538,7 @@ data class LocalInboxLedgerSlice(
 data class LocalStatsLedgerSlice(
     val plans: List<LocalPlanLedgerSlice>,
     val activities: List<LocalActivityLedgerSlice>,
+    val profileExists: Boolean,
     val hasMorePlans: Boolean = false,
     val hasMoreActivities: Boolean = false,
     val timeZone: String = ZoneId.systemDefault().id,
@@ -698,6 +702,7 @@ object LocalSurfaceMappers {
             fromEpochDay = slice.fromEpochDay,
             throughEpochDay = slice.throughEpochDay,
             activePlanId = activePlans.singleOrNull()?.plan?.planId,
+            profileExists = slice.profileExists,
             pendingDecisionCount = slice.pendingDecisionCount,
             pendingDecisionCountIsExact = slice.pendingDecisionCountIsExact,
             hasMoreActivities = slice.hasMoreActivities,
@@ -918,6 +923,7 @@ object LocalSurfaceMappers {
             .filter { it.averageHeartRateBpm != null && (it.durationSeconds ?: 0) > 0 }
         return LocalStatsReadModel(
             weeks = weeks.sortedWith(compareBy(LocalWeekStatsReadModel::startEpochDay, LocalWeekStatsReadModel::weekOrdinal)),
+            profileExists = slice.profileExists,
             recordedTotals = totals,
             totalRuns = recordedEvidence.size,
             totalDistanceMeters = recordedEvidence.sumOf { it.distanceMeters ?: 0 },
