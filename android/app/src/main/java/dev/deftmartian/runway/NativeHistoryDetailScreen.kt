@@ -204,16 +204,23 @@ private fun HistoryWorkoutRecord(
                     "${displayPrescription.scheduledDate.orDash()} · ${workoutTypeLabel(displayPrescription.type)}",
                     fontWeight = FontWeight.SemiBold,
                 )
-                displayPrescription.purpose?.takeIf(String::isNotBlank)?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
             }
             LedgerState(state, emphasis)
         }
         if (workout.isRemoved == true) {
-            HistoryPrescriptionRecord("Generated", workout.generated)
-            if (workout.generated != workout.current) {
-                HistoryPrescriptionRecord("Before removal", workout.current)
+            if (workout.generated == workout.current) {
+                HistoryPrescriptionRecord(
+                    "Generated and current",
+                    workout.current,
+                    showIdentity = false,
+                )
+            } else {
+                HistoryPrescriptionRecord("Generated", workout.generated)
+                HistoryPrescriptionRecord(
+                    "Before removal",
+                    workout.current,
+                    showIdentity = false,
+                )
             }
             Text(
                 "Removed from the current plan",
@@ -221,10 +228,10 @@ private fun HistoryWorkoutRecord(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else if (workout.generated == workout.current) {
-            HistoryPrescriptionRecord("Planned", workout.current)
+            HistoryPrescriptionRecord("Planned", workout.current, showIdentity = false)
         } else {
             HistoryPrescriptionRecord("Generated", workout.generated)
-            HistoryPrescriptionRecord("Current", workout.current)
+            HistoryPrescriptionRecord("Current", workout.current, showIdentity = false)
         }
         result?.let {
             MeasurementReadout(
@@ -250,9 +257,14 @@ private fun HistoryWorkoutRecord(
 private fun HistoryPrescriptionRecord(
     label: String,
     prescription: NativeHistoryPrescription,
+    showIdentity: Boolean = true,
 ) {
     Text(
-        "$label · ${prescription.scheduledDate.orDash()} · ${workoutTypeLabel(prescription.type)}",
+        if (showIdentity) {
+            "$label · ${prescription.scheduledDate.orDash()} · ${workoutTypeLabel(prescription.type)}"
+        } else {
+            label
+        },
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
