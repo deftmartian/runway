@@ -133,7 +133,7 @@ object Consequences {
                 val crosses = comparison.difference.toDouble() / guardrail > .10
                 val severe = comparison.actual >= comparison.target * 2
                 val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
-                val reduction = -max(minimumReduction, roundLikeJavaScriptToInt(comparison.difference * .5))
+                val reduction = -max(minimumReduction, roundTrainingValueToInt(comparison.difference * .5))
                 val risk = when {
                     input.feltHard && crosses && severe -> Risk.UNSAFE
                     crosses -> Risk.AGGRESSIVE
@@ -153,7 +153,7 @@ object Consequences {
                 val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 500
                 val reduction = -max(
                     minimumReduction,
-                    roundLikeJavaScriptToInt(abs(comparison.difference) * multiplier),
+                    roundTrainingValueToInt(abs(comparison.difference) * multiplier),
                 )
                 val risk = if (large || input.feltHard || repeatedShortfall) Risk.MODERATE else Risk.CONSERVATIVE
                 val decision = if (input.feltHard || repeatedShortfall) {
@@ -173,7 +173,7 @@ object Consequences {
                 val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 500
                 val reduction = -max(
                     minimumReduction,
-                    roundLikeJavaScriptToInt(comparison.target * multiplier),
+                    roundTrainingValueToInt(comparison.target * multiplier),
                 )
                 val elevated = input.feltHard || repeatedSkip
                 val risk = if (elevated) Risk.MODERATE else Risk.CONSERVATIVE
@@ -182,7 +182,7 @@ object Consequences {
             }
             Deviation.NEAR_PLAN -> if (input.feltHard) {
                 val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
-                val reduction = -max(minimumReduction, roundLikeJavaScriptToInt(comparison.target * .15))
+                val reduction = -max(minimumReduction, roundTrainingValueToInt(comparison.target * .15))
                 result(ConsequenceKind.HARD_EFFORT, reduction, Risk.MODERATE, PlanDecision.REDUCE_NEXT)
             } else {
                 result(ConsequenceKind.COMPLETED_AS_PLANNED, 0, Risk.CONSERVATIVE, PlanDecision.KEEP_PLAN)
@@ -192,7 +192,7 @@ object Consequences {
                     ConsequenceKind.HARD_EFFORT,
                     -max(
                         if (comparison.metric == LoadMetric.DURATION) 300 else 1_000,
-                        roundLikeJavaScriptToInt(comparison.target * .15),
+                        roundTrainingValueToInt(comparison.target * .15),
                     ),
                     Risk.MODERATE,
                     PlanDecision.REDUCE_NEXT,
@@ -221,7 +221,7 @@ object Consequences {
         val previous = if (metric == LoadMetric.DURATION) target.targetDurationSeconds ?: 0 else target.targetDistanceMeters
         if (previous <= 0) return null
         val matching = consequence.nextRunAdjustment?.takeIf { it.metric == metric }?.value?.let(::abs) ?: 0
-        val total = matching.takeIf { it > 0 } ?: if (metric == LoadMetric.DURATION) max(300, roundLikeJavaScriptToInt(previous * .15)) else 500
+        val total = matching.takeIf { it > 0 } ?: if (metric == LoadMetric.DURATION) max(300, roundTrainingValueToInt(previous * .15)) else 500
         val reduction = if (decision == PlanDecision.REBALANCE_WEEK) ceil(total.toDouble() / max(1, shareCount)).toInt() else total
         val next = max(if (metric == LoadMetric.DURATION) 600 else 500, previous - reduction)
         return DecisionEffect(metric, previous, next - previous, next)
@@ -314,7 +314,7 @@ fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraA
             input.pain -> null
             input.feltHard -> {
                 val minimumReduction = if (timed) 300 else 1_000
-                LoadDelta(metric, -max(minimumReduction, roundLikeJavaScriptToInt(next * .15)))
+                LoadDelta(metric, -max(minimumReduction, roundTrainingValueToInt(next * .15)))
             }
             else -> null
         }
@@ -355,12 +355,12 @@ fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraA
     val adjustmentMultiplier = if (input.feltHard) .6 else .5
     val adjustment = -min(
         next,
-        max(minimumReduction, roundLikeJavaScriptToInt(actual * adjustmentMultiplier)),
+        max(minimumReduction, roundTrainingValueToInt(actual * adjustmentMultiplier)),
     )
     if (input.pain) {
         val painReduction = -max(
             max(minimumReduction, next),
-            roundLikeJavaScriptToInt(actual * .5),
+            roundTrainingValueToInt(actual * .5),
         )
         return Consequence(
             ConsequenceKind.PAIN_REPORTED,
@@ -606,7 +606,7 @@ object WorkoutEdits {
                 state.current.prescriptionKind == proposed.prescriptionKind
         }
         if (delta == 0 || candidates.isEmpty()) return emptyMap()
-        val share = roundLikeJavaScriptToInt(delta.toDouble() / candidates.size)
+        val share = roundTrainingValueToInt(delta.toDouble() / candidates.size)
         return candidates.associate {
             it.id to if (proposed.prescriptionKind == PrescriptionKind.TIMED) {
                 val duration = max(600, (it.current.targetDurationSeconds ?: 600) - share)
@@ -664,7 +664,7 @@ object WorkoutEdits {
     }
     private fun higher(a: Risk, b: Risk) = if (a.ordinal >= b.ordinal) a else b
     private fun percent(delta: Int, base: Int) = round1(delta.toDouble() / max(base, 1) * 100)
-    private fun round1(value: Double) = roundOneDecimalLikeJavaScript(value)
+    private fun round1(value: Double) = roundTrainingValueToOneDecimal(value)
 
     private fun validIntervals(structure: TimedIntervalStructure?, totalDurationSeconds: Int): Boolean =
         structure != null &&
@@ -690,11 +690,11 @@ object WorkoutEdits {
         if (currentTotal <= 0 || totalDurationSeconds <= 0) return structure.copy()
         val factor = totalDurationSeconds.toDouble() / currentTotal
         val resized = TimedIntervalStructure(
-            warmupSeconds = max(0, roundLikeJavaScriptToInt(structure.warmupSeconds * factor)),
-            cooldownSeconds = max(0, roundLikeJavaScriptToInt(structure.cooldownSeconds * factor)),
+            warmupSeconds = max(0, roundTrainingValueToInt(structure.warmupSeconds * factor)),
+            cooldownSeconds = max(0, roundTrainingValueToInt(structure.cooldownSeconds * factor)),
             blocks = structure.blocks.map { block ->
                 block.copy(segments = block.segments.map { segment ->
-                    segment.copy(durationSeconds = max(1, roundLikeJavaScriptToInt(segment.durationSeconds * factor)))
+                    segment.copy(durationSeconds = max(1, roundTrainingValueToInt(segment.durationSeconds * factor)))
                 })
             },
         )

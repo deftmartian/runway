@@ -97,16 +97,16 @@ object TrainingPlanner {
             val rampedDistance = if (number == 1) {
                 intake.currentWeeklyDistanceMeters
             } else {
-                roundLikeJavaScriptToInt(previousDistance * (1 + normalRamp))
+                roundTrainingValueToInt(previousDistance * (1 + normalRamp))
             }
             val buildDistance = min(peak, rampedDistance)
             val budget = when {
                 isTaper -> taperTarget(peakDistance, taperPosition, taper)
-                down -> roundLikeJavaScriptToInt(buildDistance * .85)
+                down -> roundTrainingValueToInt(buildDistance * .85)
                 else -> buildDistance
             }
-            val rampLong = if (number == 1) initialLong else roundLikeJavaScriptToInt(previousLong * (1 + normalRamp))
-            val adjustedLong = if (down) roundLikeJavaScriptToInt(rampLong * .85) else rampLong
+            val rampLong = if (number == 1) initialLong else roundTrainingValueToInt(previousLong * (1 + normalRamp))
+            val adjustedLong = if (down) roundTrainingValueToInt(rampLong * .85) else rampLong
             val desiredLong = if (isTaper) {
                 taperTarget(peakTrainingLong, taperPosition, taper)
             } else {
@@ -509,7 +509,7 @@ object TrainingPlanner {
             position == 2 -> .45
             else -> .4
         }
-        return roundLikeJavaScriptToInt(peak * fraction)
+        return roundTrainingValueToInt(peak * fraction)
     }
 
     private fun percentIncrease(previous: Int, current: Int) = when {
@@ -551,7 +551,7 @@ object TrainingPlanner {
     private fun highestRisk(risks: List<RiskRating>) =
         risks.fold(RiskRating.CONSERVATIVE, ::elevateRisk)
 
-    private fun oneDecimal(value: Double) = roundOneDecimalLikeJavaScript(value)
+    private fun oneDecimal(value: Double) = roundTrainingValueToOneDecimal(value)
 
     private fun longRunFloor(distance: RaceDistance) = mapOf(
         RaceDistance.FIVE_K to 4000,

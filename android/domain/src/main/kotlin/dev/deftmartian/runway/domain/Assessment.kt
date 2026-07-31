@@ -98,6 +98,6 @@ object TrainingAssessments {
 
     private fun percent(value: Double): String {
         require(value.isFinite()) { "Ramp evidence must be a finite percentage." }
-        return "${roundOneDecimalLikeJavaScript(value)}%"
+        return "${roundTrainingValueToOneDecimal(value)}%"
     }
 }

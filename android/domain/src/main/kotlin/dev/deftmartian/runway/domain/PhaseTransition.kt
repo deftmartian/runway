@@ -11,8 +11,8 @@ object PhaseTransitions {
             completed.sumOf { nonnegative(it.durationSeconds) },
             distance,
             completed.maxOfOrNull { nonnegative(it.distanceMeters) } ?: 0,
-            roundLikeJavaScriptToInt(distance / weeksObserved),
-            roundOneDecimalLikeJavaScript(completed.size / weeksObserved),
+            roundTrainingValueToInt(distance / weeksObserved),
+            roundTrainingValueToOneDecimal(completed.size / weeksObserved),
         )
     }
     fun canUseDistancePlannerBaseline(baseline: PhaseBaseline) = baseline.weeklyDistanceMeters >= 3000 && baseline.runsPerWeek >= 2 && baseline.longestActivityMeters > 0
