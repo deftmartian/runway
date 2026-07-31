@@ -62,9 +62,11 @@ to preserve the update path.
 
 | Calendar | Inbox |
 | --- | --- |
-| ![Calendar in dark mode](docs/images/runway-android-calendar-dark.png) | ![Import review in light mode](docs/images/runway-android-inbox-light.png) |
-| Stats | Settings |
-| ![Training stats in light mode](docs/images/runway-android-stats-light.png) | ![Settings in dark mode](docs/images/runway-android-settings-dark.png) |
+| ![Calendar decision surface in dark mode](docs/images/runway-android-calendar-dark.png) | ![Run and plan decisions in the Inbox](docs/images/runway-android-inbox-light.png) |
+| History | Stats |
+| ![Current and past plan history](docs/images/runway-android-history-light.png) | ![Plan versus actual training stats](docs/images/runway-android-stats-light.png) |
+| Settings | Expanded layout |
+| ![Private on-device settings in dark mode](docs/images/runway-android-settings-dark.png) | ![Calendar with adaptive navigation rail](docs/images/runway-android-calendar-expanded-light.png) |
 
 ## Read more
 
