@@ -343,7 +343,12 @@ internal fun CheckRow(label: String, checked: Boolean, onCheckedChange: (Boolean
 }
 
 @Composable
-internal fun NumberField(label: String, value: String, onValueChange: (String) -> Unit) {
+internal fun NumberField(
+    label: String,
+    value: String,
+    errorMessage: String? = null,
+    onValueChange: (String) -> Unit,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = { next ->
@@ -353,6 +358,8 @@ internal fun NumberField(label: String, value: String, onValueChange: (String) -
         },
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
+        isError = errorMessage != null,
+        supportingText = errorMessage?.let { message -> { Text(message) } },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
     )

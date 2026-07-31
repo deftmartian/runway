@@ -22,6 +22,41 @@ import dev.deftmartian.runway.domain.WorkoutType
 import java.time.LocalDate
 import java.util.Locale
 
+internal fun isoDateInputError(value: String): String? = when {
+    !value.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) ->
+        "Use a complete date in YYYY-MM-DD format."
+    runCatching { LocalDate.parse(value) }.isFailure ->
+        "That date does not exist."
+    else -> null
+}
+
+internal fun boundedRunMeasurementError(
+    value: String,
+    required: Boolean,
+    minimum: Double,
+    maximum: Double,
+    unit: String,
+): String? {
+    if (value.isBlank()) return if (required) "Enter a value in $unit." else null
+    val number = value.toDoubleOrNull()
+    return if (number != null && number in minimum..maximum) {
+        null
+    } else {
+        "Use a value from ${formatInputBound(minimum)} to ${formatInputBound(maximum)} $unit."
+    }
+}
+
+internal fun positiveRunMeasurementError(value: String, unit: String): String? {
+    val number = value.toDoubleOrNull()
+    return if (number != null && number > 0.0) null else "Enter a value greater than 0 $unit."
+}
+
+internal fun workoutPurposeInputError(value: String): String? =
+    if (value.trim().length in 2..120) null else "Enter a purpose of 2 to 120 characters."
+
+private fun formatInputBound(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+
 @Composable
 internal fun FeedbackDialog(
     workout: NativeWorkout,
@@ -59,13 +94,14 @@ internal fun FeedbackDialog(
     }
     var harderThanExpected by rememberSaveable { mutableStateOf(false) }
     var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
+    val measurementError = when {
+        status == FeedbackStatus.SKIPPED -> null
+        timed -> positiveRunMeasurementError(duration, "minutes")
+        else -> positiveRunMeasurementError(distance, "km")
+    }
     val measurementValid =
         storedFormatIssue == null &&
-            (
-                status == FeedbackStatus.SKIPPED ||
-                    (timed && (duration.toDoubleOrNull() ?: 0.0) > 0) ||
-                    (!timed && (distance.toDoubleOrNull() ?: 0.0) > 0)
-            )
+            measurementError == null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Record this run") },
@@ -96,6 +132,7 @@ internal fun FeedbackDialog(
                         NumberField(
                             if (timed) "Completed duration (minutes)" else "Completed distance (km)",
                             if (timed) duration else distance,
+                            errorMessage = measurementError,
                         ) {
                             if (timed) duration = it else distance = it
                         }
@@ -172,10 +209,25 @@ internal fun ManualRunDialog(
     var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
     val distanceNumber = distance.toDoubleOrNull()
     val durationNumber = duration.toDoubleOrNull()
+    val dateError = isoDateInputError(date)
+    val distanceError = boundedRunMeasurementError(
+        value = distance,
+        required = false,
+        minimum = 0.1,
+        maximum = 100.0,
+        unit = "km",
+    )
+    val durationError = boundedRunMeasurementError(
+        value = duration,
+        required = false,
+        minimum = 1.0,
+        maximum = 600.0,
+        unit = "minutes",
+    )
     val valid =
-        runCatching { LocalDate.parse(date) }.isSuccess &&
-            (distance.isBlank() || (distanceNumber ?: 0.0) in 0.1..100.0) &&
-            (duration.isBlank() || (durationNumber ?: 0.0) in 1.0..600.0) &&
+        dateError == null &&
+            distanceError == null &&
+            durationError == null &&
             (distanceNumber != null || durationNumber != null)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -190,11 +242,25 @@ internal fun ManualRunDialog(
                         value = date,
                         onValueChange = { date = it.take(10) },
                         label = { Text("Date (YYYY-MM-DD)") },
+                        isError = dateError != null,
+                        supportingText = dateError?.let { message -> { Text(message) } },
                         singleLine = true,
                     )
                 }
-                item { NumberField("Distance (km, optional)", distance) { distance = it } }
-                item { NumberField("Duration (minutes, optional)", duration) { duration = it } }
+                item {
+                    NumberField(
+                        "Distance (km, optional)",
+                        distance,
+                        errorMessage = distanceError,
+                    ) { distance = it }
+                }
+                item {
+                    NumberField(
+                        "Duration (minutes, optional)",
+                        duration,
+                        errorMessage = durationError,
+                    ) { duration = it }
+                }
                 item {
                     Text(
                         "Enter the distance, duration, or both.",
@@ -257,11 +323,19 @@ internal fun WorkoutAddDialog(
     var reason by rememberSaveable { mutableStateOf("") }
     var rebalance by rememberSaveable { mutableStateOf(false) }
     val distanceNumber = distance.toDoubleOrNull()
+    val dateError = isoDateInputError(scheduledDate)
+    val distanceError = boundedRunMeasurementError(
+        value = distance,
+        required = true,
+        minimum = 0.1,
+        maximum = 100.0,
+        unit = "km",
+    )
+    val purposeError = workoutPurposeInputError(purpose)
     val valid =
-        runCatching { LocalDate.parse(scheduledDate) }.isSuccess &&
-            distanceNumber != null &&
-            distanceNumber >= 0.1 &&
-            purpose.trim().length >= 2
+        dateError == null &&
+            distanceError == null &&
+            purposeError == null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add a future run") },
@@ -281,6 +355,8 @@ internal fun WorkoutAddDialog(
                         value = scheduledDate,
                         onValueChange = { scheduledDate = it.take(10) },
                         label = { Text("Date (YYYY-MM-DD)") },
+                        isError = dateError != null,
+                        supportingText = dateError?.let { message -> { Text(message) } },
                         singleLine = true,
                     )
                 }
@@ -294,13 +370,21 @@ internal fun WorkoutAddDialog(
                             ChoiceRow(label, type == value) { type = value }
                         }
                 }
-                item { NumberField("Distance (km)", distance) { distance = it } }
+                item {
+                    NumberField(
+                        "Distance (km)",
+                        distance,
+                        errorMessage = distanceError,
+                    ) { distance = it }
+                }
                 item {
                     OutlinedTextField(
                         value = purpose,
                         onValueChange = { purpose = it.take(120) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Purpose") },
+                        isError = purposeError != null,
+                        supportingText = purposeError?.let { message -> { Text(message) } },
                     )
                 }
                 item {
@@ -392,11 +476,24 @@ internal fun WorkoutEditDialog(
                 "Choose a workout type before saving."
             else -> null
         }
+    val dateError = isoDateInputError(scheduledDate)
+    val loadError = if (isRest) {
+        null
+    } else {
+        boundedRunMeasurementError(
+            value = load,
+            required = true,
+            minimum = if (timed) 10.0 else 0.1,
+            maximum = if (timed) 360.0 else 100.0,
+            unit = if (timed) "minutes" else "km",
+        )
+    }
+    val purposeError = workoutPurposeInputError(purpose)
     val valid =
-        runCatching { LocalDate.parse(scheduledDate) }.isSuccess &&
+        dateError == null &&
             storedFormatIssue == null &&
-            (isRest || (loadNumber != null && loadNumber > 0)) &&
-            purpose.trim().length >= 2
+            loadError == null &&
+            purposeError == null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Adjust this workout") },
@@ -419,6 +516,8 @@ internal fun WorkoutEditDialog(
                         value = scheduledDate,
                         onValueChange = { scheduledDate = it.take(10) },
                         label = { Text("Date (YYYY-MM-DD)") },
+                        isError = dateError != null,
+                        supportingText = dateError?.let { message -> { Text(message) } },
                         singleLine = true,
                     )
                 }
@@ -439,6 +538,7 @@ internal fun WorkoutEditDialog(
                         NumberField(
                             if (timed) "Duration (minutes)" else "Distance (km)",
                             load,
+                            errorMessage = loadError,
                         ) { load = it }
                     }
                 }
@@ -448,6 +548,8 @@ internal fun WorkoutEditDialog(
                         onValueChange = { purpose = it.take(120) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Purpose") },
+                        isError = purposeError != null,
+                        supportingText = purposeError?.let { message -> { Text(message) } },
                     )
                 }
                 item {
