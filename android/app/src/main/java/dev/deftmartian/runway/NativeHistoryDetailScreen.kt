@@ -272,7 +272,7 @@ private fun HistoryPrescriptionRecord(
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     MeasurementReadout(
-        if (prescription.type == "rest") "$label schedule" else label,
+        if (prescription.type == "rest") "Schedule" else "Target",
         if (prescription.type == "rest") {
             "Recovery"
         } else {
