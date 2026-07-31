@@ -8,6 +8,8 @@ Training history, schedule patterns, route coordinates, heart-rate samples, pace
 
 runway intentionally has no account or network service. It relies on Android's application sandbox, the device lock state, and the runner's control of their device and exported files. It cannot protect local data from a fully compromised or unlocked device, from another app granted broad device access, or from a user sharing a plaintext backup.
 
+Backup and export use Android's document picker. The runner chooses the destination, and a cloud-backed document provider can move that plaintext file off the device without runway operating a network service.
+
 The app requests no broad storage permission. A folder import uses a read-only Storage Access Framework tree grant selected by the runner. The grant can be revoked in Android settings. Share intake consumes a supplied file; it does not retain original raw GPX bytes.
 
 ## Health Connect
@@ -28,7 +30,7 @@ Health Connect access is optional and read-only. Permissions are scoped to the r
 - Bound parser size, track points, values, and work per import. Reject document type declarations and entities; do not log raw activity content.
 - Validate exact released restore lineages before replacement; run supported migrations from the same immutable source as installed-ledger upgrades, and prove reruns are no-ops.
 - Keep Room queries bounded. Do not introduce unbounded history, route, or Health Connect reads into a primary surface.
-- Do not hand-roll cryptography. Signing material stays outside the repository and is supplied only to a protected release environment.
+- Do not hand-roll cryptography. Signing material stays outside the repository. CI receives it only through the protected release environment; local operator signing uses external, ignored configuration.
 - Do not commit real activity files, backups, coordinates, signing keys, passwords, or `local.properties`.
 
 ## Reporting a vulnerability

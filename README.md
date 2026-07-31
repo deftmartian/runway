@@ -4,78 +4,72 @@
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
-**A private, offline-first Android running decision ledger.**
+**A private Android running decision ledger for self-coached runners.**
 
-runway helps a self-coached runner keep the recommendation, their edits, and the work actually completed separate. A missed day, short run, extra run, or hard effort does not quietly rewrite the plan: runway records it, explains the available next decisions, and waits for the runner to choose.
+runway keeps the original recommendation, deliberate edits, and completed work separate. A missed day, short run, extra run, or hard effort is recorded as it happened; future training changes only after the runner reviews and applies a choice.
 
-It is a native Kotlin + Jetpack Compose application. All product state stays on the phone; there is no account or hosted service.
+It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer. The installed ledger and import processing are local, with no account, server, subscription, or cloud sync.
 
-## The loop
+| Calendar | Inbox |
+| --- | --- |
+| ![Calendar showing today's plan, the next run, and waiting decisions](docs/images/runway-android-calendar-dark.png) | ![Inbox showing a GPX run awaiting review and an accepted result](docs/images/runway-android-inbox-light.png) |
+
+## Plan, record, decide
 
 1. Build a conservative plan from a repeatable baseline, a foundation phase, or timed calibration.
-2. Adjust future runs when life changes: move, edit, add, remove, reset, or undo them.
-3. Record a run manually, share a GPX file, scan an approved folder, or read an approved Health Connect activity.
-4. Review the difference between plan and reality. Keep, reduce, rest, repeat, or rebalance only after an explicit choice.
+2. Move, edit, add, remove, reset, or undo future runs when the schedule changes.
+3. Record a run manually, share a GPX file, scan an approved folder, or import an optional Health Connect activity for review.
+4. Compare the plan with what happened, then keep, reduce, rest, repeat, or rebalance through an explicit choice.
 
-The five main surfaces are Calendar, Inbox, Stats, History, and Settings. Rest and recovery are planned work; training guidance is decision support, not medical advice.
+Calendar, Inbox, Stats, History, and Settings keep the current decision, unresolved review work, training context, past plans, and local controls in predictable places. Rest and recovery remain visible parts of the plan. runway provides decision support, not medical advice.
 
-## Local by default
+## Private by design
 
-- The training ledger lives in Room on the device.
-- GPX input is parsed locally and the original bytes are discarded after intake.
-- A Storage Access Framework folder grant can be scanned when the app returns to the foreground; Android background scheduling is best-effort, not a filesystem watch guarantee.
-- Health Connect reading is optional and read-only. Imported activities enter review before they affect a plan.
-- New profiles discard imported route and heart-rate detail unless the runner chooses private on-device retention in Settings. Switching either choice back to discard permanently clears the corresponding retained and pending import data.
-- Backup and export are explicit, user-controlled plaintext files. They may contain private training history, notes, route data, and heart-rate data; store and share them carefully.
+- GPX files are parsed locally; original input bytes are discarded after intake.
+- GPX and optional read-only Health Connect imports enter the Inbox before they can affect completed totals or future decisions.
+- Fresh profiles discard imported route and heart-rate detail unless private on-device retention is enabled. Switching back to discard permanently clears the corresponding retained and pending import data.
+- Backup and export are explicit plaintext files written to the location chosen in Android's document picker. They can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.
 
-## Build
+See [Security and privacy](docs/SECURITY.md) for the full trust boundary and data controls.
 
-Requirements: JDK 17, Android SDK Platform 36 and matching build tools, and the checked-in Gradle wrapper. Keep SDK paths in ignored `local.properties` or the normal Android SDK environment variables.
+<details>
+<summary><strong>More screens</strong></summary>
+
+| Stats | History |
+| --- | --- |
+| ![Stats comparing planned and completed training](docs/images/runway-android-stats-light.png) | ![History showing current and past plan records](docs/images/runway-android-history-light.png) |
+| Settings | Larger screens |
+| ![Settings for training, imports, privacy, and local data](docs/images/runway-android-settings-dark.png) | ![Calendar using the adaptive navigation rail at 600 dp and wider](docs/images/runway-android-calendar-expanded-light.png) |
+
+</details>
+
+## Install
+
+Download the APK and matching `.sha256` file from the [latest release](https://github.com/deftmartian/runway/releases/latest), verify the checksum, and open the APK on the Android device. Releases signed with the same `dev.deftmartian.runway` certificate install as in-place updates.
+
+Personal F-Droid repository operators should follow the [Android release guide](android/docs/RELEASE.md) so GitHub and F-Droid builds preserve the same application identity and update path.
+
+## Build from source
+
+Use JDK 17, Android SDK Platform 36 with matching build tools, and the checked-in Gradle wrapper:
 
 ```sh
 android/gradlew -p android --no-daemon --max-workers=1 lint test assembleDebug
 ```
 
-The project has `:app`, `:data`, and `:domain` modules. `:domain` contains pure training rules, `:data` owns Room and import persistence, and `:app` owns Compose, Android capabilities, and local orchestration.
+See [Android development](docs/ANDROID.md) for device tests and module responsibilities, or [Contributing](CONTRIBUTING.md) before changing product behavior.
 
-For an emulator or connected device:
+## Documentation
 
-```sh
-android/gradlew -p android --no-daemon --max-workers=1 connectedDebugAndroidTest
-```
-
-Do not commit real GPX, FIT, or TCX files, device backups, readable training exports, route coordinates, health data, signing material, or `local.properties`. The default `runway-training-export*.json` name is ignored as a guardrail; renamed exports remain sensitive too.
-
-## Releases
-
-The stable application id is `dev.deftmartian.runway`. Android updates are tied to both that id and the signing certificate: retain the release key securely and back it up before distributing an APK.
-
-GitHub version tags publish a signed universal APK only when the protected signing environment is available. There is one canonical APK signing key: a personal F-Droid repository may use a separate repository-index key, but its APKs must use the same application id and canonical APK certificate for in-place updates. The F-Droid source-build path is deliberately unsigned until that repository signs it. See [Android release instructions](android/docs/RELEASE.md).
-
-To install from GitHub, download the APK and matching `.sha256` file from the
-[latest release](https://github.com/deftmartian/runway/releases/latest), verify the checksum, and
-open the APK on the Android device. Future releases signed by the same certificate install as
-in-place updates. A personal F-Droid repository must publish APKs signed with that same certificate
-to preserve the update path.
-
-## The app
-
-| Calendar | Inbox |
+| Topic | Start here |
 | --- | --- |
-| ![Calendar decision surface in dark mode](docs/images/runway-android-calendar-dark.png) | ![Run and plan decisions in the Inbox](docs/images/runway-android-inbox-light.png) |
-| History | Stats |
-| ![Current and past plan history](docs/images/runway-android-history-light.png) | ![Plan versus actual training stats](docs/images/runway-android-stats-light.png) |
-| Settings | Expanded layout |
-| ![Private on-device settings in dark mode](docs/images/runway-android-settings-dark.png) | ![Calendar with adaptive navigation rail](docs/images/runway-android-calendar-expanded-light.png) |
-
-## Read more
-
-- [Product direction](docs/PRODUCT.md)
-- [Design system](docs/DESIGN_SYSTEM.md)
-- [Android architecture](docs/ARCHITECTURE.md)
-- [Security and privacy](docs/SECURITY.md)
-- [Training sources and limits](docs/TRAINING_SOURCES.md)
-- [Contributing](CONTRIBUTING.md)
+| Product intent and boundaries | [Product](docs/PRODUCT.md) |
+| Interface and copy decisions | [Design system](docs/DESIGN_SYSTEM.md) |
+| Modules and local data flow | [Architecture](docs/ARCHITECTURE.md) |
+| Data sensitivity and trust boundary | [Security and privacy](docs/SECURITY.md) |
+| Training evidence and limits | [Training sources](docs/TRAINING_SOURCES.md) |
+| Building and testing | [Android development](docs/ANDROID.md) |
+| Signing and distribution | [Android release guide](android/docs/RELEASE.md) |
 
 ## License
 

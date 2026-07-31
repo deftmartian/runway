@@ -19,14 +19,21 @@ For a locally signed release, copy the ignored template and provide the operator
 ```sh
 cp android/signing.properties.example android/signing.properties
 android/gradlew -p android --no-daemon --max-workers=1 assembleRelease
-apksigner verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
+"$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
+  android/app/build/outputs/apk/release/app-release.apk
 ```
 
 Do not put a keystore, password, or `signing.properties` in Git, CI logs, shell history, or an artifact. Record the source commit, version name/code, APK SHA-256, application id, and signer certificate fingerprint with the release.
 
 ## GitHub release
 
-Version tags are expected to use `v<semver>`. The protected Android release environment supplies the signing identity. If it is unavailable, publication must fail rather than create an unsigned normal release. Verify the GitHub artifact's SHA-256 and certificate against the recorded release identity before distributing it.
+Before creating a tag:
+
+- Set `versionName` to the release SemVer and increase the positive `versionCode` beyond the preceding release.
+- Commit the version change to the default branch.
+- Tag that commit as `v<versionName>`; the tag must be reachable from the default branch.
+
+CI rejects a tag that fails any of those conditions. The protected Android release environment supplies the signing identity. If it is unavailable, publication fails rather than creating an unsigned normal release. Verify the GitHub artifact's SHA-256 and certificate against the recorded release identity before distributing it.
 
 ## Personal F-Droid repository
 

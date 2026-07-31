@@ -23,6 +23,8 @@ The entry paths are:
 | Foundation only | A route to 30 continuous minutes without inventing a distance goal. |
 | Timed calibration | Two repeatable easy run/walk sessions each week for two weeks when distance inputs would be guesswork. |
 
+The evidence behind these conservative rules, and the limits of what each source supports, are recorded in [Training sources](TRAINING_SOURCES.md).
+
 Defaults are recommendations, not constraints. The runner can change available days, timing, distance, duration, and individual future workouts within explicit guardrails.
 
 If health context blocks plan generation, runway keeps the pending goal visible so the runner can return to it or explicitly replace it. A pending or active goal is never archived as a side effect of merely opening setup.
