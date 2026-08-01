@@ -6,20 +6,22 @@ import org.junit.Test
 
 class NativeCalendarLayoutTest {
     @Test
-    fun `calendar grid fits a standard phone viewport without horizontal scrolling`() {
-        assertFalse(calendarGridNeedsHorizontalScroll(344f))
+    fun `compact and medium screens use the readable day ledger`() {
+        assertTrue(usesCompactCalendarLedger(360f))
+        assertTrue(usesCompactCalendarLedger(600f))
+        assertTrue(usesCompactCalendarLedger(979f))
     }
 
     @Test
-    fun `calendar grid exposes its horizontal fallback below its 48dp cell width`() {
-        assertTrue(calendarGridNeedsHorizontalScroll(328f))
-        assertTrue(calendarGridNeedsHorizontalScroll(304f))
+    fun `expanded screens retain the month overview`() {
+        assertFalse(usesCompactCalendarLedger(980f))
+        assertFalse(usesCompactCalendarLedger(1_000f))
     }
 
     @Test
-    fun `calendar grid keeps labels readable when text is enlarged`() {
-        assertTrue(calendarGridNeedsHorizontalScroll(344f, fontScale = 1.3f))
-        assertFalse(calendarGridNeedsHorizontalScroll(448f, fontScale = 1.3f))
+    fun `enlarged text keeps the day ledger until the grid has readable cells`() {
+        assertTrue(usesCompactCalendarLedger(1_273f, fontScale = 1.3f))
+        assertFalse(usesCompactCalendarLedger(1_274f, fontScale = 1.3f))
     }
 
     @Test

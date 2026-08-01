@@ -1,19 +1,25 @@
 package dev.deftmartian.runway
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -34,7 +40,15 @@ class NativeDocumentationScreenshotsInstrumentedTest {
 
     @Test
     fun capturesCalendarInDarkTheme() =
-        capture("calendar-dark", darkTheme = true, calendarState())
+        capture(
+            name = "calendar-dark",
+            darkTheme = true,
+            state = calendarState(),
+            densityScale = 0.85f,
+        ) {
+            compose.onNodeWithTag("calendar-day-ledger").assertExists()
+            compose.onNodeWithText("Long easy run · 6 km").assertExists()
+        }
 
     @Test
     fun capturesCalendarAtLargeFontScale() =
@@ -58,10 +72,14 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             name = "calendar-expanded-light",
             darkTheme = false,
             state = calendarState(),
-            densityScale = 0.6f,
+            densityScale = 0.34f,
+            viewportHeightDp = 1_350f,
         ) {
             compose.onNodeWithTag("primary-navigation-rail").assertIsDisplayed()
             compose.onNodeWithTag("primary-navigation-bar").assertDoesNotExist()
+            compose.onNodeWithTag("calendar-month-grid").assertExists()
+            compose.onNodeWithTag("calendar-day-ledger").assertDoesNotExist()
+            compose.onNodeWithText("Long easy run · 6 km").assertExists()
         }
 
     @Test
@@ -96,6 +114,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
         state: RunwayUiState.Ready,
         fontScale: Float = 1f,
         densityScale: Float = 1f,
+        viewportHeightDp: Float? = null,
         prepareCapture: (() -> Unit)? = null,
     ) {
         compose.setContent {
@@ -103,36 +122,43 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             CompositionLocalProvider(
                 LocalDensity provides Density(density.density * densityScale, fontScale),
             ) {
-                RunwayTheme(darkTheme = darkTheme, dynamicColor = false) {
-                    RunwayNativeApp(
-                        state = state,
-                        onDestinationSelected = {},
-                        onCalendarMonthSelected = {},
-                        onLoadMoreHistory = {},
-                        onLoadMoreInbox = {},
-                        onLoadActivityTrace = {},
-                        onOpenHistoryDetail = {},
-                        onRetryOpen = {},
-                        onAction = {},
-                        onApplyWorkoutPreview = {},
-                        onDismissWorkoutPreview = {},
-                        onApplyPlanDecisionPreview = {},
-                        onDismissPlanDecisionPreview = {},
-                        onOpenFolder = {},
-                        onImportGpx = {},
-                        onOpenHealthConnect = {},
-                        onCreateBackup = {},
-                        onRestoreBackup = {},
-                        onExportData = {},
-                        onTimeZoneChanged = {},
-                        onRoutePrivacyChanged = {},
-                        onHeartRatePrivacyChanged = {},
-                        onHeartRateChanged = {},
-                        onHealthContextChanged = {},
-                        onEraseImportedActivityData = {},
-                        onEraseAllData = {},
-                        onAcknowledgeRetentionRepair = {},
-                    )
+                val captureModifier = if (viewportHeightDp == null) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier.fillMaxWidth().height(viewportHeightDp.dp)
+                }
+                Box(captureModifier.testTag(SCREENSHOT_ROOT_TAG)) {
+                    RunwayTheme(darkTheme = darkTheme, dynamicColor = false) {
+                        RunwayNativeApp(
+                            state = state,
+                            onDestinationSelected = {},
+                            onCalendarMonthSelected = {},
+                            onLoadMoreHistory = {},
+                            onLoadMoreInbox = {},
+                            onLoadActivityTrace = {},
+                            onOpenHistoryDetail = {},
+                            onRetryOpen = {},
+                            onAction = {},
+                            onApplyWorkoutPreview = {},
+                            onDismissWorkoutPreview = {},
+                            onApplyPlanDecisionPreview = {},
+                            onDismissPlanDecisionPreview = {},
+                            onOpenFolder = {},
+                            onImportGpx = {},
+                            onOpenHealthConnect = {},
+                            onCreateBackup = {},
+                            onRestoreBackup = {},
+                            onExportData = {},
+                            onTimeZoneChanged = {},
+                            onRoutePrivacyChanged = {},
+                            onHeartRatePrivacyChanged = {},
+                            onHeartRateChanged = {},
+                            onHealthContextChanged = {},
+                            onEraseImportedActivityData = {},
+                            onEraseAllData = {},
+                            onAcknowledgeRetentionRepair = {},
+                        )
+                    }
                 }
             }
         }
@@ -148,7 +174,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
         FileOutputStream(output).use { stream ->
             assertTrue(
                 "Could not write $output",
-                compose.onRoot().captureToImage().asAndroidBitmap().compress(
+                compose.onNodeWithTag(SCREENSHOT_ROOT_TAG).captureToImage().asAndroidBitmap().compress(
                     Bitmap.CompressFormat.PNG,
                     100,
                     stream,
@@ -411,5 +437,6 @@ class NativeDocumentationScreenshotsInstrumentedTest {
 
     private companion object {
         const val SCREENSHOT_DIRECTORY = "documentation-screenshots"
+        const val SCREENSHOT_ROOT_TAG = "documentation-screenshot-root"
     }
 }

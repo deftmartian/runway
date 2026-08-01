@@ -8,7 +8,9 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -62,7 +64,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        assertSurface("Calendar", "Your plan and completed runs by date.")
+        assertSurface("Calendar", "Earlier")
         assertSurface("Inbox", "Choose how each run counts, then decide whether its result changes the plan.")
         assertSurface("Stats", "Recorded runs and past plans.")
         assertSurface("History", "Current training schedule and past records.")
@@ -89,6 +91,82 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Build revision").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Stored on this device"))
         compose.onNodeWithText("Stored on this device").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactCalendarUsesReadableDayRowsAndKeepsRestExplicit() {
+        val easyRun = calendarWorkout(
+            id = "easy",
+            date = "2026-08-15",
+            purpose = "Long easy run",
+            distanceMeters = 6_000.0,
+        )
+        val rest = calendarWorkout(
+            id = "rest",
+            date = "2026-08-16",
+            purpose = "Rest",
+            type = "rest",
+            distanceMeters = null,
+        )
+        compose.setContent {
+            RunwayTheme {
+                RunwayNativeApp(
+                    state = RunwayUiState.Ready(
+                        surface = NativeSurface.Calendar(
+                            NativeCalendarPayload(
+                                onboardingRequired = false,
+                                hasActivePlan = true,
+                                calendar = NativeCalendar(
+                                    month = "2026-08",
+                                    today = "2026-08-12",
+                                    previousMonth = "2026-07",
+                                    nextMonth = "2026-09",
+                                    workouts = listOf(easyRun, rest),
+                                    activities = emptyList(),
+                                    feedback = emptyList(),
+                                ),
+                                nextWorkout = easyRun,
+                                activityCandidates = emptyList(),
+                            ),
+                        ),
+                        loading = false,
+                    ),
+                    onDestinationSelected = {}, onCalendarMonthSelected = {},
+                    onLoadMoreHistory = {}, onLoadMoreInbox = {}, onLoadActivityTrace = {},
+                    onOpenHistoryDetail = {}, onRetryOpen = {}, onAction = {},
+                    onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {}, onDismissPlanDecisionPreview = {},
+                    onOpenFolder = {}, onImportGpx = {}, onOpenHealthConnect = {},
+                    onCreateBackup = {}, onRestoreBackup = {}, onExportData = {},
+                    onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
+                    onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseAllData = {}, onAcknowledgeRetentionRepair = {},
+                )
+            }
+        }
+
+        compose.onAllNodesWithText("Your plan and completed runs by date.").assertCountEquals(0)
+        compose.onAllNodesWithText("Schedule run").assertCountEquals(0)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("calendar-day-ledger"))
+        compose.onNodeWithTag("calendar-day-ledger").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Long easy run · 6 km"))
+        compose.onNodeWithText("Long easy run · 6 km").assertIsDisplayed()
+        compose.onNode(
+            hasTestTag("calendar-ledger-day-2026-08-15") and
+                hasContentDescription("Long easy run · 6 km", substring = true),
+        ).assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Recovery day"))
+        compose.onNodeWithText("Recovery day").assertIsDisplayed()
+        compose.onNodeWithTag("calendar-month-grid").assertDoesNotExist()
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasTestTag("calendar-quiet-week-2026-08-23"))
+        compose.onNodeWithTag("calendar-quiet-week-2026-08-23").performClick()
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasTestTag("calendar-ledger-day-2026-08-24"))
+        compose.onNodeWithTag("calendar-ledger-day-2026-08-24").performClick()
+        compose.onNodeWithText("No run is planned or recorded for this day.").assertIsDisplayed()
+        compose.onNodeWithText("Add a run here").assertIsDisplayed()
     }
 
     @Test
@@ -465,4 +543,29 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         ))
         NativeDestination.Setup -> NativeSurface.Setup(null)
     }
+
+    private fun calendarWorkout(
+        id: String,
+        date: String,
+        purpose: String,
+        type: String = "easy",
+        distanceMeters: Double?,
+    ) = NativeWorkout(
+        id = id,
+        weekId = null,
+        weekNumber = null,
+        scheduledDate = date,
+        type = type,
+        status = "planned",
+        targetDistanceMeters = distanceMeters,
+        targetDurationSeconds = null,
+        prescriptionKind = if (type == "rest") "rest" else "distance",
+        intervalStructure = null,
+        intensity = if (type == "rest") "rest" else "easy",
+        purpose = purpose,
+        reason = null,
+        isRemoved = false,
+        isEdited = false,
+        adjustment = null,
+    )
 }

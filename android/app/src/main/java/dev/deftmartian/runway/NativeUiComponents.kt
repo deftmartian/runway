@@ -50,6 +50,7 @@ internal fun NativeList(
     state: LazyListState = rememberLazyListState(),
     horizontalContentPadding: Dp = 16.dp,
     bottomContentPadding: Dp = 18.dp,
+    maxContentWidth: Dp = 760.dp,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
     Box(
@@ -59,7 +60,7 @@ internal fun NativeList(
         LazyColumn(
             state = state,
             modifier = Modifier
-                .widthIn(max = 760.dp)
+                .widthIn(max = maxContentWidth)
                 .fillMaxWidth()
                 .fillMaxHeight(),
             contentPadding = PaddingValues(

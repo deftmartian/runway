@@ -38,7 +38,7 @@ class NativeCalendarDecisionTest {
         )
 
         assertEquals("Recorded on a rest day", summary.todayStatus)
-        assertEquals("No planned run", summary.nextStatus)
+        assertEquals("No run planned", summary.nextStatus)
         assertEquals(1, summary.reviewCount)
         assertEquals("2026-07-27", summary.reviewDate)
     }
@@ -138,6 +138,92 @@ class NativeCalendarDecisionTest {
         assertEquals("6 km", summary.nextMeasurement)
         assertEquals(2, summary.inboxDecisionCount)
         assertEquals(false, summary.inboxDecisionCountIsExact)
+    }
+
+    @Test
+    fun `an unscheduled day is distinct from planned recovery`() {
+        val unscheduled = nativeCalendarDecisionSummary(
+            calendar = calendar(emptyList()),
+            nextWorkout = null,
+        )
+        val recovery = nativeCalendarDecisionSummary(
+            calendar = calendar(listOf(workout("rest", "2026-07-29", "rest"))),
+            nextWorkout = null,
+        )
+
+        assertEquals("No run planned", unscheduled.todayStatus)
+        assertEquals("Recovery day", recovery.todayStatus)
+    }
+
+    @Test
+    fun `compact calendar rows keep the full workout and explain empty and rest days`() {
+        val planned = calendarLedgerDayPresentation(
+            workouts = listOf(
+                workout(
+                    id = "planned",
+                    date = "2026-07-29",
+                    type = "easy",
+                    purpose = "Long easy run",
+                    distanceMeters = 6_000.0,
+                ),
+            ),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+        )
+        val recovery = calendarLedgerDayPresentation(
+            workouts = listOf(workout("rest", "2026-07-29", "rest")),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+        )
+        val unscheduled = calendarLedgerDayPresentation(
+            workouts = emptyList(),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+        )
+
+        assertEquals("Long easy run · 6 km", planned.title)
+        assertEquals("Planned", planned.detail)
+        assertEquals("Recovery day", recovery.title)
+        assertEquals("Planned rest", recovery.detail)
+        assertEquals("No run planned", unscheduled.title)
+        assertEquals(null, unscheduled.detail)
+    }
+
+    @Test
+    fun `compact calendar summarizes every result on a multi run day`() {
+        val first = workout("first", "2026-07-29", "easy", purpose = "Easy run")
+        val second = workout("second", "2026-07-29", "easy", purpose = "Evening run")
+        fun presentation(secondState: String) = calendarLedgerDayPresentation(
+            workouts = listOf(first, second),
+            activities = emptyList(),
+            feedbackByWorkout = mapOf(
+                "first" to feedback("first", completionState = "done"),
+                "second" to feedback("second", completionState = secondState),
+            ),
+        )
+
+        assertEquals("2 run results", presentation("skipped").title)
+        assertEquals("1 completed · 1 skipped", presentation("skipped").detail)
+        assertEquals("1 completed · 1 shortened", presentation("shortened").detail)
+    }
+
+    @Test
+    fun `compact calendar describes the exact activity awaiting review`() {
+        val accepted = activity("accepted", "2026-07-29").copy(
+            matchedWorkoutPurpose = "Morning run",
+        )
+        val review = activity("review", "2026-07-29", reviewState = "review").copy(
+            distanceMeters = 5_000.0,
+            matchedWorkoutPurpose = "Evening run",
+        )
+        val presentation = calendarLedgerDayPresentation(
+            workouts = emptyList(),
+            activities = listOf(accepted, review),
+            feedbackByWorkout = emptyMap(),
+        )
+
+        assertEquals("Evening run", presentation.title)
+        assertEquals("Needs review · 5 km · 30 min", presentation.detail)
     }
 
     @Test

@@ -4,29 +4,43 @@
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
-**Make a running plan, track what actually happens, and decide what comes next.**
+**Plan your running, bring in what you recorded, and decide what changes next.**
 
-runway is for runners who coach themselves. Use it to build a conservative race plan or set a few regular running days each week. When a run does not go to plan, runway records what happened and lets you decide whether the rest of the schedule should change.
+runway is a private Android app for runners who plan their own training. Build toward a race or choose regular running days, then keep the plan, completed runs, recovery, and deliberate changes in one place.
 
-runway stores and processes your training data on your Android phone. It needs no account, server, subscription, or cloud sync. It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer.
+Keep recording with the app or watch you already use. Share one GPX file with runway or approve an export folder, and each new activity waits in Inbox until you review it. Optional read-only Health Connect import is available too.
+
+runway is not a GPS tracker, wearable replacement, social feed, or medical coach. It runs locally on Android 8.0 and newer with no account, server, subscription, or cloud sync.
 
 | Calendar | Inbox |
 | --- | --- |
-| ![Calendar showing today's plan, the next run, and waiting decisions](docs/images/runway-android-calendar-dark.png) | ![Inbox showing a GPX run awaiting review and an accepted result](docs/images/runway-android-inbox-light.png) |
+| ![Calendar showing today's planned run and a readable schedule by date](docs/images/runway-android-calendar-dark.png) | ![Inbox showing a GPX run awaiting review and an accepted result](docs/images/runway-android-inbox-light.png) |
 
-## Plan, record, decide
+## A clear next step
 
-1. Choose a race goal or regular running days. For a race, start from a recent week of running, a run/walk foundation, or two short calibration weeks.
-2. When life changes, move, edit, add, remove, reset, or undo future runs.
-3. Record a run manually, share a GPX file, scan an approved folder, or import an optional Health Connect activity for review.
-4. Compare the planned run with what happened, then keep the schedule, ease back, rest, repeat, or rebalance. Weekly routines simply record whether you ran; they never change future days on their own.
+- Build toward a race or choose a few regular running days each week.
+- See planned runs, recovery days, completed work, and waiting decisions by date.
+- Move, edit, add, or remove a future run when life changes.
+- Compare what was planned with what happened, then keep the schedule, ease back, rest, repeat, or rebalance.
+- Look back at the original plan, every deliberate change, and the work you completed.
 
-Calendar shows what is coming up. Inbox is where you review imported runs and schedule changes. Stats and History show how the plan changed and what you actually did. Settings keeps imports, privacy, backups, and app details together. Rest and recovery are part of the plan, not missing data. runway supports your choices; it does not give medical advice.
+Weekly routines record whether you ran without changing future days on their own. Race plans can offer a schedule change, but runway never applies one until you approve it.
+
+## Bring runs in from the apps you already use
+
+runway reads local GPX files; it does not record your route. You can share one file from another app or approve a GPX folder under **Settings → Imports**.
+
+- **[Gadgetbridge](https://gadgetbridge.org/internals/automations/auto-export/):** In **Settings → Automations → Auto export GPX tracks**, choose an export folder. Approve that same folder in runway. Gadgetbridge creates a GPX when a newly synced activity includes a GPS track.
+- **[OpenTracks](https://github.com/OpenTracksApp/OpenTracks):** Share a recorded track as GPX 1.1, or enable automatic export after each recording and approve the output folder in runway.
+- **[FitoTrack](https://codeberg.org/jannis/FitoTrack):** Set GPX export to a directory, then approve that directory in runway.
+- **Another GPX recorder:** Use the same flow if it can share a `.gpx` activity or write GPX files to a folder you choose.
+
+runway checks the approved folder when the app returns to the foreground. Optional background checks are best-effort rather than a continuous folder watch. Every imported activity goes to Inbox for review before it counts toward training or offers a schedule change.
 
 ## Private by design
 
-- runway parses GPX files on your phone and does not keep a copy of the original file.
-- You review every GPX or optional read-only Health Connect import in Inbox before it counts toward your training or offers a schedule change.
+- GPX activities are parsed on your phone; runway does not keep the original file.
+- Every GPX or optional read-only Health Connect activity waits in Inbox for your review before it counts toward training or offers a schedule change.
 - A selected GPX folder is scanned when runway returns to the foreground; Android background scans are best-effort, not a continuous folder watch.
 - You choose separately whether runway keeps route and imported heart-rate details. New profiles discard both. Switching either control back to discard permanently clears only that type of saved and pending import data.
 - Backup and export are explicit plaintext files written to the location chosen in Android's document picker. Create a backup before moving to or resetting a phone, then restore it into runway on the replacement device. These files can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.

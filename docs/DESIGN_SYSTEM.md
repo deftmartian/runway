@@ -22,6 +22,8 @@ Use the Android app bar for the current destination title. Keep the five primary
 ## Components and interaction
 
 - Prefer cards only when they separate decisions; avoid a wall of rounded containers.
+- On compact and medium widths, Calendar uses chronological day rows so the full run purpose and state can wrap. Calendar may use a wider centered canvas than other destinations. Use the seven-column month grid only at expanded widths where every cell remains readable. Day actions belong in the selected-day sheet.
+- Distinguish an unscheduled date ("No run planned") from an intentional planned rest ("Recovery day" or "Planned rest").
 - Forms use clear labels, units, sensible defaults, inline validation, and a visible save/cancel boundary. Invalid fields explain what must change; a disabled action alone is not validation.
 - Destructive actions say what local data will be removed and require confirmation.
 - Consequence choices show their precise affected workouts and remain reversible when safe.

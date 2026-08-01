@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -86,7 +84,7 @@ internal fun nativeCalendarDecisionSummary(
         todaysFeedback != null -> "Recorded"
         todaysWorkout?.type == "rest" -> "Recovery day"
         todaysWorkout != null -> "Planned"
-        else -> "Open day"
+        else -> "No run planned"
     }
     val linkedWorkoutIds = activities.mapNotNullTo(mutableSetOf(), NativeActivity::workoutId)
     val feedbackWorkoutIds = calendar?.feedback.orEmpty()
@@ -105,7 +103,7 @@ internal fun nativeCalendarDecisionSummary(
     }
     val nextStatus = nextWorkout?.purpose.orEmpty().ifBlank {
         nextWorkout?.type.orEmpty().replaceFirstChar(Char::uppercase)
-    }.ifBlank { "No planned run" }
+    }.ifBlank { "No run planned" }
     val nextMeasurement = nextWorkout
         ?.let(::calendarWorkoutMeasurement)
         ?.takeUnless { it.equals(nextStatus, ignoreCase = true) }
@@ -236,16 +234,11 @@ internal fun CalendarScreen(
         }
         submittedDialogAction = null
     }
-    NativeList(loading, horizontalContentPadding = 8.dp) {
-        item {
-            ScreenContext(
-                if (routine) {
-                    "Your weekly routine and recorded runs by date."
-                } else {
-                    "Your plan and completed runs by date."
-                },
-            )
-        }
+    NativeList(
+        loading = loading,
+        horizontalContentPadding = 8.dp,
+        maxContentWidth = 1_240.dp,
+    ) {
         if (payload != null && payload.onboardingRequired != true) {
             item {
                 CalendarDecisionCard(
@@ -288,29 +281,6 @@ internal fun CalendarScreen(
                     },
                     enabled = calendar != null,
                 ) { Text("Later") }
-            }
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        addWorkoutDate = selectedDay?.takeIf { it > today }
-                            ?: runCatching {
-                                LocalDate.parse(today).plusDays(1).toString()
-                            }.getOrDefault(LocalDate.now().plusDays(1).toString())
-                    },
-                    enabled =
-                        !actionPending &&
-                            payload?.onboardingRequired == false &&
-                            payload.hasActivePlan &&
-                            calendar != null,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text("Schedule run")
-                }
             }
         }
         when {
@@ -515,8 +485,8 @@ private fun CalendarDecisionCard(
                             contentDescription = listOfNotNull(
                                 "Today",
                                 summary.todayStatus,
-                                summary.todayPlan?.let { "Plan · $it" },
-                                "Open day details",
+                                summary.todayPlan,
+                                "View day details",
                             ).joinToString(". ")
                         },
                     shape = MaterialTheme.shapes.medium,
@@ -530,7 +500,7 @@ private fun CalendarDecisionCard(
                         Text("Today", style = MaterialTheme.typography.labelLarge)
                         Text(summary.todayStatus, style = MaterialTheme.typography.titleMedium)
                         summary.todayPlan?.let {
-                            Text("Plan · $it", style = MaterialTheme.typography.bodySmall)
+                            Text(it, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -659,12 +629,6 @@ private fun CalendarSecondaryPlanActions(
         else -> "Change goal"
     }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            if (routine) "Routine actions" else "Plan actions",
-            modifier = Modifier.semantics { heading() },
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val stackActions = usesStackedCalendarPlanActions(
                 availableWidthDp = maxWidth.value,
@@ -676,7 +640,7 @@ private fun CalendarSecondaryPlanActions(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     CalendarPlanAction(
-                        label = "Add run manually",
+                        label = "Record a run",
                         enabled = !actionPending,
                         onClick = onRecordRun,
                         modifier = Modifier.fillMaxWidth(),
@@ -694,7 +658,7 @@ private fun CalendarSecondaryPlanActions(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     CalendarPlanAction(
-                        label = "Add run manually",
+                        label = "Record a run",
                         enabled = !actionPending,
                         onClick = onRecordRun,
                         modifier = Modifier.weight(1f),
