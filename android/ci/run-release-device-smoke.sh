@@ -18,7 +18,7 @@ run_bounded() {
 }
 
 compile_package() {
-  local package_name="$1"
+  local target_package="$1"
   local timeout_seconds="${2:-180}"
   local output_file="$runner_temp/release-smoke-package-compile.txt"
   local compile_status
@@ -29,17 +29,17 @@ compile_package() {
     printf 'attempt %s\n' "$attempt" | tee -a "$output_file"
     set +e
     run_bounded "$timeout_seconds" adb -s "$serial" shell cmd package compile \
-      -m speed -f "$package_name" 2>&1 | tee -a "$output_file"
+      -m speed -f "$target_package" 2>&1 | tee -a "$output_file"
     compile_status="${PIPESTATUS[0]}"
     set -e
     if [ "$compile_status" -eq 0 ]; then
       return 0
     fi
     if [ "$attempt" -eq 1 ] && grep -Fq 'Failure calling service package: Broken pipe' "$output_file"; then
-      echo "::warning title=Package service restarted::$package_name compilation will retry once after package-manager readiness."
+      echo "::warning title=Package service restarted::$target_package compilation will retry once after package-manager readiness."
       local package_service_ready=false
       for _ in {1..15}; do
-        if run_bounded 10 adb -s "$serial" shell pm path "$package_name" >/dev/null 2>&1; then
+        if run_bounded 10 adb -s "$serial" shell pm path "$target_package" >/dev/null 2>&1; then
           package_service_ready=true
           break
         fi
@@ -58,7 +58,7 @@ compile_package() {
         cut -c 1-1800 |
         sed 's/%/%25/g'
     )"
-    echo "::error title=Package compilation failed::$package_name exited with status $compile_status. Output: $output_tail"
+    echo "::error title=Package compilation failed::$target_package exited with status $compile_status. Output: $output_tail"
     return "$compile_status"
   done
 }
