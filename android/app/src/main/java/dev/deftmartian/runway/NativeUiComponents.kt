@@ -210,6 +210,7 @@ internal fun WorkoutCard(
 internal fun ActivityCard(
     activity: NativeActivity,
     title: String? = null,
+    supportingText: String? = null,
     actions: (@Composable () -> Unit)? = null,
 ) {
     val measurement = listOfNotNull(
@@ -245,6 +246,14 @@ internal fun ActivityCard(
         }
         Spacer(Modifier.height(12.dp))
         MeasurementReadout("Actual", measurement, emphasis)
+        supportingText?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         actions?.let {
             Spacer(Modifier.height(10.dp))
             it()

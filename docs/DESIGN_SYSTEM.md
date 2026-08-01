@@ -25,7 +25,7 @@ Use the Android app bar for the current destination title. Keep the five primary
 - Forms use clear labels, units, sensible defaults, inline validation, and a visible save/cancel boundary. Invalid fields explain what must change; a disabled action alone is not validation.
 - Destructive actions say what local data will be removed and require confirmation.
 - Consequence choices show their precise affected workouts and remain reversible when safe.
-- Use progressive disclosure for technical import detail, old plans, and raw metrics; do not hide the next decision.
+- Use progressive disclosure for technical import detail, retained route and heart-rate evidence, old plans, and raw metrics; do not hide the next decision.
 - Support touch targets, keyboard navigation, screen readers, system font scaling, and both contrast modes.
 
 ## Copy

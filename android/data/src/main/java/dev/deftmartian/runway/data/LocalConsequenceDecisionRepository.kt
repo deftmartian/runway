@@ -226,7 +226,7 @@ class LocalConsequenceDecisionRepository(
                     }
                 }
                 val options = activityDao.activityConsequenceOptions(activity.activityId, MAX_OPTIONS)
-                if (!stored.matches(calculated, options)) return null
+                if (!stored.matches(calculated, options, activity)) return null
                 LocalDecisionInput(
                     source = source,
                     decision = decision,
@@ -468,17 +468,21 @@ private fun WorkoutFeedbackConsequenceEntity.toCanonicalConsequence(
 internal fun ActivityConsequenceEntity.matches(
     consequence: Consequence,
     options: List<ActivityConsequenceOptionEntity>,
+    activity: ActivityEntity,
 ): Boolean =
-    appliedDecision == null &&
+    activityId == activity.activityId &&
+        appliedDecision == null &&
+        resolvedAtEpochMillis == null &&
         classification == consequence.kind.name.lowercase() &&
         deviation == consequence.deviation.name.lowercase() &&
         loadMetric == consequence.metric.name.lowercase() &&
+        assessment == consequence.risk.name.lowercase() &&
         risk == consequence.risk.name.lowercase() &&
         recommendedDecision == consequence.recommendedDecision.toStorageValue() &&
         comparisonStatus == consequence.comparisonStatus &&
         planChangeAvailable == consequence.planChangeAvailable &&
-        actualLoadMeters == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DISTANCE } &&
-        actualLoadDurationSeconds == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DURATION } &&
+        actualLoadMeters == activity.distanceMeters &&
+        actualLoadDurationSeconds == activity.durationSeconds &&
         distanceDifferenceMeters == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DISTANCE } &&
         durationDifferenceSeconds == consequence.actualDifference.takeIf { consequence.metric == LoadMetric.DURATION } &&
         options.mapNotNull { it.decision.toStoredPlanDecision() }.toSet() == consequence.options

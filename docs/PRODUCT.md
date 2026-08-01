@@ -53,13 +53,13 @@ Onboarding is a focused setup flow, not a sixth destination.
 
 Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Intake is review-first. A candidate can be linked to a planned workout within three calendar days, counted as extra work, have its feedback recorded with that choice, or be deleted. An accepted unlinked run can return to review while its plan consequence remains unapplied; once a plan decision has been applied, that decision must be reversed through its own visible boundary first.
 
-GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data.
+GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data. When route retention is enabled, activity detail may draw a bounded, private trace directly from retained points. It uses no basemap, tile service, or network request and does not expose coordinates through accessibility text.
 
 Backup/export is explicit and plaintext. It is a user-owned recovery and portability tool, not sync.
 
 ## Non-goals
 
-- Live GPS capture, navigation, maps, route sharing, leaderboards, social feeds, or coaching chat.
+- Live GPS capture, basemaps, route discovery, navigation, route sharing, leaderboards, social feeds, or coaching chat.
 - Medical diagnosis, injury treatment, readiness clearance, or individualized physiological prescription.
 - Automatic plan changes without review and confirmation.
 - Accounts, sign-in, remote API, web/PWA, browser wrapper, cloud backup, or multi-device synchronization.

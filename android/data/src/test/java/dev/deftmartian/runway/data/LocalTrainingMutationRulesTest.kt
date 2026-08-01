@@ -84,11 +84,35 @@ class LocalTrainingMutationRulesTest {
             loadMetric = calculated.metric.name.lowercase(),
             risk = calculated.risk.name.lowercase(),
             planChangeAvailable = calculated.planChangeAvailable,
+            actualLoadDurationSeconds = 900,
         )
         val options = calculated.options.map { ActivityConsequenceOptionEntity("activity", storageValue(it)) }
+        val activity = ActivityEntity(
+            activityId = "activity",
+            source = "manual",
+            sourceRecordId = null,
+            reviewState = ACTIVITY_REVIEW_STATE_ACCEPTED,
+            occurredAtEpochMillis = 1,
+            durationSeconds = 900,
+            distanceMeters = 2_000,
+            averageHeartRateBpm = null,
+            averageCadenceSpm = null,
+            linkedWorkoutId = null,
+            acceptedAtEpochMillis = 2,
+            createdAtEpochMillis = 1,
+            updatedAtEpochMillis = 2,
+            extraPlanImpactConfirmed = true,
+        )
 
-        assertTrue(stored.matches(calculated, options))
-        assertTrue(!stored.copy(actualLoadMeters = 1_999).matches(calculated, options))
+        assertTrue(stored.matches(calculated, options, activity))
+        assertTrue(!stored.copy(actualLoadMeters = 1_999).matches(calculated, options, activity))
+        assertTrue(
+            !stored.matches(
+                calculated,
+                options,
+                activity.copy(durationSeconds = 901),
+            ),
+        )
     }
 
     @Test

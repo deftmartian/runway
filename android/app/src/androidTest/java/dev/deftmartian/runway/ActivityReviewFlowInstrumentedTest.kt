@@ -37,10 +37,17 @@ class ActivityReviewFlowInstrumentedTest {
 
         val feedback = compose.onNodeWithText("How did this run feel?")
         val role = compose.onNodeWithText("Where does this run belong?")
+        val provenance = compose.onNodeWithText("Source and plan state")
         feedback.performScrollTo()
         assertTrue(
             feedback.fetchSemanticsNode().boundsInRoot.top <
                 role.fetchSemanticsNode().boundsInRoot.top,
+        )
+        provenance.performScrollTo()
+        role.performScrollTo()
+        assertTrue(
+            role.fetchSemanticsNode().boundsInRoot.top <
+                provenance.fetchSemanticsNode().boundsInRoot.top,
         )
 
         compose.onNodeWithText("This run felt harder than expected").performClick()

@@ -78,15 +78,6 @@ internal fun ActivityDetailSheet(
                 fontWeight = FontWeight.SemiBold,
             )
             ActivitySummary(activity)
-            ActivityProvenance(activity)
-            ActivityHeartRate(activity, evidence)
-            ActivityRouteDisclosure(
-                activity = activity,
-                evidence = evidence,
-                loading = evidenceLoading,
-                failed = evidenceFailed,
-                onRetry = onLoadRouteTrace,
-            )
 
             if (activity.reviewState == "review") {
                 Text("How did this run feel?", fontWeight = FontWeight.SemiBold)
@@ -174,6 +165,16 @@ internal fun ActivityDetailSheet(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Save feedback correction") }
             }
+
+            ActivityProvenance(activity)
+            ActivityHeartRate(activity, evidence)
+            ActivityRouteDisclosure(
+                activity = activity,
+                evidence = evidence,
+                loading = evidenceLoading,
+                failed = evidenceFailed,
+                onRetry = onLoadRouteTrace,
+            )
 
             TextButton(
                 onClick = { confirmDelete = true },

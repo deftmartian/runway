@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -63,8 +64,12 @@ internal fun CalendarMonthLedger(
     }
     val horizontalScroll = rememberScrollState()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val needsHorizontalScroll = calendarGridNeedsHorizontalScroll(maxWidth.value)
-        val gridWidth = if (needsHorizontalScroll) CalendarMinimumGridWidth else maxWidth
+        val minimumGridWidth = calendarMinimumGridWidth(LocalDensity.current.fontScale)
+        val needsHorizontalScroll = calendarGridNeedsHorizontalScroll(
+            availableWidthDp = maxWidth.value,
+            fontScale = LocalDensity.current.fontScale,
+        )
+        val gridWidth = if (needsHorizontalScroll) minimumGridWidth else maxWidth
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (needsHorizontalScroll) {
                 Text(
@@ -133,8 +138,13 @@ internal fun CalendarMonthLedger(
 
 internal val CalendarMinimumGridWidth = 344.dp
 
-internal fun calendarGridNeedsHorizontalScroll(availableWidthDp: Float): Boolean =
-    availableWidthDp < CalendarMinimumGridWidth.value
+internal fun calendarMinimumGridWidth(fontScale: Float) =
+    CalendarMinimumGridWidth * fontScale.coerceAtLeast(1f)
+
+internal fun calendarGridNeedsHorizontalScroll(
+    availableWidthDp: Float,
+    fontScale: Float = 1f,
+): Boolean = availableWidthDp < calendarMinimumGridWidth(fontScale).value
 
 @Composable
 private fun CalendarDayCell(

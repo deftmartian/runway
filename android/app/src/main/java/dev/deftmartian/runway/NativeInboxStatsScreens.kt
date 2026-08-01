@@ -105,6 +105,9 @@ internal fun InboxScreen(
                 items(reviewActivities, key = { it.id.orEmpty() }) { activity ->
                     ActivityCard(
                         activity = activity,
+                        supportingText =
+                            "Choose a planned run or count it as extra. " +
+                                "The plan stays unchanged until you decide.",
                         actions = {
                             Button(
                                 onClick = {

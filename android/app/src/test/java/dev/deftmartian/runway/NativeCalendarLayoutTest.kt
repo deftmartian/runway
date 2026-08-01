@@ -15,4 +15,17 @@ class NativeCalendarLayoutTest {
         assertTrue(calendarGridNeedsHorizontalScroll(328f))
         assertTrue(calendarGridNeedsHorizontalScroll(304f))
     }
+
+    @Test
+    fun `calendar grid keeps labels readable when text is enlarged`() {
+        assertTrue(calendarGridNeedsHorizontalScroll(344f, fontScale = 1.3f))
+        assertFalse(calendarGridNeedsHorizontalScroll(448f, fontScale = 1.3f))
+    }
+
+    @Test
+    fun `secondary plan actions stack for narrow or enlarged layouts`() {
+        assertFalse(usesStackedCalendarPlanActions(344f, fontScale = 1f))
+        assertTrue(usesStackedCalendarPlanActions(304f, fontScale = 1f))
+        assertTrue(usesStackedCalendarPlanActions(344f, fontScale = 1.3f))
+    }
 }

@@ -1,6 +1,7 @@
 package dev.deftmartian.runway
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -645,22 +647,68 @@ private fun CalendarSecondaryPlanActions(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TextButton(
-                onClick = onRecordRun,
-                enabled = !actionPending,
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                shape = MaterialTheme.shapes.small,
-            ) { Text("Add run manually") }
-            TextButton(
-                onClick = onChangeGoal,
-                enabled = !actionPending,
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(if (hasActivePlan) "Change goal" else "Build plan") }
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val stackActions = usesStackedCalendarPlanActions(
+                availableWidthDp = maxWidth.value,
+                fontScale = LocalDensity.current.fontScale,
+            )
+            if (stackActions) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    CalendarPlanAction(
+                        label = "Add run manually",
+                        enabled = !actionPending,
+                        onClick = onRecordRun,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    CalendarPlanAction(
+                        label = if (hasActivePlan) "Change goal" else "Build plan",
+                        enabled = !actionPending,
+                        onClick = onChangeGoal,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CalendarPlanAction(
+                        label = "Add run manually",
+                        enabled = !actionPending,
+                        onClick = onRecordRun,
+                        modifier = Modifier.weight(1f),
+                    )
+                    CalendarPlanAction(
+                        label = if (hasActivePlan) "Change goal" else "Build plan",
+                        enabled = !actionPending,
+                        onClick = onChangeGoal,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun CalendarPlanAction(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = MaterialTheme.shapes.small,
+    ) { Text(label) }
+}
+
+internal fun usesStackedCalendarPlanActions(
+    availableWidthDp: Float,
+    fontScale: Float,
+): Boolean = availableWidthDp < 320f || fontScale > 1.15f
