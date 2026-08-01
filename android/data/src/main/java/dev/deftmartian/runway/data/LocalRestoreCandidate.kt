@@ -29,6 +29,11 @@ internal object LocalRestoreCandidate {
                     migrationError(candidate, fromVersion = 2)
                         ?: currentSchemaError(candidate)
                 }
+                inspection.version == 3 &&
+                    inspection.identityHash == RunwayLedgerMigrations.V3_IDENTITY_HASH -> {
+                    migrationError(candidate, fromVersion = 3)
+                        ?: currentSchemaError(candidate)
+                }
                 else -> unsupportedLineageMessage(inspection)
             }
         }
@@ -59,7 +64,10 @@ internal object LocalRestoreCandidate {
                 if (fromVersion == 1) {
                     platformDatabase.execSQL(RunwayLedgerMigrations.V1_TO_V2_SQL)
                 }
-                RunwayLedgerMigrations.applyV2ToV3(platformDatabase::execSQL)
+                if (fromVersion <= 2) {
+                    RunwayLedgerMigrations.applyV2ToV3(platformDatabase::execSQL)
+                }
+                LegacyTimedConsequenceLedgerRepair.apply(platformDatabase)
                 platformDatabase.execSQL(
                     "UPDATE room_master_table SET identity_hash = ? WHERE id = 42",
                     arrayOf(RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH),

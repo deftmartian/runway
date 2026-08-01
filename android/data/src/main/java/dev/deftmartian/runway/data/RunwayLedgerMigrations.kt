@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 object RunwayLedgerMigrations {
     const val V1_IDENTITY_HASH = "154538ddd4b50c6c924697299e447e9a"
     const val V2_IDENTITY_HASH = "f91a86620eddb116d9e3fdea5af998bc"
+    const val V3_IDENTITY_HASH = "e07bbca67f5da673e81167f32b14d51a"
     const val V1_TO_V2_SQL =
         "ALTER TABLE profile_settings ADD COLUMN heartRateDataMode TEXT NOT NULL DEFAULT 'private'"
     const val CREATE_PLAN_SETUP_RECEIPTS_SQL =
@@ -208,5 +209,16 @@ object RunwayLedgerMigrations {
 
     fun applyV2ToV3(execSql: (String) -> Unit) {
         v2ToV3Sql.forEach(execSql)
+    }
+
+    /**
+     * v0.8.0-v0.8.8 changed timed consequence headlines without resizing their persisted
+     * interval structures. Version 4 has the same Room schema shape as version 3, but crossing
+     * this explicit lineage boundary repairs the released ledger before it can be used again.
+     */
+    val V3_TO_V4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            LegacyTimedConsequenceLedgerRepair.apply(db)
+        }
     }
 }

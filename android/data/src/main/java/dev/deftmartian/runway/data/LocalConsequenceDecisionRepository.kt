@@ -10,6 +10,7 @@ import dev.deftmartian.runway.domain.LoadDelta
 import dev.deftmartian.runway.domain.LoadMetric
 import dev.deftmartian.runway.domain.PlanDecision
 import dev.deftmartian.runway.domain.Risk
+import dev.deftmartian.runway.domain.WorkoutEdits
 import dev.deftmartian.runway.domain.calculateExtraActivityConsequence
 import dev.deftmartian.runway.domain.historicalExtraActivityReview
 import dev.deftmartian.runway.domain.isHistoricalExtraActivity
@@ -109,7 +110,8 @@ class LocalConsequenceDecisionRepository(
             AdjustmentEffectGroupEntity(groupId, adjustmentId, 0, "consequence_decision", null, null),
         )
         ready.changes.forEachIndexed { ordinal, change ->
-            val after = change.after.copy(updatedAtEpochMillis = appliedAtEpochMillis)
+            val persisted = preparePersistedChange(planDao, change, appliedAtEpochMillis)
+            val after = persisted.after
             val effectId = "$adjustmentId-effect-$ordinal"
             adjustmentDao.saveWorkoutEffect(effect(effectId, groupId, ordinal, change.before, after))
             saveCurrentStructureSnapshot(
@@ -122,8 +124,11 @@ class LocalConsequenceDecisionRepository(
                 planDao = planDao,
                 before = change.before,
                 after = after,
-                repeatSource = current.originWorkout,
+                repeatSource = current.originWorkout.takeIf {
+                    ready.decision == PlanDecision.REPEAT_PRESCRIPTION
+                },
                 seed = "$adjustmentId-$ordinal",
+                replacementBlocks = persisted.replacementBlocks,
             )
             saveCurrentStructureSnapshot(
                 effectId = effectId,
@@ -322,6 +327,86 @@ class LocalConsequenceDecisionRepository(
         newWeekId = after.weekId,
     )
 
+    /**
+     * A reduced timed headline and its current interval structure are one persisted prescription.
+     * The non-null adjustment marker distinguishes reduction/rebalance from repeat, whose origin
+     * structure must be copied exactly. Validate the resized reduction before it becomes the
+     * after-state.
+     */
+    private suspend fun preparePersistedChange(
+        planDao: GoalPlanDao,
+        change: LocalWorkoutDecisionChange,
+        appliedAtEpochMillis: Long,
+    ): PersistedDecisionChange {
+        val after = change.after.copy(updatedAtEpochMillis = appliedAtEpochMillis)
+        if (change.adjustment == null ||
+            after.currentPrescriptionKind != "timed" ||
+            after.currentDurationSeconds == change.before.currentDurationSeconds
+        ) {
+            return PersistedDecisionChange(after)
+        }
+
+        val currentBlocks = storedCurrentBlocks(planDao, change.before.workoutId)
+        val current = LocalWorkoutChangeMapper.currentProposal(
+            StoredWorkout(
+                entity = change.before,
+                generatedBlocks = emptyList(),
+                currentBlocks = currentBlocks,
+                generatedSourceReferences = emptyList(),
+                currentSourceReferences = emptyList(),
+            ),
+        )
+        val targetDurationSeconds = requireNotNull(after.currentDurationSeconds)
+        val resized = current.copy(
+            targetDurationSeconds = targetDurationSeconds,
+            intervalStructure = WorkoutEdits.resizeTimedIntervalStructure(
+                current.intervalStructure,
+                targetDurationSeconds,
+            ),
+            reason = after.currentReason.orEmpty(),
+        )
+        WorkoutEdits.assertProposal(resized)
+        val structure = requireNotNull(resized.intervalStructure)
+        return PersistedDecisionChange(
+            after = after.copy(
+                currentWarmupSeconds = structure.warmupSeconds,
+                currentCooldownSeconds = structure.cooldownSeconds,
+            ),
+            replacementBlocks = LocalWorkoutChangeMapper.blocks(resized),
+        )
+    }
+
+    private suspend fun storedCurrentBlocks(
+        planDao: GoalPlanDao,
+        workoutId: String,
+    ): List<StoredWorkoutBlock> {
+        val blocks = planDao.blocksForWorkout(workoutId, "current", MAX_BLOCKS + 1)
+        require(blocks.size <= MAX_BLOCKS) { "Current workout block cap exceeded." }
+        return blocks.map { block ->
+            val segments = planDao.segmentsForBlock(block.blockId, MAX_SEGMENTS + 1)
+            require(segments.size <= MAX_SEGMENTS) { "Current workout segment cap exceeded." }
+            StoredWorkoutBlock(
+                blockType = block.blockType,
+                repetitions = block.repetitions,
+                segments = segments.map { segment ->
+                    StoredWorkoutSegment(
+                        segmentType = segment.segmentType,
+                        targetDistanceMeters = segment.targetDistanceMeters,
+                        targetDurationSeconds = segment.targetDurationSeconds,
+                    )
+                },
+            )
+        }
+    }
+
+    private suspend fun storedCurrentReferences(
+        planDao: GoalPlanDao,
+        workoutId: String,
+    ): List<WorkoutSourceReferenceEntity> =
+        planDao.workoutSourceReferences(workoutId, "current", MAX_REFERENCES + 1).also {
+            require(it.size <= MAX_REFERENCES) { "Current workout source-reference cap exceeded." }
+        }
+
     /** Writes the complete structured current prescription, including the intentionally empty rest case. */
     private suspend fun replaceCurrentStructure(
         planDao: GoalPlanDao,
@@ -329,25 +414,38 @@ class LocalConsequenceDecisionRepository(
         after: WorkoutEntity,
         repeatSource: WorkoutEntity?,
         seed: String,
+        replacementBlocks: List<StoredWorkoutBlock>?,
     ) {
         val sourceWorkoutId = when {
             after.currentPrescriptionKind == "rest" -> null
-            after.currentReason?.contains(
-                "repeat the earlier prescription",
-                ignoreCase = true,
-            ) == true -> repeatSource?.workoutId
+            repeatSource != null -> repeatSource.workoutId
             else -> before.workoutId
         }
-        val sourceBlocks = sourceWorkoutId?.let { planDao.blocksForWorkout(it, "current", MAX_BLOCKS) }.orEmpty()
+        val sourceBlocks = replacementBlocks
+            ?: sourceWorkoutId?.let { storedCurrentBlocks(planDao, it) }.orEmpty()
         val blocks = sourceBlocks.mapIndexed { ordinal, block ->
-            block.copy(blockId = "$seed-block-$ordinal", workoutId = after.workoutId, prescriptionVersion = "current", ordinal = ordinal)
+            WorkoutBlockEntity(
+                blockId = "$seed-block-$ordinal",
+                workoutId = after.workoutId,
+                prescriptionVersion = "current",
+                ordinal = ordinal,
+                blockType = block.blockType,
+                repetitions = block.repetitions,
+            )
         }
         val segments = sourceBlocks.flatMapIndexed { blockOrdinal, block ->
-            planDao.segmentsForBlock(block.blockId, MAX_SEGMENTS).mapIndexed { ordinal, segment ->
-                segment.copy(segmentId = "$seed-segment-$blockOrdinal-$ordinal", blockId = blocks[blockOrdinal].blockId, ordinal = ordinal)
+            block.segments.mapIndexed { ordinal, segment ->
+                WorkoutSegmentEntity(
+                    segmentId = "$seed-segment-$blockOrdinal-$ordinal",
+                    blockId = blocks[blockOrdinal].blockId,
+                    ordinal = ordinal,
+                    segmentType = segment.segmentType,
+                    targetDistanceMeters = segment.targetDistanceMeters,
+                    targetDurationSeconds = segment.targetDurationSeconds,
+                )
             }
         }
-        val references = sourceWorkoutId?.let { planDao.workoutSourceReferences(it, "current", MAX_REFERENCES) }.orEmpty()
+        val references = sourceWorkoutId?.let { storedCurrentReferences(planDao, it) }.orEmpty()
             .mapIndexed { ordinal, reference ->
                 reference.copy(referenceId = "$seed-source-$ordinal", workoutId = after.workoutId, prescriptionVersion = "current", ordinal = ordinal)
             }
@@ -367,7 +465,7 @@ class LocalConsequenceDecisionRepository(
     ) {
         val planDao = database.goalPlanDao()
         val adjustmentDao = database.adjustmentDao()
-        val blocks = planDao.blocksForWorkout(workoutId, "current", MAX_BLOCKS)
+        val blocks = storedCurrentBlocks(planDao, workoutId)
         blocks.forEachIndexed { blockOrdinal, block ->
             val blockSnapshotId = "$effectId-$snapshotState-block-$blockOrdinal"
             adjustmentDao.saveEffectBlockSnapshot(
@@ -380,22 +478,21 @@ class LocalConsequenceDecisionRepository(
                     repetitions = block.repetitions,
                 ),
             )
-            planDao.segmentsForBlock(block.blockId, MAX_SEGMENTS)
-                .forEachIndexed { segmentOrdinal, segment ->
-                    adjustmentDao.saveEffectSegmentSnapshot(
-                        AdjustmentEffectSegmentSnapshotEntity(
-                            segmentSnapshotId =
-                                "$effectId-$snapshotState-segment-$blockOrdinal-$segmentOrdinal",
-                            blockSnapshotId = blockSnapshotId,
-                            ordinal = segmentOrdinal,
-                            segmentType = segment.segmentType,
-                            targetDistanceMeters = segment.targetDistanceMeters,
-                            targetDurationSeconds = segment.targetDurationSeconds,
-                        ),
-                    )
-                }
+            block.segments.forEachIndexed { segmentOrdinal, segment ->
+                adjustmentDao.saveEffectSegmentSnapshot(
+                    AdjustmentEffectSegmentSnapshotEntity(
+                        segmentSnapshotId =
+                            "$effectId-$snapshotState-segment-$blockOrdinal-$segmentOrdinal",
+                        blockSnapshotId = blockSnapshotId,
+                        ordinal = segmentOrdinal,
+                        segmentType = segment.segmentType,
+                        targetDistanceMeters = segment.targetDistanceMeters,
+                        targetDurationSeconds = segment.targetDurationSeconds,
+                    ),
+                )
+            }
         }
-        planDao.workoutSourceReferences(workoutId, "current", MAX_REFERENCES)
+        storedCurrentReferences(planDao, workoutId)
             .forEachIndexed { referenceOrdinal, reference ->
                 adjustmentDao.saveEffectSourceReferenceSnapshot(
                     AdjustmentEffectSourceReferenceSnapshotEntity(
@@ -410,6 +507,11 @@ class LocalConsequenceDecisionRepository(
                 )
             }
     }
+
+    private data class PersistedDecisionChange(
+        val after: WorkoutEntity,
+        val replacementBlocks: List<StoredWorkoutBlock>? = null,
+    )
 
     private companion object {
         const val MAX_PLAN_WORKOUTS = 1_024

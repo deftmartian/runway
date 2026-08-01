@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -89,6 +90,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             .addMigrations(
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
+                RunwayLedgerMigrations.V3_TO_V4,
             )
             .allowMainThreadQueries()
             .build()
@@ -108,7 +110,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     .heartRateSamples("preserved-activity", 10)
                     .map { it.beatsPerMinute },
             )
-            assertEquals(3, upgraded.openHelper.writableDatabase.version)
+            assertEquals(4, upgraded.openHelper.writableDatabase.version)
         } finally {
             upgraded.close()
         }
@@ -121,6 +123,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             .addMigrations(
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
+                RunwayLedgerMigrations.V3_TO_V4,
             )
             .allowMainThreadQueries()
             .build()
@@ -128,7 +131,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             val profile = reopened.profileSettingsDao().get()
             assertNotNull(profile)
             assertEquals("private", profile?.heartRateDataMode)
-            assertTrue(reopened.openHelper.writableDatabase.version == 3)
+            assertTrue(reopened.openHelper.writableDatabase.version == 4)
         } finally {
             reopened.close()
         }
@@ -181,6 +184,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             .addMigrations(
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
+                RunwayLedgerMigrations.V3_TO_V4,
             )
             .allowMainThreadQueries()
             .build()
@@ -192,7 +196,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 "Preserved 5K",
                 restored.goalPlanDao().goal("preserved-goal")?.title,
             )
-            assertEquals(3, restored.openHelper.writableDatabase.version)
+            assertEquals(4, restored.openHelper.writableDatabase.version)
         } finally {
             restored.close()
         }
@@ -268,7 +272,10 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerDatabase::class.java,
                 TEST_V2_DATABASE,
             )
-                .addMigrations(RunwayLedgerMigrations.V2_TO_V3)
+                .addMigrations(
+                    RunwayLedgerMigrations.V2_TO_V3,
+                    RunwayLedgerMigrations.V3_TO_V4,
+                )
                 .allowMainThreadQueries()
                 .build()
             try {
@@ -293,7 +300,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     LocalPrivacyRepository(upgraded).pendingRetentionRepairNotice(),
                 )
                 assertV2SourceReferencesPreserved(upgraded, "ledger")
-                assertEquals(3, upgraded.openHelper.writableDatabase.version)
+                assertEquals(4, upgraded.openHelper.writableDatabase.version)
             } finally {
                 upgraded.close()
             }
@@ -303,7 +310,10 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerDatabase::class.java,
                 TEST_V2_DATABASE,
             )
-                .addMigrations(RunwayLedgerMigrations.V2_TO_V3)
+                .addMigrations(
+                    RunwayLedgerMigrations.V2_TO_V3,
+                    RunwayLedgerMigrations.V3_TO_V4,
+                )
                 .allowMainThreadQueries()
                 .build()
             try {
@@ -364,6 +374,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             .addMigrations(
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
+                RunwayLedgerMigrations.V3_TO_V4,
             )
             .allowMainThreadQueries()
             .build()
@@ -373,7 +384,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 requireNotNull(restored.profileSettingsDao().get()).privateNotes,
             )
             assertV2SourceReferencesPreserved(restored, "restore")
-            assertEquals(3, restored.openHelper.writableDatabase.version)
+            assertEquals(4, restored.openHelper.writableDatabase.version)
         } finally {
             restored.close()
         }
@@ -414,6 +425,446 @@ class RunwayLedgerMigrationInstrumentedTest {
                 assertEquals(RunwayLedgerMigrations.V2_IDENTITY_HASH, cursor.getString(0))
             }
         }
+    }
+
+    @Test
+    fun v3LedgerRepairsChainedTimedConsequenceStructuresAndGuardedUndoRemainsViable() =
+        runBlocking<Unit> {
+            helper.createDatabase(TEST_V3_TIMED_CONSEQUENCE_DATABASE, 3).apply {
+                seedV3DivergentTimedConsequenceChain()
+                close()
+            }
+
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val upgraded = Room.databaseBuilder(
+                context,
+                RunwayLedgerDatabase::class.java,
+                TEST_V3_TIMED_CONSEQUENCE_DATABASE,
+            )
+                .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+                .allowMainThreadQueries()
+                .build()
+            try {
+                assertTimedConsequenceRepair(upgraded)
+                assertEquals(4, upgraded.openHelper.writableDatabase.version)
+            } finally {
+                upgraded.close()
+            }
+
+            val reopened = Room.databaseBuilder(
+                context,
+                RunwayLedgerDatabase::class.java,
+                TEST_V3_TIMED_CONSEQUENCE_DATABASE,
+            )
+                .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+                .allowMainThreadQueries()
+                .build()
+            try {
+                // Opening the already-repaired v4 ledger cannot resize it a second time.
+                assertTimedConsequenceRepair(reopened)
+
+                val undone = reopened.localWorkoutChangeRepository().undo(
+                    adjustmentId = "timed-adjustment-2",
+                    reversalId = "timed-reversal-2",
+                    reversedAtEpochMillis = 1_700_000_003_000,
+                    today = LocalDate.ofEpochDay(22_000),
+                )
+                assertEquals(
+                    UndoLocalWorkoutChangeResult.Undone(
+                        "timed-adjustment-2",
+                        listOf("timed-workout"),
+                    ),
+                    undone,
+                )
+                val restored = requireNotNull(reopened.goalPlanDao().workout("timed-workout"))
+                assertEquals(1_201, restored.currentDurationSeconds)
+                assertEquals(100, restored.currentWarmupSeconds)
+                assertEquals(101, restored.currentCooldownSeconds)
+                assertEquals(1_201, currentTimedTotal(reopened, "timed-workout"))
+            } finally {
+                reopened.close()
+            }
+        }
+
+    @Test
+    fun v3TimedConsequenceWithImpossibleStructureFailsClosedAtVersion3() {
+        helper.createDatabase(TEST_V3_INVALID_TIMED_CONSEQUENCE_DATABASE, 3).apply {
+            seedV3DivergentTimedConsequenceChain()
+            execSQL(
+                "UPDATE adjustment_effect_segment_snapshots SET targetDurationSeconds = NULL " +
+                    "WHERE segmentSnapshotId = 'timed-effect-2-after-segment-1'",
+            )
+            close()
+        }
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val opening = Room.databaseBuilder(
+            context,
+            RunwayLedgerDatabase::class.java,
+            TEST_V3_INVALID_TIMED_CONSEQUENCE_DATABASE,
+        )
+            .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertNotNull(runCatching { opening.openHelper.writableDatabase }.exceptionOrNull())
+        } finally {
+            opening.close()
+        }
+
+        SQLiteDatabase.openDatabase(
+            context.getDatabasePath(TEST_V3_INVALID_TIMED_CONSEQUENCE_DATABASE).path,
+            null,
+            SQLiteDatabase.OPEN_READONLY,
+        ).use { sqlite ->
+            assertEquals(3, sqlite.version)
+            sqlite.rawQuery(
+                "SELECT identity_hash FROM room_master_table WHERE id = 42",
+                emptyArray(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(RunwayLedgerMigrations.V3_IDENTITY_HASH, cursor.getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun v3DivergentBackupUsesTheSameRepairAndSecondPreparationIsANoOp() = runBlocking<Unit> {
+        helper.createDatabase(TEST_V3_TIMED_CONSEQUENCE_BACKUP_DATABASE, 3).apply {
+            seedV3DivergentTimedConsequenceChain()
+            close()
+        }
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val candidate = context.getDatabasePath(TEST_V3_TIMED_CONSEQUENCE_BACKUP_DATABASE)
+        assertNull(LocalRestoreCandidate.prepare(candidate))
+        assertNull(LocalRestoreCandidate.prepare(candidate))
+
+        val restored = Room.databaseBuilder(
+            context,
+            RunwayLedgerDatabase::class.java,
+            TEST_V3_TIMED_CONSEQUENCE_BACKUP_DATABASE,
+        )
+            .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertTimedConsequenceRepair(restored)
+            assertEquals(4, restored.openHelper.writableDatabase.version)
+        } finally {
+            restored.close()
+        }
+    }
+
+    private fun SupportSQLiteDatabase.seedV3DivergentTimedConsequenceChain() {
+        execSQL(
+            """
+            INSERT INTO goals (
+                goalId, title, targetDateEpochDay, state, createdAtEpochMillis,
+                updatedAtEpochMillis, kind, startMode, raceDistanceMeters, priority
+            ) VALUES (
+                'timed-goal', 'Timed migration goal', 23000, 'active', 1700000000000,
+                1700000000000, 'foundation', 'timed_calibration', NULL, 'finish_healthy'
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO plans (
+                planId, goalId, phaseType, state, startEpochDay,
+                createdAtEpochMillis, updatedAtEpochMillis
+            ) VALUES (
+                'timed-plan', 'timed-goal', 'foundation', 'active', 22000,
+                1700000000000, 1700000000000
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO plan_weeks (
+                weekId, planId, ordinal, startEpochDay, isDownWeek, isTaperWeek
+            ) VALUES ('timed-week', 'timed-plan', 0, 22000, 0, 0)
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO workouts (
+                workoutId, planId, weekId, position,
+                generatedPurpose, generatedDistanceMeters, generatedDurationSeconds,
+                currentPurpose, currentDistanceMeters, currentDurationSeconds,
+                updatedAtEpochMillis, generatedScheduledEpochDay, currentScheduledEpochDay,
+                generatedWorkoutType, currentWorkoutType,
+                generatedPrescriptionKind, currentPrescriptionKind,
+                generatedIntensity, currentIntensity, generatedReason, currentReason,
+                currentStatus, generatedWarmupSeconds, generatedCooldownSeconds,
+                currentWarmupSeconds, currentCooldownSeconds
+            ) VALUES (
+                'timed-workout', 'timed-plan', 'timed-week', 0,
+                'Easy intervals', 0, 1200,
+                'Easy intervals', 0, 1500,
+                1700000002000, 22001, 22001,
+                'easy', 'easy',
+                'timed', 'timed',
+                'easy', 'easy', 'Generated timed', 'legacy-two',
+                'planned', 100, 100,
+                100, 100
+            )
+            """.trimIndent(),
+        )
+        listOf("generated", "current").forEach { version ->
+            execSQL(
+                """
+                INSERT INTO workout_blocks (
+                    blockId, workoutId, prescriptionVersion, ordinal, blockType, repetitions
+                ) VALUES (
+                    'timed-$version-block', 'timed-workout', '$version', 0, 'timed', 2
+                )
+                """.trimIndent(),
+            )
+            listOf("run", "walk").forEachIndexed { ordinal, type ->
+                execSQL(
+                    """
+                    INSERT INTO workout_segments (
+                        segmentId, blockId, ordinal, segmentType,
+                        targetDistanceMeters, targetDurationSeconds
+                    ) VALUES (
+                        'timed-$version-segment-$ordinal', 'timed-$version-block', $ordinal,
+                        '$type', NULL, 250
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+        execSQL(
+            """
+            INSERT INTO workout_source_references (
+                referenceId, workoutId, prescriptionVersion, ordinal, sourceName, sourceLocator
+            ) VALUES
+                ('timed-generated-source', 'timed-workout', 'generated', 0,
+                 'Generated source', 'generated-locator'),
+                ('timed-current-source', 'timed-workout', 'current', 0,
+                 'Current source', 'current-locator')
+            """.trimIndent(),
+        )
+
+        seedV3TimedEffect(
+            number = 1,
+            previousDuration = 1_200,
+            newDuration = 1_201,
+            previousReason = "Generated timed",
+            newReason = "legacy-one",
+            createdAtEpochMillis = 1_700_000_001_000,
+        )
+        seedV3TimedEffect(
+            number = 2,
+            previousDuration = 1_201,
+            newDuration = 1_500,
+            previousReason = "legacy-one",
+            newReason = "legacy-two",
+            createdAtEpochMillis = 1_700_000_002_000,
+        )
+    }
+
+    private fun SupportSQLiteDatabase.seedV3TimedEffect(
+        number: Int,
+        previousDuration: Int,
+        newDuration: Int,
+        previousReason: String,
+        newReason: String,
+        createdAtEpochMillis: Long,
+    ) {
+        val adjustmentId = "timed-adjustment-$number"
+        val groupId = "timed-group-$number"
+        val effectId = "timed-effect-$number"
+        execSQL(
+            """
+            INSERT INTO plan_adjustments (
+                adjustmentId, planId, workoutId, adjustmentType, state,
+                affectedWorkoutCount, createdAtEpochMillis,
+                triggerKind, triggerId, triggerVersion
+            ) VALUES (
+                '$adjustmentId', 'timed-plan', 'timed-workout', 'reduce_next', 'applied',
+                1, $createdAtEpochMillis,
+                'Activity', 'timed-trigger-$number', '$createdAtEpochMillis'
+            )
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO adjustment_effect_groups (
+                groupId, adjustmentId, ordinal, effectType
+            ) VALUES ('$groupId', '$adjustmentId', 0, 'consequence_decision')
+            """.trimIndent(),
+        )
+        execSQL(
+            """
+            INSERT INTO adjustment_workout_effects (
+                effectId, groupId, workoutId, ordinal,
+                previousScheduledEpochDay, newScheduledEpochDay,
+                previousWorkoutType, newWorkoutType, previousStatus, newStatus,
+                previousDistanceMeters, newDistanceMeters,
+                previousDurationSeconds, newDurationSeconds,
+                previousIntensity, newIntensity, previousPurpose, newPurpose,
+                previousReason, newReason,
+                previousWarmupSeconds, newWarmupSeconds,
+                previousCooldownSeconds, newCooldownSeconds,
+                previousPrescriptionKind, newPrescriptionKind,
+                previousWeekId, newWeekId
+            ) VALUES (
+                '$effectId', '$groupId', 'timed-workout', 0,
+                22001, 22001,
+                'easy', 'easy', 'planned', 'planned',
+                0, 0,
+                $previousDuration, $newDuration,
+                'easy', 'easy', 'Easy intervals', 'Easy intervals',
+                '$previousReason', '$newReason',
+                100, 100,
+                100, 100,
+                'timed', 'timed',
+                'timed-week', 'timed-week'
+            )
+            """.trimIndent(),
+        )
+        listOf("before", "after").forEach { state ->
+            val blockId = "$effectId-$state-block"
+            execSQL(
+                """
+                INSERT INTO adjustment_effect_block_snapshots (
+                    blockSnapshotId, effectId, snapshotState, ordinal, blockType, repetitions
+                ) VALUES ('$blockId', '$effectId', '$state', 0, 'timed', 2)
+                """.trimIndent(),
+            )
+            listOf("run", "walk").forEachIndexed { ordinal, type ->
+                execSQL(
+                    """
+                    INSERT INTO adjustment_effect_segment_snapshots (
+                        segmentSnapshotId, blockSnapshotId, ordinal, segmentType,
+                        targetDistanceMeters, targetDurationSeconds
+                    ) VALUES (
+                        '$effectId-$state-segment-$ordinal', '$blockId', $ordinal,
+                        '$type', NULL, 250
+                    )
+                    """.trimIndent(),
+                )
+            }
+            execSQL(
+                """
+                INSERT INTO adjustment_effect_source_reference_snapshots (
+                    sourceReferenceSnapshotId, effectId, snapshotState, ordinal,
+                    sourceName, sourceLocator
+                ) VALUES (
+                    '$effectId-$state-source', '$effectId', '$state', 0,
+                    'Current source', 'current-locator'
+                )
+                """.trimIndent(),
+            )
+        }
+        execSQL(
+            """
+            INSERT INTO plan_decisions (
+                decisionId, adjustmentId, decisionType, affectedWorkoutCount,
+                effectiveFromEpochDay, decidedAtEpochMillis
+            ) VALUES (
+                'timed-decision-$number', '$adjustmentId', 'reduce_next', 1,
+                22001, $createdAtEpochMillis
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private suspend fun assertTimedConsequenceRepair(database: RunwayLedgerDatabase) {
+        val first = database.adjustmentDao().workoutEffects("timed-group-1", 10).single()
+        assertEquals(100, first.previousWarmupSeconds)
+        assertEquals(100, first.previousCooldownSeconds)
+        assertEquals(100, first.newWarmupSeconds)
+        assertEquals(101, first.newCooldownSeconds)
+        assertEquals(1_200, snapshotTimedTotal(database, first, "before"))
+        assertEquals(1_201, snapshotTimedTotal(database, first, "after"))
+
+        val second = database.adjustmentDao().workoutEffects("timed-group-2", 10).single()
+        assertEquals(100, second.previousWarmupSeconds)
+        assertEquals(101, second.previousCooldownSeconds)
+        assertEquals(125, second.newWarmupSeconds)
+        assertEquals(123, second.newCooldownSeconds)
+        assertEquals(1_201, snapshotTimedTotal(database, second, "before"))
+        assertEquals(1_500, snapshotTimedTotal(database, second, "after"))
+        assertEquals(
+            listOf(313, 313),
+            database.adjustmentDao()
+                .effectSegmentSnapshots(second.effectId, "after", 10)
+                .map { requireNotNull(it.targetDurationSeconds) },
+        )
+
+        val workout = requireNotNull(database.goalPlanDao().workout("timed-workout"))
+        assertEquals(1_500, workout.currentDurationSeconds)
+        assertEquals(125, workout.currentWarmupSeconds)
+        assertEquals(123, workout.currentCooldownSeconds)
+        assertEquals(1_500, currentTimedTotal(database, workout.workoutId))
+
+        // Generated recommendations and both current/history source references are not repair data.
+        assertEquals(1_200, workout.generatedDurationSeconds)
+        assertEquals(100, workout.generatedWarmupSeconds)
+        assertEquals(100, workout.generatedCooldownSeconds)
+        val generatedBlock = database.goalPlanDao()
+            .blocksForWorkout(workout.workoutId, "generated", 10)
+            .single()
+        assertEquals(
+            listOf(250, 250),
+            database.goalPlanDao().segmentsForBlock(generatedBlock.blockId, 10)
+                .map { requireNotNull(it.targetDurationSeconds) },
+        )
+        assertEquals(
+            "generated-locator",
+            database.goalPlanDao()
+                .workoutSourceReferences(workout.workoutId, "generated", 10)
+                .single()
+                .sourceLocator,
+        )
+        assertEquals(
+            "current-locator",
+            database.goalPlanDao()
+                .workoutSourceReferences(workout.workoutId, "current", 10)
+                .single()
+                .sourceLocator,
+        )
+        assertEquals(
+            "current-locator",
+            database.adjustmentDao()
+                .effectSourceReferenceSnapshots(second.effectId, "after", 10)
+                .single()
+                .sourceLocator,
+        )
+    }
+
+    private suspend fun snapshotTimedTotal(
+        database: RunwayLedgerDatabase,
+        effect: AdjustmentWorkoutEffectEntity,
+        state: String,
+    ): Int {
+        val warmup = if (state == "after") effect.newWarmupSeconds else effect.previousWarmupSeconds
+        val cooldown = if (state == "after") effect.newCooldownSeconds else effect.previousCooldownSeconds
+        val blocks = database.adjustmentDao().effectBlockSnapshots(effect.effectId, state, 10)
+        val segments = database.adjustmentDao().effectSegmentSnapshots(effect.effectId, state, 100)
+            .groupBy(AdjustmentEffectSegmentSnapshotEntity::blockSnapshotId)
+        return requireNotNull(warmup) + requireNotNull(cooldown) + blocks.sumOf { block ->
+            block.repetitions * segments.getValue(block.blockSnapshotId)
+                .sumOf { requireNotNull(it.targetDurationSeconds) }
+        }
+    }
+
+    private suspend fun currentTimedTotal(
+        database: RunwayLedgerDatabase,
+        workoutId: String,
+    ): Int {
+        val workout = requireNotNull(database.goalPlanDao().workout(workoutId))
+        var blockTotal = 0
+        database.goalPlanDao().blocksForWorkout(workoutId, "current", 10).forEach { block ->
+            blockTotal += block.repetitions *
+                database.goalPlanDao().segmentsForBlock(block.blockId, 100)
+                    .sumOf { requireNotNull(it.targetDurationSeconds) }
+        }
+        return requireNotNull(workout.currentWarmupSeconds) +
+            requireNotNull(workout.currentCooldownSeconds) + blockTotal
     }
 
     private fun SupportSQLiteDatabase.seedV2SourceReferences(prefix: String) {
@@ -566,5 +1017,10 @@ class RunwayLedgerMigrationInstrumentedTest {
         const val TEST_V2_DATABASE = "runway-ledger-v2-to-v3"
         const val TEST_V2_BACKUP_DATABASE = "runway-backup-v2-to-v3"
         const val TEST_V2_COLLISION_DATABASE = "runway-backup-v2-collision"
+        const val TEST_V3_TIMED_CONSEQUENCE_DATABASE = "runway-ledger-v3-to-v4-timed"
+        const val TEST_V3_INVALID_TIMED_CONSEQUENCE_DATABASE =
+            "runway-ledger-v3-to-v4-invalid-timed"
+        const val TEST_V3_TIMED_CONSEQUENCE_BACKUP_DATABASE =
+            "runway-backup-v3-to-v4-timed"
     }
 }

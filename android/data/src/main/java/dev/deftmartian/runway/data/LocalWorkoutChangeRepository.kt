@@ -300,9 +300,11 @@ class LocalWorkoutChangeRepository(
                 storedEffect.beforeSourceReferences,
                 after = false,
             )
-            LocalWorkoutChangePersistenceMapper(policy).mutation(
+            LocalWorkoutChangePersistenceMapper(policy).restoreMutation(
                 existing = current,
                 proposal = before,
+                effect = storedEffect.effect,
+                sourceReferences = storedEffect.beforeSourceReferences,
                 idSeed = "$reversalId:$workoutId",
                 planId = current.entity.planId,
                 workoutId = workoutId,
@@ -630,6 +632,52 @@ object LocalWorkoutChangeMapper {
 class LocalWorkoutChangePersistenceMapper(
     private val policy: LocalWorkoutChangePolicy = LocalWorkoutChangePolicy(),
 ) {
+    /**
+     * Rebuilds the typed prescription, then restores nullable ledger scalars and source metadata
+     * exactly. The domain proposal intentionally normalizes absent values such as a timed workout's
+     * distance to zero; undo must not write those normalized values back over its before-snapshot.
+     */
+    fun restoreMutation(
+        existing: StoredWorkout,
+        proposal: WorkoutProposal,
+        effect: AdjustmentWorkoutEffectEntity,
+        sourceReferences: List<StoredWorkoutSourceReference>,
+        idSeed: String,
+        planId: String,
+        workoutId: String,
+        position: Int,
+        updatedAtEpochMillis: Long,
+    ): PersistedWorkoutMutation {
+        val restored = mutation(
+            existing = existing,
+            proposal = proposal,
+            idSeed = idSeed,
+            planId = planId,
+            workoutId = workoutId,
+            position = position,
+            updatedAtEpochMillis = updatedAtEpochMillis,
+        )
+        return restored.copy(
+            workout = restored.workout.copy(
+                currentPurpose = effect.previousPurpose,
+                currentDistanceMeters = effect.previousDistanceMeters,
+                currentDurationSeconds = effect.previousDurationSeconds,
+                tombstonedAtEpochMillis = effect.previousTombstonedAtEpochMillis,
+                currentIntensity = effect.previousIntensity,
+                currentReason = effect.previousReason,
+                currentStatus = requireNotNull(effect.previousStatus),
+                currentWarmupSeconds = effect.previousWarmupSeconds,
+                currentCooldownSeconds = effect.previousCooldownSeconds,
+            ),
+            currentSourceReferences = sourceReferenceEntities(
+                workoutId = workoutId,
+                version = CURRENT,
+                idSeed = idSeed,
+                references = sourceReferences,
+            ),
+        )
+    }
+
     fun map(
         prepared: PreparedLocalWorkoutChange,
         adjustmentId: String,
@@ -877,6 +925,27 @@ class LocalWorkoutChangePersistenceMapper(
                 sourceLocator = source.sourceLocator,
             )
         }
+    }
+
+    private fun sourceReferenceEntities(
+        workoutId: String,
+        version: String,
+        idSeed: String,
+        references: List<StoredWorkoutSourceReference>,
+    ): List<WorkoutSourceReferenceEntity> = references.mapIndexed { ordinal, source ->
+        WorkoutSourceReferenceEntity(
+            referenceId = stableId(
+                "$version-source",
+                idSeed,
+                ordinal.toString(),
+                source.sourceLocator ?: source.sourceName,
+            ),
+            workoutId = workoutId,
+            prescriptionVersion = version,
+            ordinal = ordinal,
+            sourceName = source.sourceName,
+            sourceLocator = source.sourceLocator,
+        )
     }
 
     private fun effect(
