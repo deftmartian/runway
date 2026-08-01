@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 
@@ -50,6 +51,12 @@ internal class NativeSurfaceLoader(
 
     suspend fun load(request: SurfaceLoadRequest): SurfaceLoadResult =
         withContext(ioDispatcher) {
+            when (request.destination) {
+                NativeDestination.Calendar ->
+                    reads.ensureRoutineHorizon(request.calendarMonth.atEndOfMonth().toEpochDay())
+                NativeDestination.Inbox, NativeDestination.Stats -> reads.ensureRoutineHorizon()
+                else -> Unit
+            }
             when (request.destination) {
                 NativeDestination.Calendar -> loadCalendar(request)
                 NativeDestination.Inbox -> SurfaceLoadResult(
@@ -161,6 +168,8 @@ internal class NativeSurfaceLoader(
 }
 
 internal interface NativeSurfaceReads {
+    /** Idempotently materializes dated slots for an active open-ended routine before any surface reads it. */
+    suspend fun ensureRoutineHorizon(requestedThroughEpochDay: Long? = null) = Unit
     suspend fun profileTimeZone(): String?
     suspend fun calendar(month: YearMonth): LocalCalendarReadModel
     suspend fun inbox(cursor: LocalInboxPagingCursor): LocalInboxReadModel
@@ -177,6 +186,23 @@ private class RunwayNativeSurfaceReads(
     private val services: RunwayServices,
 ) : NativeSurfaceReads {
     private val context = application.applicationContext
+
+    override suspend fun ensureRoutineHorizon(requestedThroughEpochDay: Long?) {
+        val plan = services.trainingContext.activePlan()
+            ?.takeIf { it.phaseType == "routine" && it.state == "active" }
+            ?: return
+        val profile = services.trainingContext.profile() ?: return
+        val zone = runCatching { ZoneId.of(profile.timeZone) }.getOrNull()
+            ?: error("The active routine needs a valid training time zone.")
+        val now = Instant.now()
+        val defaultThrough = now.atZone(zone).toLocalDate().plusWeeks(8).toEpochDay()
+        val through = maxOf(defaultThrough, requestedThroughEpochDay ?: defaultThrough)
+        when (services.routines.ensureHorizon(plan.planId, through, now.toEpochMilli())) {
+            dev.deftmartian.runway.data.LocalRoutineHorizonResult.Rejected ->
+                error("The active routine schedule could not be extended safely.")
+            else -> Unit
+        }
+    }
 
     override suspend fun profileTimeZone(): String? =
         services.trainingContext.profile()?.timeZone

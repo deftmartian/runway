@@ -14,10 +14,10 @@ class NativeSettingsSummaryTest {
     }
 
     @Test
-    fun `current pain remains visible in the standalone settings summary`() {
+    fun `running check-in summary states the saved consequence`() {
         assertEquals(
-            "Current pain reported",
-            healthContextSummary(
+            "Pain now · new schedules paused",
+            runningCheckInSummary(
                 NativeHealthContext(
                     recentInjury = false,
                     currentPain = true,
@@ -27,6 +27,29 @@ class NativeSettingsSummaryTest {
                 ),
             ),
         )
+        assertEquals(
+            "Recent injury · more cautious ramp checks",
+            runningCheckInSummary(NativeHealthContext(recentInjury = true)),
+        )
+        assertEquals("Private reminder only", runningCheckInSummary(NativeHealthContext(notes = "remember")))
+        assertEquals("No limits reported", runningCheckInSummary(NativeHealthContext()))
+    }
+
+    @Test
+    fun `running check-in effects distinguish scheduling ramp checks and private notes`() {
+        assertEquals(
+            "New setup saves the goal but does not create a schedule. Existing workouts stay recorded.",
+            runningCheckInEffect(NativeHealthContext(currentPain = true)),
+        )
+        assertEquals(
+            "Distance prescriptions and edits to targeted runs use more cautious ramp checks. Foundation sessions and open routine runs stay unchanged.",
+            runningCheckInEffect(NativeHealthContext(recurringPain = true)),
+        )
+        assertEquals(
+            "The private reminder is for your reference only. It does not change workouts or scheduling.",
+            runningCheckInEffect(NativeHealthContext(notes = "remember")),
+        )
+        assertEquals(null, runningCheckInEffect(NativeHealthContext()))
     }
 
     @Test

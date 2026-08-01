@@ -128,6 +128,70 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
     }
 
     @Test
+    fun openRoutineFeedbackRecordsFactsWithoutCreatingAFuturePlanDecision() = runBlocking {
+        insertPlanGraph("routine", status = "planned", phaseType = "routine", prescriptionKind = "open")
+        val repository = LocalTrainingMutationRepository(database, nowEpochMillis = { now })
+
+        val recorded = repository.recordWorkoutFeedback(
+            LocalWorkoutFeedbackCommand(
+                workoutId = "routine",
+                status = dev.deftmartian.runway.domain.FeedbackStatus.DONE,
+                feltHard = true,
+                pain = true,
+            ),
+        )
+
+        check(recorded is LocalTrainingMutationResult.WorkoutFeedbackRecorded)
+        assertFalse(recorded.consequence.planChangeAvailable)
+        assertEquals("done", database.goalPlanDao().workout("routine")?.currentStatus)
+        val feedback = requireNotNull(database.activityLedgerDao().workoutFeedback("routine"))
+        assertNull(feedback.completedDistanceMeters)
+        assertNull(feedback.completedDurationSeconds)
+        assertTrue(requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(requireNotNull(database.activityLedgerDao().workoutFeedbackConsequence(feedback.feedbackId)).planChangeAvailable)
+    }
+
+    @Test
+    fun openRoutineAllowsPositiveActualsOrAnUnmeasuredSkip() = runBlocking {
+        insertPlanGraph("routine-done", status = "planned", phaseType = "routine", prescriptionKind = "open")
+        insertPlanGraph("routine-skip", status = "planned", phaseType = "routine", prescriptionKind = "open")
+        insertPlanGraph("routine-invalid", status = "planned", phaseType = "routine", prescriptionKind = "open")
+        val repository = LocalTrainingMutationRepository(database, nowEpochMillis = { now })
+
+        check(
+            repository.recordWorkoutFeedback(
+                LocalWorkoutFeedbackCommand(
+                    "routine-done",
+                    dev.deftmartian.runway.domain.FeedbackStatus.DONE,
+                    completedDistanceMeters = 2_000,
+                    completedDurationSeconds = 900,
+                ),
+            ) is LocalTrainingMutationResult.WorkoutFeedbackRecorded,
+        )
+        assertEquals(
+            LocalTrainingMutationResult.Rejected(LocalTrainingMutationIssue.INVALID_MEASUREMENT),
+            repository.recordWorkoutFeedback(
+                LocalWorkoutFeedbackCommand(
+                    "routine-invalid",
+                    dev.deftmartian.runway.domain.FeedbackStatus.DONE,
+                    completedDurationSeconds = 0,
+                ),
+            ),
+        )
+        check(
+            repository.recordWorkoutFeedback(
+                LocalWorkoutFeedbackCommand(
+                    "routine-skip",
+                    dev.deftmartian.runway.domain.FeedbackStatus.SKIPPED,
+                ),
+            ) is LocalTrainingMutationResult.WorkoutFeedbackRecorded,
+        )
+        assertEquals(2_000, database.activityLedgerDao().workoutFeedback("routine-done")?.completedDistanceMeters)
+        assertEquals(900, database.activityLedgerDao().workoutFeedback("routine-done")?.completedDurationSeconds)
+        assertEquals("skipped", database.goalPlanDao().workout("routine-skip")?.currentStatus)
+    }
+
+    @Test
     fun unlinkingALinkedManualCandidateReturnsItToReviewAndItCanBeLinkedAgain() = runBlocking {
         insertPlanGraph("manual-relink", status = "planned")
         val mutations = LocalTrainingMutationRepository(
@@ -156,20 +220,25 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
         assertTrue(review.link("manual-relink-activity", "manual-relink") is LocalActivityReviewResult.Linked)
     }
 
-    private suspend fun insertPlanGraph(workoutId: String, status: String = "done") {
+    private suspend fun insertPlanGraph(
+        workoutId: String,
+        status: String = "done",
+        phaseType: String = "foundation",
+        prescriptionKind: String = "distance",
+    ) {
         val goalId = "goal-$workoutId"
         val planId = "plan-$workoutId"
         val weekId = "week-$workoutId"
         database.goalPlanDao().saveGoal(
-            GoalEntity(goalId, "Test", null, "active", now, now, "foundation", "foundation_only", null, "consistency"),
+            GoalEntity(goalId, "Test", null, "active", now, now, phaseType, phaseType, null, "consistency"),
         )
         database.goalPlanDao().createPlanGraph(
-            PlanEntity(planId, goalId, "foundation", "active", today.toEpochDay() - 7, today.toEpochDay() + 7, now, now),
+            PlanEntity(planId, goalId, phaseType, "active", today.toEpochDay() - 7, today.toEpochDay() + 7, now, now),
             listOf(PlanWeekEntity(weekId, planId, 1, today.toEpochDay() - 3, 5_000)),
             listOf(
                 WorkoutEntity(
                     workoutId, planId, weekId, 0, "Easy", 5_000, null, "Easy", 5_000, null,
-                    null, now, today.toEpochDay(), today.toEpochDay(), "easy", "easy", "distance", "distance",
+                    null, now, today.toEpochDay(), today.toEpochDay(), "easy", "easy", prescriptionKind, prescriptionKind,
                     currentStatus = status,
                 ),
             ),

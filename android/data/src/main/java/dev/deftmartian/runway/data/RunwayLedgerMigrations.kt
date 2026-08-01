@@ -11,6 +11,8 @@ object RunwayLedgerMigrations {
     const val V1_IDENTITY_HASH = "154538ddd4b50c6c924697299e447e9a"
     const val V2_IDENTITY_HASH = "f91a86620eddb116d9e3fdea5af998bc"
     const val V3_IDENTITY_HASH = "e07bbca67f5da673e81167f32b14d51a"
+    /** v4 was a repair-only lineage boundary and retained v3's Room schema identity. */
+    const val V4_IDENTITY_HASH = "e07bbca67f5da673e81167f32b14d51a"
     const val V1_TO_V2_SQL =
         "ALTER TABLE profile_settings ADD COLUMN heartRateDataMode TEXT NOT NULL DEFAULT 'private'"
     const val CREATE_PLAN_SETUP_RECEIPTS_SQL =
@@ -68,6 +70,17 @@ object RunwayLedgerMigrations {
 
     const val ROUTE_RETENTION_REPAIR_KEY = "privacy_retention_repair_v3_route"
     const val HEART_RATE_RETENTION_REPAIR_KEY = "privacy_retention_repair_v3_heart_rate"
+    const val CREATE_ROUTINE_SCHEDULE_DAYS_SQL =
+        """
+        CREATE TABLE routine_schedule_days (
+            planId TEXT NOT NULL,
+            dayOfWeek INTEGER NOT NULL,
+            PRIMARY KEY(planId, dayOfWeek),
+            FOREIGN KEY(planId) REFERENCES plans(planId) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """
+    const val CREATE_ROUTINE_SCHEDULE_DAYS_PLAN_INDEX_SQL =
+        "CREATE INDEX index_routine_schedule_days_planId ON routine_schedule_days (planId)"
 
     private val v2ToV3Sql = listOf(
         CREATE_PLAN_SETUP_RECEIPTS_SQL,
@@ -220,5 +233,17 @@ object RunwayLedgerMigrations {
         override fun migrate(db: SupportSQLiteDatabase) {
             LegacyTimedConsequenceLedgerRepair.apply(db)
         }
+    }
+
+    /** Additive routine cadence metadata; released ledger rows are deliberately untouched. */
+    val V4_TO_V5: Migration = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            applyV4ToV5(db::execSQL)
+        }
+    }
+
+    fun applyV4ToV5(execSql: (String) -> Unit) {
+        execSql(CREATE_ROUTINE_SCHEDULE_DAYS_SQL)
+        execSql(CREATE_ROUTINE_SCHEDULE_DAYS_PLAN_INDEX_SQL)
     }
 }

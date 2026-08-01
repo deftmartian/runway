@@ -332,22 +332,30 @@ class LocalActivityReviewRepository(
             beforeEpochDay = workout.currentScheduledEpochDay,
             limit = MAX_RECENT_FEEDBACK_READ,
         )
-        val consequence = Consequences.calculate(
-            FeedbackInput(
-                targetDistanceMeters = workout.currentDistanceMeters ?: 0,
-                targetDurationSeconds = workout.currentDurationSeconds,
-                weekTargetDistanceMeters = weekWorkouts.sumOfCurrentDistance(),
-                completedDistanceMeters = activity.distanceMeters,
-                completedDurationSeconds = activity.durationSeconds,
-                status = FeedbackStatus.DONE,
+        val routine = planDao.plan(workout.planId)?.phaseType == ROUTINE_PHASE
+        val consequence = if (routine) {
+            Consequences.recordRoutine(
+                FeedbackStatus.DONE,
                 feltHard = feedback?.feltHard == true,
                 pain = feedback?.pain == true,
-                recentSkippedWorkouts = recent.count { it.completionState == "skipped" },
-                recentShortenedWorkouts = recent.count { it.completionState == "shortened" },
-            ),
-        )
-        val completionState =
-            if (consequence.deviation == Deviation.SHORT) "shortened" else "done"
+            )
+        } else {
+            Consequences.calculate(
+                FeedbackInput(
+                    targetDistanceMeters = workout.currentDistanceMeters ?: 0,
+                    targetDurationSeconds = workout.currentDurationSeconds,
+                    weekTargetDistanceMeters = weekWorkouts.sumOfCurrentDistance(),
+                    completedDistanceMeters = activity.distanceMeters,
+                    completedDurationSeconds = activity.durationSeconds,
+                    status = FeedbackStatus.DONE,
+                    feltHard = feedback?.feltHard == true,
+                    pain = feedback?.pain == true,
+                    recentSkippedWorkouts = recent.count { it.completionState == "skipped" },
+                    recentShortenedWorkouts = recent.count { it.completionState == "shortened" },
+                ),
+            )
+        }
+        val completionState = if (!routine && consequence.deviation == Deviation.SHORT) "shortened" else "done"
         val feedbackId = "workout-feedback-${activity.activityId}"
         activityDao.saveWorkoutFeedback(
             WorkoutFeedbackEntity(
@@ -394,6 +402,7 @@ class LocalActivityReviewRepository(
         val visible = activePlan?.let {
             planDao.visibleWorkoutsForPlan(it.planId, limit = MAX_PLAN_WORKOUTS_READ)
         }.orEmpty()
+        val routine = activePlan?.phaseType == ROUTINE_PHASE
         val next = eligibleFutureDecisionWorkouts(
             candidates = visible,
             originEpochDay = activityDate.toEpochDay(),
@@ -404,22 +413,30 @@ class LocalActivityReviewRepository(
         val activityWeek = visible.filter {
             it.currentScheduledEpochDay in weekStart.toEpochDay()..weekEnd.toEpochDay()
         }
-        val raw = calculateExtraActivityConsequence(
-            ExtraActivityInput(
-                distanceMeters = activity.distanceMeters ?: 0,
-                durationSeconds = activity.durationSeconds,
+        val raw = if (routine) {
+            Consequences.recordRoutine(
+                FeedbackStatus.DONE,
                 feltHard = feedback?.feltHard == true,
                 pain = feedback?.pain == true,
-            ),
-            ExtraActivityTargets(
-                nextRunTargetDistanceMeters = next?.currentDistanceMeters ?: 0,
-                nextRunTargetDurationSeconds = next?.currentDurationSeconds,
-                weekTargetDistanceMeters = activityWeek.sumOfCurrentDistance(),
-                weekTargetDurationSeconds = activityWeek.sumOfCurrentDuration(),
-            ),
-        )
+            )
+        } else {
+            calculateExtraActivityConsequence(
+                ExtraActivityInput(
+                    distanceMeters = activity.distanceMeters ?: 0,
+                    durationSeconds = activity.durationSeconds,
+                    feltHard = feedback?.feltHard == true,
+                    pain = feedback?.pain == true,
+                ),
+                ExtraActivityTargets(
+                    nextRunTargetDistanceMeters = next?.currentDistanceMeters ?: 0,
+                    nextRunTargetDurationSeconds = next?.currentDurationSeconds,
+                    weekTargetDistanceMeters = activityWeek.sumOfCurrentDistance(),
+                    weekTargetDurationSeconds = activityWeek.sumOfCurrentDuration(),
+                ),
+            )
+        }
         val consequence =
-            if (next == null || isHistoricalExtraActivity(activityDate, today)) {
+            if (!routine && (next == null || isHistoricalExtraActivity(activityDate, today))) {
                 historicalExtraActivityReview(raw)
             } else {
                 raw
@@ -461,6 +478,7 @@ class LocalActivityReviewRepository(
         const val ACTIVE_STATE = "active"
         const val PLANNED_STATE = "planned"
         const val REST_TYPE = "rest"
+        const val ROUTINE_PHASE = "routine"
         const val MANUAL_SOURCE = "manual"
         const val RECENT_DEVIATION_DAYS = 28L
         const val MAX_PRIVATE_NOTES_LENGTH = 240

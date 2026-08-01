@@ -13,10 +13,19 @@ class RoomLocalWorkoutChangeStore(
     override suspend fun <T> transaction(block: suspend LocalWorkoutChangeStore.() -> T): T =
         database.withTransaction { block(this@RoomLocalWorkoutChangeStore) }
 
-    override suspend fun loadLedger(planId: String, maximumWorkouts: Int): WorkoutChangeLedgerSnapshot {
+    override suspend fun loadLedger(
+        planId: String,
+        maximumWorkouts: Int,
+        todayEpochDay: Long,
+    ): WorkoutChangeLedgerSnapshot {
         val planDao = database.goalPlanDao()
         val plan = requireNotNull(planDao.plan(planId)) { "Plan was not found." }
-        val workoutEntities = planDao.allWorkoutsForPlan(planId, maximumWorkouts)
+        val routine = plan.phaseType == "routine"
+        val workoutEntities = if (routine) {
+            planDao.allWorkoutsForPlanFrom(planId, todayEpochDay, maximumWorkouts)
+        } else {
+            planDao.allWorkoutsForPlan(planId, maximumWorkouts)
+        }
         val workouts = if (workoutEntities.isEmpty()) {
             emptyList()
         } else {
@@ -24,7 +33,11 @@ class RoomLocalWorkoutChangeStore(
         }
         return WorkoutChangeLedgerSnapshot(
             plan = plan,
-            weeks = planDao.weeksForPlan(planId, maximumWorkouts),
+            weeks = if (routine) {
+                planDao.weeksForPlanFrom(planId, todayEpochDay - 6, maximumWorkouts)
+            } else {
+                planDao.weeksForPlan(planId, maximumWorkouts)
+            },
             workouts = workouts,
         )
     }

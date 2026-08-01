@@ -6,6 +6,7 @@ import dev.deftmartian.runway.data.GoalEntity
 import dev.deftmartian.runway.data.LocalPlanCandidate
 import dev.deftmartian.runway.data.LocalPlanSetupRequest
 import dev.deftmartian.runway.data.ProfileSettingsEntity
+import dev.deftmartian.runway.data.RoutinePlanPersistenceMapper
 import dev.deftmartian.runway.domain.CalibrationIntake
 import dev.deftmartian.runway.domain.DateUtils
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
@@ -57,6 +58,11 @@ internal sealed interface StandaloneOnboardingOutcome {
     ) : StandaloneOnboardingOutcome
 
     data class PendingGoal(val metadata: StandaloneGoalMetadata) : StandaloneOnboardingOutcome
+    data class Routine(
+        val metadata: StandaloneGoalMetadata,
+        val startDate: String,
+        val selectedDays: List<Int>,
+    ) : StandaloneOnboardingOutcome
     data class Planned(
         val metadata: StandaloneGoalMetadata,
         val intake: PlannerIntake,
@@ -77,15 +83,30 @@ internal object StandaloneOnboardingAdapter {
                 null
             }
 
-        val goalKind = enumValue(OnboardingField.GOAL_KIND, command.goalKind, mapOf("race" to GoalKind.RACE, "foundation" to GoalKind.FOUNDATION))
+        val goalKind = enumValue(
+            OnboardingField.GOAL_KIND,
+            command.goalKind,
+            mapOf(
+                "race" to GoalKind.RACE,
+                "foundation" to GoalKind.FOUNDATION,
+                "routine" to GoalKind.ROUTINE,
+            ),
+        )
         val startMode = enumValue(OnboardingField.START_MODE, command.startMode, mapOf(
             "established" to StartMode.ESTABLISHED,
             "foundation_to_goal" to StartMode.FOUNDATION_TO_GOAL,
             "foundation_only" to StartMode.FOUNDATION_ONLY,
             "calibration" to StartMode.CALIBRATION,
+            "routine" to StartMode.ROUTINE,
         ))
-        val priority = enumValue(OnboardingField.PRIORITY, command.priority, mapOf("finish_healthy" to GoalPriority.FINISH_HEALTHY, "consistency" to GoalPriority.CONSISTENCY))
-        val raceDistance = command.raceDistance.trim().lowercase().takeIf(String::isNotEmpty)?.let {
+        val priority = enumValue(
+            OnboardingField.PRIORITY,
+            if (goalKind == GoalKind.ROUTINE) "consistency" else command.priority,
+            mapOf("finish_healthy" to GoalPriority.FINISH_HEALTHY, "consistency" to GoalPriority.CONSISTENCY),
+        )
+        val raceDistance = command.raceDistance.trim().lowercase()
+            .takeIf { goalKind == GoalKind.RACE && it.isNotEmpty() }
+            ?.let {
             mapOf("5k" to RaceDistance.FIVE_K, "10k" to RaceDistance.TEN_K, "half" to RaceDistance.HALF, "marathon" to RaceDistance.MARATHON)[it]
                 ?: run {
                     error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.INVALID_VALUE)
@@ -96,7 +117,8 @@ internal object StandaloneOnboardingAdapter {
         if (!DateUtils.isValidTimeZone(timeZone)) error(OnboardingField.TIME_ZONE, OnboardingFieldError.INVALID_VALUE)
         val zone = timeZone.takeIf(DateUtils::isValidTimeZone)?.let(ZoneId::of)
         val today = zone?.let { now.atZone(it).toLocalDate() }
-        val targetDate = command.targetDate.trim().takeIf(String::isNotEmpty)
+        val targetDate = command.targetDate.trim()
+            .takeIf { goalKind == GoalKind.RACE && it.isNotEmpty() }
         if (targetDate != null && runCatching { DateUtils.parseIsoDate(targetDate) }.isFailure) {
             error(OnboardingField.TARGET_DATE, OnboardingFieldError.INVALID_DATE)
         }
@@ -120,7 +142,11 @@ internal object StandaloneOnboardingAdapter {
             strictWhole(command.calibrationDurationMinutes, OnboardingField.CALIBRATION_DURATION, ::error)
         } else null
         val longRunDay = if (needsEstablishedBaseline) strictWhole(command.preferredLongRunDay, OnboardingField.LONG_RUN_DAY, ::error) else null
-        val bounds = if (startMode == StartMode.FOUNDATION_ONLY) null else OnboardingValidation.targetDateBounds(today, startMode)
+        val bounds = if (goalKind == GoalKind.RACE) {
+            OnboardingValidation.targetDateBounds(today, startMode)
+        } else {
+            null
+        }
         val selection = OnboardingSelection(
             goalKind, startMode, raceDistance, targetDate, command.availability, timeZone, flags,
             weeklyKm, runs, longestKm, longRunDay,
@@ -138,11 +164,19 @@ internal object StandaloneOnboardingAdapter {
         if (errors.isNotEmpty()) return StandaloneOnboardingOutcome.Invalid(errors.mapValues { it.value.toSet() }, bounds)
         val metadata = StandaloneGoalMetadata(goalKind, startMode, raceDistance, targetDate, priority, timeZone, bounds)
         if (blocked) return StandaloneOnboardingOutcome.PendingGoal(metadata)
+        if (startMode == StartMode.ROUTINE) {
+            return StandaloneOnboardingOutcome.Routine(
+                metadata = metadata,
+                startDate = today.toString(),
+                selectedDays = command.availability.sorted(),
+            )
+        }
         val startDate = nextPlanStartDate(today)
         val intake = when (startMode) {
             StartMode.ESTABLISHED -> EstablishedTrainingIntake(priority, command.availability, flags, requireNotNull(raceDistance), requireNotNull(targetDate), kilometersToMeters(requireNotNull(weeklyKm)), requireNotNull(runs), kilometersToMeters(requireNotNull(longestKm)), requireNotNull(longRunDay), startDate)
             StartMode.FOUNDATION_TO_GOAL, StartMode.FOUNDATION_ONLY -> FoundationIntake(startMode, goalKind, raceDistance, command.availability, flags, startDate)
             StartMode.CALIBRATION -> CalibrationIntake(goalKind, raceDistance, command.availability, flags, requireNotNull(calibrationMinutes) * 60, startDate)
+            StartMode.ROUTINE -> error("Routine setup does not use the training planner")
         }
         return StandaloneOnboardingOutcome.Planned(metadata, intake, TrainingPlanner.generatePlan(intake, today))
     }
@@ -237,6 +271,7 @@ internal object StandaloneOnboardingPersistenceMapper {
         val metadata = when (outcome) {
             is StandaloneOnboardingOutcome.Planned -> outcome.metadata
             is StandaloneOnboardingOutcome.PendingGoal -> outcome.metadata
+            is StandaloneOnboardingOutcome.Routine -> outcome.metadata
             is StandaloneOnboardingOutcome.Invalid -> error("unreachable")
         }
         val goalId = stableId("goal", operationId)
@@ -271,6 +306,17 @@ internal object StandaloneOnboardingPersistenceMapper {
                     startMode = metadata.startMode.name.lowercase(),
                     raceDistanceMeters = metadata.raceDistance?.meters(),
                     priority = metadata.priority.storageValue(),
+                ),
+            )
+            is StandaloneOnboardingOutcome.Routine -> LocalPlanCandidate.Routine(
+                RoutinePlanPersistenceMapper.map(
+                    goalId = goalId,
+                    planId = planId,
+                    title = title(metadata),
+                    priority = metadata.priority.storageValue(),
+                    startEpochDay = LocalDate.parse(outcome.startDate).toEpochDay(),
+                    selectedDays = outcome.selectedDays,
+                    createdAtEpochMillis = occurredAtEpochMillis,
                 ),
             )
             is StandaloneOnboardingOutcome.Invalid -> error("unreachable")
@@ -323,9 +369,11 @@ internal object StandaloneOnboardingPersistenceMapper {
 
     private fun title(metadata: StandaloneGoalMetadata): String = when (metadata.goalKind) {
         GoalKind.FOUNDATION -> "Foundation"
+        GoalKind.ROUTINE -> "Weekly running routine"
         GoalKind.RACE -> "${requireNotNull(metadata.raceDistance).label()} ${when (metadata.startMode) {
             StartMode.FOUNDATION_TO_GOAL -> "foundation"
             StartMode.CALIBRATION -> "calibration"
+            StartMode.ROUTINE -> error("A race goal cannot use routine mode")
             else -> "plan"
         }}"
     }

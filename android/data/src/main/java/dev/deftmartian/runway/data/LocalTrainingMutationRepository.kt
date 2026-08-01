@@ -124,24 +124,29 @@ class LocalTrainingMutationRepository(
                 limit = MAX_RECENT_FEEDBACK,
             )
             val weekWorkouts = planDao.workoutsForWeek(workout.weekId, limit = MAX_WEEK_WORKOUTS)
-            val consequence = Consequences.calculate(
-                FeedbackInput(
-                    targetDistanceMeters = workout.currentDistanceMeters ?: 0,
-                    targetDurationSeconds = workout.currentDurationSeconds,
-                    weekTargetDistanceMeters = weekWorkouts.sumOfCurrentDistance(),
-                    completedDistanceMeters = command.completedDistanceMeters,
-                    completedDurationSeconds = command.completedDurationSeconds,
-                    status = command.status,
-                    feltHard = command.feltHard,
-                    pain = command.pain,
-                    choice = command.skipChoice,
-                    recentSkippedWorkouts = recent.count { it.completionState == SKIPPED_STATE },
-                    recentShortenedWorkouts = recent.count { it.completionState == SHORTENED_STATE },
-                ),
-            )
+            val routine = plan.phaseType == ROUTINE_PHASE
+            val consequence = if (routine) {
+                Consequences.recordRoutine(command.status, command.feltHard, command.pain)
+            } else {
+                Consequences.calculate(
+                    FeedbackInput(
+                        targetDistanceMeters = workout.currentDistanceMeters ?: 0,
+                        targetDurationSeconds = workout.currentDurationSeconds,
+                        weekTargetDistanceMeters = weekWorkouts.sumOfCurrentDistance(),
+                        completedDistanceMeters = command.completedDistanceMeters,
+                        completedDurationSeconds = command.completedDurationSeconds,
+                        status = command.status,
+                        feltHard = command.feltHard,
+                        pain = command.pain,
+                        choice = command.skipChoice,
+                        recentSkippedWorkouts = recent.count { it.completionState == SKIPPED_STATE },
+                        recentShortenedWorkouts = recent.count { it.completionState == SHORTENED_STATE },
+                    ),
+                )
+            }
             val completionState = when {
                 command.status == FeedbackStatus.SKIPPED -> SKIPPED_STATE
-                consequence.deviation == Deviation.SHORT -> SHORTENED_STATE
+                !routine && consequence.deviation == Deviation.SHORT -> SHORTENED_STATE
                 else -> DONE_STATE
             }
             val now = nowEpochMillis()
@@ -264,6 +269,7 @@ class LocalTrainingMutationRepository(
         const val SHORTENED_STATE = "shortened"
         const val SKIPPED_STATE = "skipped"
         const val REST_TYPE = "rest"
+        const val ROUTINE_PHASE = "routine"
         const val MANUAL_SOURCE = "manual"
         const val REVIEW_STATE = "review"
         const val RECENT_HISTORY_DAYS = 28L
@@ -347,6 +353,7 @@ internal fun feedbackMeasurementIssue(
     if (command.completedDurationSeconds != null && command.completedDurationSeconds <= 0) {
         return LocalTrainingMutationIssue.INVALID_MEASUREMENT
     }
+    if (workout.currentPrescriptionKind == "open") return null
     return if ((workout.currentDurationSeconds ?: 0) > 0) {
         LocalTrainingMutationIssue.COMPLETED_DURATION_REQUIRED.takeIf { command.completedDurationSeconds == null }
     } else {

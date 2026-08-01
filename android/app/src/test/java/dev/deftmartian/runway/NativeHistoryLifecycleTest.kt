@@ -73,6 +73,26 @@ class NativeHistoryLifecycleTest {
         assertFalse(state.canChooseGoal)
     }
 
+    @Test
+    fun `ongoing routine cannot expose completion or phase transitions`() {
+        val state = nativeHistoryLifecycleState(
+            activePlan = activePlan(targetDate = "2026-07-01").copy(phase = "routine"),
+            today = "2026-08-01",
+            phaseReview = phaseReview(
+                goalKind = "race",
+                options = listOf("confirm_race_baseline", "continue_calibration", "later_date"),
+                racePlan = racePlan(),
+            ),
+        )
+
+        assertTrue(state.isRoutine)
+        assertFalse(state.targetReached)
+        assertFalse(state.canCompletePlan)
+        assertFalse(state.canConfirmBaseline)
+        assertFalse(state.canContinuePhase)
+        assertFalse(state.canChooseGoal)
+    }
+
     private fun activePlan(
         targetDate: String,
         status: String = "active",

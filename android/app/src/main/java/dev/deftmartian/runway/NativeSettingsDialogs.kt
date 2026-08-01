@@ -219,28 +219,45 @@ internal fun HealthContextDialog(
     var recurringPain by rememberSaveable { mutableStateOf(current.recurringPain) }
     var clinicianRestriction by rememberSaveable { mutableStateOf(current.clinicianRestriction) }
     var notes by rememberSaveable { mutableStateOf(current.notes) }
+    val selection = NativeHealthContext(
+        recentInjury,
+        currentPain,
+        recurringPain,
+        clinicianRestriction,
+        notes,
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Health context") },
+        title = { Text("Running check-in") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Text(
-                        "This can make training suggestions more conservative. It is not medical advice or a diagnosis.",
+                        "This is a setup safeguard, not a daily readiness score. Use it only when pain, an injury, or a clinician's limit affects running now. A pain report from a recent run can turn it on; clear it when it no longer reflects your situation.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 item {
                     CheckRow("Recent injury affects current training", recentInjury) { recentInjury = it }
-                    CheckRow("Pain is present now", currentPain) { currentPain = it }
+                    CheckRow("Pain affects walking or running now", currentPain) { currentPain = it }
                     CheckRow("Pain tends to recur while running", recurringPain) { recurringPain = it }
-                    CheckRow("A clinician has limited current training", clinicianRestriction) { clinicianRestriction = it }
+                    CheckRow("A clinician has limited current running", clinicianRestriction) { clinicianRestriction = it }
+                }
+                runningCheckInEffect(selection)?.let { effect ->
+                    item {
+                        Text(effect, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 item {
                     TextEntryField(
-                        "Optional private context",
+                        "Private reminder (optional)",
                         notes,
                         { notes = it.take(240) },
+                    )
+                    Text(
+                        "For your reference only. The app does not interpret this note.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
@@ -259,7 +276,7 @@ internal fun HealthContextDialog(
                     )
                 },
                 enabled = !actionPending,
-            ) { Text("Save") }
+            ) { Text("Save check-in") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

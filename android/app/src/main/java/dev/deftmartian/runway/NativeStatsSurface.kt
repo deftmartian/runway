@@ -72,9 +72,9 @@ internal fun noActiveStatsSummary(
     }
     val status = when {
         recorded != null || acceptedHeartRate != null ->
-            "There is no active plan or recommendation. Recorded work remains available below."
+            "There is no active schedule or recommendation. Recorded work remains available below."
         else ->
-            "There is no active plan or recommendation. Add and review a run, or build a plan, to see comparisons here."
+            "There is no active schedule or recommendation. Add and review a run, or set up running, to see comparisons here."
     }
     return NativeNoActiveStatsSummary(status, recorded, acceptedHeartRate)
 }
@@ -130,9 +130,104 @@ internal fun NativeStatsTraces(
             title = "Weekly training time",
             points = duration,
             format = ::formatDuration,
+            plannedFormat = ::formatPlannedDurationEstimate,
         )
     }
     NativeAcceptedContext(weeklySummaries)
+}
+
+/** Routine charts contain observations only; there is no generated or current load target. */
+@Composable
+internal fun NativeRoutineStatsTraces(
+    weeklySummaries: List<NativeWeekSummary>,
+    todayIso: String?,
+    runsPerWeek: Int?,
+) {
+    NativeRoutineFrequencyLedger(weeklySummaries, todayIso, runsPerWeek)
+    val distance = weeklySummaries.map { summary ->
+        NativeWeeklyTrace(
+            label = "Week ${summary.weekNumber ?: 0}",
+            recommendation = null,
+            current = null,
+            acceptedActual = summary.completedDistanceMeters,
+            summary = summary,
+        )
+    }
+    val duration = weeklySummaries.map { summary ->
+        NativeWeeklyTrace(
+            label = "Week ${summary.weekNumber ?: 0}",
+            recommendation = null,
+            current = null,
+            acceptedActual = summary.completedDurationSeconds,
+            summary = summary,
+        )
+    }
+    if (distance.hasPositiveMeasurement()) {
+        NativeWeeklyTraceChart("Recorded weekly distance", distance, ::formatDistance, actualOnly = true)
+    }
+    if (duration.hasPositiveMeasurement()) {
+        NativeWeeklyTraceChart("Recorded weekly time", duration, ::formatDuration, actualOnly = true)
+    }
+    NativeAcceptedContext(weeklySummaries)
+}
+
+@Composable
+private fun NativeRoutineFrequencyLedger(
+    weeklySummaries: List<NativeWeekSummary>,
+    todayIso: String?,
+    runsPerWeek: Int?,
+) {
+    if (weeklySummaries.isEmpty()) return
+    var showAll by rememberSaveable { mutableStateOf(false) }
+    val recentCount = 8
+    val visible = if (showAll) weeklySummaries else weeklySummaries.takeLast(recentCount)
+    SettingCard("Runs each week") {
+        Text(
+            runsPerWeek?.takeIf { it > 0 }?.let {
+                "Your routine is $it ${if (it == 1) "run" else "runs"} each week. Distance and time remain optional observations."
+            } ?: "Scheduled runs are shown by week. Distance and time remain optional observations.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        visible.forEach { summary ->
+            SettingRow(
+                routineWeekLabel(summary, todayIso),
+                routineRunCountSummary(summary),
+            )
+        }
+        if (weeklySummaries.size > recentCount) {
+            TextButton(
+                onClick = { showAll = !showAll },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (showAll) "Show recent weeks" else "Show earlier weeks")
+            }
+        }
+    }
+}
+
+internal fun routineRunCountSummary(summary: NativeWeekSummary): String = buildList {
+    val extras = summary.extraRuns ?: 0
+    val plannedRecorded = summary.plannedRunsRecorded
+        ?: ((summary.completedRuns ?: 0) - extras).coerceAtLeast(0)
+    add("${summary.completedRuns ?: 0} recorded")
+    if (extras > 0) {
+        add("$plannedRecorded on scheduled days")
+        add("$extras on other days")
+    }
+    add("${summary.plannedRuns ?: 0} scheduled")
+    summary.missedRuns?.takeIf { it > 0 }?.let { add("$it not recorded") }
+    summary.skippedRuns?.takeIf { it > 0 }?.let { add("$it skipped") }
+}.joinToString(" · ")
+
+internal fun routineWeekLabel(summary: NativeWeekSummary, todayIso: String?): String {
+    val start = summary.startDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        ?: return "Week ${summary.weekNumber ?: 0}"
+    val today = todayIso?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    return if (today != null && today in start..start.plusDays(6)) {
+        "This week"
+    } else {
+        friendlyDate(start.toString())
+    }
 }
 
 private fun List<NativeWeeklyTrace>.hasPositiveMeasurement(): Boolean = any { point ->
@@ -144,6 +239,8 @@ private fun NativeWeeklyTraceChart(
     title: String,
     points: List<NativeWeeklyTrace>,
     format: (Double) -> String,
+    plannedFormat: (Double) -> String = format,
+    actualOnly: Boolean = false,
 ) {
     var showExactValues by rememberSaveable(title) { mutableStateOf(false) }
     val recommendationColor = MaterialTheme.colorScheme.primary
@@ -152,16 +249,26 @@ private fun NativeWeeklyTraceChart(
     val railColor = MaterialTheme.colorScheme.outlineVariant
     SettingCard(title) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            NativeTraceLegend("Generated · dashed", recommendationColor, NativeTraceStyle.Generated)
-            NativeTraceLegend("Current · solid", currentColor, NativeTraceStyle.Current)
-            NativeTraceLegend("Accepted actual · square", actualColor, NativeTraceStyle.Actual)
+            if (!actualOnly) {
+                NativeTraceLegend("Generated · dashed", recommendationColor, NativeTraceStyle.Generated)
+                NativeTraceLegend("Current · solid", currentColor, NativeTraceStyle.Current)
+            }
+            NativeTraceLegend(
+                if (actualOnly) "Recorded · square" else "Accepted actual · square",
+                actualColor,
+                NativeTraceStyle.Actual,
+            )
         }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(176.dp)
                 .semantics {
-                    contentDescription = nativeTraceChartDescription(title)
+                    contentDescription = if (actualOnly) {
+                        "$title chart. Recorded values only. Open Weekly values for each week."
+                    } else {
+                        nativeTraceChartDescription(title)
+                    }
                 },
         ) {
             val left = 14.dp.toPx()
@@ -174,28 +281,30 @@ private fun NativeWeeklyTraceChart(
             val step = if (points.size > 1) span / (points.size - 1) else 0f
             drawLine(railColor, Offset(left, bottom), Offset(right, bottom), 1.dp.toPx())
             drawLine(railColor, Offset(left, top), Offset(right, top), 1.dp.toPx())
-            drawNativeTraceLine(
-                points,
-                { it.recommendation },
-                recommendationColor,
-                NativeTraceStyle.Generated,
-                maximum,
-                left,
-                step,
-                top,
-                bottom,
-            )
-            drawNativeTraceLine(
-                points,
-                { it.current },
-                currentColor,
-                NativeTraceStyle.Current,
-                maximum,
-                left,
-                step,
-                top,
-                bottom,
-            )
+            if (!actualOnly) {
+                drawNativeTraceLine(
+                    points,
+                    { it.recommendation },
+                    recommendationColor,
+                    NativeTraceStyle.Generated,
+                    maximum,
+                    left,
+                    step,
+                    top,
+                    bottom,
+                )
+                drawNativeTraceLine(
+                    points,
+                    { it.current },
+                    currentColor,
+                    NativeTraceStyle.Current,
+                    maximum,
+                    left,
+                    step,
+                    top,
+                    bottom,
+                )
+            }
             drawNativeTraceLine(
                 points,
                 { it.acceptedActual },
@@ -218,20 +327,22 @@ private fun NativeWeeklyTraceChart(
                 },
             shape = MaterialTheme.shapes.small,
         ) {
-            Text(if (showExactValues) "Hide exact weekly values" else "Exact weekly values")
+            Text(if (showExactValues) "Hide weekly values" else "Weekly values")
         }
         if (showExactValues) {
             points.forEach { point ->
+                if (!actualOnly) {
+                    NativeTraceValueRow(
+                        "${point.label} · generated",
+                        point.recommendation?.let(plannedFormat).orDash(),
+                    )
+                    NativeTraceValueRow(
+                        "${point.label} · current",
+                        point.current?.let(plannedFormat).orDash(),
+                    )
+                }
                 NativeTraceValueRow(
-                    "${point.label} · generated",
-                    point.recommendation?.let(format).orDash(),
-                )
-                NativeTraceValueRow(
-                    "${point.label} · current",
-                    point.current?.let(format).orDash(),
-                )
-                NativeTraceValueRow(
-                    "${point.label} · accepted actual",
+                    "${point.label} · ${if (actualOnly) "recorded" else "accepted actual"}",
                     point.acceptedActual?.let(format).orDash(),
                 )
             }
@@ -240,7 +351,7 @@ private fun NativeWeeklyTraceChart(
 }
 
 internal fun nativeTraceChartDescription(title: String): String =
-    "$title chart. Generated recommendation, current plan, and accepted actual are shown. Open Exact weekly values for each week."
+    "$title chart. Generated recommendation, current plan, and accepted actual are shown. Open Weekly values for each week."
 
 internal fun usesStackedNativeTraceRow(availableWidthDp: Float, fontScale: Float): Boolean =
     availableWidthDp < 480f || fontScale > 1f

@@ -43,8 +43,9 @@ object OnboardingValidation {
             StartMode.CALIBRATION -> 10
             StartMode.FOUNDATION_TO_GOAL -> 17
             StartMode.FOUNDATION_ONLY -> 0
+            StartMode.ROUTINE -> 0
         }
-        require(weeks > 0) { "Foundation-only plans do not have a race target-date bound." }
+        require(weeks > 0) { "Only race plans have a target-date bound." }
         return TargetDateBounds(
             today.plusDays((weeks * 7).toLong()).toString(),
             today.plusDays(52L * 7 - 1).toString(),
@@ -58,7 +59,7 @@ object OnboardingValidation {
         if (selection.injuryFlags.currentPain || selection.injuryFlags.medicalRestriction) {
             add(OnboardingIssue.HEALTH_BLOCKS_SCHEDULING)
         }
-        if (selection.goalKind == GoalKind.RACE && mode == null) {
+        if (selection.goalKind in setOf(GoalKind.RACE, GoalKind.ROUTINE) && mode == null) {
             add(OnboardingIssue.MISSING_START_MODE)
         }
         if (hasInvalidGoalMode(selection.goalKind, mode)) add(OnboardingIssue.INVALID_GOAL_MODE)
@@ -69,6 +70,7 @@ object OnboardingValidation {
 
         val requiredDays = when (mode) {
             StartMode.FOUNDATION_TO_GOAL, StartMode.FOUNDATION_ONLY -> 3
+            StartMode.ROUTINE -> 1
             else -> 2
         }
         if (selection.availability.distinct().size < requiredDays) {
@@ -88,7 +90,9 @@ object OnboardingValidation {
 
     private fun hasInvalidGoalMode(goalKind: GoalKind, mode: StartMode?): Boolean =
         mode == StartMode.FOUNDATION_ONLY && goalKind != GoalKind.FOUNDATION ||
-            mode != null && mode != StartMode.FOUNDATION_ONLY && goalKind != GoalKind.RACE
+            mode == StartMode.ROUTINE && goalKind != GoalKind.ROUTINE ||
+            mode != null && mode !in setOf(StartMode.FOUNDATION_ONLY, StartMode.ROUTINE) &&
+                goalKind != GoalKind.RACE
 
     private fun validateRaceGoal(
         selection: OnboardingSelection,

@@ -69,7 +69,7 @@ internal enum class NativeDestination(
     History("History", "history", R.drawable.ic_nav_history),
     Settings("Settings", "settings", R.drawable.ic_nav_settings),
     HistoryDetail(
-        "Plan record",
+        "Training record",
         "history-detail",
         R.drawable.ic_nav_history,
         primaryNavigation = false,
@@ -1275,7 +1275,7 @@ internal class RunwayViewModel(
         OneOffGpxImportOutcome.Imported -> "GPX activity saved for review."
         OneOffGpxImportOutcome.Duplicate -> "That GPX activity is already in your local log."
         OneOffGpxImportOutcome.DeletedPreviously -> "That GPX activity was previously removed and was not restored."
-        OneOffGpxImportOutcome.ConfigurationRequired -> "Set up a local training plan before importing GPX activity."
+        OneOffGpxImportOutcome.ConfigurationRequired -> "Set up running before importing GPX activity."
         OneOffGpxImportOutcome.FutureActivity -> "Future-dated activity was not imported."
         OneOffGpxImportOutcome.Interrupted -> "The GPX import stopped while local data was changing. Choose the file again."
         OneOffGpxImportOutcome.TooLarge -> "That GPX file is too large to import on this phone."
@@ -1324,7 +1324,7 @@ internal class RunwayViewModel(
         }
         return listOfNotNull(
             workout.currentDistanceMeters?.let { formatDistance(it.toDouble()) },
-            workout.currentDurationSeconds?.let { formatDuration(it.toDouble()) },
+            workout.currentDurationSeconds?.let { formatPlannedDurationEstimate(it.toDouble()) },
             workout.currentPurpose?.takeIf(String::isNotBlank),
         ).joinToString(" · ").ifBlank { "Planned run" }
     }

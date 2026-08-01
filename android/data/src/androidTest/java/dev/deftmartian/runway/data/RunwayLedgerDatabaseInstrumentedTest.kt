@@ -46,6 +46,7 @@ class RunwayLedgerDatabaseInstrumentedTest {
                     "profile_availability_days",
                     "goals",
                     "plans",
+                    "routine_schedule_days",
                     "plan_summary_warnings",
                     "plan_weeks",
                     "plan_source_references",

@@ -40,6 +40,45 @@ class StandaloneOnboardingAdapterTest {
         assertTrue(result.plan is GeneratedFoundationPlan)
     }
 
+    @Test fun `weekly routine needs only selected days and starts today`() {
+        val result = StandaloneOnboardingAdapter.adapt(
+            command(
+                goalKind = "routine",
+                startMode = "routine",
+                raceDistance = "stale-race-value",
+                targetDate = "not-a-date",
+                availability = listOf(1, 3, 6),
+                currentWeeklyDistanceKm = "not-a-number",
+                currentRunsPerWeek = "none",
+                longestRecentRunKm = "none",
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Routine
+
+        assertEquals(StartMode.ROUTINE, result.metadata.startMode)
+        assertEquals(null, result.metadata.targetBounds)
+        assertEquals(null, result.metadata.targetDate)
+        assertEquals(null, result.metadata.raceDistance)
+        assertEquals("2026-01-01", result.startDate)
+        assertEquals(listOf(1, 3, 6), result.selectedDays)
+    }
+
+    @Test fun `current pain saves a weekly routine goal without workouts`() {
+        val result = StandaloneOnboardingAdapter.adapt(
+            command(
+                goalKind = "routine",
+                startMode = "routine",
+                raceDistance = "",
+                targetDate = "",
+                availability = listOf(2),
+                currentPain = true,
+            ),
+            utcNow,
+        )
+
+        assertTrue(result is StandaloneOnboardingOutcome.PendingGoal)
+    }
+
     @Test fun `calibration command creates timed baseline`() {
         val result = StandaloneOnboardingAdapter.adapt(command(startMode = "calibration", targetDate = "2026-03-15", availability = listOf(2, 6)), utcNow) as StandaloneOnboardingOutcome.Planned
         assertTrue(result.plan is GeneratedCalibrationPlan)
@@ -148,6 +187,33 @@ class StandaloneOnboardingAdapterTest {
         assertNull(request.profile.baselineDistanceMeters)
         assertFalse(request.profile.baselineConfirmed)
         assertTrue(request.confirmReplaceCurrent)
+    }
+
+    @Test fun `persistence boundary creates a target free weekly routine deterministically`() {
+        val operation = command(
+            goalKind = "routine",
+            startMode = "routine",
+            raceDistance = "",
+            targetDate = "",
+            availability = listOf(1, 3, 6),
+        ).copy(operationId = "routine-setup", occurredAtEpochMillis = 4_321)
+        val outcome = StandaloneOnboardingAdapter.adapt(operation, utcNow)
+
+        val first = StandaloneOnboardingPersistenceMapper.map(operation, outcome)
+        val second = StandaloneOnboardingPersistenceMapper.map(operation, outcome)
+        val graph = (first.candidate as LocalPlanCandidate.Routine).graph
+
+        assertEquals("routine", graph.goal.kind)
+        assertEquals("routine", graph.plan.phaseType)
+        assertNull(graph.goal.targetDateEpochDay)
+        assertNull(graph.plan.endEpochDay)
+        assertEquals(3, graph.days.size)
+        assertTrue(graph.workouts.all {
+            it.currentPrescriptionKind == "open" &&
+                it.currentDistanceMeters == null &&
+                it.currentDurationSeconds == null
+        })
+        assertEquals(first, second)
     }
 
     @Test fun `persistence profile keeps established baseline and operation ids differ`() {

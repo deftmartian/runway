@@ -177,7 +177,11 @@ sealed interface UndoLocalWorkoutChangeResult {
  */
 interface LocalWorkoutChangeStore {
     suspend fun <T> transaction(block: suspend LocalWorkoutChangeStore.() -> T): T
-    suspend fun loadLedger(planId: String, maximumWorkouts: Int): WorkoutChangeLedgerSnapshot
+    suspend fun loadLedger(
+        planId: String,
+        maximumWorkouts: Int,
+        todayEpochDay: Long,
+    ): WorkoutChangeLedgerSnapshot
     suspend fun adjustmentExists(adjustmentId: String): Boolean
     suspend fun persistChange(change: PersistedLocalWorkoutChange)
     suspend fun loadUndoChange(adjustmentId: String): StoredUndoChange?
@@ -215,7 +219,7 @@ class LocalWorkoutChangeRepository(
         hasInjuryRisk: Boolean,
     ): PreparedLocalWorkoutChange = store.transaction {
         LocalWorkoutChangePreparer(policy).prepare(
-            loadLedger(planId, policy.maximumWorkoutsPerPlan + 1),
+            loadLedger(planId, policy.maximumWorkoutsPerPlan + 1, today.toEpochDay()),
             request,
             today,
             hasInjuryRisk,
@@ -232,7 +236,7 @@ class LocalWorkoutChangeRepository(
             return@transaction ApplyLocalWorkoutChangeResult.AlreadyApplied(command.adjustmentId)
         }
         val prepared = LocalWorkoutChangePreparer(policy).prepare(
-            loadLedger(planId, policy.maximumWorkoutsPerPlan + 1),
+            loadLedger(planId, policy.maximumWorkoutsPerPlan + 1, today.toEpochDay()),
             command.request,
             today,
             hasInjuryRisk,
@@ -273,7 +277,11 @@ class LocalWorkoutChangeRepository(
         if (stored.alreadyReversed) return@transaction UndoLocalWorkoutChangeResult.AlreadyUndone(adjustmentId)
         require(stored.adjustment.state == "applied") { "Only an applied workout change can be undone." }
 
-        val ledger = loadLedger(stored.adjustment.planId, policy.maximumWorkoutsPerPlan + 1)
+        val ledger = loadLedger(
+            stored.adjustment.planId,
+            policy.maximumWorkoutsPerPlan + 1,
+            today.toEpochDay(),
+        )
         val byId = ledger.workouts.associateBy { it.entity.workoutId }
         val mutations = stored.effects.map { storedEffect ->
             val workoutId = requireNotNull(storedEffect.effect.workoutId) {
@@ -349,7 +357,7 @@ class LocalWorkoutChangePreparer(
         val states = ledger.workouts.map(LocalWorkoutChangeMapper::state)
 
         val target: EffectiveWorkoutState
-        val proposed: WorkoutProposal
+        var proposed: WorkoutProposal
         val recommended: WorkoutProposal?
         val operation: String
         when (request) {
@@ -394,6 +402,8 @@ class LocalWorkoutChangePreparer(
                 operation = "reset"
             }
         }
+
+        proposed = proposalInScheduledWeek(proposed, weeks)
 
         guardProposal(proposed, ledger.plan, weekById, today)
         val previewStates = if (target.id in existingById) states else states + target
@@ -458,6 +468,17 @@ class LocalWorkoutChangePreparer(
         }
         require(workout.entity.currentWorkoutType != "race") { "Race workouts cannot be changed here." }
         return workout
+    }
+
+    private fun proposalInScheduledWeek(
+        proposal: WorkoutProposal,
+        weeks: List<PlanWeekEntity>,
+    ): WorkoutProposal {
+        val epochDay = proposal.scheduledDate.toEpochDay()
+        val scheduledWeek = requireNotNull(
+            weeks.singleOrNull { epochDay in it.startEpochDay..(it.startEpochDay + 6) },
+        ) { "Workout date is outside the materialized plan weeks." }
+        return proposal.copy(weekId = scheduledWeek.weekId)
     }
 
     private fun guardProposal(
@@ -803,10 +824,10 @@ class LocalWorkoutChangePersistenceMapper(
             weekId = proposal.weekId,
             position = position,
             generatedPurpose = proposal.purpose,
-            generatedDistanceMeters = proposal.targetDistanceMeters,
+            generatedDistanceMeters = proposal.persistedDistanceMeters(),
             generatedDurationSeconds = proposal.targetDurationSeconds,
             currentPurpose = proposal.purpose,
-            currentDistanceMeters = proposal.targetDistanceMeters,
+            currentDistanceMeters = proposal.persistedDistanceMeters(),
             currentDurationSeconds = proposal.targetDurationSeconds,
             tombstonedAtEpochMillis = null,
             updatedAtEpochMillis = updatedAtEpochMillis,
@@ -829,7 +850,7 @@ class LocalWorkoutChangePersistenceMapper(
         val entity = base.copy(
             weekId = proposal.weekId,
             currentPurpose = proposal.purpose,
-            currentDistanceMeters = proposal.targetDistanceMeters,
+            currentDistanceMeters = proposal.persistedDistanceMeters(),
             currentDurationSeconds = proposal.targetDurationSeconds,
             tombstonedAtEpochMillis = if (proposal.isRemoved) updatedAtEpochMillis else null,
             updatedAtEpochMillis = updatedAtEpochMillis,
@@ -964,8 +985,8 @@ class LocalWorkoutChangePersistenceMapper(
         newWorkoutType = change.after.type.name.lowercase(),
         previousStatus = if (change.before.isRemoved) WORKOUT_STATE_TOMBSTONED else "planned",
         newStatus = if (change.after.isRemoved) WORKOUT_STATE_TOMBSTONED else "planned",
-        previousDistanceMeters = change.before.targetDistanceMeters,
-        newDistanceMeters = change.after.targetDistanceMeters,
+        previousDistanceMeters = change.before.persistedDistanceMeters(),
+        newDistanceMeters = change.after.persistedDistanceMeters(),
         previousDurationSeconds = change.before.targetDurationSeconds,
         newDurationSeconds = change.after.targetDurationSeconds,
         previousIntensity = change.before.intensity,
@@ -1026,6 +1047,11 @@ class LocalWorkoutChangePersistenceMapper(
         }
     }
 }
+
+private fun WorkoutProposal.persistedDistanceMeters(): Int? =
+    targetDistanceMeters.takeUnless {
+        prescriptionKind in setOf(PrescriptionKind.OPEN, PrescriptionKind.REST)
+    }
 
 private fun previewToken(planId: String, operation: String, preview: EditPreview): String =
     sha256(

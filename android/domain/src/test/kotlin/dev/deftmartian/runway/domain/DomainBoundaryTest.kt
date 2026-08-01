@@ -30,6 +30,11 @@ class DomainBoundaryTest {
         assertEquals(2.0, baseline.runsPerWeek, 0.0)
         assertTrue(PhaseTransitions.canUseDistancePlannerBaseline(baseline))
         assertEquals(PhaseTransitionOption.CONFIRM_RACE_BASELINE, PhaseTransitions.options(PlanPhase.CALIBRATION, GoalKind.RACE, baseline, true).recommended)
+        try {
+            PhaseTransitions.options(PlanPhase.ROUTINE, GoalKind.ROUTINE, baseline, false)
+            throw AssertionError("A routine must not expose a beginner phase transition.")
+        } catch (_: IllegalArgumentException) {
+        }
     }
 
     @Test fun `onboarding bounds and validation use start-mode-specific dates`() {
@@ -39,5 +44,41 @@ class DomainBoundaryTest {
         val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-03-11", listOf(2, 6), "America/Halifax", InjuryFlags(), calibrationDurationMinutes = 20)
         assertTrue(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection, today))
         assertFalse(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection.copy(targetDate = "2026-03-12"), today))
+    }
+
+    @Test fun `weekly routine needs only one to seven unique weekdays`() {
+        val today = LocalDate.parse("2026-01-01")
+        val routine = OnboardingSelection(
+            goalKind = GoalKind.ROUTINE,
+            startMode = StartMode.ROUTINE,
+            raceDistance = null,
+            targetDate = null,
+            availability = listOf(1),
+            timeZone = "America/Halifax",
+            injuryFlags = InjuryFlags(),
+        )
+
+        assertTrue(OnboardingValidation.validate(routine, today).isEmpty())
+        assertTrue(OnboardingValidation.validate(routine.copy(availability = (0..6).toList()), today).isEmpty())
+        assertEquals(
+            setOf(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS),
+            OnboardingValidation.validate(routine.copy(availability = emptyList()), today),
+        )
+        assertEquals(
+            setOf(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS),
+            OnboardingValidation.validate(routine.copy(availability = listOf(1, 1)), today),
+        )
+        assertEquals(
+            setOf(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS),
+            OnboardingValidation.validate(routine.copy(availability = listOf(7)), today),
+        )
+        assertEquals(
+            setOf(OnboardingIssue.HEALTH_BLOCKS_SCHEDULING),
+            OnboardingValidation.validate(routine.copy(injuryFlags = InjuryFlags(currentPain = true)), today),
+        )
+        assertEquals(
+            setOf(OnboardingIssue.MISSING_START_MODE, OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS),
+            OnboardingValidation.validate(routine.copy(startMode = null), today),
+        )
     }
 }

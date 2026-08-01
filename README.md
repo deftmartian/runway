@@ -6,7 +6,7 @@
 
 **A private Android running decision ledger for self-coached runners.**
 
-runway keeps the original recommendation, deliberate edits, and completed work separate. A missed day, short run, extra run, or hard effort is recorded as it happened; future training changes only after the runner reviews and applies a choice.
+runway keeps conservative recommendations, deliberate edits, and completed work separate. A missed day, short run, extra run, or hard effort is recorded as it happened; future training changes only after the runner reviews and applies a choice. A weekly routine is different: it tracks chosen run days without prescribing load or changing itself.
 
 It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer. The installed ledger and import processing are local, with no account, server, subscription, or cloud sync.
 
@@ -16,12 +16,12 @@ It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer. The ins
 
 ## Plan, record, decide
 
-1. Build a conservative plan from a repeatable baseline, a foundation phase, or timed calibration.
+1. Build a conservative race plan from a repeatable baseline, a foundation phase, or timed calibration — or keep an open weekly running routine on chosen days.
 2. Move, edit, add, remove, reset, or undo future runs when the schedule changes.
 3. Record a run manually, share a GPX file, scan an approved folder, or import an optional Health Connect activity for review.
-4. Compare the plan with what happened, then keep, reduce, rest, repeat, or rebalance through an explicit choice.
+4. Compare a prescription with what happened, then keep, reduce, rest, repeat, or rebalance through an explicit choice. Routine runs simply count as recorded, skipped, or extra; they do not alter future slots.
 
-Calendar, Inbox, Stats, History, and Settings keep the current decision, unresolved review work, training context, past plans, and local controls in predictable places. Rest and recovery remain visible parts of the plan. runway provides decision support, not medical advice.
+Calendar, Inbox, Stats, History, and Settings keep today's status, the next run, unresolved review work, past plans, and local controls in predictable places. Rest and recovery remain visible parts of the plan. runway provides decision support, not medical advice.
 
 ## Private by design
 

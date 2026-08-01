@@ -119,6 +119,29 @@ data class PlanEntity(
     val summarySessionDurationSeconds: Int? = null,
 )
 
+/**
+ * Immutable cadence selected for an ongoing routine.  Profile availability is intentionally not
+ * reused here: changing a preference must not silently rewrite an already-started routine.
+ */
+@Entity(
+    tableName = "routine_schedule_days",
+    primaryKeys = ["planId", "dayOfWeek"],
+    foreignKeys = [
+        ForeignKey(
+            entity = PlanEntity::class,
+            parentColumns = ["planId"],
+            childColumns = ["planId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["planId"])],
+)
+data class RoutineScheduleDayEntity(
+    val planId: String,
+    /** Existing availability convention: Sunday is 0, Monday is 1 through Saturday 6. */
+    val dayOfWeek: Int,
+)
+
 @Entity(
     tableName = "plan_summary_warnings",
     foreignKeys = [

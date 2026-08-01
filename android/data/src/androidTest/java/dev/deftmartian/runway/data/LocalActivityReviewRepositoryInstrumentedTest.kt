@@ -100,6 +100,49 @@ class LocalActivityReviewRepositoryInstrumentedTest {
     }
 
     @Test
+    fun linkingToAnOpenRoutineRecordsActualsWithoutAPlanChange() = runBlocking {
+        database.activityLedgerDao().saveActivity(
+            activity("routine-linked", reviewState = "review", occurredAtEpochMillis = epochMillis(today)),
+        )
+        seedLinkableWorkout("routine-workout", today, phaseType = "routine", prescriptionKind = "open")
+
+        val result = LocalActivityReviewRepository(database, nowEpochMillis = { now }).link(
+            activityId = "routine-linked",
+            workoutId = "routine-workout",
+            feltHard = true,
+            pain = true,
+        )
+
+        check(result is LocalActivityReviewResult.Linked)
+        assertFalse(result.consequence.planChangeAvailable)
+        assertEquals("done", database.goalPlanDao().workout("routine-workout")?.currentStatus)
+        val feedback = requireNotNull(database.activityLedgerDao().workoutFeedback("routine-workout"))
+        assertEquals(2_000, feedback.completedDistanceMeters)
+        assertEquals(900, feedback.completedDurationSeconds)
+        assertFalse(requireNotNull(database.activityLedgerDao().workoutFeedbackConsequence(feedback.feedbackId)).planChangeAvailable)
+        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+    }
+
+    @Test
+    fun routineExtraStaysFactualAndDoesNotReshapeFutureOpenWorkouts() = runBlocking {
+        seedLinkableWorkout("routine-future", today.plusDays(1), phaseType = "routine", prescriptionKind = "open")
+        database.activityLedgerDao().saveActivity(
+            activity("routine-extra", reviewState = "review", occurredAtEpochMillis = epochMillis(today)),
+        )
+        val before = requireNotNull(database.goalPlanDao().workout("routine-future"))
+
+        val result = LocalActivityReviewRepository(database, nowEpochMillis = { now })
+            .confirmAsExtra("routine-extra", feltHard = true, pain = true)
+
+        check(result is LocalActivityReviewResult.AcceptedExtra)
+        assertFalse(result.consequence.planChangeAvailable)
+        val consequence = requireNotNull(database.activityLedgerDao().activityConsequence("routine-extra"))
+        assertFalse(consequence.planChangeAvailable)
+        assertEquals(before, database.goalPlanDao().workout("routine-future"))
+        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+    }
+
+    @Test
     fun extraAcceptancePersistsReviewFeedbackAndCanReturnToReviewBeforeAPlanChange() = runBlocking {
         database.activityLedgerDao().saveActivity(
             activity("extra-now", reviewState = "review", occurredAtEpochMillis = epochMillis(today)),
@@ -278,7 +321,12 @@ class LocalActivityReviewRepositoryInstrumentedTest {
 
     private fun epochMillis(date: LocalDate): Long = date.atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
 
-    private suspend fun seedLinkableWorkout(workoutId: String, date: LocalDate) {
+    private suspend fun seedLinkableWorkout(
+        workoutId: String,
+        date: LocalDate,
+        phaseType: String = "distance",
+        prescriptionKind: String = "distance",
+    ) {
         val goal = GoalEntity(
             goalId = "goal-$workoutId",
             title = "5K",
@@ -286,15 +334,15 @@ class LocalActivityReviewRepositoryInstrumentedTest {
             state = "active",
             createdAtEpochMillis = now,
             updatedAtEpochMillis = now,
-            kind = "race",
-            startMode = "established",
+            kind = phaseType,
+            startMode = phaseType,
             raceDistanceMeters = 5_000,
             priority = "finish_healthy",
         )
         val plan = PlanEntity(
             planId = "plan-$workoutId",
             goalId = goal.goalId,
-            phaseType = "distance",
+            phaseType = phaseType,
             state = "active",
             startEpochDay = date.minusDays(1).toEpochDay(),
             endEpochDay = today.plusWeeks(8).toEpochDay(),
@@ -325,8 +373,8 @@ class LocalActivityReviewRepositoryInstrumentedTest {
             currentScheduledEpochDay = date.toEpochDay(),
             generatedWorkoutType = "easy",
             currentWorkoutType = "easy",
-            generatedPrescriptionKind = "distance",
-            currentPrescriptionKind = "distance",
+            generatedPrescriptionKind = prescriptionKind,
+            currentPrescriptionKind = prescriptionKind,
         )
         database.goalPlanDao().saveGoal(goal)
         database.goalPlanDao().createPlanGraph(plan, listOf(week), listOf(workout))

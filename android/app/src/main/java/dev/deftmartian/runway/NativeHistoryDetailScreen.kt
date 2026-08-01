@@ -19,17 +19,22 @@ internal fun HistoryDetailScreen(
     loading: Boolean,
 ) {
     val detail = payload?.detail
+    val routine = detail?.plan?.phase == "routine"
     NativeList(loading) {
         item {
             ScreenIntro(
                 detail?.goal?.title.orDash(),
-                "Plan phase, changes, recorded work, and their consequences.",
+                if (routine) {
+                    "Weekly schedule, changes, and recorded runs."
+                } else {
+                    "Plan phase, changes, recorded work, and their consequences."
+                },
             )
         }
         when {
             payload == null -> item { EmptyCard("Loading plan record…") }
             payload.onboardingRequired == true || detail == null -> item {
-                EmptyCard("This plan record is no longer available.")
+                EmptyCard("This training record is no longer available.")
             }
             else -> {
                 item { PlanRecordSummary(detail) }
@@ -48,6 +53,7 @@ internal fun HistoryDetailScreen(
                         week = week,
                         cutoffDate = detail.cutoffDate,
                         planClosed = detail.plan?.status != "active",
+                        routine = routine,
                     )
                 }
             }
@@ -58,29 +64,47 @@ internal fun HistoryDetailScreen(
 @Composable
 private fun PlanRecordSummary(detail: NativeHistoryDetail) {
     val plan = detail.plan
-    SettingCard("Plan summary") {
-        SettingRow("Phase", plan?.phase.orDash())
-        SettingRow(
-            "Dates",
-            listOfNotNull(plan?.startDate, plan?.targetDate)
-                .map(::ledgerDate)
-                .joinToString(" → ")
-                .orDash(),
-        )
-        SettingRow("State", lifecycleLabel(plan?.status, plan?.lifecycleReason))
-        SettingRow("Goal", goalLabel(detail.goal?.distance))
-        plan?.risk?.takeIf(String::isNotBlank)?.let {
-            SettingRow("Ramp assessment", nativeRampAssessment(it).label)
+    val routine = plan?.phase == "routine"
+    SettingCard(if (routine) "Routine summary" else "Plan summary") {
+        if (routine) {
+            SettingRow("Type", "Weekly running routine")
+            SettingRow("Started", plan.startDate?.let(::ledgerDate).orDash())
+            SettingRow(
+                "Schedule",
+                plan.sessionsPerWeek?.let { "$it ${if (it == 1) "run" else "runs"} per week" }.orDash(),
+            )
+            SettingRow("State", if (plan.status == "active") "Ongoing" else "Ended")
+        } else {
+            SettingRow("Phase", plan?.phase.orDash())
+            SettingRow(
+                "Dates",
+                listOfNotNull(plan?.startDate, plan?.targetDate)
+                    .map(::ledgerDate)
+                    .joinToString(" → ")
+                    .orDash(),
+            )
+            SettingRow("State", lifecycleLabel(plan?.status, plan?.lifecycleReason))
+            SettingRow("Goal", goalLabel(detail.goal?.distance))
+            plan?.risk?.takeIf(String::isNotBlank)?.let {
+                SettingRow("Ramp assessment", nativeRampAssessment(it).label)
+            }
         }
     }
 }
 
 @Composable
 private fun PhaseStartedRecord(detail: NativeHistoryDetail) {
+    val routine = detail.plan?.phase == "routine"
     LedgerSurface {
-        LedgerState("Phase started", LedgerEmphasis.Planned)
+        LedgerState(if (routine) "Routine started" else "Phase started", LedgerEmphasis.Planned)
         Text(
-            "${detail.plan?.phase.orDash()} phase · ${detail.plan?.weeks ?: 0} weeks",
+            if (routine) {
+                detail.plan.sessionsPerWeek
+                    ?.let { "$it ${if (it == 1) "run" else "runs"} per week" }
+                    .orDash()
+            } else {
+                "${detail.plan?.phase.orDash()} phase · ${detail.plan?.weeks ?: 0} weeks"
+            },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
@@ -137,8 +161,12 @@ private fun HistoryWeekRecord(
     week: NativeHistoryWeek,
     cutoffDate: String?,
     planClosed: Boolean,
+    routine: Boolean,
 ) {
     SettingCard("Week ${week.weekNumber ?: 0}") {
+        val scheduledRuns = week.workouts.count {
+            it.current.type != "rest" && it.isRemoved != true
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(ledgerDate(week.startDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
             val flags = listOfNotNull(
@@ -147,14 +175,21 @@ private fun HistoryWeekRecord(
             )
             if (flags.isNotEmpty()) LedgerState(flags.joinToString(" · "), LedgerEmphasis.Neutral)
         }
-        MeasurementReadout(
-            "Training",
-            weekMeasurement(week.targetDistanceMeters, week.targetDurationSeconds),
-            LedgerEmphasis.Planned,
-        )
+        if (routine) {
+            SettingRow(
+                "Scheduled",
+                "$scheduledRuns ${if (scheduledRuns == 1) "run" else "runs"}",
+            )
+        } else {
+            MeasurementReadout(
+                "Training",
+                plannedWeekMeasurement(week.targetDistanceMeters, week.targetDurationSeconds),
+                LedgerEmphasis.Planned,
+            )
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             week.workouts.forEach { workout ->
-                HistoryWorkoutRecord(workout, cutoffDate, planClosed)
+                HistoryWorkoutRecord(workout, cutoffDate, planClosed, routine)
             }
             week.extraActivities.forEach { activity -> HistoryExtraActivityRecord(activity) }
             if (!week.extraActivityContextIsComplete) {
@@ -193,13 +228,15 @@ private fun HistoryWorkoutRecord(
     workout: NativeHistoryWorkout,
     cutoffDate: String?,
     planClosed: Boolean,
+    routine: Boolean,
 ) {
     val result = workout.result
-    val state = workoutStateLabel(workout, cutoffDate, planClosed)
+    val state = workoutStateLabel(workout, cutoffDate, planClosed, routine)
     val displayPrescription = workout.current
     val emphasis = when {
         result?.pain == true -> LedgerEmphasis.Danger
-        result?.feltHard == true || state == "Short" || state == "Missed" || state == "Skipped" -> LedgerEmphasis.Review
+        result?.feltHard == true -> LedgerEmphasis.Review
+        !routine && state in setOf("Short", "Missed", "Skipped") -> LedgerEmphasis.Review
         result != null -> LedgerEmphasis.Actual
         state == "Not reached" -> LedgerEmphasis.Neutral
         else -> LedgerEmphasis.Planned
@@ -280,10 +317,13 @@ private fun HistoryPrescriptionRecord(
     }
     MeasurementReadout(
         if (prescription.type == "rest") "Schedule" else "Target",
-        if (prescription.type == "rest") {
-            "Recovery"
-        } else {
-            weekMeasurement(prescription.targetDistanceMeters, prescription.targetDurationSeconds)
+        when {
+            prescription.type == "rest" -> "Recovery"
+            prescription.prescriptionKind == "open" -> "Open run"
+            else -> plannedWeekMeasurement(
+                prescription.targetDistanceMeters,
+                prescription.targetDurationSeconds,
+            )
         },
         LedgerEmphasis.Planned,
     )
@@ -325,13 +365,15 @@ private fun changeLabel(trigger: String?): String = when (trigger) {
 private fun changeStateLabel(state: NativeHistoryWorkoutState?): String = when {
     state?.isRemoved == true -> "Removed from current plan"
     state?.prescriptionKind == "rest" || state?.type == "rest" -> "${ledgerDate(state.scheduledDate)} · Rest"
-    state?.prescriptionKind == "timed" -> "${ledgerDate(state.scheduledDate)} · ${state.targetDurationSeconds?.let(::formatDuration).orDash()}"
+    state?.prescriptionKind == "open" -> "${ledgerDate(state.scheduledDate)} · Open run"
+    state?.prescriptionKind == "timed" -> "${ledgerDate(state.scheduledDate)} · ${state.targetDurationSeconds?.let(::formatPlannedDurationEstimate).orDash()}"
     else -> "${ledgerDate(state?.scheduledDate)} · ${state?.targetDistanceMeters?.let(::formatDistance).orDash()}"
 }
-private fun workoutStateLabel(
+internal fun workoutStateLabel(
     workout: NativeHistoryWorkout,
     cutoffDate: String?,
     planClosed: Boolean,
+    routine: Boolean = false,
 ): String = when {
     workout.isRemoved == true -> "Removed"
     workout.current.type == "rest" -> "Rest"
@@ -341,7 +383,7 @@ private fun workoutStateLabel(
     workout.status == "planned" &&
         cutoffDate != null &&
         workout.current.scheduledDate != null &&
-        workout.current.scheduledDate < cutoffDate -> "Missed"
+        workout.current.scheduledDate < cutoffDate -> if (routine) "Not recorded" else "Missed"
     planClosed &&
         workout.status == "planned" &&
         cutoffDate != null &&
@@ -358,6 +400,11 @@ private fun workoutTypeLabel(type: String?): String = when (type) {
 private fun weekMeasurement(distance: Double?, duration: Double?): String = when {
     distance != null && distance > 0 -> formatDistance(distance)
     duration != null && duration > 0 -> formatDuration(duration)
+    else -> "—"
+}
+private fun plannedWeekMeasurement(distance: Double?, duration: Double?): String = when {
+    distance != null && distance > 0 -> formatDistance(distance)
+    duration != null && duration > 0 -> formatPlannedDurationEstimate(duration)
     else -> "—"
 }
 private fun formatPercent(value: Double): String = "${(value * 10).toInt() / 10.0}%"

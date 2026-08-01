@@ -1,9 +1,9 @@
 package dev.deftmartian.runway.domain
 
 enum class RaceDistance { FIVE_K, TEN_K, HALF, MARATHON }
-enum class GoalKind { RACE, FOUNDATION }
-enum class PlanPhase { DISTANCE, FOUNDATION, CALIBRATION }
-enum class StartMode { ESTABLISHED, FOUNDATION_TO_GOAL, FOUNDATION_ONLY, CALIBRATION }
+enum class GoalKind { RACE, FOUNDATION, ROUTINE }
+enum class PlanPhase { DISTANCE, FOUNDATION, CALIBRATION, ROUTINE }
+enum class StartMode { ESTABLISHED, FOUNDATION_TO_GOAL, FOUNDATION_ONLY, CALIBRATION, ROUTINE }
 enum class GoalPriority { FINISH_HEALTHY, CONSISTENCY }
 enum class RiskRating { CONSERVATIVE, MODERATE, AGGRESSIVE, UNSAFE }
 enum class WorkoutType { EASY, LONG, RECOVERY, REST, RACE }
@@ -35,6 +35,8 @@ sealed interface WorkoutPrescription {
         val cooldownSeconds: Int,
         val blocks: List<RunWalkBlock>
     ) : WorkoutPrescription
+    /** A scheduled run with no prescribed amount. Actual distance and duration remain optional observations. */
+    data object Open : WorkoutPrescription
     data object Rest : WorkoutPrescription
 }
 

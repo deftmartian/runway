@@ -54,6 +54,13 @@ class NativeSetupValidationTest {
             "Choose an available long-run day.",
             scheduleValidation("established", listOf(1, 3, 6), "3", "2", "America/Halifax", false),
         )
+        assertNull(
+            scheduleValidation("routine", listOf(6), "", "", "America/Halifax", false),
+        )
+        assertEquals(
+            "Choose at least 1 available day.",
+            scheduleValidation("routine", emptyList(), "", "", "America/Halifax", false),
+        )
     }
 
     @Test
@@ -65,18 +72,6 @@ class NativeSetupValidationTest {
         assertEquals(
             true,
             requiresConcentratedScheduleAcceptance("established", "2", "marathon", false),
-        )
-    }
-
-    @Test
-    fun `collapsed health context states what is actually saved`() {
-        assertEquals(
-            "Nothing noted",
-            healthContextSummary(false, false, false, false),
-        )
-        assertEquals(
-            "Recent injury, Pain now, Training limited",
-            healthContextSummary(true, true, false, true),
         )
     }
 

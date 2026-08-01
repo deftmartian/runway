@@ -3,12 +3,32 @@ package dev.deftmartian.runway.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDate
 
 class LocalSurfaceMappersTest {
+    @Test
+    fun `bounded stats activity context requires exact coverage for every displayed week`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            LocalSurfaceMappers.stats(
+                LocalStatsLedgerSlice(
+                    plans = listOf(planSlice()),
+                    activities = emptyList(),
+                    profileExists = true,
+                    activitiesContainCompleteWeekContext = false,
+                ),
+            )
+        }
+
+        assertEquals(
+            "Bounded activity context requires one exact actual aggregate for every displayed plan week.",
+            error.message,
+        )
+    }
+
     @Test
     fun `calendar preserves generated current actual and rest while excluding review evidence`() {
         val day = LocalDate.parse("2026-07-30").toEpochDay()
@@ -444,11 +464,13 @@ class LocalSurfaceMappersTest {
         val week = mapped.weeks.single()
         assertEquals(4_000, week.actual.distanceMeters)
         assertEquals(1, week.completedRuns)
+        assertEquals(0, week.plannedRunsRecorded)
+        assertEquals(1, week.extraRuns)
         assertEquals(1, week.painFlags)
         assertEquals(375.0, week.weightedPaceSecondsPerKilometre!!, 0.001)
         assertEquals("unsafe", mapped.currentSignal?.risk)
         assertEquals("activity", mapped.currentSignal?.source)
-        assertEquals("Pain is present now", mapped.currentSignal?.healthNotice?.heading)
+        assertEquals("Pain affects running now", mapped.currentSignal?.healthNotice?.heading)
     }
 
     @Test
@@ -535,6 +557,9 @@ class LocalSurfaceMappersTest {
         assertEquals(70L, historyPlan.adjustments.single().reversedAtEpochMillis)
         assertEquals(2_000, historyPlan.weeks.single().actual.distanceMeters)
         assertEquals("extra-in-week", historyPlan.weeks.single().extraActivities.single().activityId)
+        assertEquals(0, historyPlan.plannedRunsRecorded)
+        assertEquals(1, historyPlan.extraRuns)
+        assertEquals(1, historyPlan.completedRuns)
         assertTrue(mapped.unlinkedActivities.isEmpty())
     }
 

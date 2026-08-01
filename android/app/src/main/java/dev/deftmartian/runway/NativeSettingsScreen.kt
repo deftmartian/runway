@@ -37,11 +37,17 @@ internal data class NativeSettingsState(
     val heartRatePrivacy: NativeHeartRatePrivacy = NativeHeartRatePrivacy.Discard,
     val heartRate: NativeHeartRateProfile = NativeHeartRateProfile(),
     val healthContext: NativeHealthContext = NativeHealthContext(),
+    val activeRoutine: NativeRoutineSettings? = null,
     val folderImport: NativeImportConnection = NativeImportConnection.NotConnected,
     val healthConnectImport: NativeImportConnection = NativeImportConnection.NotConnected,
     val appVersion: String = BuildConfig.VERSION_NAME,
     val sourceCommit: String = BuildConfig.SOURCE_COMMIT,
     val retentionRepair: RetentionRepairNotice? = null,
+)
+
+internal data class NativeRoutineSettings(
+    val startedOn: String?,
+    val runsPerWeek: Int?,
 )
 
 internal enum class NativeRoutePrivacy(val summary: String) {
@@ -144,13 +150,24 @@ internal fun SettingsScreen(
         }
         item {
             SettingsRail("Training") {
+                state.activeRoutine?.let { routine ->
+                    SettingsValueRow(
+                        "Active routine",
+                        listOfNotNull(
+                            routine.runsPerWeek?.let {
+                                "$it ${if (it == 1) "run" else "runs"} each week"
+                            },
+                            routine.startedOn?.let { "ongoing since ${ledgerDate(it)}" },
+                        ).joinToString(" · ").ifBlank { "Weekly running routine · ongoing" },
+                    )
+                }
                 SettingsActionRow("Time zone", state.timeZone.ifBlank { "Not set" }, "Change", !actionPending) {
                     editingTimeZone = true
                 }
                 SettingsActionRow("Heart rate", heartRateSummary(state.heartRate), "Edit", !actionPending) {
                     editingHeartRate = true
                 }
-                SettingsActionRow("Health context", healthContextSummary(state.healthContext), "Edit", !actionPending) {
+                SettingsActionRow("Running check-in", runningCheckInSummary(state.healthContext), "Review", !actionPending) {
                     editingHealthContext = true
                 }
             }
@@ -482,14 +499,25 @@ internal fun usesStackedSettingsActionRow(availableWidthDp: Float, fontScale: Fl
     }
 }
 
-internal fun healthContextSummary(context: NativeHealthContext): String = when {
-    context.currentPain -> "Current pain reported"
-    context.clinicianRestriction -> "Clinician restriction saved"
-    context.recentInjury && context.recurringPain -> "Recent and recurring issue history saved"
-    context.recentInjury -> "Recent injury history saved"
-    context.recurringPain -> "Recurring issue history saved"
-    context.notes.isNotBlank() -> "Private note saved"
-    else -> "Nothing saved"
+internal fun runningCheckInSummary(context: NativeHealthContext): String = when {
+    context.currentPain && context.clinicianRestriction -> "Pain and clinician limit · new schedules paused"
+    context.currentPain -> "Pain now · new schedules paused"
+    context.clinicianRestriction -> "Clinician limit · new schedules paused"
+    context.recentInjury && context.recurringPain -> "Recent injury and recurring pain · more cautious ramp checks"
+    context.recentInjury -> "Recent injury · more cautious ramp checks"
+    context.recurringPain -> "Recurring pain · more cautious ramp checks"
+    context.notes.isNotBlank() -> "Private reminder only"
+    else -> "No limits reported"
+}
+
+internal fun runningCheckInEffect(context: NativeHealthContext): String? = when {
+    context.currentPain || context.clinicianRestriction ->
+        "New setup saves the goal but does not create a schedule. Existing workouts stay recorded."
+    context.recentInjury || context.recurringPain ->
+        "Distance prescriptions and edits to targeted runs use more cautious ramp checks. Foundation sessions and open routine runs stay unchanged."
+    context.notes.isNotBlank() ->
+        "The private reminder is for your reference only. It does not change workouts or scheduling."
+    else -> null
 }
 
 internal fun heartRateSummary(profile: NativeHeartRateProfile): String = when (profile.source) {

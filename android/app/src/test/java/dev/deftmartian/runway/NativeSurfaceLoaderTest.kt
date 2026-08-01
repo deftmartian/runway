@@ -20,6 +20,18 @@ import java.time.YearMonth
 
 class NativeSurfaceLoaderTest {
     @Test
+    fun `routine horizon extends only for surfaces that depend on current scheduled work`() = runBlocking {
+        val reads = FakeSurfaceReads()
+
+        loader(reads).load(request(NativeDestination.Settings))
+        assertEquals(0, reads.routineHorizonReads)
+
+        loader(reads).load(request(NativeDestination.Calendar))
+        assertEquals(1, reads.routineHorizonReads)
+        assertEquals(YearMonth.of(2026, 7).atEndOfMonth().toEpochDay(), reads.lastRoutineThroughEpochDay)
+    }
+
+    @Test
     fun `new profile without an active plan redirects to populated setup`() = runBlocking {
         val reads = FakeSurfaceReads(
             calendar = emptyCalendar(activePlanId = null, profileExists = false),
@@ -136,7 +148,14 @@ class NativeSurfaceLoaderTest {
         val history: LocalHistoryReadModel = history("plan-1"),
     ) : NativeSurfaceReads {
         var settingsReads = 0
+        var routineHorizonReads = 0
+        var lastRoutineThroughEpochDay: Long? = null
         var lastHistoryPlanId: String? = null
+
+        override suspend fun ensureRoutineHorizon(requestedThroughEpochDay: Long?) {
+            routineHorizonReads += 1
+            lastRoutineThroughEpochDay = requestedThroughEpochDay
+        }
 
         override suspend fun profileTimeZone(): String = "America/Halifax"
         override suspend fun calendar(month: YearMonth): LocalCalendarReadModel = calendar

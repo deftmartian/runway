@@ -119,6 +119,7 @@ internal fun CalendarMonthLedger(
                                     CalendarDayCell(
                                         date = date,
                                         isToday = dateValue == today,
+                                        isPast = dateValue < today,
                                         isSelected = dateValue == selectedDay,
                                         workouts = dayWorkouts,
                                         activities = dayActivities,
@@ -150,6 +151,7 @@ internal fun calendarGridNeedsHorizontalScroll(
 private fun CalendarDayCell(
     date: LocalDate,
     isToday: Boolean,
+    isPast: Boolean,
     isSelected: Boolean,
     workouts: List<NativeWorkout>,
     activities: List<NativeActivity>,
@@ -157,7 +159,12 @@ private fun CalendarDayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val presentation = calendarDayPresentation(workouts, activities, feedbackByWorkout)
+    val presentation = calendarDayPresentation(
+        workouts,
+        activities,
+        feedbackByWorkout,
+        routineDateIsPast = isPast,
+    )
     val description = buildString {
         append(friendlyDate(date.toString()))
         if (isToday) append(", today")
@@ -243,6 +250,7 @@ internal fun calendarDayPresentation(
     workouts: List<NativeWorkout>,
     activities: List<NativeActivity>,
     feedbackByWorkout: Map<String, NativeWorkoutFeedback>,
+    routineDateIsPast: Boolean = false,
 ): CalendarDayPresentation {
     val activeWorkouts = workouts.filter { it.isRemoved != true }
     val runWorkouts = activeWorkouts.filter { it.type != "rest" }
@@ -275,19 +283,23 @@ internal fun calendarDayPresentation(
         }
         return CalendarDayPresentation(label, "recorded", CalendarCellEmphasis.Actual)
     }
-    if (runWorkouts.any { it.isEdited == true }) {
-        return CalendarDayPresentation("↺ Edited", "edited plan", CalendarCellEmphasis.Planned)
-    }
     if (activeWorkouts.isNotEmpty() && runWorkouts.isEmpty()) {
         return CalendarDayPresentation("— Rest", "rest", CalendarCellEmphasis.Neutral)
+    }
+    if (routineDateIsPast && runWorkouts.any { it.planPhase == "routine" }) {
+        return CalendarDayPresentation("— Not recorded", "not recorded", CalendarCellEmphasis.Neutral)
+    }
+    if (runWorkouts.any { it.isEdited == true }) {
+        return CalendarDayPresentation("↺ Edited", "edited plan", CalendarCellEmphasis.Planned)
     }
     if (runWorkouts.isNotEmpty()) {
         val label = if (runWorkouts.size > 1) {
             "${runWorkouts.size} runs"
         } else {
-            formatPrescriptionMeasurement(
+            formatPlannedPrescriptionMeasurement(
                 runWorkouts.single().targetDistanceMeters,
                 runWorkouts.single().targetDurationSeconds,
+                open = runWorkouts.single().prescriptionKind == "open",
             ).takeUnless { it == "Plan details" } ?: "Run"
         }
         return CalendarDayPresentation(label, "planned", CalendarCellEmphasis.Planned)
@@ -356,7 +368,7 @@ internal fun CalendarDayDetailSheet(
                 }
             } else if (date > today) {
                 Text(
-                    "Build a plan before scheduling future runs.",
+                    "Set up a plan or routine before scheduling future runs.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -73,6 +73,7 @@ internal fun nativeCalendarDecisionSummary(
         todaysWorkout?.type == "rest" && todaysActivity != null -> "Recorded on a rest day"
         todaysActivity != null ->
             todaysActivity.distanceMeters?.let { "Recorded ${formatDistance(it)}" } ?: "Recorded"
+        todaysWorkout?.status == "skipped" && todaysWorkout.planPhase == "routine" -> "Skipped"
         todaysWorkout?.status == "skipped" -> "Skipped — review the next run"
         todaysWorkout?.status == "shortened" ->
             todaysFeedback?.completedDistanceMeters
@@ -95,6 +96,7 @@ internal fun nativeCalendarDecisionSummary(
     } else {
         workouts.filter {
             it.type != "rest" &&
+                it.planPhase != "routine" &&
                 it.status == "planned" &&
                 it.scheduledDate?.let { date -> date < today } == true &&
                 it.id !in linkedWorkoutIds &&
@@ -104,6 +106,9 @@ internal fun nativeCalendarDecisionSummary(
     val nextStatus = nextWorkout?.purpose.orEmpty().ifBlank {
         nextWorkout?.type.orEmpty().replaceFirstChar(Char::uppercase)
     }.ifBlank { "No planned run" }
+    val nextMeasurement = nextWorkout
+        ?.let(::calendarWorkoutMeasurement)
+        ?.takeUnless { it.equals(nextStatus, ignoreCase = true) }
     return NativeCalendarDecisionSummary(
         todayStatus = todayStatus,
         todayDate = today,
@@ -112,7 +117,7 @@ internal fun nativeCalendarDecisionSummary(
             ?.takeUnless { it == todayStatus || it.startsWith("$todayStatus ·") },
         nextStatus = nextStatus,
         nextDate = nextWorkout?.scheduledDate?.takeIf(String::isNotBlank),
-        nextMeasurement = nextWorkout?.let(::calendarWorkoutMeasurement),
+        nextMeasurement = nextMeasurement,
         reviewCount = missedWorkouts.size,
         reviewDate = missedWorkouts.firstOrNull()?.scheduledDate,
         inboxDecisionCount = inboxDecisionCount.coerceAtLeast(0),
@@ -124,14 +129,16 @@ internal fun calendarWorkoutPlanSummary(workout: NativeWorkout): String {
     val purpose = workout.purpose.orEmpty().ifBlank {
         workout.type.orEmpty().replaceFirstChar(Char::uppercase)
     }.ifBlank { "Planned run" }
-    return "$purpose · ${calendarWorkoutMeasurement(workout)}"
+    val measurement = calendarWorkoutMeasurement(workout)
+    return if (measurement.equals(purpose, ignoreCase = true)) purpose else "$purpose · $measurement"
 }
 
 internal fun calendarWorkoutMeasurement(workout: NativeWorkout): String =
-    formatPrescriptionMeasurement(
+    formatPlannedPrescriptionMeasurement(
         distanceMeters = workout.targetDistanceMeters,
         durationSeconds = workout.targetDurationSeconds,
         rest = workout.type == "rest",
+        open = workout.prescriptionKind == "open",
     )
 
 @Composable
@@ -182,6 +189,7 @@ internal fun CalendarScreen(
     val calendar = payload?.calendar
     val month = calendar?.month.orEmpty()
     val today = calendar?.today.orEmpty()
+    val routine = payload?.activePlanPhase == "routine"
     var feedbackWorkout by remember { mutableStateOf<NativeWorkout?>(null) }
     var editWorkout by remember { mutableStateOf<NativeWorkout?>(null) }
     var addWorkoutDate by rememberSaveable { mutableStateOf<String?>(null) }
@@ -229,7 +237,15 @@ internal fun CalendarScreen(
         submittedDialogAction = null
     }
     NativeList(loading, horizontalContentPadding = 8.dp) {
-        item { ScreenContext("Your plan and completed runs by date.") }
+        item {
+            ScreenContext(
+                if (routine) {
+                    "Your weekly routine and recorded runs by date."
+                } else {
+                    "Your plan and completed runs by date."
+                },
+            )
+        }
         if (payload != null && payload.onboardingRequired != true) {
             item {
                 CalendarDecisionCard(
@@ -245,6 +261,7 @@ internal fun CalendarScreen(
                 CalendarSecondaryPlanActions(
                     actionPending = actionPending,
                     hasActivePlan = payload.hasActivePlan,
+                    routine = routine,
                     onRecordRun = { showManualRun = true },
                     onChangeGoal = { onDestinationSelected(NativeDestination.Setup) },
                 )
@@ -335,7 +352,7 @@ internal fun CalendarScreen(
                             if (payload.hasActivePlan) {
                                 "Nothing is scheduled in this month yet. Select a day to add a future run."
                             } else {
-                                "No plan is active. Recorded runs will still appear here."
+                                "No schedule is active. Recorded runs will still appear here."
                             },
                         )
                     }
@@ -374,6 +391,7 @@ internal fun CalendarScreen(
     addWorkoutDate?.let { date ->
         WorkoutAddDialog(
             defaultDate = date,
+            routine = routine,
             actionPending = actionPending,
             errorMessage = actionNotice?.takeIf { it.isError }?.message,
             onDismiss = { addWorkoutDate = null },
@@ -486,12 +504,6 @@ private fun CalendarDecisionCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                "Current decision",
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
             summary.todayDate?.let {
                 Surface(
                     onClick = onOpenToday,
@@ -637,12 +649,18 @@ private fun CalendarDecisionCard(
 private fun CalendarSecondaryPlanActions(
     actionPending: Boolean,
     hasActivePlan: Boolean,
+    routine: Boolean,
     onRecordRun: () -> Unit,
     onChangeGoal: () -> Unit,
 ) {
+    val changeLabel = when {
+        !hasActivePlan -> "Set up running"
+        routine -> "Change routine"
+        else -> "Change goal"
+    }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            "Plan actions",
+            if (routine) "Routine actions" else "Plan actions",
             modifier = Modifier.semantics { heading() },
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -664,7 +682,7 @@ private fun CalendarSecondaryPlanActions(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     CalendarPlanAction(
-                        label = if (hasActivePlan) "Change goal" else "Build plan",
+                        label = changeLabel,
                         enabled = !actionPending,
                         onClick = onChangeGoal,
                         modifier = Modifier.fillMaxWidth(),
@@ -682,7 +700,7 @@ private fun CalendarSecondaryPlanActions(
                         modifier = Modifier.weight(1f),
                     )
                     CalendarPlanAction(
-                        label = if (hasActivePlan) "Change goal" else "Build plan",
+                        label = changeLabel,
                         enabled = !actionPending,
                         onClick = onChangeGoal,
                         modifier = Modifier.weight(1f),

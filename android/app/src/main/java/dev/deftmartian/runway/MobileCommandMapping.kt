@@ -23,6 +23,7 @@ internal fun String?.toPrescriptionKindOrNull(): PrescriptionKind? =
     when (this) {
         "distance" -> PrescriptionKind.DISTANCE
         "timed" -> PrescriptionKind.TIMED
+        "open" -> PrescriptionKind.OPEN
         "rest" -> PrescriptionKind.REST
         else -> null
     }

@@ -156,7 +156,8 @@ internal fun HistoryLifecycleConfirmationDialog(
         NativeHistoryConfirmation.ContinuePhase ->
             if (phase == "calibration") "Continue calibration?" else "Add another beginner week?"
         NativeHistoryConfirmation.Complete -> "Mark this plan complete?"
-        NativeHistoryConfirmation.Stop -> "Stop this plan?"
+        NativeHistoryConfirmation.Stop ->
+            if (phase == "routine") "End weekly running routine?" else "Stop this plan?"
     }
     val explanation = when (confirmation) {
         NativeHistoryConfirmation.UseBaseline ->
@@ -166,7 +167,11 @@ internal fun HistoryLifecycleConfirmationDialog(
         NativeHistoryConfirmation.Complete ->
             "The schedule will close as completed. Recorded work remains in History, even when some workouts were not done."
         NativeHistoryConfirmation.Stop ->
-            "The goal will stop without being marked complete. Recorded work remains in History, and no plan becomes active until you build another one."
+            if (phase == "routine") {
+                "The future routine schedule will close without being marked complete. Recorded runs remain in History."
+            } else {
+                "The goal will stop without being marked complete. Recorded work remains in History, and no plan becomes active until you build another one."
+            }
     }
     val confirmLabel = when (confirmation) {
         NativeHistoryConfirmation.UseBaseline -> "Confirm and build"
@@ -174,7 +179,8 @@ internal fun HistoryLifecycleConfirmationDialog(
             if (phase == "calibration") "Continue calibration" else "Add week"
         NativeHistoryConfirmation.Complete -> "Mark complete"
         NativeHistoryConfirmation.Stop ->
-            goalTitle?.takeIf(String::isNotBlank)?.let { "Stop $it" } ?: "Stop plan"
+            if (phase == "routine") "End routine"
+            else goalTitle?.takeIf(String::isNotBlank)?.let { "Stop $it" } ?: "Stop plan"
     }
     AlertDialog(
         onDismissRequest = onDismiss,

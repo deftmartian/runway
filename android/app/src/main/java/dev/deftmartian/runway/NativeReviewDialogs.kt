@@ -42,32 +42,46 @@ internal fun WorkoutPreviewDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val open = preview.proposed.prescriptionKind == dev.deftmartian.runway.domain.PrescriptionKind.OPEN
+    val adding = preview.operation == "add"
     val assessment = nativeLoadAssessment(preview.risk.name.lowercase())
     val weeklyChange = preview.weeklyLoadChangePercent
     val spacingConflicts = preview.spacingConflicts.size
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Review the plan effect") },
+        title = {
+            Text(
+                when {
+                    open && adding -> "Review added routine run"
+                    else -> "Review the plan effect"
+                },
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 errorMessage?.let { Notice(it, isError = true) }
-                SettingRow("Load assessment", assessment.label)
-                preview.recommended?.let { PreviewPrescriptionRow("Generated", it) }
-                PreviewPrescriptionRow("Current", preview.current)
-                PreviewPrescriptionRow("Proposed", preview.proposed)
-                SettingRow("Largest weekly load change", "${String.format(Locale.US, "%.1f", weeklyChange)}%")
-                val ramp = nativeRampAssessment(preview.projectedRampRisk.name.lowercase())
-                SettingRow("Projected ramp", "${String.format(Locale.US, "%.1f", preview.projectedRampPercent)}% · ${ramp.label}")
-                preview.weeks.forEach { week ->
-                    val distance = "${formatDistance(week.distanceBefore.toDouble())} → ${formatDistance(week.distanceAfter.toDouble())}"
-                    val duration = "${formatDuration(week.durationBefore.toDouble())} → ${formatDuration(week.durationAfter.toDouble())}"
-                    SettingRow(
-                        week.label,
-                        "$distance · $duration",
-                    )
+                if (open) {
+                    Notice("This adds an open run without changing your recurring days or future weeks.")
+                    PreviewPrescriptionRow("Run", preview.proposed)
+                } else {
+                    SettingRow("Load assessment", assessment.label)
+                    preview.recommended?.let { PreviewPrescriptionRow("Generated", it) }
+                    if (!adding) PreviewPrescriptionRow("Current", preview.current)
+                    PreviewPrescriptionRow("Proposed", preview.proposed)
+                    SettingRow("Largest weekly load change", "${String.format(Locale.US, "%.1f", weeklyChange)}%")
+                    val ramp = nativeRampAssessment(preview.projectedRampRisk.name.lowercase())
+                    SettingRow("Projected ramp", "${String.format(Locale.US, "%.1f", preview.projectedRampPercent)}% · ${ramp.label}")
+                    preview.weeks.forEach { week ->
+                        val distance = "${formatDistance(week.distanceBefore.toDouble())} → ${formatDistance(week.distanceAfter.toDouble())}"
+                        val duration = "${formatDuration(week.durationBefore.toDouble())} → ${formatDuration(week.durationAfter.toDouble())}"
+                        SettingRow(
+                            week.label,
+                            "$distance · $duration",
+                        )
+                    }
                 }
                 preview.changes.forEach { change ->
                     val before = previewPrescriptionMeasurement(change.before)
@@ -82,13 +96,19 @@ internal fun WorkoutPreviewDialog(
                     )
                 }
                 Text(
-                    "The original recommendation stays in the adjustment ledger, so this can be undone later.",
+                    if (adding) {
+                        "This addition stays in the adjustment ledger, so it can be undone later."
+                    } else {
+                        "The original recommendation stays in the adjustment ledger, so this can be undone later."
+                    },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm, enabled = !actionPending) { Text("Apply change") }
+            Button(onClick = onConfirm, enabled = !actionPending) {
+                Text(if (open && adding) "Add run" else "Apply change")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Go back") } },
     )
@@ -100,10 +120,11 @@ private fun PreviewPrescriptionRow(label: String, prescription: dev.deftmartian.
 }
 
 private fun previewPrescriptionMeasurement(prescription: dev.deftmartian.runway.domain.WorkoutProposal): String =
-    formatPrescriptionMeasurement(
+    formatPlannedPrescriptionMeasurement(
         prescription.targetDistanceMeters.toDouble(),
         prescription.targetDurationSeconds?.toDouble(),
-        prescription.prescriptionKind == dev.deftmartian.runway.domain.PrescriptionKind.REST || prescription.type == dev.deftmartian.runway.domain.WorkoutType.REST,
+        rest = prescription.prescriptionKind == dev.deftmartian.runway.domain.PrescriptionKind.REST || prescription.type == dev.deftmartian.runway.domain.WorkoutType.REST,
+        open = prescription.prescriptionKind == dev.deftmartian.runway.domain.PrescriptionKind.OPEN,
     ).let { amount ->
         listOf(prescription.scheduledDate.toString(), prescription.purpose.takeIf { it.isNotBlank() }, amount)
             .joinToString(" · ")

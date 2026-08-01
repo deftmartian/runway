@@ -40,6 +40,44 @@ class TrainingPlannerTest {
         assertTrue(calibration.weeks.flatMap { it.workouts }.filter { it.type == WorkoutType.EASY }.all { it.targetDurationSeconds == 1200 && it.targetDistanceMeters == 0 })
     }
 
+    @Test fun `foundation keeps source interval totals exact behind coarse presentation`() {
+        val foundation = TrainingPlanner.generateFoundation(
+            FoundationIntake(
+                StartMode.FOUNDATION_ONLY,
+                GoalKind.FOUNDATION,
+                null,
+                listOf(1, 3, 6),
+                InjuryFlags(),
+                "2026-05-11",
+            ),
+        )
+        val runs = foundation.weeks.flatMap { week -> week.workouts.filter { it.type == WorkoutType.EASY } }
+
+        assertEquals(
+            listOf(
+                1_710, 1_710, 1_710,
+                1_740, 1_740, 1_740,
+                1_500, 1_500, 1_500,
+                1_890, 1_890, 1_890,
+                1_860, 1_860, 1_800,
+                2_040, 1_980, 2_100,
+                2_100, 2_100, 2_100,
+                2_280, 2_280, 2_280,
+                2_400, 2_400, 2_400,
+            ),
+            runs.map { it.targetDurationSeconds },
+        )
+        assertTrue(runs.all { workout ->
+            val prescription = workout.prescription as WorkoutPrescription.Timed
+            val intervalTotal = prescription.warmupSeconds + prescription.cooldownSeconds +
+                prescription.blocks.sumOf { block ->
+                    block.repetitions * block.segments.sumOf(PrescriptionSegment::durationSeconds)
+                }
+            prescription.totalDurationSeconds == workout.targetDurationSeconds &&
+                intervalTotal == workout.targetDurationSeconds
+        })
+    }
+
     @Test(expected = IllegalArgumentException::class) fun `phase sessions require rest-day spacing`() {
         TrainingPlanner.generateFoundation(FoundationIntake(StartMode.FOUNDATION_ONLY, GoalKind.FOUNDATION, null, listOf(1, 2, 3), InjuryFlags(), "2026-05-11"))
     }

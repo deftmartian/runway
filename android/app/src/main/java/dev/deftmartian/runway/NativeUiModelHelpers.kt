@@ -4,6 +4,7 @@ import java.time.YearMonth
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.floor
 
 internal data class PendingPlanDecision(
     val source: String,
@@ -179,24 +180,68 @@ internal fun formatPrescriptionMeasurement(
     ).joinToString(" · ").ifBlank { "Plan details" }
 }
 
+internal fun formatPlannedPrescriptionMeasurement(
+    distanceMeters: Double?,
+    durationSeconds: Double?,
+    rest: Boolean = false,
+    open: Boolean = false,
+): String {
+    if (rest) return "Recovery day"
+    if (open) return "Open run"
+    return listOfNotNull(
+        distanceMeters?.takeIf { it > 0 }?.let(::formatDistance),
+        durationSeconds?.takeIf { it > 0 }?.let(::formatPlannedDurationEstimate),
+    ).joinToString(" · ").ifBlank { "Plan details" }
+}
+
 /** Compact, readable interval detail for cards; the typed structure remains the source of truth. */
 internal fun formatTimedStructure(structure: TimedIntervalStructureDto?): String? {
     structure ?: return null
     val parts = buildList {
-        structure.warmupSeconds?.takeIf { it > 0 }?.let { add("Warm up ${formatDuration(it.toDouble())}") }
+        structure.warmupSeconds?.takeIf { it > 0 }?.let { add("Warm up ${formatIntervalDuration(it)}") }
         structure.blocks.forEach { block ->
             val segments = block.segments.mapNotNull { segment ->
                 val kind = segment.kind?.replaceFirstChar(Char::uppercase) ?: return@mapNotNull null
-                segment.durationSeconds?.takeIf { it > 0 }?.let { "$kind ${formatDuration(it.toDouble())}" } ?: kind
+                segment.durationSeconds?.takeIf { it > 0 }?.let { "$kind ${formatIntervalDuration(it)}" } ?: kind
             }
             if (segments.isNotEmpty()) {
                 val repeats = block.repetitions?.takeIf { it > 1 }?.let { "$it × " }.orEmpty()
                 add(repeats + segments.joinToString(" / "))
             }
         }
-        structure.cooldownSeconds?.takeIf { it > 0 }?.let { add("Cool down ${formatDuration(it.toDouble())}") }
+        structure.cooldownSeconds?.takeIf { it > 0 }?.let { add("Cool down ${formatIntervalDuration(it)}") }
     }
     return parts.joinToString(" · ").takeIf(String::isNotBlank)
+}
+
+/**
+ * Planned timed work is a scheduling estimate. Keep source intervals exact in the expanded detail,
+ * but do not imply that a runner needs to reserve an odd number of whole minutes.
+ */
+internal fun formatPlannedDurationEstimate(seconds: Double): String {
+    require(seconds.isFinite() && seconds > 0) { "Planned duration must be a positive finite value." }
+    val roundedMinutes = floor((seconds + 150.0) / 300.0).toInt().coerceAtLeast(1) * 5
+    val hours = roundedMinutes / 60
+    val minutes = roundedMinutes % 60
+    val amount = when {
+        hours == 0 -> "$minutes min"
+        minutes == 0 -> "$hours h"
+        else -> "$hours h $minutes min"
+    }
+    return "About $amount"
+}
+
+/** Exact execution detail for run/walk blocks; unlike card totals, half-minutes matter here. */
+internal fun formatIntervalDuration(seconds: Int): String {
+    require(seconds > 0) { "Interval duration must be positive." }
+    val hours = seconds / 3_600
+    val minutes = seconds % 3_600 / 60
+    val remainderSeconds = seconds % 60
+    return buildList {
+        if (hours > 0) add("$hours h")
+        if (minutes > 0) add("$minutes min")
+        if (remainderSeconds > 0) add("$remainderSeconds sec")
+    }.joinToString(" ")
 }
 
 internal fun formatDuration(seconds: Double): String {

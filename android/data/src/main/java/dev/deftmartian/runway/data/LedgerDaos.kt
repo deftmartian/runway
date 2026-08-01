@@ -229,11 +229,44 @@ abstract class GoalPlanDao {
     @Query("SELECT * FROM plans WHERE planId = :planId")
     abstract suspend fun plan(planId: String): PlanEntity?
 
+    @Query("SELECT * FROM routine_schedule_days WHERE planId = :planId ORDER BY dayOfWeek")
+    abstract suspend fun routineScheduleDays(planId: String): List<RoutineScheduleDayEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertRoutineScheduleDays(days: List<RoutineScheduleDayEntity>)
+
     @Query("SELECT * FROM workouts WHERE workoutId = :workoutId")
     abstract suspend fun workout(workoutId: String): WorkoutEntity?
 
     @Query("SELECT * FROM plan_weeks WHERE planId = :planId ORDER BY ordinal LIMIT :limit")
     abstract suspend fun weeksForPlan(planId: String, limit: Int): List<PlanWeekEntity>
+
+    @Query("SELECT * FROM plan_weeks WHERE planId = :planId AND startEpochDay >= :fromEpochDay ORDER BY ordinal LIMIT :limit")
+    abstract suspend fun weeksForPlanFrom(
+        planId: String,
+        fromEpochDay: Long,
+        limit: Int,
+    ): List<PlanWeekEntity>
+
+    @Query(
+        """
+        SELECT * FROM plan_weeks
+        WHERE planId = :planId
+          AND startEpochDay <= :throughEpochDay
+          AND startEpochDay + 6 >= :fromEpochDay
+        ORDER BY ordinal
+        LIMIT :limit
+        """,
+    )
+    abstract suspend fun weeksForPlanInRange(
+        planId: String,
+        fromEpochDay: Long,
+        throughEpochDay: Long,
+        limit: Int,
+    ): List<PlanWeekEntity>
+
+    @Query("SELECT * FROM plan_weeks WHERE planId = :planId ORDER BY startEpochDay DESC LIMIT 1")
+    abstract suspend fun lastWeekForPlan(planId: String): PlanWeekEntity?
 
     @Query("SELECT * FROM plan_weeks WHERE planId IN (:planIds) ORDER BY planId, ordinal LIMIT :limit")
     abstract suspend fun weeksForPlans(planIds: List<String>, limit: Int): List<PlanWeekEntity>
@@ -291,6 +324,47 @@ abstract class GoalPlanDao {
 
     @Query("SELECT * FROM workouts WHERE planId = :planId ORDER BY currentScheduledEpochDay, position LIMIT :limit")
     abstract suspend fun allWorkoutsForPlan(planId: String, limit: Int): List<WorkoutEntity>
+
+    @Query("SELECT * FROM workouts WHERE planId = :planId AND currentScheduledEpochDay >= :fromEpochDay ORDER BY currentScheduledEpochDay, position LIMIT :limit")
+    abstract suspend fun allWorkoutsForPlanFrom(
+        planId: String,
+        fromEpochDay: Long,
+        limit: Int,
+    ): List<WorkoutEntity>
+
+    @Query(
+        """
+        SELECT * FROM workouts
+        WHERE planId = :planId
+          AND currentScheduledEpochDay BETWEEN :fromEpochDay AND :throughEpochDay
+          AND currentStatus != :tombstoneState
+        ORDER BY currentScheduledEpochDay, position
+        LIMIT :limit
+        """,
+    )
+    abstract suspend fun visibleWorkoutsForPlanInRange(
+        planId: String,
+        fromEpochDay: Long,
+        throughEpochDay: Long,
+        tombstoneState: String = WORKOUT_STATE_TOMBSTONED,
+        limit: Int,
+    ): List<WorkoutEntity>
+
+    @Query(
+        """
+        SELECT * FROM workouts
+        WHERE planId = :planId
+          AND currentScheduledEpochDay BETWEEN :fromEpochDay AND :throughEpochDay
+        ORDER BY currentScheduledEpochDay, position
+        LIMIT :limit
+        """,
+    )
+    abstract suspend fun historyWorkoutsForPlanInRange(
+        planId: String,
+        fromEpochDay: Long,
+        throughEpochDay: Long,
+        limit: Int,
+    ): List<WorkoutEntity>
 
     @Query("SELECT * FROM workouts WHERE currentScheduledEpochDay BETWEEN :fromEpochDay AND :toEpochDay AND currentStatus != :tombstoneState ORDER BY currentScheduledEpochDay, position LIMIT :limit")
     abstract suspend fun workoutsInRange(
@@ -431,6 +505,25 @@ abstract class GoalPlanDao {
         insertWeeks(weeks)
         insertWorkouts(workouts)
         if (summaryWarnings.isNotEmpty()) insertPlanSummaryWarnings(summaryWarnings)
+    }
+
+    @Transaction
+    open suspend fun createRoutineGraph(graph: RoutinePlanPersistenceGraph) {
+        require(graph.days.all { it.planId == graph.plan.planId })
+        require(graph.weeks.all { it.planId == graph.plan.planId })
+        val weekIds = graph.weeks.mapTo(mutableSetOf(), PlanWeekEntity::weekId)
+        require(graph.workouts.all { it.planId == graph.plan.planId && it.weekId in weekIds })
+        insertPlan(graph.plan)
+        insertRoutineScheduleDays(graph.days)
+        insertWeeks(graph.weeks)
+        insertWorkouts(graph.workouts)
+    }
+
+    @Transaction
+    open suspend fun appendRoutineWeek(week: PlanWeekEntity, workouts: List<WorkoutEntity>) {
+        require(workouts.all { it.planId == week.planId && it.weekId == week.weekId })
+        insertWeeks(listOf(week))
+        insertWorkouts(workouts)
     }
 }
 

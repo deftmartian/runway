@@ -69,6 +69,46 @@ class NativeCalendarDecisionTest {
     }
 
     @Test
+    fun `skipped routine run remains a fact without next-run review language`() {
+        val summary = nativeCalendarDecisionSummary(
+            calendar = calendar(
+                workouts = listOf(
+                    workout(
+                        "routine-today",
+                        "2026-07-29",
+                        "easy",
+                        status = "skipped",
+                        planPhase = "routine",
+                    ),
+                ),
+            ),
+            nextWorkout = null,
+        )
+
+        assertEquals("Skipped", summary.todayStatus)
+    }
+
+    @Test
+    fun `open routine run is not repeated as both the next title and measurement`() {
+        val next = workout(
+            "routine-next",
+            "2026-07-31",
+            "easy",
+            purpose = "Open run",
+            planPhase = "routine",
+        ).copy(
+            prescriptionKind = "open",
+            targetDistanceMeters = null,
+        )
+
+        val summary = nativeCalendarDecisionSummary(calendar = calendar(emptyList()), nextWorkout = next)
+
+        assertEquals("Open run", summary.nextStatus)
+        assertEquals(null, summary.nextMeasurement)
+        assertEquals("Open run", calendarWorkoutPlanSummary(next))
+    }
+
+    @Test
     fun `current decision carries plan detail and pending run review`() {
         val summary = nativeCalendarDecisionSummary(
             calendar = calendar(
@@ -153,6 +193,31 @@ class NativeCalendarDecisionTest {
     }
 
     @Test
+    fun `past routine run is factual and not review debt even after an individual edit`() {
+        val open = workout("routine", "2026-07-28", "easy").copy(
+            prescriptionKind = "distance",
+            targetDistanceMeters = 5_000.0,
+            targetDurationSeconds = null,
+            isEdited = true,
+            planPhase = "routine",
+        )
+        val presentation = calendarDayPresentation(
+            workouts = listOf(open),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+            routineDateIsPast = true,
+        )
+        val summary = nativeCalendarDecisionSummary(
+            calendar = calendar(listOf(open)),
+            nextWorkout = null,
+        )
+
+        assertEquals("— Not recorded", presentation.label)
+        assertEquals(CalendarCellEmphasis.Neutral, presentation.emphasis)
+        assertEquals(0, summary.reviewCount)
+    }
+
+    @Test
     fun `unapplied consequence keeps a resolved activity actionable`() {
         val presentation = calendarDayPresentation(
             workouts = emptyList(),
@@ -198,6 +263,7 @@ class NativeCalendarDecisionTest {
         removed: Boolean = false,
         status: String = "planned",
         distanceMeters: Double? = null,
+        planPhase: String? = null,
     ) = NativeWorkout(
         id = id,
         weekId = null,
@@ -215,6 +281,7 @@ class NativeCalendarDecisionTest {
         isRemoved = removed,
         isEdited = false,
         adjustment = null,
+        planPhase = planPhase,
     )
 
     private fun activity(

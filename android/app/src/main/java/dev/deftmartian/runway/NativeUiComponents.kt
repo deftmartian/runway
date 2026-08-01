@@ -134,10 +134,11 @@ internal fun WorkoutCard(
 ) {
     val type = workout.type.orEmpty().replaceFirstChar { it.uppercase() }.ifBlank { "Run" }
     val isRest = workout.type == "rest"
-    val measurement = formatPrescriptionMeasurement(
+    val measurement = formatPlannedPrescriptionMeasurement(
         distanceMeters = workout.targetDistanceMeters,
         durationSeconds = workout.targetDurationSeconds,
         rest = isRest,
+        open = workout.prescriptionKind == "open",
     )
     val emphasis = if (isRest) LedgerEmphasis.Neutral else LedgerEmphasis.Planned
     LedgerSurface {
@@ -277,7 +278,7 @@ internal fun WeekCard(week: NativeWeek, summary: NativeWeekSummary?) {
         (planned ?: 0.0) <= 0 &&
             (week.targetDurationSeconds ?: 0.0) > 0
     val plannedReadout = if (usesDuration) {
-        week.targetDurationSeconds?.let(::formatDuration)
+        week.targetDurationSeconds?.let(::formatPlannedDurationEstimate)
     } else {
         planned?.let(::formatDistance)
     }

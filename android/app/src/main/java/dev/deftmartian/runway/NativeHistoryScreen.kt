@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 internal data class NativeHistoryLifecycleState(
+    val isRoutine: Boolean,
     val targetReached: Boolean,
     val canCompletePlan: Boolean,
     val canConfirmBaseline: Boolean,
@@ -35,6 +36,7 @@ internal fun nativeHistoryLifecycleState(
     today: String?,
     phaseReview: NativePhaseReview?,
 ): NativeHistoryLifecycleState {
+    val isRoutine = activePlan?.phase == "routine"
     val targetDate = activePlan?.targetDate?.takeIf(String::isNotBlank)
     val currentDate = today?.takeIf(String::isNotBlank)
     val targetReached =
@@ -43,21 +45,22 @@ internal fun nativeHistoryLifecycleState(
             currentDate != null &&
             targetDate <= currentDate
     return NativeHistoryLifecycleState(
-        targetReached = targetReached,
+        isRoutine = isRoutine,
+        targetReached = targetReached && !isRoutine,
         canCompletePlan =
-            targetReached &&
+            !isRoutine && targetReached &&
                 (phaseReview == null || phaseReview.goalKind == "foundation"),
         canConfirmBaseline =
-            activePlan?.status == "active" &&
+            !isRoutine && activePlan?.status == "active" &&
                 phaseReview?.racePlan != null &&
                 "confirm_race_baseline" in phaseReview.options,
         canContinuePhase =
-            activePlan?.status == "active" &&
+            !isRoutine && activePlan?.status == "active" &&
                 phaseReview?.options.orEmpty().any {
                     it == "another_foundation_week" || it == "continue_calibration"
                 },
         canChooseGoal =
-            activePlan?.status == "active" &&
+            !isRoutine && activePlan?.status == "active" &&
                 phaseReview?.options.orEmpty().any {
                     it == "later_date" || it == "shorter_goal"
                 },
@@ -94,7 +97,7 @@ internal fun HistoryScreen(
     }
     NativeList(loading) {
         item {
-            ScreenContext("Current and past training plans.")
+            ScreenContext("Current training schedule and past records.")
         }
         if (payload == null) {
             item { EmptyCard("Loading history…") }
@@ -110,10 +113,11 @@ internal fun HistoryScreen(
                     )
                 }
             } else {
-                item { SectionLabel("Current plan") }
+                item { SectionLabel(if (lifecycle.isRoutine) "Weekly running routine" else "Current plan") }
                 item {
                     CurrentPlanRecord(
                         item = active,
+                        isRoutine = lifecycle.isRoutine,
                         targetReached = lifecycle.targetReached,
                         actionPending = actionPending,
                         onOpenCalendar = {
@@ -128,7 +132,7 @@ internal fun HistoryScreen(
                         },
                     )
                 }
-                payload.phaseReview?.let { review ->
+                payload.phaseReview?.takeUnless { lifecycle.isRoutine }?.let { review ->
                     item {
                         PhaseCompletionDecision(
                             review = review,
@@ -158,7 +162,7 @@ internal fun HistoryScreen(
                 }
             }
 
-            item { SectionLabel("Past plans") }
+            item { SectionLabel("Past plans and routines") }
             if (pastPlans.isEmpty()) {
                 item { EmptyCard("No past plans yet.") }
             } else {
@@ -196,7 +200,7 @@ internal fun HistoryScreen(
         HistoryLifecycleConfirmationDialog(
             confirmation = requested,
             goalTitle = active?.goal?.title,
-            phase = payload?.phaseReview?.phase,
+            phase = active?.plan?.phase ?: payload?.phaseReview?.phase,
             actionPending = actionPending,
             onDismiss = { confirmation = null },
             onConfirm = {
@@ -256,12 +260,12 @@ private fun NoActivePlanCard(
     actionPending: Boolean,
     onBuildPlan: () -> Unit,
 ) {
-    SettingCard("No active plan") {
+    SettingCard("No active schedule") {
         Text(
             if (hasPastPlans) {
-                "The last plan is closed. Its recorded work remains below."
+                "The last schedule is closed. Its recorded work remains below."
             } else {
-                "Create a plan when you are ready to schedule a goal."
+                "Set up a training plan or a weekly running routine when you are ready."
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -271,7 +275,7 @@ private fun NoActivePlanCard(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
         ) {
-            Text("Build plan")
+            Text("Set up running")
         }
     }
 }
@@ -279,6 +283,7 @@ private fun NoActivePlanCard(
 @Composable
 private fun CurrentPlanRecord(
     item: NativePlanHistoryItem,
+    isRoutine: Boolean,
     targetReached: Boolean,
     actionPending: Boolean,
     onOpenCalendar: () -> Unit,
@@ -288,31 +293,55 @@ private fun CurrentPlanRecord(
 ) {
     val plan = item.plan
     val summary = item.summary
+    val shownWeeks = plan?.weeks ?: 0
     var planOptionsOpen by rememberSaveable(plan?.id) { mutableStateOf(false) }
     var endPlanOptionOpen by rememberSaveable(plan?.id) { mutableStateOf(false) }
-    SettingCard(item.goal?.title.orDash()) {
+    SettingCard(if (isRoutine) "Weekly running routine" else item.goal?.title.orDash()) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                listOfNotNull(plan?.startDate, plan?.targetDate)
-                    .map(::ledgerDate)
-                    .joinToString(" → ")
-                    .orDash(),
+                if (isRoutine) {
+                    listOfNotNull(
+                        plan?.sessionsPerWeek?.let {
+                            "$it ${if (it == 1) "run" else "runs"} each week"
+                        },
+                        plan?.startDate?.let { "ongoing since ${ledgerDate(it)}" },
+                    ).joinToString(" · ").orDash()
+                } else {
+                    listOfNotNull(plan?.startDate, plan?.targetDate)
+                        .map(::ledgerDate)
+                        .joinToString(" → ")
+                        .orDash()
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             LedgerState(
-                if (targetReached) "Target date reached" else "In progress",
+                when {
+                    isRoutine -> "Ongoing"
+                    targetReached -> "Target date reached"
+                    else -> "In progress"
+                },
                 if (targetReached) LedgerEmphasis.Review else LedgerEmphasis.Planned,
+            )
+        }
+        if (isRoutine && shownWeeks > 0) {
+            Text(
+                "Counts below cover the $shownWeeks most recent routine ${if (shownWeeks == 1) "week" else "weeks"} shown.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         CurrentPlanMetrics(
             completedRuns = summary?.completedRuns ?: 0,
+            plannedRunsRecorded = summary?.plannedRunsRecorded ?: 0,
+            extraRuns = summary?.extraRuns ?: 0,
             completedDistance = summary?.completedDistanceMeters?.let(::formatDistance).orDash(),
             missedRuns = summary?.missedRuns ?: 0,
             skippedRuns = summary?.skippedRuns ?: 0,
             painFlags = summary?.painFlags ?: 0,
+            isRoutine = isRoutine,
         )
         Button(
             onClick = onOpenCalendar,
@@ -322,19 +351,40 @@ private fun CurrentPlanRecord(
         ) {
             Text("Open calendar")
         }
-        OutlinedButton(
-            onClick = { planOptionsOpen = !planOptionsOpen },
-            enabled = !actionPending,
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics {
-                    stateDescription = if (planOptionsOpen) "Expanded" else "Collapsed"
-                },
-            shape = MaterialTheme.shapes.small,
-        ) {
-            Text(if (planOptionsOpen) "Hide plan options" else "Plan options")
+        if (isRoutine) {
+            plan?.id?.takeIf(String::isNotBlank)?.let { planId ->
+                TextButton(
+                    onClick = { onOpenPlan(planId) },
+                    enabled = !actionPending,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Open routine record") }
+            }
+            OutlinedButton(
+                onClick = onChangeGoal,
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) { Text("Change routine") }
+            TextButton(
+                onClick = onStop,
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("End routine") }
+        } else {
+            OutlinedButton(
+                onClick = { planOptionsOpen = !planOptionsOpen },
+                enabled = !actionPending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        stateDescription = if (planOptionsOpen) "Expanded" else "Collapsed"
+                    },
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(if (planOptionsOpen) "Hide plan options" else "Plan options")
+            }
         }
-        if (planOptionsOpen) {
+        if (!isRoutine && planOptionsOpen) {
             plan?.id?.takeIf(String::isNotBlank)?.let { planId ->
                 TextButton(
                     onClick = { onOpenPlan(planId) },
@@ -381,42 +431,63 @@ private fun CurrentPlanRecord(
 @Composable
 private fun CurrentPlanMetrics(
     completedRuns: Int,
+    plannedRunsRecorded: Int,
+    extraRuns: Int,
     completedDistance: String,
     missedRuns: Int,
     skippedRuns: Int,
     painFlags: Int,
+    isRoutine: Boolean,
 ) {
-    val metrics = listOf(
-        Triple(
-            "Runs completed",
-            completedRuns.toString(),
-            if (completedRuns > 0) LedgerEmphasis.Actual else LedgerEmphasis.Neutral,
-        ),
-        Triple(
-            "Distance recorded",
-            completedDistance,
-            if (completedDistance != "0 km" && completedDistance != "—") {
-                LedgerEmphasis.Actual
-            } else {
-                LedgerEmphasis.Neutral
-            },
-        ),
-        Triple(
-            "Missed",
-            missedRuns.toString(),
-            if (missedRuns > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
-        ),
-        Triple(
-            "Skipped",
-            skippedRuns.toString(),
-            if (skippedRuns > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
-        ),
-        Triple(
-            "Pain flags",
-            painFlags.toString(),
-            if (painFlags > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
-        ),
-    )
+    val metrics = buildList {
+        add(
+            Triple(
+                if (isRoutine) "Runs recorded" else "Runs completed",
+                completedRuns.toString(),
+                if (completedRuns > 0) {
+                    LedgerEmphasis.Actual
+                } else {
+                    LedgerEmphasis.Neutral
+                },
+            ),
+        )
+        if (isRoutine && extraRuns > 0) {
+            add(Triple("On scheduled days", plannedRunsRecorded.toString(), LedgerEmphasis.Actual))
+            add(Triple("On other days", extraRuns.toString(), LedgerEmphasis.Actual))
+        }
+        add(
+            Triple(
+                "Distance recorded",
+                completedDistance,
+                if (completedDistance != "0 km" && completedDistance != "—") {
+                    LedgerEmphasis.Actual
+                } else {
+                    LedgerEmphasis.Neutral
+                },
+            ),
+        )
+        add(
+            Triple(
+                if (isRoutine) "Not recorded" else "Missed",
+                missedRuns.toString(),
+                if (!isRoutine && missedRuns > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
+            ),
+        )
+        add(
+            Triple(
+                "Skipped",
+                skippedRuns.toString(),
+                if (!isRoutine && skippedRuns > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
+            ),
+        )
+        add(
+            Triple(
+                "Pain reports",
+                painFlags.toString(),
+                if (painFlags > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
+            ),
+        )
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -447,9 +518,13 @@ private fun CurrentPlanMetrics(
 private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) -> Unit) {
     val plan = item.plan
     val summary = item.summary
+    val shownWeeks = plan?.weeks ?: 0
+    val isRoutine = plan?.phase == "routine"
     val state = plan?.status.orEmpty().replaceFirstChar(Char::uppercase).ifBlank { "Recorded" }
     val closedOn = plan?.completedAt?.takeIf(String::isNotBlank)?.let { "Completed ${ledgerDate(it)}" }
-        ?: plan?.archivedAt?.takeIf(String::isNotBlank)?.let { "Stopped ${ledgerDate(it)}" }
+        ?: plan?.archivedAt?.takeIf(String::isNotBlank)?.let {
+            "${if (isRoutine) "Ended" else "Stopped"} ${ledgerDate(it)}"
+        }
         ?: if (plan?.status == "active") "Current plan" else null
     SettingCard(item.goal?.title.orDash()) {
         Column(
@@ -457,10 +532,14 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                listOfNotNull(plan?.startDate, plan?.targetDate)
-                    .map(::ledgerDate)
-                    .joinToString(" → ")
-                    .orDash(),
+                if (isRoutine) {
+                    plan.startDate?.let { "Started ${ledgerDate(it)}" }.orDash()
+                } else {
+                    listOfNotNull(plan?.startDate, plan?.targetDate)
+                        .map(::ledgerDate)
+                        .joinToString(" → ")
+                        .orDash()
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             LedgerState(
@@ -480,11 +559,29 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             MeasurementReadout(
-                "Recorded / planned",
-                "${summary?.completedRuns ?: 0} / ${summary?.plannedRuns ?: 0}",
+                if (isRoutine) "Runs recorded" else "Recorded / planned",
+                if (isRoutine) {
+                    (summary?.completedRuns ?: 0).toString()
+                } else {
+                    "${summary?.completedRuns ?: 0} / ${summary?.plannedRuns ?: 0}"
+                },
                 LedgerEmphasis.Actual,
                 Modifier.fillMaxWidth(),
             )
+            if (isRoutine && (summary?.extraRuns ?: 0) > 0) {
+                MeasurementReadout(
+                    "On scheduled days",
+                    (summary?.plannedRunsRecorded ?: 0).toString(),
+                    LedgerEmphasis.Actual,
+                    Modifier.fillMaxWidth(),
+                )
+                MeasurementReadout(
+                    "On other days",
+                    summary?.extraRuns.toString(),
+                    LedgerEmphasis.Actual,
+                    Modifier.fillMaxWidth(),
+                )
+            }
             MeasurementReadout(
                 "Actual distance",
                 summary?.completedDistanceMeters?.let(::formatDistance).orDash(),
@@ -493,7 +590,9 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
             )
         }
         val exceptions = buildList {
-            summary?.missedRuns?.takeIf { it > 0 }?.let { add("$it missed") }
+            summary?.missedRuns?.takeIf { it > 0 }?.let {
+                add(if (isRoutine) "$it not recorded" else "$it missed")
+            }
             summary?.skippedRuns?.takeIf { it > 0 }?.let { add("$it skipped") }
             summary?.painFlags?.takeIf { it > 0 }?.let { add("$it pain reports") }
         }
@@ -506,6 +605,13 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 fontWeight = FontWeight.SemiBold,
+            )
+        }
+        if (isRoutine && shownWeeks > 0) {
+            Text(
+                "Summary covers the $shownWeeks most recent routine ${if (shownWeeks == 1) "week" else "weeks"} shown.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         plan?.lifecycleReason?.takeIf(String::isNotBlank)?.let {

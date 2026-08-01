@@ -21,6 +21,7 @@ internal data class NativeCalendarPayload(
     val activityCandidates: List<NativeWorkout>,
     val pendingDecisionCount: Int = 0,
     val pendingDecisionCountIsExact: Boolean = true,
+    val activePlanPhase: String? = null,
 )
 
 internal data class NativeReviewPayload(
@@ -88,7 +89,7 @@ internal data class NativeHistoryDetail(
 internal data class NativeHistoryDetailPlan(
     val id: String?, val status: String?, val phase: String?, val startDate: String?,
     val targetDate: String?, val weeks: Int?, val risk: String?, val completedAt: String?,
-    val archivedAt: String?, val lifecycleReason: String?,
+    val archivedAt: String?, val lifecycleReason: String?, val sessionsPerWeek: Int? = null,
 )
 internal data class NativeHistoryDetailGoal(val title: String?, val distance: String?, val priority: String?)
 internal data class NativeHistoryTimelineItem(
@@ -185,6 +186,7 @@ internal data class NativeWorkout(
     val isRemoved: Boolean?,
     val isEdited: Boolean?,
     val adjustment: NativeAdjustment?,
+    val planPhase: String? = null,
 )
 
 internal data class TimedIntervalStructureDto(
@@ -388,6 +390,8 @@ internal data class NativeWeekSummary(
     val hardFlags: Int?,
     val averagePaceSecondsPerKm: Double?,
     val averageHeartRate: Int?,
+    val plannedRunsRecorded: Int? = null,
+    val extraRuns: Int? = null,
 )
 internal data class NativePlanHistoryPage(
     val items: List<NativePlanHistoryItem>,
@@ -411,6 +415,8 @@ internal data class NativePlan(
     val completedAt: String?,
     val archivedAt: String?,
     val lifecycleReason: String?,
+    val phase: String? = null,
+    val sessionsPerWeek: Int? = null,
 )
 internal data class NativePlanSummary(
     val plannedRuns: Int?,
@@ -419,4 +425,6 @@ internal data class NativePlanSummary(
     val skippedRuns: Int?,
     val painFlags: Int?,
     val completedDistanceMeters: Double?,
+    val plannedRunsRecorded: Int? = null,
+    val extraRuns: Int? = null,
 )

@@ -8,6 +8,56 @@ import org.junit.Test
 class NativeUiModelHelpersTest {
 
     @Test
+    fun `planned timed headlines use durable five minute estimates`() {
+        assertEquals("About 30 min", formatPlannedDurationEstimate(1_710.0))
+        assertEquals("About 30 min", formatPlannedDurationEstimate(1_740.0))
+        assertEquals("About 30 min", formatPlannedDurationEstimate(1_890.0))
+        assertEquals("About 35 min", formatPlannedDurationEstimate(2_040.0))
+        assertEquals("About 1 h", formatPlannedDurationEstimate(3_600.0))
+        assertEquals("About 1 h 5 min", formatPlannedDurationEstimate(3_900.0))
+        assertEquals(
+            "About 30 min",
+            formatPlannedPrescriptionMeasurement(null, 1_710.0),
+        )
+        assertEquals(
+            "29 min",
+            formatPrescriptionMeasurement(null, 1_740.0),
+        )
+    }
+
+    @Test
+    fun `open planned run does not invent a measurement`() {
+        assertEquals(
+            "Open run",
+            formatPlannedPrescriptionMeasurement(null, null, open = true),
+        )
+    }
+
+    @Test
+    fun `timed structure keeps half minute instructions exact`() {
+        val text = formatTimedStructure(
+            TimedIntervalStructureDto(
+                warmupSeconds = 300,
+                cooldownSeconds = 300,
+                blocks = listOf(
+                    TimedBlockDto(
+                        repetitions = 2,
+                        segments = listOf(
+                            TimedSegmentDto("run", 90),
+                            TimedSegmentDto("walk", 150),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Warm up 5 min · 2 × Run 1 min 30 sec / Walk 2 min 30 sec · Cool down 5 min",
+            text,
+        )
+    }
+
+    @Test
     fun `timed prescription text preserves warmup repeats segments and cooldown`() {
         val text = formatTimedStructure(
             TimedIntervalStructureDto(
@@ -155,7 +205,7 @@ class NativeUiModelHelpersTest {
         val summary = noActiveStatsSummary(history)
 
         assertEquals(
-            "There is no active plan or recommendation. Recorded work remains available below.",
+            "There is no active schedule or recommendation. Recorded work remains available below.",
             summary.statusMessage,
         )
         assertEquals(recorded, summary.recordedHistory)
@@ -167,7 +217,7 @@ class NativeUiModelHelpersTest {
         val summary = noActiveStatsSummary(history = null)
 
         assertEquals(
-            "There is no active plan or recommendation. Add and review a run, or build a plan, to see comparisons here.",
+            "There is no active schedule or recommendation. Add and review a run, or set up running, to see comparisons here.",
             summary.statusMessage,
         )
         assertEquals(null, summary.recordedHistory)

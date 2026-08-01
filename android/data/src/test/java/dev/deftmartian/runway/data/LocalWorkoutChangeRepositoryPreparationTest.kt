@@ -173,6 +173,34 @@ class LocalWorkoutChangeRepositoryPreparationTest {
     }
 
     @Test
+    fun `moving a workout across a week updates its persisted week ownership`() {
+        val current = distance("week-1", today.plusDays(2), 5_000, "Current")
+        val stored = stored("workout-1", current)
+        val secondWeek = PlanWeekEntity(
+            weekId = "week-2",
+            planId = "plan-1",
+            ordinal = 2,
+            startEpochDay = today.plusWeeks(1).toEpochDay(),
+            generatedLoadMeters = 0,
+        )
+        val moved = current.copy(scheduledDate = today.plusDays(9))
+
+        val prepared = LocalWorkoutChangePreparer().prepare(
+            ledger(listOf(stored)).copy(weeks = ledger(listOf(stored)).weeks + secondWeek),
+            LocalWorkoutChangeRequest.Edit("workout-1", moved),
+            today,
+            false,
+        )
+
+        assertEquals("week-2", prepared.preview.proposed.weekId)
+        val persisted = LocalWorkoutChangePersistenceMapper()
+            .map(prepared, "move-adjustment", "move-decision", 123)
+        assertEquals("week-1", persisted.effectWeekTransitions.single().previousWeekId)
+        assertEquals("week-2", persisted.effectWeekTransitions.single().newWeekId)
+        assertEquals("week-2", persisted.mutations.single().workout.weekId)
+    }
+
+    @Test
     fun `guards reject results past dates races inactive plans and caps`() {
         val valid = stored("workout-1", distance("week-1", today.plusDays(2), 5_000, "Valid"))
         val preparer = LocalWorkoutChangePreparer(LocalWorkoutChangePolicy(maximumWorkoutsPerPlan = 1))

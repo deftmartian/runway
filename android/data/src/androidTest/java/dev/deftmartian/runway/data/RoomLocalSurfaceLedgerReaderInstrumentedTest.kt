@@ -256,6 +256,55 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
     }
 
     @Test
+    fun longRunningRoutineReadsTheCurrentWindowBeforeApplyingSurfaceLimits() = runBlocking {
+        val start = LocalDate.parse("2025-01-06")
+        val today = LocalDate.parse("2026-08-03")
+        database.profileSettingsDao().save(profile())
+        val graph = RoutinePlanPersistenceMapper.map(
+            goalId = "long-routine-goal",
+            planId = "long-routine-plan",
+            title = "Weekly running routine",
+            priority = "consistency",
+            startEpochDay = start.toEpochDay(),
+            selectedDays = listOf(1, 3, 6),
+            createdAtEpochMillis = 1,
+        )
+        database.goalPlanDao().saveGoal(graph.goal)
+        database.goalPlanDao().createRoutineGraph(graph)
+        assertTrue(
+            LocalRoutineRepository(database).ensureHorizon(
+                planId = graph.plan.planId,
+                throughEpochDay = today.plusWeeks(8).toEpochDay(),
+                updatedAtEpochMillis = 2,
+            ) is LocalRoutineHorizonResult.Extended,
+        )
+        assertTrue(
+            database.goalPlanDao().visibleWorkoutsForPlan(graph.plan.planId, limit = 1_000).size >
+                LocalSurfaceReadLimits().calendarWorkouts,
+        )
+        val now = today.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+        val reader = RoomLocalSurfaceLedgerReader(database, nowEpochMillis = { now })
+
+        val calendar = reader.calendar(
+            fromEpochDay = today.toEpochDay(),
+            throughEpochDay = today.plusDays(6).toEpochDay(),
+            limits = LocalSurfaceReadLimits(),
+        )
+        assertEquals(
+            listOf(today, today.plusDays(2), today.plusDays(5)).map(LocalDate::toEpochDay),
+            calendar.plans.single().workouts.map(WorkoutEntity::currentScheduledEpochDay),
+        )
+
+        val stats = reader.stats(LocalSurfaceReadLimits(statsWeeks = 52))
+        assertEquals(52, stats.plans.single().weeks.size)
+        assertEquals(today.minusWeeks(51).toEpochDay(), stats.plans.single().weeks.first().startEpochDay)
+        assertEquals(today.toEpochDay(), stats.plans.single().weeks.last().startEpochDay)
+
+        val history = reader.history(LocalSurfaceReadLimits(statsWeeks = 52), 0, 0)
+        assertEquals(today.toEpochDay(), history.plans.single().weeks.last().startEpochDay)
+    }
+
+    @Test
     fun profilePresenceRemainsVisibleWithoutAnActivePlan() = runBlocking {
         val reader = RoomLocalSurfaceLedgerReader(database)
         val limits = LocalSurfaceReadLimits()

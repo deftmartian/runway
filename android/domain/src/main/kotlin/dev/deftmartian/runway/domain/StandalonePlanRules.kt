@@ -89,7 +89,9 @@ object StandalonePlanRules {
     fun assessContinuation(input: ContinuationEligibilityInput): ContinuationEligibility {
         val reasons = linkedSetOf<ContinuationIneligibility>()
         if (!input.activePlan) reasons += ContinuationIneligibility.NO_ACTIVE_BEGINNER_PLAN
-        if (input.phase == PlanPhase.DISTANCE) reasons += ContinuationIneligibility.NOT_A_BEGINNER_PHASE
+        if (input.phase !in setOf(PlanPhase.FOUNDATION, PlanPhase.CALIBRATION)) {
+            reasons += ContinuationIneligibility.NOT_A_BEGINNER_PHASE
+        }
         if (input.targetDate.isAfter(input.today)) reasons += ContinuationIneligibility.PHASE_NOT_COMPLETE
         if (input.planWeeks >= MAX_PLAN_WEEKS) reasons += ContinuationIneligibility.PLAN_WEEK_LIMIT
         if (!input.hasRepeatableFinalWeek) reasons += ContinuationIneligibility.NO_FINAL_WEEK

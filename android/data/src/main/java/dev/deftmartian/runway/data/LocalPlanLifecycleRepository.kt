@@ -297,6 +297,9 @@ class LocalPlanLifecycleRepository(
                 LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.INVALID_PLAN_STATE)
             }
         }
+        if (completed && plan.phaseType == ROUTINE_PHASE) {
+            return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.ROUTINE_CANNOT_COMPLETE)
+        }
         if (completed && (plan.endEpochDay ?: Long.MAX_VALUE) > request.todayEpochDay) {
             return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.TARGET_NOT_REACHED)
         }
@@ -516,6 +519,7 @@ class LocalPlanLifecycleRepository(
     )
 
     private companion object {
+        const val ROUTINE_PHASE = "routine"
         const val MAX_PLAN_WEEKS = 52
         const val MAX_WORKOUTS_PER_WEEK = 32
         const val MAX_BLOCKS_PER_WORKOUT = 128
@@ -564,6 +568,7 @@ enum class LocalPlanLifecycleError {
     PLAN_NOT_FOUND,
     INVALID_PLAN_STATE,
     TARGET_NOT_REACHED,
+    ROUTINE_CANNOT_COMPLETE,
     BEGINNER_PHASE_REQUIRED,
     PHASE_NOT_READY,
     RACE_GOAL_REQUIRED,

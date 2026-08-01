@@ -24,6 +24,7 @@ class LocalWorkoutChangePresentationTest {
             risk = Risk.CONSERVATIVE, requiresConfirmation = false,
         ).toLocalWorkoutChangeDisplay()
 
+        assertEquals("edit", display.operation)
         assertEquals(Risk.CONSERVATIVE, display.risk)
         assertEquals(15_000, display.weeks.single().distanceBefore)
         assertEquals(16_000, display.weeks.single().distanceAfter)

@@ -73,6 +73,8 @@ class StandalonePlanRulesTest {
         assertTrue(ContinuationIneligibility.PLAN_WEEK_LIMIT in atLimit.reasons)
         val distance = StandalonePlanRules.assessContinuation(ContinuationEligibilityInput(true, PlanPhase.DISTANCE, today, today, 20, true))
         assertTrue(ContinuationIneligibility.NOT_A_BEGINNER_PHASE in distance.reasons)
+        val routine = StandalonePlanRules.assessContinuation(ContinuationEligibilityInput(true, PlanPhase.ROUTINE, today, today, 20, true))
+        assertTrue(ContinuationIneligibility.NOT_A_BEGINNER_PHASE in routine.reasons)
     }
 
     @Test fun `accepted evidence uses paired weighted pace and duration weighted heart rate while retaining provenance`() {

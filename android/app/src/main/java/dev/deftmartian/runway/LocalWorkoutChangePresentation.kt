@@ -17,6 +17,7 @@ internal data class LocalWorkoutChangePreview(
 )
 
 internal data class LocalWorkoutChangeDisplay(
+    val operation: String,
     val risk: Risk,
     val requiresConfirmation: Boolean,
     val weeklyLoadChangePercent: Double,
@@ -33,6 +34,7 @@ internal data class LocalWorkoutChangeLine(val before: WorkoutProposal, val afte
 internal data class LocalWorkoutWeekLoad(val label: String, val distanceBefore: Int, val distanceAfter: Int, val durationBefore: Int, val durationAfter: Int)
 
 internal fun EditPreview.toLocalWorkoutChangeDisplay() = LocalWorkoutChangeDisplay(
+    operation = operation,
     risk = risk,
     requiresConfirmation = requiresConfirmation,
     weeklyLoadChangePercent = weeklyLoadChangePercent,

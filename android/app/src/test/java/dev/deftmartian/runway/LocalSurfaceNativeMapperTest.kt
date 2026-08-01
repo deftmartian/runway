@@ -1,6 +1,7 @@
 package dev.deftmartian.runway
 
 import dev.deftmartian.runway.data.LocalLoadReadModel
+import dev.deftmartian.runway.data.LocalCalendarReadModel
 import dev.deftmartian.runway.data.LocalCurrentSignalReadModel
 import dev.deftmartian.runway.data.LocalHealthNoticeReadModel
 import dev.deftmartian.runway.data.LocalHistoryWeekReadModel
@@ -23,6 +24,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalSurfaceNativeMapperTest {
+    @Test
+    fun `calendar projection carries the active routine discriminator without inference`() {
+        val native = LocalCalendarReadModel(
+            fromEpochDay = 20_000,
+            throughEpochDay = 20_030,
+            activePlanId = "routine-plan",
+            profileExists = true,
+            pendingDecisionCount = 0,
+            pendingDecisionCountIsExact = true,
+            hasMoreActivities = false,
+            days = emptyList(),
+            activePlanPhase = LocalPlanPhase.ROUTINE,
+        ).toNativeCalendar()
+
+        assertEquals("routine", native.activePlanPhase)
+    }
+
     @Test
     fun `workout projection carries distinct generated and current timed structures`() {
         val generated = timedPrescription(warmup = 300, repetitions = 4, runSeconds = 120)
@@ -149,6 +167,52 @@ class LocalSurfaceNativeMapperTest {
     }
 
     @Test
+    fun `routine cadence survives the stats projection`() {
+        val native = LocalStatsReadModel(
+            weeks = listOf(
+                LocalWeekStatsReadModel(
+                    planId = "routine-plan",
+                    planState = LocalPlanState.ACTIVE,
+                    phase = LocalPlanPhase.ROUTINE,
+                    weekOrdinal = 1,
+                    startEpochDay = 20_000,
+                    generated = LocalLoadReadModel(null, null),
+                    current = LocalLoadReadModel(null, null),
+                    actual = LocalLoadReadModel(null, null),
+                    plannedRuns = 2,
+                    completedRuns = 3,
+                    missedRuns = 0,
+                    painFlags = 0,
+                    hardFlags = 0,
+                    weightedPaceSecondsPerKilometre = null,
+                    durationWeightedHeartRateBpm = null,
+                    skippedRuns = 0,
+                    plannedRunsRecorded = 1,
+                    extraRuns = 2,
+                ),
+            ),
+            profileExists = true,
+            recordedTotals = emptyList(),
+            totalRuns = 0,
+            totalDistanceMeters = 0,
+            totalDurationSeconds = 0,
+            longestRunMeters = null,
+            weightedPaceSecondsPerKilometre = null,
+            durationWeightedHeartRateBpm = null,
+            isComplete = true,
+            activeSessionsPerWeek = 3,
+        ).toNativeStats()
+
+        assertEquals("routine", native.active?.plan?.phase)
+        assertEquals(3, native.active?.plan?.sessionsPerWeek)
+        assertEquals(null, native.active?.plan?.targetDate)
+        assertEquals(1, native.active?.summary?.plannedRunsRecorded)
+        assertEquals(2, native.active?.summary?.extraRuns)
+        assertEquals(1, native.history?.weeklySummaries?.single()?.plannedRunsRecorded)
+        assertEquals(2, native.history?.weeklySummaries?.single()?.extraRuns)
+    }
+
+    @Test
     fun `history summary keeps overdue skipped and pain counts distinct`() {
         val plan = LocalPlanHistoryReadModel(
             planId = "plan",
@@ -238,6 +302,32 @@ class LocalSurfaceNativeMapperTest {
         assertEquals("Changed my mind", change.reversalReason)
         assertEquals(4_500.0, change.newState?.targetDistanceMeters)
         assertEquals("1970-01-01", detail.cutoffDate)
+    }
+
+    @Test
+    fun `routine history detail carries its fixed weekly cadence`() {
+        val detail = requireNotNull(
+            LocalPlanHistoryReadModel(
+                planId = "routine-plan",
+                goalId = "routine-goal",
+                goalTitle = "Weekly running routine",
+                state = LocalPlanState.ACTIVE,
+                phase = LocalPlanPhase.ROUTINE,
+                startEpochDay = 20_000,
+                endEpochDay = null,
+                completedAtEpochMillis = null,
+                archivedAtEpochMillis = null,
+                plannedRuns = 3,
+                completedRuns = 0,
+                actual = LocalLoadReadModel(null, null),
+                lifecycle = emptyList(),
+                sessionsPerWeek = 3,
+            ).toNativeHistoryDetail("UTC", 20_040).detail,
+        )
+
+        assertEquals("routine", detail.plan?.phase)
+        assertEquals(3, detail.plan?.sessionsPerWeek)
+        assertEquals(null, detail.plan?.targetDate)
     }
 
     @Test

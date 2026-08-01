@@ -9,6 +9,7 @@ import dev.deftmartian.runway.data.LocalPlanLifecycleRepository
 import dev.deftmartian.runway.data.LocalPlanSetupRepository
 import dev.deftmartian.runway.data.LocalPrivacyRepository
 import dev.deftmartian.runway.data.LocalProfileRepository
+import dev.deftmartian.runway.data.LocalRoutineRepository
 import dev.deftmartian.runway.data.LocalSurfaceRepository
 import dev.deftmartian.runway.data.LocalTrainingMutationRepository
 import dev.deftmartian.runway.data.LocalTrainingContextRepository
@@ -37,6 +38,7 @@ class RunwayServices(application: Application) {
     val activityReview = LocalActivityReviewRepository(database)
     val trainingMutations = LocalTrainingMutationRepository(database)
     val trainingContext = LocalTrainingContextRepository(database)
+    val routines = LocalRoutineRepository(database)
     val workoutChanges = LocalWorkoutChangeRepository(RoomLocalWorkoutChangeStore(database))
     val consequenceDecisions = LocalConsequenceDecisionRepository(database)
     val planLifecycle = LocalPlanLifecycleRepository(database)

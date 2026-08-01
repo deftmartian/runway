@@ -79,6 +79,34 @@ class LocalPlanLifecycleRepositoryInstrumentedTest {
     }
 
     @Test
+    fun routineCannotCompleteOrPhaseReviewButArchivesIdempotently() = runBlocking {
+        database.goalPlanDao().saveGoal(
+            GoalEntity("routine-goal", "Weekly running", null, "active", 1_000, 1_000, "routine", "routine", null, "consistency"),
+        )
+        database.goalPlanDao().createPlanGraph(
+            PlanEntity("routine-plan", "routine-goal", "routine", "active", 100, null, 1_000, 1_000),
+            emptyList(),
+            emptyList(),
+        )
+        val repository = LocalPlanLifecycleRepository(database)
+        val request = LocalPlanEndRequest("routine-plan", "archive-routine", 113, 2_000)
+
+        assertEquals(LocalPhaseReviewResult.Unavailable, repository.phaseReview("routine-plan", 113))
+        assertEquals(
+            LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.ROUTINE_CANNOT_COMPLETE),
+            repository.complete(request),
+        )
+        assertEquals(
+            LocalPlanLifecycleResult.Ended("routine-plan", completed = false, alreadyApplied = false),
+            repository.archive(request),
+        )
+        assertEquals(
+            LocalPlanLifecycleResult.Ended("routine-plan", completed = false, alreadyApplied = true),
+            repository.archive(request),
+        )
+    }
+
+    @Test
     fun delayedBaselineAndContinuationStartOnTheNextSchedulingBoundary() = runBlocking {
         seedCalibrationPlan()
         val activityDao = database.activityLedgerDao()

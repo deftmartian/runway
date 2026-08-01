@@ -91,6 +91,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
                 RunwayLedgerMigrations.V3_TO_V4,
+                RunwayLedgerMigrations.V4_TO_V5,
             )
             .allowMainThreadQueries()
             .build()
@@ -110,7 +111,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     .heartRateSamples("preserved-activity", 10)
                     .map { it.beatsPerMinute },
             )
-            assertEquals(4, upgraded.openHelper.writableDatabase.version)
+            assertEquals(5, upgraded.openHelper.writableDatabase.version)
         } finally {
             upgraded.close()
         }
@@ -124,6 +125,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
                 RunwayLedgerMigrations.V3_TO_V4,
+                RunwayLedgerMigrations.V4_TO_V5,
             )
             .allowMainThreadQueries()
             .build()
@@ -131,7 +133,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             val profile = reopened.profileSettingsDao().get()
             assertNotNull(profile)
             assertEquals("private", profile?.heartRateDataMode)
-            assertTrue(reopened.openHelper.writableDatabase.version == 4)
+            assertTrue(reopened.openHelper.writableDatabase.version == 5)
         } finally {
             reopened.close()
         }
@@ -185,6 +187,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
                 RunwayLedgerMigrations.V3_TO_V4,
+                RunwayLedgerMigrations.V4_TO_V5,
             )
             .allowMainThreadQueries()
             .build()
@@ -196,9 +199,44 @@ class RunwayLedgerMigrationInstrumentedTest {
                 "Preserved 5K",
                 restored.goalPlanDao().goal("preserved-goal")?.title,
             )
-            assertEquals(4, restored.openHelper.writableDatabase.version)
+            assertEquals(5, restored.openHelper.writableDatabase.version)
         } finally {
             restored.close()
+        }
+    }
+
+    @Test
+    fun v4LedgerAddsAnEmptyRoutineScheduleWithoutRewritingExistingGoals() = runBlocking<Unit> {
+        helper.createDatabase(TEST_V4_ROUTINE_DATABASE, 4).apply {
+            execSQL(
+                """
+                INSERT INTO goals (
+                    goalId, title, targetDateEpochDay, state, createdAtEpochMillis,
+                    updatedAtEpochMillis, kind, startMode, raceDistanceMeters, priority
+                ) VALUES (
+                    'v4-goal', 'Existing plan', 21000, 'active', 1700000000000,
+                    1700000000000, 'race', 'established', 5000, 'finish_healthy'
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val upgraded = Room.databaseBuilder(
+            context,
+            RunwayLedgerDatabase::class.java,
+            TEST_V4_ROUTINE_DATABASE,
+        )
+            .addMigrations(RunwayLedgerMigrations.V4_TO_V5)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals("Existing plan", upgraded.goalPlanDao().goal("v4-goal")?.title)
+            assertTrue(upgraded.goalPlanDao().routineScheduleDays("missing").isEmpty())
+            assertEquals(5, upgraded.openHelper.writableDatabase.version)
+        } finally {
+            upgraded.close()
         }
     }
 
@@ -275,6 +313,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 .addMigrations(
                     RunwayLedgerMigrations.V2_TO_V3,
                     RunwayLedgerMigrations.V3_TO_V4,
+                    RunwayLedgerMigrations.V4_TO_V5,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -300,7 +339,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                     LocalPrivacyRepository(upgraded).pendingRetentionRepairNotice(),
                 )
                 assertV2SourceReferencesPreserved(upgraded, "ledger")
-                assertEquals(4, upgraded.openHelper.writableDatabase.version)
+                assertEquals(5, upgraded.openHelper.writableDatabase.version)
             } finally {
                 upgraded.close()
             }
@@ -313,6 +352,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 .addMigrations(
                     RunwayLedgerMigrations.V2_TO_V3,
                     RunwayLedgerMigrations.V3_TO_V4,
+                    RunwayLedgerMigrations.V4_TO_V5,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -375,6 +415,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerMigrations.V1_TO_V2,
                 RunwayLedgerMigrations.V2_TO_V3,
                 RunwayLedgerMigrations.V3_TO_V4,
+                RunwayLedgerMigrations.V4_TO_V5,
             )
             .allowMainThreadQueries()
             .build()
@@ -384,7 +425,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 requireNotNull(restored.profileSettingsDao().get()).privateNotes,
             )
             assertV2SourceReferencesPreserved(restored, "restore")
-            assertEquals(4, restored.openHelper.writableDatabase.version)
+            assertEquals(5, restored.openHelper.writableDatabase.version)
         } finally {
             restored.close()
         }
@@ -441,12 +482,12 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerDatabase::class.java,
                 TEST_V3_TIMED_CONSEQUENCE_DATABASE,
             )
-                .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+                .addMigrations(RunwayLedgerMigrations.V3_TO_V4, RunwayLedgerMigrations.V4_TO_V5)
                 .allowMainThreadQueries()
                 .build()
             try {
                 assertTimedConsequenceRepair(upgraded)
-                assertEquals(4, upgraded.openHelper.writableDatabase.version)
+                assertEquals(5, upgraded.openHelper.writableDatabase.version)
             } finally {
                 upgraded.close()
             }
@@ -456,7 +497,7 @@ class RunwayLedgerMigrationInstrumentedTest {
                 RunwayLedgerDatabase::class.java,
                 TEST_V3_TIMED_CONSEQUENCE_DATABASE,
             )
-                .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+                .addMigrations(RunwayLedgerMigrations.V3_TO_V4, RunwayLedgerMigrations.V4_TO_V5)
                 .allowMainThreadQueries()
                 .build()
             try {
@@ -503,7 +544,7 @@ class RunwayLedgerMigrationInstrumentedTest {
             RunwayLedgerDatabase::class.java,
             TEST_V3_INVALID_TIMED_CONSEQUENCE_DATABASE,
         )
-            .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+            .addMigrations(RunwayLedgerMigrations.V3_TO_V4, RunwayLedgerMigrations.V4_TO_V5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -545,12 +586,12 @@ class RunwayLedgerMigrationInstrumentedTest {
             RunwayLedgerDatabase::class.java,
             TEST_V3_TIMED_CONSEQUENCE_BACKUP_DATABASE,
         )
-            .addMigrations(RunwayLedgerMigrations.V3_TO_V4)
+            .addMigrations(RunwayLedgerMigrations.V3_TO_V4, RunwayLedgerMigrations.V4_TO_V5)
             .allowMainThreadQueries()
             .build()
         try {
             assertTimedConsequenceRepair(restored)
-            assertEquals(4, restored.openHelper.writableDatabase.version)
+            assertEquals(5, restored.openHelper.writableDatabase.version)
         } finally {
             restored.close()
         }
@@ -1014,6 +1055,7 @@ class RunwayLedgerMigrationInstrumentedTest {
     private companion object {
         const val TEST_DATABASE = "runway-ledger-v1-to-v2"
         const val TEST_BACKUP_DATABASE = "runway-backup-v1-to-v2"
+        const val TEST_V4_ROUTINE_DATABASE = "runway-ledger-v4-to-v5-routine"
         const val TEST_V2_DATABASE = "runway-ledger-v2-to-v3"
         const val TEST_V2_BACKUP_DATABASE = "runway-backup-v2-to-v3"
         const val TEST_V2_COLLISION_DATABASE = "runway-backup-v2-collision"

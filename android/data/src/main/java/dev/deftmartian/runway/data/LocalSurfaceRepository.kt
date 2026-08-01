@@ -28,7 +28,7 @@ data class LocalSurfaceReadLimits(
 }
 
 enum class LocalPlanState { ACTIVE, COMPLETED, ARCHIVED, OTHER }
-enum class LocalPlanPhase { FOUNDATION, CALIBRATION, DISTANCE, OTHER }
+enum class LocalPlanPhase { FOUNDATION, CALIBRATION, DISTANCE, ROUTINE, OTHER }
 enum class LocalPlanProvenance { ACTIVE, COMPLETED, ARCHIVED, OTHER, UNLINKED }
 
 data class LocalLoadReadModel(
@@ -198,6 +198,7 @@ data class LocalWorkoutReadModel(
     val actual: LocalActivityReadModel?,
     val consequence: LocalConsequenceReadModel? = null,
     val adjustment: LocalWorkoutAdjustmentReadModel? = null,
+    val planPhase: LocalPlanPhase = LocalPlanPhase.OTHER,
 )
 
 data class LocalCalendarDayReadModel(
@@ -220,6 +221,7 @@ data class LocalCalendarReadModel(
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val nextWorkout: LocalWorkoutReadModel? = null,
+    val activePlanPhase: LocalPlanPhase? = null,
 )
 
 data class LocalInboxReadModel(
@@ -297,6 +299,10 @@ data class LocalWeekStatsReadModel(
     val weightedPaceSecondsPerKilometre: Double?,
     val durationWeightedHeartRateBpm: Int?,
     val skippedRuns: Int = 0,
+    /** Scheduled workout slots with a recorded completion. */
+    val plannedRunsRecorded: Int = 0,
+    /** Accepted runs in this plan week that are not linked to a scheduled slot. */
+    val extraRuns: Int = 0,
 )
 
 data class LocalHealthNoticeReadModel(
@@ -362,6 +368,7 @@ data class LocalStatsReadModel(
     val timeZone: String = ZoneId.systemDefault().id,
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
+    val activeSessionsPerWeek: Int? = null,
 )
 
 data class LocalLifecycleReadModel(
@@ -441,6 +448,11 @@ data class LocalPlanHistoryReadModel(
     val missedRuns: Int = 0,
     val skippedRuns: Int = 0,
     val painFlags: Int = 0,
+    val sessionsPerWeek: Int? = null,
+    /** Scheduled workout slots with a recorded completion. */
+    val plannedRunsRecorded: Int = 0,
+    /** Accepted runs in this plan that are not linked to a scheduled slot. */
+    val extraRuns: Int = 0,
 )
 
 data class LocalHistoryReadModel(
@@ -496,6 +508,7 @@ data class LocalActivePlanReadModel(
     val endEpochDay: Long?,
     val riskAssessment: String?,
     val latestLifecycleEvent: LocalLifecycleReadModel?,
+    val sessionsPerWeek: Int? = null,
 )
 
 /** A health-blocked goal remains a visible local decision even before it has a plan graph. */
@@ -610,6 +623,8 @@ data class LocalStatsLedgerSlice(
     val profile: ProfileSettingsEntity? = null,
     val recordedAggregates: List<LocalRecordedAggregateLedgerRow> = emptyList(),
     val weekActualAggregates: List<LocalWeekActualAggregateLedgerRow> = emptyList(),
+    /** False when [activities] is deliberately bounded and exact aggregates are required. */
+    val activitiesContainCompleteWeekContext: Boolean = true,
 )
 
 data class LocalHistoryLedgerSlice(
@@ -623,6 +638,8 @@ data class LocalHistoryLedgerSlice(
     val nextPlanOffset: Int? = null,
     val nextActivityOffset: Int? = null,
     val weekActualAggregates: List<LocalWeekActualAggregateLedgerRow> = emptyList(),
+    /** False when [activities] is deliberately bounded and exact aggregates are required. */
+    val activitiesContainCompleteWeekContext: Boolean = true,
 )
 
 data class LocalSettingsLedgerSlice(
@@ -729,6 +746,7 @@ object LocalSurfaceMappers {
                         adjustment = plan.undoableWorkoutAdjustments.firstOrNull { adjustment ->
                             adjustment.workoutId == it.workoutId
                         },
+                        planPhase = planPhase(plan.plan.phaseType),
                     )
                 }
         }
@@ -779,6 +797,7 @@ object LocalSurfaceMappers {
                 adjustment = plan?.undoableWorkoutAdjustments?.firstOrNull { adjustment ->
                     adjustment.workoutId == entity.workoutId
                 },
+                planPhase = plan?.plan?.phaseType?.let(::planPhase) ?: LocalPlanPhase.OTHER,
             )
         }
         return LocalCalendarReadModel(
@@ -795,6 +814,7 @@ object LocalSurfaceMappers {
             todayEpochDay = slice.todayEpochDay,
             phaseReview = slice.phaseReview,
             nextWorkout = nextWorkout,
+            activePlanPhase = activePlans.singleOrNull()?.plan?.phaseType?.let(::planPhase),
         )
     }
 
@@ -864,6 +884,11 @@ object LocalSurfaceMappers {
     )
 
     fun stats(slice: LocalStatsLedgerSlice): LocalStatsReadModel {
+        assertCompleteWeekActualContext(
+            plans = slice.plans,
+            aggregates = slice.weekActualAggregates,
+            activitiesContainCompleteWeekContext = slice.activitiesContainCompleteWeekContext,
+        )
         val accepted = slice.activities.filter { it.activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED }
         val acceptedByWorkout = accepted
             .filter { it.activity.linkedWorkoutId != null }
@@ -907,6 +932,11 @@ object LocalSurfaceMappers {
                         feedbackByWorkout[workout.workoutId]?.completionState in
                         setOf("done", "shortened", "completed", "overrun")
                 }
+                val plannedRunsRecorded = workouts.count {
+                    it.currentWorkoutType != "rest" && workoutCompleted(it)
+                }
+                val extraRuns = exactActual?.unlinkedRuns?.toSurfaceInt("unlinked week run count")
+                    ?: unlinkedRows.size
                 LocalWeekStatsReadModel(
                     planId = plan.plan.planId,
                     planState = planState(plan.plan.state),
@@ -922,12 +952,7 @@ object LocalSurfaceMappers {
                         )
                     } ?: loads(actualLoads),
                     plannedRuns = workouts.count { it.currentWorkoutType != "rest" },
-                    completedRuns = workouts.count {
-                        it.currentWorkoutType != "rest" && workoutCompleted(it)
-                    } + (
-                        exactActual?.unlinkedRuns?.toSurfaceInt("unlinked week run count")
-                            ?: unlinkedRows.size
-                        ),
+                    completedRuns = plannedRunsRecorded + extraRuns,
                     missedRuns = workouts.count {
                         it.currentWorkoutType != "rest" &&
                             !workoutCompleted(it) &&
@@ -986,6 +1011,8 @@ object LocalSurfaceMappers {
                             !workoutCompleted(it) &&
                             it.currentStatus == "skipped"
                     },
+                    plannedRunsRecorded = plannedRunsRecorded,
+                    extraRuns = extraRuns,
                 )
             }
         }
@@ -1128,6 +1155,10 @@ object LocalSurfaceMappers {
             timeZone = slice.timeZone,
             todayEpochDay = slice.todayEpochDay,
             phaseReview = slice.phaseReview,
+            activeSessionsPerWeek = slice.plans
+                .firstOrNull { it.plan.state == "active" }
+                ?.plan
+                ?.summarySessionsPerWeek,
         )
     }
 
@@ -1138,6 +1169,11 @@ object LocalSurfaceMappers {
     )
 
     fun history(slice: LocalHistoryLedgerSlice): LocalHistoryReadModel {
+        assertCompleteWeekActualContext(
+            plans = slice.plans,
+            aggregates = slice.weekActualAggregates,
+            activitiesContainCompleteWeekContext = slice.activitiesContainCompleteWeekContext,
+        )
         val accepted = slice.activities.filter { it.activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED }
         val zone = runCatching { ZoneId.of(slice.timeZone) }.getOrDefault(ZoneId.systemDefault())
         val unlinkedAssignments = assignUnlinkedToPlanWeeks(accepted, slice.plans, zone)
@@ -1275,6 +1311,14 @@ object LocalSurfaceMappers {
                     plan.plan.archivedAtEpochMillis,
                 ).minOrNull()?.let { localEpochDay(it, slice.timeZone) } ?: slice.todayEpochDay
             }
+            val plannedRunsRecorded = plan.workouts.count {
+                it.currentWorkoutType != "rest" && workoutCompleted(it)
+            }
+            val extraRuns = exactPlanActuals
+                .sumOf(LocalWeekActualAggregateLedgerRow::unlinkedRuns)
+                .takeIf { exactPlanActuals.isNotEmpty() }
+                ?.toSurfaceInt("history plan unlinked run count")
+                ?: planExtraActivities.size
             LocalPlanHistoryReadModel(
                 planId = plan.plan.planId,
                 goalId = plan.goal?.goalId ?: plan.plan.goalId,
@@ -1288,15 +1332,7 @@ object LocalSurfaceMappers {
                 plannedRuns = plan.workouts.count {
                     it.currentWorkoutType != "rest" && it.currentStatus != WORKOUT_STATE_TOMBSTONED
                 },
-                completedRuns = plan.workouts.count {
-                    it.currentWorkoutType != "rest" && workoutCompleted(it)
-                } + (
-                    exactPlanActuals
-                        .sumOf(LocalWeekActualAggregateLedgerRow::unlinkedRuns)
-                        .takeIf { exactPlanActuals.isNotEmpty() }
-                        ?.toSurfaceInt("history plan unlinked run count")
-                        ?: planExtraActivities.size
-                    ),
+                completedRuns = plannedRunsRecorded + extraRuns,
                 actual = if (exactPlanActuals.isNotEmpty()) {
                     LocalLoadReadModel(
                         exactPlanActuals
@@ -1376,6 +1412,9 @@ object LocalSurfaceMappers {
                         planExtraActivities.mapNotNull(LocalActivityLedgerSlice::feedback)
                             .count(ActivityFeedbackEntity::pain)
                 },
+                sessionsPerWeek = plan.plan.summarySessionsPerWeek,
+                plannedRunsRecorded = plannedRunsRecorded,
+                extraRuns = extraRuns,
             )
         }
         return LocalHistoryReadModel(
@@ -1396,6 +1435,21 @@ object LocalSurfaceMappers {
             todayEpochDay = slice.todayEpochDay,
             phaseReview = slice.phaseReview,
         )
+    }
+
+    private fun assertCompleteWeekActualContext(
+        plans: List<LocalPlanLedgerSlice>,
+        aggregates: List<LocalWeekActualAggregateLedgerRow>,
+        activitiesContainCompleteWeekContext: Boolean,
+    ) {
+        if (activitiesContainCompleteWeekContext) return
+        val expected = plans.flatMap { plan ->
+            plan.weeks.map { week -> plan.plan.planId to week.weekId }
+        }.toSet()
+        val actual = aggregates.map { it.planId to it.weekId }
+        require(actual.size == expected.size && actual.toSet() == expected) {
+            "Bounded activity context requires one exact actual aggregate for every displayed plan week."
+        }
     }
 
     fun settings(slice: LocalSettingsLedgerSlice): LocalSettingsReadModel {
@@ -1442,6 +1496,7 @@ object LocalSurfaceMappers {
                 endEpochDay = it.plan.endEpochDay,
                 riskAssessment = it.plan.riskAssessment,
                 latestLifecycleEvent = it.lifecycle.maxByOrNull(PlanLifecycleEventEntity::occurredAtEpochMillis)?.let(::lifecycle),
+                sessionsPerWeek = it.plan.summarySessionsPerWeek,
             )
         }
         val pendingGoal = slice.pendingGoal?.let {
@@ -1476,6 +1531,7 @@ object LocalSurfaceMappers {
         segments: List<WorkoutSegmentEntity> = emptyList(),
         consequence: LocalConsequenceReadModel? = null,
         adjustment: LocalWorkoutAdjustmentReadModel? = null,
+        planPhase: LocalPlanPhase = LocalPlanPhase.OTHER,
     ): LocalWorkoutReadModel {
         val generated = prescription(entity, generated = true, blocks = blocks, segments = segments)
         val current = prescription(entity, generated = false, blocks = blocks, segments = segments)
@@ -1500,6 +1556,7 @@ object LocalSurfaceMappers {
             actual = actual?.let(::activity),
             consequence = consequence,
             adjustment = adjustment,
+            planPhase = planPhase,
         )
     }
 
@@ -1787,18 +1844,18 @@ object LocalSurfaceMappers {
     private fun healthNotice(profile: ProfileSettingsEntity?): LocalHealthNoticeReadModel? = when {
         profile?.medicalRestriction == true -> LocalHealthNoticeReadModel(
             level = "paused",
-            heading = "Running limit recorded",
-            message = "A clinician-imposed running limit is active. The schedule remains recorded, but runway does not treat it as clearance to continue.",
+            heading = "Clinician limit saved",
+            message = "New setup will not create a schedule while this remains selected. Existing workouts stay recorded; runway does not treat them as clearance to continue.",
         )
         profile?.currentPain == true -> LocalHealthNoticeReadModel(
             level = "paused",
-            heading = "Pain is present now",
-            message = "The schedule remains recorded, but runway does not treat it as clearance to continue. Seek qualified guidance if pain persists, worsens, or changes how you move.",
+            heading = "Pain affects running now",
+            message = "New setup will not create a schedule while this remains selected. Existing workouts stay recorded; seek qualified guidance if pain persists, worsens, or changes how you move.",
         )
         profile?.recentInjury == true || profile?.recurringPain == true -> LocalHealthNoticeReadModel(
             level = "caution",
-            heading = "Health context noted",
-            message = "Recovery or recurring pain is recorded. It changes the distance-ramp assessment, but it does not determine whether running is appropriate.",
+            heading = "More cautious ramp checks",
+            message = "A recent injury or recurring pain is saved. Distance prescriptions and targeted-run edits are flagged sooner; foundation sessions and open routine runs stay unchanged.",
         )
         else -> null
     }
@@ -1886,6 +1943,7 @@ object LocalSurfaceMappers {
         "foundation" -> LocalPlanPhase.FOUNDATION
         "calibration" -> LocalPlanPhase.CALIBRATION
         "distance" -> LocalPlanPhase.DISTANCE
+        "routine" -> LocalPlanPhase.ROUTINE
         else -> LocalPlanPhase.OTHER
     }
 

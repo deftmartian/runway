@@ -386,13 +386,14 @@ internal fun StatsScreen(
         .associateBy { it.startDate.orEmpty() }
     val noActiveSummary = noActiveStatsSummary(payload?.history)
     val hasRecordedHistory = hasRecordedStatsHistory(payload?.history)
+    val isRoutine = payload?.active?.plan?.phase == "routine"
     NativeList(loading) {
         item {
             ScreenContext(
                 if (payload?.active == null) {
                     "Recorded runs and past plans."
                 } else {
-                    "Current plan and recorded runs."
+                    if (isRoutine) "Weekly routine and recorded runs." else "Current plan and recorded runs."
                 },
             )
         }
@@ -426,24 +427,168 @@ internal fun StatsScreen(
                             onClick = { onDestinationSelected(NativeDestination.Setup) },
                             modifier = Modifier.weight(1f),
                             shape = MaterialTheme.shapes.small,
-                        ) { Text("Build plan") }
+                        ) { Text("Set up running") }
                     }
                 }
             }
-            !hasRecordedHistory -> FirstRunStats(
-                active = payload.active,
-                todayIso = payload.history?.todayIso,
-                fallbackWeeks = weeks.size,
-                onOpenCalendar = { onDestinationSelected(NativeDestination.Calendar) },
-            )
+            !hasRecordedHistory -> if (isRoutine) {
+                FirstRoutineStats(
+                    runsPerWeek = payload.active.plan.sessionsPerWeek,
+                    onOpenCalendar = { onDestinationSelected(NativeDestination.Calendar) },
+                )
+            } else {
+                FirstRunStats(
+                    active = payload.active,
+                    todayIso = payload.history?.todayIso,
+                    fallbackWeeks = weeks.size,
+                    onOpenCalendar = { onDestinationSelected(NativeDestination.Calendar) },
+                )
+            }
             else -> {
-                item { StatsAssessment(payload.history) }
-                item { NativeStatsTraces(payload.planTrace, payload.history?.weeklySummaries.orEmpty()) }
-                items(weeks, key = { it.id.orEmpty() }) { week ->
-                    WeekCard(week, completedByStart[week.startDate.orEmpty()])
+                if (isRoutine) {
+                    item {
+                        RoutineStatsAssessment(
+                            history = payload.history,
+                            runsPerWeek = payload.active.plan.sessionsPerWeek,
+                            routineStartDate = payload.active.plan.startDate,
+                            onOpenCalendar = { onDestinationSelected(NativeDestination.Calendar) },
+                        )
+                    }
+                    item {
+                        NativeRoutineStatsTraces(
+                            weeklySummaries = payload.history?.weeklySummaries.orEmpty(),
+                            todayIso = payload.history?.todayIso,
+                            runsPerWeek = payload.active.plan.sessionsPerWeek,
+                        )
+                    }
+                } else {
+                    item { StatsAssessment(payload.history) }
+                    item { NativeStatsTraces(payload.planTrace, payload.history?.weeklySummaries.orEmpty()) }
+                    items(weeks, key = { it.id.orEmpty() }) { week ->
+                        WeekCard(week, completedByStart[week.startDate.orEmpty()])
+                    }
                 }
             }
         }
+    }
+}
+
+private fun LazyListScope.FirstRoutineStats(
+    runsPerWeek: Int?,
+    onOpenCalendar: () -> Unit,
+) {
+    item {
+        SettingCard("Your weekly routine is ready") {
+            Text(
+                if (runsPerWeek != null && runsPerWeek > 0) {
+                    "$runsPerWeek ${if (runsPerWeek == 1) "run is" else "runs are"} scheduled each week. Routine runs start open; you can add a target to an individual run."
+                } else {
+                    "Open Calendar to see the next open run."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = onOpenCalendar,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text("Open calendar")
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoutineStatsAssessment(
+    history: NativeTrainingHistory?,
+    runsPerWeek: Int?,
+    routineStartDate: String?,
+    onOpenCalendar: () -> Unit,
+) {
+    history?.currentSignal?.healthNotice?.let { notice ->
+        SettingCard(notice.heading.orEmpty().ifBlank { "Running check-in" }) {
+            Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    val week = routineCurrentWeek(history)
+    if (routineWeekIsWaiting(week)) {
+        SettingCard("Your routine is ready") {
+            Text(
+                routineWaitingMessage(routineStartDate, history?.todayIso),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = onOpenCalendar,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text("Open calendar")
+            }
+        }
+        return
+    }
+    requireNotNull(week)
+    val planned = week.plannedRuns ?: 0
+    val extras = week.extraRuns ?: 0
+    val plannedRecorded = week.plannedRunsRecorded
+        ?: ((week.completedRuns ?: 0) - extras).coerceAtLeast(0)
+    val recorded = week.completedRuns ?: 0
+    SettingCard("This week") {
+        runsPerWeek?.takeIf { it > 0 }?.let {
+            SettingRow("Routine goal", "$it ${if (it == 1) "run" else "runs"} each week")
+        }
+        SettingRow(
+            "Runs recorded",
+            if (planned > 0) "$recorded of $planned this week" else recorded.toString(),
+        )
+        if (extras > 0) {
+            SettingRow("On scheduled days", plannedRecorded.toString())
+            SettingRow("On other days", extras.toString())
+        }
+        if ((week.skippedRuns ?: 0) > 0) SettingRow("Marked skipped", week.skippedRuns.toString())
+        if ((week.missedRuns ?: 0) > 0) SettingRow("Not recorded", week.missedRuns.toString())
+        week.completedDistanceMeters?.takeIf { it > 0 }?.let {
+            SettingRow("Recorded distance", formatDistance(it))
+        }
+        week.completedDurationSeconds?.takeIf { it > 0 }?.let {
+            SettingRow("Recorded time", formatDuration(it))
+        }
+        Text(
+            "Missing or extra runs do not move future routine days.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+internal fun routineWeekIsWaiting(week: NativeWeekSummary?): Boolean =
+    week == null || (
+        (week.plannedRuns ?: 0) == 0 &&
+            (week.completedRuns ?: 0) == 0 &&
+            (week.completedDistanceMeters ?: 0.0) <= 0.0 &&
+            (week.completedDurationSeconds ?: 0.0) <= 0.0
+        )
+
+internal fun routineWaitingMessage(startDate: String?, todayIso: String?): String {
+    val start = startDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    val today = todayIso?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    return if (start != null && today != null && start > today) {
+        "Your first routine week starts ${friendlyDate(start.toString())}. Calendar shows the open runs."
+    } else {
+        "Calendar shows the next open run in your routine."
+    }
+}
+
+internal fun routineCurrentWeek(history: NativeTrainingHistory?): NativeWeekSummary? {
+    val today = history?.todayIso?.takeIf(String::isNotBlank) ?: return null
+    return history.weeklySummaries.firstOrNull { week ->
+        week.startDate?.let { start ->
+            runCatching {
+                val startDate = java.time.LocalDate.parse(start)
+                val current = java.time.LocalDate.parse(today)
+                current in startDate..startDate.plusDays(6)
+            }.getOrDefault(false)
+        } == true
     }
 }
 
@@ -494,7 +639,7 @@ private fun StatsAssessment(history: NativeTrainingHistory?) {
     val weeks = history?.weeklySummaries.orEmpty()
     val signal = history?.currentSignal
     signal?.healthNotice?.let { notice ->
-        SettingCard(notice.heading.orEmpty().ifBlank { "Health context" }) {
+        SettingCard(notice.heading.orEmpty().ifBlank { "Running check-in" }) {
             Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

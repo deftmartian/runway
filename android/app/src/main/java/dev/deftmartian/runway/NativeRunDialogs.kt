@@ -51,6 +51,13 @@ internal fun positiveRunMeasurementError(value: String, unit: String): String? {
     return if (number != null && number > 0.0) null else "Enter a value greater than 0 $unit."
 }
 
+internal fun feedbackPlanChangeMessage(planPhase: String?): String =
+    if (planPhase == "routine") {
+        "Hard effort and pain are saved in your record. A pain report also updates the running check-in; neither changes later routine days."
+    } else {
+        "These reports can offer conservative next-step options. Nothing changes until you choose and apply it."
+    }
+
 internal fun workoutPurposeInputError(value: String): String? =
     if (value.trim().length in 2..120) null else "Enter a purpose of 2 to 120 characters."
 
@@ -67,6 +74,8 @@ internal fun FeedbackDialog(
 ) {
     val prescriptionKind = workout.prescriptionKind.toPrescriptionKindOrNull()
     val timed = prescriptionKind == PrescriptionKind.TIMED
+    val open = prescriptionKind == PrescriptionKind.OPEN
+    val routine = workout.planPhase == "routine"
     val storedFormatIssue =
         if (prescriptionKind == null || prescriptionKind == PrescriptionKind.REST) {
             "This workout does not have a supported run prescription, so its result cannot be recorded."
@@ -94,8 +103,17 @@ internal fun FeedbackDialog(
     }
     var harderThanExpected by rememberSaveable { mutableStateOf(false) }
     var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
+    val distanceError = when {
+        status == FeedbackStatus.SKIPPED || !open -> null
+        else -> boundedRunMeasurementError(distance, false, 0.1, 100.0, "km")
+    }
+    val durationError = when {
+        status == FeedbackStatus.SKIPPED || !open -> null
+        else -> boundedRunMeasurementError(duration, false, 1.0, 600.0, "minutes")
+    }
     val measurementError = when {
         status == FeedbackStatus.SKIPPED -> null
+        open -> distanceError ?: durationError
         timed -> positiveRunMeasurementError(duration, "minutes")
         else -> positiveRunMeasurementError(distance, "km")
     }
@@ -129,15 +147,34 @@ internal fun FeedbackDialog(
                 }
                 if (status != FeedbackStatus.SKIPPED) {
                     item {
-                        NumberField(
-                            if (timed) "Completed duration (minutes)" else "Completed distance (km)",
-                            if (timed) duration else distance,
-                            errorMessage = measurementError,
-                        ) {
-                            if (timed) duration = it else distance = it
+                        if (open) {
+                            NumberField(
+                                "Distance (km, optional)",
+                                distance,
+                                errorMessage = distanceError,
+                            ) { distance = it }
+                            NumberField(
+                                "Duration (minutes, optional)",
+                                duration,
+                                errorMessage = durationError,
+                            ) { duration = it }
+                        } else {
+                            NumberField(
+                                if (timed) "Completed duration (minutes)" else "Completed distance (km)",
+                                if (timed) duration else distance,
+                                errorMessage = measurementError,
+                            ) {
+                                if (timed) duration = it else distance = it
+                            }
                         }
                         Text(
-                            "Enter what happened. Runway will compare it with the prescription and show whether it was near, under, or over plan.",
+                            if (open && routine) {
+                                "Record either measurement if it is useful. This routine tracks that you ran; it does not compare the amount with a target."
+                            } else if (open) {
+                                "Record either measurement if it is useful. This run has no target to compare."
+                            } else {
+                                "Enter what happened. Runway will compare it with the prescription and show whether it was near, under, or over plan."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -155,7 +192,7 @@ internal fun FeedbackDialog(
                 }
                 item {
                     Text(
-                        "These reports can offer conservative next-step options. Nothing changes until you choose and apply it.",
+                        feedbackPlanChangeMessage(workout.planPhase),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -172,14 +209,14 @@ internal fun FeedbackDialog(
                             feltHard = harderThanExpected,
                             pain = painDuringOrAfter,
                             completedDistanceKm =
-                                if (status != FeedbackStatus.SKIPPED && !timed) {
-                                    distance.toDouble()
+                                if (status != FeedbackStatus.SKIPPED && (open || !timed)) {
+                                    distance.toDoubleOrNull()
                                 } else {
                                     null
                                 },
                             completedDurationMinutes =
-                                if (status != FeedbackStatus.SKIPPED && timed) {
-                                    duration.toDouble()
+                                if (status != FeedbackStatus.SKIPPED && (open || timed)) {
+                                    duration.toDoubleOrNull()
                                 } else {
                                     null
                                 },
@@ -311,6 +348,7 @@ internal fun ManualRunDialog(
 @Composable
 internal fun WorkoutAddDialog(
     defaultDate: String,
+    routine: Boolean = false,
     actionPending: Boolean,
     errorMessage: String?,
     onDismiss: () -> Unit,
@@ -319,18 +357,24 @@ internal fun WorkoutAddDialog(
     var scheduledDate by rememberSaveable { mutableStateOf(defaultDate) }
     var type by rememberSaveable { mutableStateOf(WorkoutType.EASY) }
     var distance by rememberSaveable { mutableStateOf("") }
-    var purpose by rememberSaveable { mutableStateOf("Easy aerobic run") }
+    var purpose by rememberSaveable(routine) {
+        mutableStateOf(if (routine) "Open run" else "Easy aerobic run")
+    }
     var reason by rememberSaveable { mutableStateOf("") }
     var rebalance by rememberSaveable { mutableStateOf(false) }
     val distanceNumber = distance.toDoubleOrNull()
     val dateError = isoDateInputError(scheduledDate)
-    val distanceError = boundedRunMeasurementError(
-        value = distance,
-        required = true,
-        minimum = 0.1,
-        maximum = 100.0,
-        unit = "km",
-    )
+    val distanceError = if (routine) {
+        null
+    } else {
+        boundedRunMeasurementError(
+            value = distance,
+            required = true,
+            minimum = 0.1,
+            maximum = 100.0,
+            unit = "km",
+        )
+    }
     val purposeError = workoutPurposeInputError(purpose)
     val valid =
         dateError == null &&
@@ -346,7 +390,11 @@ internal fun WorkoutAddDialog(
                 }
                 item {
                     Text(
-                        "Runway will show the weekly-load effect before adding it.",
+                        if (routine) {
+                            "This adds one open run. It does not change your recurring days or any other week."
+                        } else {
+                            "Runway will show the weekly-load effect before adding it."
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -360,22 +408,24 @@ internal fun WorkoutAddDialog(
                         singleLine = true,
                     )
                 }
-                item {
-                    listOf(
-                        WorkoutType.EASY to "Easy",
-                        WorkoutType.LONG to "Long",
-                        WorkoutType.RECOVERY to "Recovery",
-                    )
-                        .forEach { (value, label) ->
-                            ChoiceRow(label, type == value) { type = value }
-                        }
-                }
-                item {
-                    NumberField(
-                        "Distance (km)",
-                        distance,
-                        errorMessage = distanceError,
-                    ) { distance = it }
+                if (!routine) {
+                    item {
+                        listOf(
+                            WorkoutType.EASY to "Easy",
+                            WorkoutType.LONG to "Long",
+                            WorkoutType.RECOVERY to "Recovery",
+                        )
+                            .forEach { (value, label) ->
+                                ChoiceRow(label, type == value) { type = value }
+                            }
+                    }
+                    item {
+                        NumberField(
+                            "Distance (km)",
+                            distance,
+                            errorMessage = distanceError,
+                        ) { distance = it }
+                    }
                 }
                 item {
                     OutlinedTextField(
@@ -395,8 +445,10 @@ internal fun WorkoutAddDialog(
                         label = { Text("Why you’re adding it (optional)") },
                     )
                 }
-                item {
-                    CheckRow("Rebalance the rest of this week", rebalance) { rebalance = it }
+                if (!routine) {
+                    item {
+                        CheckRow("Rebalance the rest of this week", rebalance) { rebalance = it }
+                    }
                 }
             }
         },
@@ -405,17 +457,13 @@ internal fun WorkoutAddDialog(
                 onClick = {
                     onSubmit(
                         PreviewWorkoutAddCommand(
-                            WorkoutMutation(
+                            workoutAddMutation(
                                 scheduledDate = scheduledDate,
+                                routine = routine,
                                 type = type,
-                                prescriptionKind = PrescriptionKind.DISTANCE,
-                                targetDistanceMeters =
-                                    (requireNotNull(distanceNumber) * 1_000).toInt(),
-                                targetDurationSeconds = null,
-                                intervalStructure = null,
-                                intensity = "easy",
-                                purpose = purpose.trim(),
-                                userReason = reason.trim(),
+                                distanceKm = distanceNumber,
+                                purpose = purpose,
+                                reason = reason,
                                 rebalance = rebalance,
                             ),
                         ),
@@ -430,6 +478,30 @@ internal fun WorkoutAddDialog(
     )
 }
 
+internal fun workoutAddMutation(
+    scheduledDate: String,
+    routine: Boolean,
+    type: WorkoutType,
+    distanceKm: Double?,
+    purpose: String,
+    reason: String,
+    rebalance: Boolean,
+): WorkoutMutation {
+    require(routine || distanceKm != null)
+    return WorkoutMutation(
+        scheduledDate = scheduledDate,
+        type = if (routine) WorkoutType.EASY else type,
+        prescriptionKind = if (routine) PrescriptionKind.OPEN else PrescriptionKind.DISTANCE,
+        targetDistanceMeters = if (routine) 0 else (requireNotNull(distanceKm) * 1_000).toInt(),
+        targetDurationSeconds = null,
+        intervalStructure = null,
+        intensity = "easy",
+        purpose = purpose.trim(),
+        userReason = reason.trim(),
+        rebalance = !routine && rebalance,
+    )
+}
+
 @Composable
 internal fun WorkoutEditDialog(
     workout: NativeWorkout,
@@ -441,29 +513,46 @@ internal fun WorkoutEditDialog(
 ) {
     val currentPrescriptionKind = workout.prescriptionKind.toPrescriptionKindOrNull()
     val currentWorkoutType = workout.type.toWorkoutTypeOrNull()
-    val timed = currentPrescriptionKind == PrescriptionKind.TIMED
     var scheduledDate by rememberSaveable { mutableStateOf(workout.scheduledDate.orEmpty()) }
     var type by rememberSaveable { mutableStateOf(currentWorkoutType) }
-    var load by rememberSaveable {
+    var prescriptionKind by rememberSaveable {
         mutableStateOf(
-            if (timed) {
+            currentPrescriptionKind?.takeUnless { it == PrescriptionKind.REST }
+                ?: PrescriptionKind.DISTANCE,
+        )
+    }
+    val timed = prescriptionKind == PrescriptionKind.TIMED
+    val open = prescriptionKind == PrescriptionKind.OPEN
+    var distanceTarget by rememberSaveable {
+        mutableStateOf(
+            if (currentPrescriptionKind == PrescriptionKind.DISTANCE) {
+                String.format(
+                    Locale.US,
+                    "%.1f",
+                    (workout.targetDistanceMeters ?: 0.0) / 1_000,
+                )
+            } else {
+                ""
+            },
+        )
+    }
+    var durationTarget by rememberSaveable {
+        mutableStateOf(
+            if (currentPrescriptionKind == PrescriptionKind.TIMED) {
                 String.format(
                     Locale.US,
                     "%.0f",
                     (workout.targetDurationSeconds ?: 0.0) / 60,
                 )
             } else {
-                String.format(
-                    Locale.US,
-                    "%.1f",
-                    (workout.targetDistanceMeters ?: 0.0) / 1_000,
-                )
+                ""
             },
         )
     }
     var purpose by rememberSaveable { mutableStateOf(workout.purpose.orEmpty()) }
     var reason by rememberSaveable { mutableStateOf("") }
     var rebalance by rememberSaveable { mutableStateOf(false) }
+    val load = if (timed) durationTarget else distanceTarget
     val loadNumber = load.toDoubleOrNull()
     val isRest = type == WorkoutType.REST
     val storedFormatIssue =
@@ -477,7 +566,7 @@ internal fun WorkoutEditDialog(
             else -> null
         }
     val dateError = isoDateInputError(scheduledDate)
-    val loadError = if (isRest) {
+    val loadError = if (isRest || open) {
         null
     } else {
         boundedRunMeasurementError(
@@ -507,7 +596,11 @@ internal fun WorkoutEditDialog(
                 }
                 item {
                     Text(
-                        "Runway will show the weekly-load effect before applying this change.",
+                        if (open) {
+                            "This run has no prescribed amount. You can move it, change its purpose, or give this one run a distance or time target."
+                        } else {
+                            "Runway will show the weekly-load effect before applying this change."
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -530,16 +623,39 @@ internal fun WorkoutEditDialog(
                         WorkoutType.REST to "Rest",
                     )
                         .forEach { (value, label) ->
-                            ChoiceRow(label, type == value) { type = value }
+                            ChoiceRow(label, type == value) {
+                                type = value
+                                if (open && value !in setOf(WorkoutType.EASY, WorkoutType.REST)) {
+                                    prescriptionKind = PrescriptionKind.DISTANCE
+                                }
+                            }
                         }
                 }
                 if (!isRest) {
                     item {
-                        NumberField(
-                            if (timed) "Duration (minutes)" else "Distance (km)",
-                            load,
-                            errorMessage = loadError,
-                        ) { load = it }
+                        Text("Target", style = MaterialTheme.typography.labelLarge)
+                        ChoiceRow("Open run", open) {
+                            type = WorkoutType.EASY
+                            prescriptionKind = PrescriptionKind.OPEN
+                            rebalance = false
+                        }
+                        ChoiceRow("Distance", prescriptionKind == PrescriptionKind.DISTANCE) {
+                            prescriptionKind = PrescriptionKind.DISTANCE
+                        }
+                        ChoiceRow("Time", timed) {
+                            prescriptionKind = PrescriptionKind.TIMED
+                        }
+                    }
+                    if (!open) {
+                        item {
+                            NumberField(
+                                if (timed) "Duration (minutes)" else "Distance (km)",
+                                load,
+                                errorMessage = loadError,
+                            ) {
+                                if (timed) durationTarget = it else distanceTarget = it
+                            }
+                        }
                     }
                 }
                 item {
@@ -561,7 +677,9 @@ internal fun WorkoutEditDialog(
                     )
                 }
                 item {
-                    CheckRow("Rebalance the rest of this week", rebalance) { rebalance = it }
+                    if (!isRest && !open) {
+                        CheckRow("Rebalance the rest of this week", rebalance) { rebalance = it }
+                    }
                 }
                 item {
                     TextButton(onClick = onRemove, enabled = !actionPending) {
@@ -587,13 +705,11 @@ internal fun WorkoutEditDialog(
                                 prescriptionKind =
                                     if (isRest) {
                                         PrescriptionKind.REST
-                                    } else if (timed) {
-                                        PrescriptionKind.TIMED
                                     } else {
-                                        PrescriptionKind.DISTANCE
+                                        prescriptionKind
                                     },
                                 targetDistanceMeters =
-                                    if (isRest || timed) 0
+                                    if (isRest || timed || open) 0
                                     else (requireNotNull(loadNumber) * 1_000).toInt(),
                                 targetDurationSeconds = targetDurationSeconds,
                                 intervalStructure =
@@ -608,7 +724,7 @@ internal fun WorkoutEditDialog(
                                 intensity = if (isRest) "rest" else "easy",
                                 purpose = purpose.trim(),
                                 userReason = reason.trim(),
-                                rebalance = rebalance,
+                                rebalance = rebalance && !isRest && !open,
                             ),
                         ),
                     )

@@ -19,7 +19,7 @@ class LocalPlanSetupRepository(
         return database.withTransaction {
             val plans = database.goalPlanDao()
             val candidate = request.candidate
-            val candidatePlanId = (candidate as? LocalPlanCandidate.Generated)?.graph?.plan?.planId
+            val candidatePlanId = candidate.planId
             database.planSetupReceiptDao().receipt(request.operationId)?.let { receipt ->
                 if (receipt.operationFingerprint != request.operationFingerprint) {
                     return@withTransaction LocalPlanSetupResult.Rejected(
@@ -74,15 +74,21 @@ class LocalPlanSetupRepository(
                 request.profile.preservingLocalPreferencesFrom(profiles.get()),
                 request.availabilityDays,
             )
-            (candidate as? LocalPlanCandidate.Generated)?.graph?.let { graph ->
-                plans.saveGoal(graph.goal)
-                plans.createPlanGraph(graph.plan, graph.weeks, graph.workouts, graph.planSummaryWarnings)
-                for (reference in graph.planSourceReferences) plans.savePlanSourceReference(reference)
-                for (block in graph.blocks) plans.saveBlock(block)
-                for (segment in graph.segments) plans.saveSegment(segment)
-                for (reference in graph.workoutSourceReferences) plans.saveWorkoutSourceReference(reference)
-            } ?: run {
-                plans.saveGoal(candidate.goal)
+            when (candidate) {
+                is LocalPlanCandidate.Generated -> {
+                    val graph = candidate.graph
+                    plans.saveGoal(graph.goal)
+                    plans.createPlanGraph(graph.plan, graph.weeks, graph.workouts, graph.planSummaryWarnings)
+                    for (reference in graph.planSourceReferences) plans.savePlanSourceReference(reference)
+                    for (block in graph.blocks) plans.saveBlock(block)
+                    for (segment in graph.segments) plans.saveSegment(segment)
+                    for (reference in graph.workoutSourceReferences) plans.saveWorkoutSourceReference(reference)
+                }
+                is LocalPlanCandidate.Routine -> {
+                    plans.saveGoal(candidate.graph.goal)
+                    plans.createRoutineGraph(candidate.graph)
+                }
+                is LocalPlanCandidate.Pending -> plans.saveGoal(candidate.goal)
             }
             database.planSetupReceiptDao().insert(
                 PlanSetupReceiptEntity(
@@ -142,13 +148,22 @@ data class LocalPlanSetupRequest(
 
 sealed interface LocalPlanCandidate {
     val goal: GoalEntity
+    val planId: String?
 
     data class Generated(val graph: GeneratedPlanPersistenceGraph) : LocalPlanCandidate {
         override val goal: GoalEntity get() = graph.goal
+        override val planId: String get() = graph.plan.planId
+    }
+
+    data class Routine(val graph: RoutinePlanPersistenceGraph) : LocalPlanCandidate {
+        override val goal: GoalEntity get() = graph.goal
+        override val planId: String get() = graph.plan.planId
     }
 
     /** A health-blocked or not-yet-schedulable goal intentionally has no plan rows. */
-    data class Pending(override val goal: GoalEntity) : LocalPlanCandidate
+    data class Pending(override val goal: GoalEntity) : LocalPlanCandidate {
+        override val planId: String? = null
+    }
 }
 
 sealed interface LocalPlanSetupResult {
@@ -166,6 +181,7 @@ enum class LocalPlanSetupError {
     INVALID_AVAILABILITY,
     INVALID_IDENTITY,
     INVALID_GENERATED_GRAPH,
+    INVALID_ROUTINE_GRAPH,
     PENDING_GOAL_MUST_USE_PENDING_STATE,
     GENERATED_GRAPH_MUST_USE_ACTIVE_STATE,
     IDENTITY_ALREADY_EXISTS,
@@ -198,6 +214,7 @@ object LocalPlanSetupPreparation {
                 if (candidate.goal.state != "pending") Invalid(LocalPlanSetupError.PENDING_GOAL_MUST_USE_PENDING_STATE) else Ready
             }
             is LocalPlanCandidate.Generated -> validateGraph(candidate.graph)
+            is LocalPlanCandidate.Routine -> validateRoutineGraph(candidate.graph)
         }
     }
 
@@ -221,6 +238,52 @@ object LocalPlanSetupPreparation {
             graph.planSummaryWarnings.map { it.warningId } + graph.planSourceReferences.map { it.referenceId } +
             graph.workoutSourceReferences.map { it.referenceId }
         return if (identities.size == identities.distinct().size) Ready else Invalid(LocalPlanSetupError.INVALID_GENERATED_GRAPH)
+    }
+
+    private fun validateRoutineGraph(graph: RoutinePlanPersistenceGraph): Result {
+        if (
+            graph.goal.state != "active" || graph.goal.kind != "routine" ||
+            graph.goal.startMode != "routine" || graph.goal.targetDateEpochDay != null ||
+            graph.plan.state != "active" || graph.plan.goalId != graph.goal.goalId ||
+            graph.plan.phaseType != "routine" || graph.plan.endEpochDay != null ||
+            !validId(graph.plan.planId) ||
+            graph.days.size !in 1..7 ||
+            graph.days.map { it.dayOfWeek }.distinct().size != graph.days.size ||
+            graph.days.any { it.planId != graph.plan.planId || it.dayOfWeek !in 0..6 } ||
+            graph.weeks.size != RoutinePlanPersistenceMapper.INITIAL_HORIZON_WEEKS ||
+            graph.weeks.any { !validId(it.weekId) || it.planId != graph.plan.planId } ||
+            graph.workouts.any { !validId(it.workoutId) || it.planId != graph.plan.planId } ||
+            graph.workouts.any { workout -> graph.weeks.none { it.weekId == workout.weekId } } ||
+            graph.workouts.any {
+                it.generatedPrescriptionKind != "open" || it.currentPrescriptionKind != "open" ||
+                    it.generatedDistanceMeters != null || it.currentDistanceMeters != null ||
+                    it.generatedDurationSeconds != null || it.currentDurationSeconds != null
+            }
+        ) return Invalid(LocalPlanSetupError.INVALID_ROUTINE_GRAPH)
+        val weeks = graph.weeks.sortedBy(PlanWeekEntity::ordinal)
+        if (weeks.map(PlanWeekEntity::ordinal) != (1..RoutinePlanPersistenceMapper.INITIAL_HORIZON_WEEKS).toList() ||
+            weeks.zipWithNext().any { (before, after) -> after.startEpochDay != before.startEpochDay + 7 }
+        ) return Invalid(LocalPlanSetupError.INVALID_ROUTINE_GRAPH)
+        val expected = runCatching {
+            RoutinePlanPersistenceMapper.map(
+                goalId = graph.goal.goalId,
+                planId = graph.plan.planId,
+                title = graph.goal.title,
+                priority = graph.goal.priority,
+                startEpochDay = graph.plan.startEpochDay,
+                selectedDays = graph.days.map(RoutineScheduleDayEntity::dayOfWeek),
+                createdAtEpochMillis = graph.goal.createdAtEpochMillis,
+            )
+        }.getOrNull()
+        if (expected != graph) return Invalid(LocalPlanSetupError.INVALID_ROUTINE_GRAPH)
+        val identities = graph.weeks.map(PlanWeekEntity::weekId) + graph.workouts.map(WorkoutEntity::workoutId)
+        return if (graph.workouts.isNotEmpty() && graph.workouts.all { it.currentScheduledEpochDay >= graph.plan.startEpochDay } &&
+            graph.workouts.size <= graph.days.size * graph.weeks.size && identities.size == identities.distinct().size
+        ) {
+            Ready
+        } else {
+            Invalid(LocalPlanSetupError.INVALID_ROUTINE_GRAPH)
+        }
     }
 
     private fun validId(value: String): Boolean = value.isNotBlank() && value.length <= 256

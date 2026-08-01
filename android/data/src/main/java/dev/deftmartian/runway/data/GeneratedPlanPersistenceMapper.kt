@@ -186,18 +186,21 @@ object GeneratedPlanPersistenceMapper {
             val kind = when (workout.prescription) {
                 is WorkoutPrescription.Distance -> "distance"
                 is WorkoutPrescription.Timed -> "timed"
+                WorkoutPrescription.Open -> "open"
                 WorkoutPrescription.Rest -> "rest"
             }
+            val storedDistance = workout.targetDistanceMeters
+                .takeUnless { workout.prescription in setOf(WorkoutPrescription.Open, WorkoutPrescription.Rest) }
             return WorkoutEntity(
                 workoutId = workoutId,
                 planId = planId,
                 weekId = weekId,
                 position = position,
                 generatedPurpose = workout.purpose,
-                generatedDistanceMeters = workout.targetDistanceMeters,
+                generatedDistanceMeters = storedDistance,
                 generatedDurationSeconds = workout.targetDurationSeconds,
                 currentPurpose = workout.purpose,
-                currentDistanceMeters = workout.targetDistanceMeters,
+                currentDistanceMeters = storedDistance,
                 currentDurationSeconds = workout.targetDurationSeconds,
                 tombstonedAtEpochMillis = null,
                 updatedAtEpochMillis = updatedAtEpochMillis,

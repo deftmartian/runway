@@ -129,6 +129,71 @@ class TrainingDecisionDomainTest {
         assertTrue(removal.spacingConflicts.isEmpty())
     }
 
+    @Test fun `open runs are easy load-free proposals and never rebalance other workouts`() {
+        val day = LocalDate.parse("2026-07-20")
+        val selected = EffectiveWorkoutState("one", generated = runProposal("week", day, 3_000))
+        val peer = EffectiveWorkoutState("two", generated = runProposal("week", day.plusDays(2), 3_000))
+        val open = openProposal("week", day)
+
+        WorkoutEdits.assertProposal(open)
+        val preview = WorkoutEdits.preview(
+            current = selected,
+            recommended = selected.generated,
+            proposed = open,
+            states = listOf(selected, peer),
+            weeks = listOf(EditWeek("week", 1)),
+            today = day,
+            rebalance = true,
+        )
+
+        assertTrue(preview.affectedFutureWorkoutIds.isEmpty())
+        assertEquals(1, preview.workoutChanges.size)
+        assertEquals("one", preview.workoutChanges.single().workoutId)
+        assertEquals(3_000, preview.weekLoads.getValue("week").second.distanceMeters)
+        assertEquals(0, preview.weekLoads.getValue("week").second.durationSeconds)
+        assertInvalid(open.copy(targetDistanceMeters = 1))
+        assertInvalid(open.copy(targetDurationSeconds = 600))
+        assertInvalid(open.copy(type = WorkoutType.LONG))
+
+        val removal = WorkoutEdits.preview(
+            current = EffectiveWorkoutState("open", generated = open),
+            recommended = open,
+            proposed = open.copy(isRemoved = true),
+            states = listOf(EffectiveWorkoutState("open", generated = open)),
+            weeks = listOf(EditWeek("week", 1)),
+            today = day,
+            operation = "remove",
+        )
+        assertEquals("remove", removal.operation)
+        assertEquals(0, removal.weekLoads.getValue("week").second.distanceMeters)
+    }
+
+    @Test fun `routine feedback is recorded without creating a load consequence`() {
+        listOf(
+            Consequences.recordRoutine(FeedbackStatus.DONE),
+            Consequences.recordRoutine(FeedbackStatus.SKIPPED),
+            Consequences.recordRoutine(FeedbackStatus.SHORTENED, feltHard = true),
+        ).forEach { consequence ->
+            assertEquals(ConsequenceKind.ROUTINE_RUN_RECORDED, consequence.kind)
+            assertEquals(Deviation.NOT_APPLICABLE, consequence.deviation)
+            assertEquals(LoadMetric.NONE, consequence.metric)
+            assertNull(consequence.weeklyLoadDelta)
+            assertNull(consequence.nextRunAdjustment)
+            assertEquals(PlanDecision.KEEP_PLAN, consequence.recommendedDecision)
+            assertEquals(setOf(PlanDecision.KEEP_PLAN), consequence.options)
+            assertFalse(consequence.planChangeAvailable)
+        }
+        assertEquals(
+            Risk.MODERATE,
+            Consequences.recordRoutine(FeedbackStatus.SHORTENED, feltHard = true).risk,
+        )
+        val pain = Consequences.recordRoutine(FeedbackStatus.DONE, pain = true)
+        assertEquals(ConsequenceKind.PAIN_REPORTED, pain.kind)
+        assertEquals(Risk.UNSAFE, pain.risk)
+        assertFalse(pain.planChangeAvailable)
+        assertEquals(setOf(PlanDecision.KEEP_PLAN), pain.options)
+    }
+
     private fun feedback(
         status: FeedbackStatus = FeedbackStatus.DONE,
         targetDuration: Int? = null,
@@ -154,6 +219,23 @@ class TrainingDecisionDomainTest {
         ),
         purpose = "Easy timed run",
     )
+
+    private fun openProposal(week: String, date: LocalDate) = WorkoutProposal(
+        weekId = week,
+        scheduledDate = date,
+        type = WorkoutType.EASY,
+        prescriptionKind = PrescriptionKind.OPEN,
+        targetDistanceMeters = 0,
+        purpose = "Open run",
+    )
+
+    private fun assertInvalid(proposal: WorkoutProposal) {
+        try {
+            WorkoutEdits.assertProposal(proposal)
+            throw AssertionError("Expected invalid proposal")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
 
     @Test fun `timed edit requires complete intervals and rebalance scales them`() {
         val day = LocalDate.parse("2026-07-20")

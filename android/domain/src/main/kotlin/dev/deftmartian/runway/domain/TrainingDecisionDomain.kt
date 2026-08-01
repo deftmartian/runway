@@ -22,6 +22,7 @@ enum class ConsequenceKind {
     LOAD_SPIKE,
     HARD_EFFORT,
     PAIN_REPORTED,
+    ROUTINE_RUN_RECORDED,
     EXTRA_ACTIVITY,
     NEEDS_REVIEW,
 }
@@ -208,6 +209,39 @@ object Consequences {
             }
             else -> result(ConsequenceKind.COMPLETED_AS_PLANNED, 0, Risk.CONSERVATIVE, PlanDecision.KEEP_PLAN)
         }
+    }
+
+    /**
+     * A weekly routine tracks whether a run happened, not a prescribed load. Feedback remains
+     * useful context in its own right, but it must not create a synthetic shortfall or alter a
+     * future open-run slot.
+     */
+    fun recordRoutine(
+        status: FeedbackStatus,
+        feltHard: Boolean = false,
+        pain: Boolean = false,
+    ): Consequence {
+        val kind = when (status) {
+            FeedbackStatus.DONE, FeedbackStatus.SHORTENED, FeedbackStatus.SKIPPED ->
+                if (pain) ConsequenceKind.PAIN_REPORTED else ConsequenceKind.ROUTINE_RUN_RECORDED
+        }
+        return Consequence(
+            kind = kind,
+            deviation = Deviation.NOT_APPLICABLE,
+            metric = LoadMetric.NONE,
+            actualDifference = 0,
+            weeklyLoadDelta = null,
+            nextRunAdjustment = null,
+            risk = when {
+                pain -> Risk.UNSAFE
+                feltHard -> Risk.MODERATE
+                else -> Risk.CONSERVATIVE
+            },
+            recommendedDecision = PlanDecision.KEEP_PLAN,
+            options = setOf(PlanDecision.KEEP_PLAN),
+            comparisonStatus = "not_comparable",
+            planChangeAvailable = false,
+        )
     }
 
     fun apply(consequence: Consequence, decision: PlanDecision): Consequence {
@@ -399,7 +433,7 @@ fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraA
     )
 }
 
-enum class PrescriptionKind { DISTANCE, TIMED, REST }
+enum class PrescriptionKind { DISTANCE, TIMED, OPEN, REST }
 data class TimedIntervalStructure(
     val warmupSeconds: Int,
     val cooldownSeconds: Int,
@@ -579,6 +613,13 @@ object WorkoutEdits {
                     proposal.targetDurationSeconds in 600..21_600 &&
                     validIntervals(proposal.intervalStructure, proposal.targetDurationSeconds),
             )
+            PrescriptionKind.OPEN -> require(
+                proposal.type == WorkoutType.EASY &&
+                    proposal.intensity == "easy" &&
+                    proposal.targetDistanceMeters == 0 &&
+                    proposal.targetDurationSeconds == null &&
+                    proposal.intervalStructure == null,
+            )
         }
     }
     fun rampRisk(percent: Double, injury: Boolean = false): Risk {
@@ -591,7 +632,11 @@ object WorkoutEdits {
         }
     }
     private fun rebalance(selected: EffectiveWorkoutState, proposed: WorkoutProposal, states: List<EffectiveWorkoutState>, today: LocalDate): Map<String, WorkoutProposal> {
-        if (proposed.isRemoved || proposed.type == WorkoutType.REST || proposed.prescriptionKind == PrescriptionKind.REST) return emptyMap()
+        if (
+            proposed.isRemoved ||
+            proposed.type == WorkoutType.REST ||
+            proposed.prescriptionKind in setOf(PrescriptionKind.REST, PrescriptionKind.OPEN)
+        ) return emptyMap()
         val before = weekLoad(states, proposed.weekId)
         val selectedAfter = states.map { if (it.id == selected.id) it.copy(current = proposed) else it }
         val after = weekLoad(selectedAfter, proposed.weekId)
@@ -649,7 +694,8 @@ object WorkoutEdits {
 
     private fun metric(value: WorkoutProposal): Pair<LoadMetric, Int> = when {
         value.isRemoved || value.type == WorkoutType.REST ||
-            value.prescriptionKind == PrescriptionKind.REST -> LoadMetric.NONE to 0
+            value.prescriptionKind in setOf(PrescriptionKind.REST, PrescriptionKind.OPEN) ->
+            LoadMetric.NONE to 0
         value.prescriptionKind == PrescriptionKind.TIMED -> {
             LoadMetric.DURATION to (value.targetDurationSeconds ?: 0)
         }

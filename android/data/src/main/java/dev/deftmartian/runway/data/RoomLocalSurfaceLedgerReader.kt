@@ -22,6 +22,15 @@ class RoomLocalSurfaceLedgerReader(
     private val buildRevision: String? = null,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : LocalSurfaceLedgerReader {
+    private data class EpochDayWindow(
+        val from: Long,
+        val through: Long,
+    ) {
+        init {
+            require(from <= through)
+        }
+    }
+
     override suspend fun calendar(
         fromEpochDay: Long,
         throughEpochDay: Long,
@@ -39,6 +48,9 @@ class RoomLocalSurfaceLedgerReader(
             limits,
             limits.calendarWorkouts,
             undoTodayEpochDay = todayEpochDay,
+            routineWindows = activePlans
+                .filter { it.phaseType == ROUTINE_PHASE }
+                .associate { it.planId to EpochDayWindow(fromEpochDay, throughEpochDay) },
         )
         val nextWorkout = activePlans.singleOrNull()?.let { plan ->
             // Today has its own decision row. "Next" must not repeat the same workout.
@@ -90,8 +102,6 @@ class RoomLocalSurfaceLedgerReader(
                 .acceptedLinkedActivitiesWithPendingPlanChangePage(
                     cursor.acceptedLinked.occurredAtEpochMillis, cursor.acceptedLinked.activityId, pageLimit,
                 )
-            val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
-                .let { planSlices(it, limits, MAX_INBOX_PLAN_WORKOUTS).firstOrNull() }
             val directFeedbackRows = if (cursor.directFeedback.exhausted) emptyList() else activityDao
                 .pendingDirectWorkoutFeedbackPage(
                     cursor.directFeedback.recordedAtEpochMillis,
@@ -122,6 +132,24 @@ class RoomLocalSurfaceLedgerReader(
                     .toLocalDate()
                     .toEpochDay()
             }
+            val storedActivePlans = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
+            val routineWindow = reviewEpochDays
+                .takeIf { it.isNotEmpty() }
+                ?.let { days ->
+                    EpochDayWindow(
+                        from = requireNotNull(days.minOrNull()) - ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS,
+                        through = requireNotNull(days.maxOrNull()) + ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS,
+                    )
+                }
+                ?: currentWeekWindow(todayEpochDay)
+            val activePlan = planSlices(
+                plans = storedActivePlans,
+                limits = limits,
+                workoutLimitPerPlan = MAX_INBOX_PLAN_WORKOUTS,
+                routineWindows = storedActivePlans
+                    .filter { it.phaseType == ROUTINE_PHASE }
+                    .associate { it.planId to routineWindow },
+            ).firstOrNull()
             val linkCandidates = activePlan?.workouts.orEmpty()
                 .asSequence()
                 .filter {
@@ -238,6 +266,9 @@ class RoomLocalSurfaceLedgerReader(
                 activePlans,
                 limits,
                 limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
+                routineWindows = activePlans
+                    .filter { it.phaseType == ROUTINE_PHASE }
+                    .associate { it.planId to recentRoutineWindow(todayEpochDay, limits.statsWeeks) },
             )
             val linkedActivities = acceptedLinkedActivitiesForPlans(plans)
             val latestUnlinkedSignal = plans.firstOrNull()
@@ -263,6 +294,7 @@ class RoomLocalSurfaceLedgerReader(
                 profile = profile,
                 recordedAggregates = exactRecordedAggregates(),
                 weekActualAggregates = exactWeekActualAggregates(plans, zone),
+                activitiesContainCompleteWeekContext = false,
             )
         }
 
@@ -284,11 +316,13 @@ class RoomLocalSurfaceLedgerReader(
                 limit = limits.historyPlans + 1,
                 offset = planOffset,
             )
+            val storedPlans = activePlan + pastPlanWindow.take(limits.historyPlans)
             val plans = planSlices(
-                activePlan + pastPlanWindow.take(limits.historyPlans),
+                storedPlans,
                 limits,
                 limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
                 includeHistoryAudit = true,
+                routineWindows = routineHistoryWindows(storedPlans, todayEpochDay, limits.statsWeeks),
             )
             val linkedActivities = acceptedLinkedActivitiesForPlans(plans)
             val unlinkedWindow = database.activityLedgerDao().acceptedUnlinkedActivitiesPage(
@@ -344,6 +378,7 @@ class RoomLocalSurfaceLedgerReader(
                     null
                 },
                 weekActualAggregates = exactWeekActualAggregates(plans, zone),
+                activitiesContainCompleteWeekContext = false,
             )
         }
 
@@ -367,6 +402,7 @@ class RoomLocalSurfaceLedgerReader(
             limits = limits,
             workoutLimitPerPlan = limits.statsWeeks * MAX_WORKOUTS_PER_WEEK,
             includeHistoryAudit = true,
+            routineWindows = routineHistoryWindows(listOf(plan), todayEpochDay, limits.statsWeeks),
         )
         val unlinkedContext = assignedUnlinkedContextForPlan(
             plan = plans.single(),
@@ -390,6 +426,7 @@ class RoomLocalSurfaceLedgerReader(
                 todayEpochDay,
             ),
             weekActualAggregates = exactWeekActualAggregates(plans, zone),
+            activitiesContainCompleteWeekContext = false,
         )
     }
 
@@ -399,9 +436,15 @@ class RoomLocalSurfaceLedgerReader(
             val timeZone = profile?.timeZone ?: ZoneId.systemDefault().id
             val todayEpochDay = todayEpochDay(timeZone)
             val availability = database.profileSettingsDao().availabilityDays(limit = MAX_AVAILABILITY_DAYS)
-            val activePlan = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS)
-                .take(1)
-                .let { planSlices(it, limits, limits.calendarWorkouts).firstOrNull() }
+            val storedActivePlans = database.goalPlanDao().activePlans(MAX_ACTIVE_PLANS).take(1)
+            val activePlan = planSlices(
+                plans = storedActivePlans,
+                limits = limits,
+                workoutLimitPerPlan = limits.calendarWorkouts,
+                routineWindows = storedActivePlans
+                    .filter { it.phaseType == ROUTINE_PHASE }
+                    .associate { it.planId to currentWeekWindow(todayEpochDay) },
+            ).firstOrNull()
             val pendingGoal = database.goalPlanDao().pendingGoals(MAX_CURRENT_GOALS).singleOrNull()
             LocalSettingsLedgerSlice(
                 profile = profile,
@@ -441,6 +484,7 @@ class RoomLocalSurfaceLedgerReader(
         workoutLimitPerPlan: Int,
         undoTodayEpochDay: Long? = null,
         includeHistoryAudit: Boolean = false,
+        routineWindows: Map<String, EpochDayWindow> = emptyMap(),
     ): List<LocalPlanLedgerSlice> {
         if (plans.isEmpty()) return emptyList()
         val planIds = plans.map(PlanEntity::planId)
@@ -449,10 +493,28 @@ class RoomLocalSurfaceLedgerReader(
             plans.map(PlanEntity::goalId).distinct(),
             plans.size,
         ).associateBy(GoalEntity::goalId)
-        val weeks = dao.weeksForPlans(
-            planIds,
-            plans.size * limits.statsWeeks,
-        ).groupBy(PlanWeekEntity::planId)
+        val boundedRoutinePlanIds = plans
+            .filter { it.phaseType == ROUTINE_PHASE && routineWindows.containsKey(it.planId) }
+            .mapTo(mutableSetOf(), PlanEntity::planId)
+        val ordinaryPlanIds = planIds.filterNot(boundedRoutinePlanIds::contains)
+        val weeks = mutableMapOf<String, List<PlanWeekEntity>>()
+        if (ordinaryPlanIds.isNotEmpty()) {
+            weeks.putAll(
+                dao.weeksForPlans(
+                    ordinaryPlanIds,
+                    ordinaryPlanIds.size * limits.statsWeeks,
+                ).groupBy(PlanWeekEntity::planId),
+            )
+        }
+        boundedRoutinePlanIds.forEach { planId ->
+            val window = requireNotNull(routineWindows[planId])
+            weeks[planId] = dao.weeksForPlanInRange(
+                planId = planId,
+                fromEpochDay = window.from,
+                throughEpochDay = window.through,
+                limit = limits.statsWeeks,
+            )
+        }
         val summaryWarnings = dao.planSummaryWarningsForPlans(
             planIds,
             plans.size * MAX_SUMMARY_WARNINGS_PER_PLAN,
@@ -465,14 +527,35 @@ class RoomLocalSurfaceLedgerReader(
         } else {
             emptyMap()
         }
-        val workoutLimit = plans.size * workoutLimitPerPlan
-        val workouts = (
-            if (includeHistoryAudit) {
-                dao.historyWorkoutsForPlans(planIds, limit = workoutLimit)
+        val workouts = mutableMapOf<String, List<WorkoutEntity>>()
+        if (ordinaryPlanIds.isNotEmpty()) {
+            val ordinaryWorkoutLimit = ordinaryPlanIds.size * workoutLimitPerPlan
+            val rows = if (includeHistoryAudit) {
+                dao.historyWorkoutsForPlans(ordinaryPlanIds, limit = ordinaryWorkoutLimit)
             } else {
-                dao.visibleWorkoutsForPlans(planIds, limit = workoutLimit)
+                dao.visibleWorkoutsForPlans(ordinaryPlanIds, limit = ordinaryWorkoutLimit)
             }
-        ).groupBy(WorkoutEntity::planId)
+            workouts.putAll(rows.groupBy(WorkoutEntity::planId))
+        }
+        boundedRoutinePlanIds.forEach { planId ->
+            val window = requireNotNull(routineWindows[planId])
+            val rows = if (includeHistoryAudit) {
+                dao.historyWorkoutsForPlanInRange(
+                    planId = planId,
+                    fromEpochDay = window.from,
+                    throughEpochDay = window.through,
+                    limit = workoutLimitPerPlan,
+                )
+            } else {
+                dao.visibleWorkoutsForPlanInRange(
+                    planId = planId,
+                    fromEpochDay = window.from,
+                    throughEpochDay = window.through,
+                    limit = workoutLimitPerPlan,
+                )
+            }
+            workouts[planId] = rows
+        }
         val visibleWorkoutIds = workouts.values.flatten().map(WorkoutEntity::workoutId)
         val undoableAdjustments = if (undoTodayEpochDay == null || visibleWorkoutIds.isEmpty()) {
             emptyList()
@@ -511,9 +594,10 @@ class RoomLocalSurfaceLedgerReader(
         val workoutPlan = workouts.flatMap { (planId, rows) ->
             rows.map { it.workoutId to planId }
         }.toMap()
-        val feedback = database.activityLedgerDao().workoutFeedbackForPlans(
-            planIds,
-            plans.size * workoutLimitPerPlan,
+        val feedback = chunkedSqliteIdRead(
+            ids = visibleWorkoutIds,
+            limit = visibleWorkoutIds.size,
+            read = database.activityLedgerDao()::workoutFeedbackForWorkouts,
         ).groupBy { workoutPlan[it.workoutId] }
         val feedbackIds = feedback.values.flatten().map(WorkoutFeedbackEntity::feedbackId)
         val consequences = chunkedSqliteIdRead(
@@ -558,6 +642,41 @@ class RoomLocalSurfaceLedgerReader(
                 workoutSegments = planBlocks.flatMap { segmentsByBlock[it.blockId].orEmpty() },
             )
         }
+    }
+
+    private fun currentWeekWindow(todayEpochDay: Long): EpochDayWindow {
+        val today = LocalDate.ofEpochDay(todayEpochDay)
+        val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+        return EpochDayWindow(monday.toEpochDay(), monday.plusDays(6).toEpochDay())
+    }
+
+    private fun recentRoutineWindow(todayEpochDay: Long, weekCount: Int): EpochDayWindow {
+        val current = currentWeekWindow(todayEpochDay)
+        return EpochDayWindow(
+            from = current.from - ((weekCount - 1L) * 7L),
+            through = current.through,
+        )
+    }
+
+    private suspend fun routineHistoryWindows(
+        plans: List<PlanEntity>,
+        todayEpochDay: Long,
+        weekCount: Int,
+    ): Map<String, EpochDayWindow> {
+        val windows = mutableMapOf<String, EpochDayWindow>()
+        plans.filter { it.phaseType == ROUTINE_PHASE }.forEach { plan ->
+            val through = if (plan.state == ACTIVE_STATE) {
+                currentWeekWindow(todayEpochDay).through
+            } else {
+                database.goalPlanDao().lastWeekForPlan(plan.planId)?.startEpochDay?.plus(6)
+                    ?: return@forEach
+            }
+            windows[plan.planId] = EpochDayWindow(
+                from = through - ((weekCount - 1L) * 7L),
+                through = through,
+            )
+        }
+        return windows
     }
 
     private suspend fun acceptedLinkedActivitiesForPlans(
@@ -1024,6 +1143,8 @@ class RoomLocalSurfaceLedgerReader(
         Instant.ofEpochMilli(nowEpochMillis()).atZone(ZoneId.of(timeZone)).toLocalDate().toEpochDay()
 
     private companion object {
+        const val ACTIVE_STATE = "active"
+        const val ROUTINE_PHASE = "routine"
         const val MAX_ACTIVE_PLANS = 2
         const val MAX_CURRENT_GOALS = 2
         const val MAX_AVAILABILITY_DAYS = 7

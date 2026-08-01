@@ -9,6 +9,7 @@ import dev.deftmartian.runway.data.LocalHistoryReadModel
 import dev.deftmartian.runway.data.LocalInboxReadModel
 import dev.deftmartian.runway.data.LocalPhaseReviewReadModel
 import dev.deftmartian.runway.data.LocalPlanHistoryReadModel
+import dev.deftmartian.runway.data.LocalPlanPhase
 import dev.deftmartian.runway.data.LocalPlanProvenance
 import dev.deftmartian.runway.data.LocalPlanState
 import dev.deftmartian.runway.data.LocalPrescriptionReadModel
@@ -71,6 +72,7 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
         activityCandidates = emptyList(),
         pendingDecisionCount = pendingDecisionCount,
         pendingDecisionCountIsExact = pendingDecisionCountIsExact,
+        activePlanPhase = activePlanPhase?.name?.lowercase(),
     )
 }
 
@@ -126,13 +128,19 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                 id = id,
                 status = "active",
                 startDate = activeWeeks.minOfOrNull { it.startEpochDay }?.let(LocalDate::ofEpochDay)?.toString(),
-                targetDate = activeWeeks.maxOfOrNull { it.startEpochDay + 6 }?.let(LocalDate::ofEpochDay)?.toString(),
+                targetDate = activeWeeks
+                    .takeUnless { it.firstOrNull()?.phase == dev.deftmartian.runway.data.LocalPlanPhase.ROUTINE }
+                    ?.maxOfOrNull { it.startEpochDay + 6 }
+                    ?.let(LocalDate::ofEpochDay)
+                    ?.toString(),
                 weeks = activeWeeks.size,
                 risk = null,
                 summaryKind = null,
                 completedAt = null,
                 archivedAt = null,
                 lifecycleReason = null,
+                phase = activeWeeks.firstOrNull()?.phase?.name?.lowercase(),
+                sessionsPerWeek = activeSessionsPerWeek,
             ),
             goal = null,
             summary = NativePlanSummary(
@@ -142,6 +150,8 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                 skippedRuns = activeWeeks.sumOf { it.skippedRuns },
                 painFlags = activeWeeks.sumOf { it.painFlags },
                 completedDistanceMeters = activeWeeks.sumOf { it.actual.distanceMeters ?: 0 }.toDouble(),
+                plannedRunsRecorded = activeWeeks.sumOf { it.plannedRunsRecorded },
+                extraRuns = activeWeeks.sumOf { it.extraRuns },
             ),
         )
     }
@@ -180,6 +190,8 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                     hardFlags = it.hardFlags,
                     averagePaceSecondsPerKm = it.weightedPaceSecondsPerKilometre,
                     averageHeartRate = it.durationWeightedHeartRateBpm,
+                    plannedRunsRecorded = it.plannedRunsRecorded,
+                    extraRuns = it.extraRuns,
                 )
             },
             todayIso = zoneToday,
@@ -283,6 +295,7 @@ internal fun LocalPlanHistoryReadModel.toNativeHistoryDetail(
                 completedAt = completedAtEpochMillis?.toIsoDate(timeZone),
                 archivedAt = archivedAtEpochMillis?.toIsoDate(timeZone),
                 lifecycleReason = lifecycle.lastOrNull()?.note,
+                sessionsPerWeek = sessionsPerWeek,
             ),
             goal = NativeHistoryDetailGoal(goalTitle, null, null),
             cutoffDate = cutoffDate,
@@ -400,6 +413,8 @@ private fun LocalPlanHistoryReadModel.toNativeHistoryItem(timeZone: String) = Na
         completedAt = completedAtEpochMillis?.toIsoDate(timeZone),
         archivedAt = archivedAtEpochMillis?.toIsoDate(timeZone),
         lifecycleReason = lifecycle.lastOrNull()?.note,
+        phase = phase.name.lowercase(),
+        sessionsPerWeek = sessionsPerWeek,
     ),
     goal = NativeGoalSummary(
         id = goalId,
@@ -415,6 +430,8 @@ private fun LocalPlanHistoryReadModel.toNativeHistoryItem(timeZone: String) = Na
         skippedRuns = skippedRuns,
         painFlags = painFlags,
         completedDistanceMeters = actual.distanceMeters?.toDouble(),
+        plannedRunsRecorded = plannedRunsRecorded,
+        extraRuns = extraRuns,
     ),
 )
 
@@ -451,6 +468,14 @@ internal fun LocalSettingsReadModel.toNativeSettingsState() = NativeSettingsStat
         clinicianRestriction = profile?.medicalRestriction == true,
         notes = profile?.privateNotes.orEmpty(),
     ),
+    activeRoutine = activePlan
+        ?.takeIf { it.phase == LocalPlanPhase.ROUTINE && it.state == LocalPlanState.ACTIVE }
+        ?.let {
+            NativeRoutineSettings(
+                startedOn = LocalDate.ofEpochDay(it.startEpochDay).toString(),
+                runsPerWeek = it.sessionsPerWeek,
+            )
+        },
     appVersion = about.versionName ?: BuildConfig.VERSION_NAME,
     sourceCommit = about.buildRevision ?: BuildConfig.SOURCE_COMMIT,
 )
@@ -479,6 +504,7 @@ internal fun LocalWorkoutReadModel.toNativeWorkout() = NativeWorkout(
             reason = "Manual workout change",
         )
     },
+    planPhase = planPhase.name.lowercase(),
 )
 
 private fun LocalWorkoutLinkCandidateReadModel.toNativeWorkout() = NativeWorkout(
