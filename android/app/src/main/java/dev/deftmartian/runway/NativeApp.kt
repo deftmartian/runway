@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -199,12 +200,14 @@ private fun NativeProductShell(
                     state.notice?.let { Notice(it.message, it.isError) }
                     when (val surface = state.surface) {
                         is NativeSurface.Setup ->
-                            SetupScreen(
-                                payload = surface.payload,
-                                actionPending = state.actionPending,
-                                onAction = onAction,
-                                onRestoreBackup = onRestoreBackup,
-                            )
+                            key(surface.payload != null, surface.payload?.currentGoal?.id) {
+                                SetupScreen(
+                                    payload = surface.payload,
+                                    actionPending = state.actionPending,
+                                    onAction = onAction,
+                                    onRestoreBackup = onRestoreBackup,
+                                )
+                            }
                         is NativeSurface.Calendar -> CalendarScreen(
                             payload = surface.payload,
                             loading = state.loading,

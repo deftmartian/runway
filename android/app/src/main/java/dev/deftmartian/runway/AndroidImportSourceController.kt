@@ -13,14 +13,14 @@ internal class ImportSourceBoundaryException(
  * Owns the Android-side half of removing import access.
  *
  * Every action is attempted so one provider failure cannot leave another source connected
- * unnecessarily. Callers decide whether a failed disconnect should block or follow a database
- * mutation.
+ * unnecessarily. Non-cancellation failures are collected; cancellation propagates immediately so
+ * callers do not treat an interrupted disconnect as a completed boundary.
  */
 internal class AndroidImportSourceController(
     private val cancelWorkers: () -> Unit,
     private val disconnectFolder: () -> Unit,
     private val clearHealthConnectCursor: () -> Unit,
-    private val revokeHealthConnectPermissions: () -> Boolean,
+    private val revokeHealthConnectPermissions: suspend () -> Boolean,
 ) {
     constructor(context: Context) : this(
         cancelWorkers = { ReconciliationScheduler.cancelAllAndWait(context.applicationContext) },
@@ -38,11 +38,11 @@ internal class AndroidImportSourceController(
         },
     )
 
-    fun disconnectAll() {
+    suspend fun disconnectAll() {
         val failures = buildList {
-            attempt("background import work", cancelWorkers)
-            attempt("GPX folder access", disconnectFolder)
-            attempt("Health Connect cursor", clearHealthConnectCursor)
+            attempt("background import work") { cancelWorkers() }
+            attempt("GPX folder access") { disconnectFolder() }
+            attempt("Health Connect cursor") { clearHealthConnectCursor() }
             attempt("Health Connect permission") {
                 check(revokeHealthConnectPermissions()) {
                     "Health Connect did not confirm permission removal."
@@ -112,8 +112,14 @@ internal class AndroidImportSourceController(
         error,
     )
 
-    private fun MutableList<String>.attempt(label: String, action: () -> Unit) {
-        if (runCatching(action).isFailure) add(label)
+    private suspend fun MutableList<String>.attempt(label: String, action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            add(label)
+        }
     }
 }
 

@@ -19,7 +19,6 @@ import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
 import dev.deftmartian.runway.data.healthconnect.HealthConnectObservation
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectHeartRatePoint
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectPersistenceResult
@@ -111,12 +110,16 @@ internal class AndroidHealthConnectGateway(
     suspend fun hasBackgroundPermission(): Boolean =
         client().permissionController.getGrantedPermissions().contains(HEALTH_CONNECT_BACKGROUND_PERMISSION)
 
-    fun revokeAllPermissions(): Boolean = runCatching {
+    suspend fun revokeAllPermissions(): Boolean = try {
         if (availability() == HealthConnectAvailability.Available) {
-            runBlocking { client().permissionController.revokeAllPermissions() }
+            client().permissionController.revokeAllPermissions()
         }
         true
-    }.getOrDefault(false)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        false
+    }
 
     fun supportsBackgroundRead(): Boolean =
         HealthConnectBackgroundPolicy.supported(

@@ -1,15 +1,16 @@
 package dev.deftmartian.runway
 
 import dev.deftmartian.runway.data.LocalRestoreResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlinx.coroutines.runBlocking
 
 class AndroidImportSourceControllerTest {
     @Test
-    fun `disconnect attempts every source and reports the failed boundary`() {
+    fun `disconnect attempts every source and reports the failed boundary`() = runBlocking {
         val attempted = mutableListOf<String>()
         val controller = AndroidImportSourceController(
             cancelWorkers = { attempted += "workers" },
@@ -24,7 +25,7 @@ class AndroidImportSourceControllerTest {
             },
         )
 
-        val failure = runCatching(controller::disconnectAll).exceptionOrNull()
+        val failure = runCatching { controller.disconnectAll() }.exceptionOrNull()
 
         assertEquals(listOf("workers", "folder", "cursor", "health"), attempted)
         assertTrue(failure?.message.orEmpty().contains("GPX folder access"))
@@ -33,7 +34,7 @@ class AndroidImportSourceControllerTest {
     }
 
     @Test
-    fun `health connect must confirm permission removal`() {
+    fun `health connect must confirm permission removal`() = runBlocking {
         val failure = runCatching {
             AndroidImportSourceController({}, {}, {}, { false }).disconnectAll()
         }.exceptionOrNull()
@@ -117,5 +118,51 @@ class AndroidImportSourceControllerTest {
 
         assertTrue(failure?.message.orEmpty().contains("Local data was not changed"))
         assertTrue(!eraseStarted)
+    }
+
+    @Test
+    fun `disconnect cancellation is propagated and does not start erase`() = runBlocking {
+        val attempted = mutableListOf<String>()
+        var eraseStarted = false
+        val controller = AndroidImportSourceController(
+            cancelWorkers = { attempted += "workers" },
+            disconnectFolder = { attempted += "folder" },
+            clearHealthConnectCursor = { attempted += "cursor" },
+            revokeHealthConnectPermissions = {
+                attempted += "health"
+                throw CancellationException("permission revocation cancelled")
+            },
+        )
+
+        val failure = runCatching {
+            controller.disconnectBeforeErase { eraseStarted = true }
+        }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertEquals(listOf("workers", "folder", "cursor", "health"), attempted)
+        assertFalse(eraseStarted)
+        assertEquals("open", AndroidStateCoordinator.withImportDataBoundary { "open" })
+    }
+
+    @Test
+    fun `early disconnect cancellation stops later source work`() = runBlocking {
+        val attempted = mutableListOf<String>()
+        val controller = AndroidImportSourceController(
+            cancelWorkers = {
+                attempted += "workers"
+                throw CancellationException("worker cancellation interrupted")
+            },
+            disconnectFolder = { attempted += "folder" },
+            clearHealthConnectCursor = { attempted += "cursor" },
+            revokeHealthConnectPermissions = {
+                attempted += "health"
+                true
+            },
+        )
+
+        val failure = runCatching { controller.disconnectAll() }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertEquals(listOf("workers"), attempted)
     }
 }

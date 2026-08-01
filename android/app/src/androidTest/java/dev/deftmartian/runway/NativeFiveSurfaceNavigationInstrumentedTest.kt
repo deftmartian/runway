@@ -6,6 +6,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -127,6 +129,78 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Replace local runway data?").assertIsDisplayed()
         compose.onNodeWithText("Choose backup").performClick()
         compose.runOnIdle { assertTrue(restoreRequested) }
+    }
+
+    @Test
+    fun loadingAnExistingGoalIntoSetupUsesItsSavedValuesInsteadOfFreshDefaults() {
+        val targetDate = "2026-10-01"
+        val existingPayload = NativeOnboardingPayload(
+            initialValues = NativePlanInitialValues(
+                startMode = "established",
+                raceDistance = "10k",
+                targetDate = targetDate,
+                priority = "consistency",
+                currentWeeklyDistanceKm = "24",
+                currentRunsPerWeek = "3",
+                longestRecentRunKm = "12",
+                calibrationDurationMinutes = null,
+                preferredLongRunDay = "6",
+                timeZone = "America/Halifax",
+                availability = listOf(1, 3, 6),
+                recentInjury = false,
+                currentPain = false,
+                recurringPain = false,
+                medicalRestriction = false,
+                injuryNotes = null,
+            ),
+            minimumTargetDate = null,
+            minimumCalibrationTargetDate = null,
+            minimumFoundationTargetDate = null,
+            maximumTargetDate = null,
+            currentGoal = NativeGoalSummary(
+                id = "existing-goal",
+                title = "Existing 10K plan",
+                targetDate = targetDate,
+                priority = "consistency",
+                state = "active",
+                risk = "conservative",
+            ),
+        )
+        var loadPayload: ((NativeOnboardingPayload?) -> Unit)? = null
+
+        compose.setContent {
+            var payload by remember { mutableStateOf<NativeOnboardingPayload?>(null) }
+            loadPayload = { payload = it }
+            RunwayTheme {
+                RunwayNativeApp(
+                    state = RunwayUiState.Ready(
+                        surface = NativeSurface.Setup(payload),
+                        loading = payload == null,
+                    ),
+                    onDestinationSelected = {}, onCalendarMonthSelected = {},
+                    onLoadMoreHistory = {}, onLoadMoreInbox = {}, onLoadActivityTrace = {},
+                    onOpenHistoryDetail = {}, onRetryOpen = {}, onAction = {},
+                    onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {}, onDismissPlanDecisionPreview = {},
+                    onOpenFolder = {}, onImportGpx = {}, onOpenHealthConnect = {},
+                    onCreateBackup = {}, onRestoreBackup = {}, onExportData = {},
+                    onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
+                    onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseAllData = {}, onAcknowledgeRetentionRepair = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Restore a backup instead").assertIsDisplayed()
+        compose.runOnIdle { loadPayload?.invoke(existingPayload) }
+
+        compose.onNodeWithText("Replacing Existing 10K plan keeps its history and archives the current plan after confirmation.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Prepare for a race").assertIsSelected()
+        compose.onNodeWithText("10K").assertIsSelected()
+        compose.onNodeWithText("5K").assertIsNotSelected()
+        compose.onNodeWithText("Build consistency").assertIsSelected()
     }
 
     @Test

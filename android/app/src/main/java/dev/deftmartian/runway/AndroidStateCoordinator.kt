@@ -3,8 +3,10 @@ package dev.deftmartian.runway
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
@@ -64,14 +66,15 @@ internal object AndroidStateCoordinator {
      *
      * [closeAcquisition] must promptly cancel workers and disconnect/revoke any Android-owned
      * sources. It deliberately runs before waiting for imports: a blocked provider operation must
-     * receive cancellation rather than making erase/restore wait forever behind the mutex.
+     * receive cancellation rather than making erase/restore wait forever behind the mutex. If the
+     * suspendable close is cancelled, draining and mutation are skipped and the gate is reopened.
      *
      * [keepAcquisitionClosedAfter] is only for a terminal mutation such as replacing and closing
      * Room before an immediate process restart. Ordinary mutations must use the default so imports
      * can resume.
      */
     suspend fun <T> withDestructiveImportBoundary(
-        closeAcquisition: () -> Unit,
+        closeAcquisition: suspend () -> Unit,
         keepAcquisitionClosedAfter: (T) -> Boolean = { false },
         mutation: suspend () -> T,
     ): T = destructiveImportMutex.withLock {
@@ -82,7 +85,9 @@ internal object AndroidStateCoordinator {
             drained.await()
             mutation().also { keepClosed = keepAcquisitionClosedAfter(it) }
         } finally {
-            if (!keepClosed) reopenAcquisitionGate()
+            // A cancellation while a suspendable source disconnect is in progress must not leave
+            // future imports permanently rejected after this destructive operation has stopped.
+            if (!keepClosed) withContext(NonCancellable) { reopenAcquisitionGate() }
         }
     }
 

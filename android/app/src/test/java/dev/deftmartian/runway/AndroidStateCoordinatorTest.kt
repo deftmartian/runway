@@ -8,6 +8,7 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -166,5 +167,30 @@ class AndroidStateCoordinatorTest {
             "open again",
             AndroidStateCoordinator.withImportDataBoundary { "open again" },
         )
+    }
+
+    @Test
+    fun `cancelling a suspendable source close reopens acquisition without mutation`() = runBlocking {
+        val closeStarted = CompletableDeferred<Unit>()
+        val closeNeverCompletes = CompletableDeferred<Unit>()
+        var mutationStarted = false
+        val destructive = async(Dispatchers.Default) {
+            AndroidStateCoordinator.withDestructiveImportBoundary(
+                closeAcquisition = {
+                    closeStarted.complete(Unit)
+                    closeNeverCompletes.await()
+                },
+            ) {
+                mutationStarted = true
+            }
+        }
+
+        closeStarted.await()
+        destructive.cancel()
+        val failure = runCatching { destructive.await() }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertFalse(mutationStarted)
+        assertEquals("open", AndroidStateCoordinator.withImportDataBoundary { "open" })
     }
 }
