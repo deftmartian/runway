@@ -65,7 +65,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         assertSurface("Calendar", "Your plan and completed runs by date.")
         assertSurface("Inbox", "Choose how each run counts, then decide whether its result changes the plan.")
         assertSurface("Stats", "Recorded runs and past plans.")
-        assertSurface("History", "Current and past training plans.")
+        assertSurface("History", "Current training schedule and past records.")
         assertSurface("Settings", "Private training preferences and local data.")
 
         selectSurface("History")
@@ -73,7 +73,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Open plan record").performClick()
         compose.onNodeWithText("Test goal").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to History").performClick()
-        compose.onNodeWithText("Current and past training plans.").assertIsDisplayed()
+        compose.onNodeWithText("Current training schedule and past records.").assertIsDisplayed()
 
         selectSurface("Settings")
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Privacy"))

@@ -22,6 +22,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -100,28 +101,38 @@ internal fun RunwayNativeApp(
 }
 
 @Composable
-private fun LoadingScreen() = Box(
+private fun LoadingScreen() = Surface(
     modifier = Modifier.fillMaxSize(),
-    contentAlignment = Alignment.Center,
+    color = MaterialTheme.colorScheme.background,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        CircularProgressIndicator()
-        Spacer(Modifier.height(16.dp))
-        Text("Opening your training log")
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(16.dp))
+            Text("Opening your training log")
+        }
     }
 }
 
 @Composable
-private fun FailureScreen(message: String, retry: () -> Unit) = Box(
+private fun FailureScreen(message: String, retry: () -> Unit) = Surface(
     modifier = Modifier.fillMaxSize(),
-    contentAlignment = Alignment.Center,
+    color = MaterialTheme.colorScheme.background,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Couldn’t open Runway", fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(message)
-        Spacer(Modifier.height(20.dp))
-        Button(onClick = retry) { Text("Try again") }
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Couldn’t open Runway", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text(message)
+            Spacer(Modifier.height(20.dp))
+            Button(onClick = retry) { Text("Try again") }
+        }
     }
 }
 
