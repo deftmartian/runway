@@ -9,6 +9,14 @@ run_bounded() {
   python3 android/ci/run-with-timeout.py "$@"
 }
 
+stop_instrumentation_packages() {
+  local package_name
+  for package_name in "$@"; do
+    run_bounded 20 adb -s "$serial" shell am force-stop "$package_name" \
+      >/dev/null 2>&1 || true
+  done
+}
+
 compile_package() {
   local package_name="$1"
   local timeout_seconds="${2:-180}"
@@ -118,39 +126,60 @@ run_bounded 120 adb -s "$serial" install -r -t \
 compile_package dev.deftmartian.runway.debug 600
 compile_package dev.deftmartian.runway.debug.test
 
-set +e
-run_bounded 300 adb -s "$serial" shell am instrument -w -r \
-  -e class "$app_test_classes" \
-  dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner \
-  2>&1 | tee "$RUNNER_TEMP/app-instrumentation.txt"
-app_status="${PIPESTATUS[0]}"
-set -e
-if [ "$app_status" -ne 0 ]; then
-  echo "::error title=App instrumentation failed::Runner exited with status $app_status."
-  exit "$app_status"
-fi
 failure_pattern='FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation'
-app_failure_marker="$(
-  grep -Eo "$failure_pattern" "$RUNNER_TEMP/app-instrumentation.txt" |
-    head -n 1 ||
-    true
-)"
-if [ -n "$app_failure_marker" ]; then
-  report_instrumentation_failure \
-    "App instrumentation failed" \
-    "$RUNNER_TEMP/app-instrumentation.txt" \
-    "Runner output contained $app_failure_marker."
-  exit 1
-fi
-if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' \
-  "$RUNNER_TEMP/app-instrumentation.txt"
-then
-  report_instrumentation_failure \
-    "App instrumentation failed" \
-    "$RUNNER_TEMP/app-instrumentation.txt" \
-    "Runner output did not contain a success marker."
-  exit 1
-fi
+app_output="$RUNNER_TEMP/app-instrumentation.txt"
+app_class_output="$RUNNER_TEMP/app-instrumentation-current.txt"
+: >"$app_output"
+# Keep each Compose class independently bounded. A single stalled class must identify itself
+# instead of consuming the aggregate runner timeout and hiding behind a generic exit 124.
+while IFS= read -r app_test_class; do
+  test -n "$app_test_class" || continue
+  printf 'Running %s\n' "$app_test_class" | tee -a "$app_output"
+  set +e
+  run_bounded 240 adb -s "$serial" shell am instrument -w -r \
+    -e class "$app_test_class" \
+    dev.deftmartian.runway.debug.test/androidx.test.runner.AndroidJUnitRunner </dev/null \
+    2>&1 | tee "$app_class_output"
+  app_status="${PIPESTATUS[0]}"
+  set -e
+  cat "$app_class_output" >>"$app_output"
+  if [ "$app_status" -ne 0 ]; then
+    report_instrumentation_failure \
+      "App instrumentation failed" \
+      "$app_class_output" \
+      "$app_test_class exited with status $app_status."
+    stop_instrumentation_packages \
+      dev.deftmartian.runway.debug \
+      dev.deftmartian.runway.debug.test
+    exit "$app_status"
+  fi
+  app_failure_marker="$(
+    grep -Eo "$failure_pattern" "$app_class_output" |
+      head -n 1 ||
+      true
+  )"
+  if [ -n "$app_failure_marker" ]; then
+    report_instrumentation_failure \
+      "App instrumentation failed" \
+      "$app_class_output" \
+      "$app_test_class output contained $app_failure_marker."
+    stop_instrumentation_packages \
+      dev.deftmartian.runway.debug \
+      dev.deftmartian.runway.debug.test
+    exit 1
+  fi
+  if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' "$app_class_output"; then
+    report_instrumentation_failure \
+      "App instrumentation failed" \
+      "$app_class_output" \
+      "$app_test_class did not report a success marker."
+    stop_instrumentation_packages \
+      dev.deftmartian.runway.debug \
+      dev.deftmartian.runway.debug.test
+    exit 1
+  fi
+done < <(printf '%s\n' "$app_test_classes" | tr ',' '\n')
+rm -f "$app_class_output"
 
 run_bounded 120 adb -s "$serial" install -r -t \
   android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
@@ -165,6 +194,9 @@ data_status="${PIPESTATUS[0]}"
 set -e
 if [ "$data_status" -ne 0 ]; then
   echo "::error title=Data instrumentation failed::Runner exited with status $data_status."
+  stop_instrumentation_packages \
+    dev.deftmartian.runway.debug \
+    dev.deftmartian.runway.data.test
   exit "$data_status"
 fi
 data_failure_marker="$(
@@ -177,6 +209,9 @@ if [ -n "$data_failure_marker" ]; then
     "Data instrumentation failed" \
     "$RUNNER_TEMP/data-instrumentation.txt" \
     "Runner output contained $data_failure_marker."
+  stop_instrumentation_packages \
+    dev.deftmartian.runway.debug \
+    dev.deftmartian.runway.data.test
   exit 1
 fi
 if ! grep -Eq 'OK[[:space:]]+\([0-9]+[[:space:]]+tests?\)' \
@@ -186,6 +221,9 @@ then
     "Data instrumentation failed" \
     "$RUNNER_TEMP/data-instrumentation.txt" \
     "Runner output did not contain a success marker."
+  stop_instrumentation_packages \
+    dev.deftmartian.runway.debug \
+    dev.deftmartian.runway.data.test
   exit 1
 fi
 
