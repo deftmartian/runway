@@ -3,7 +3,7 @@
 The six PNGs beside this note are sanitized native Android documentation captures. They show
 fixture data only; they contain no real training, route, heart-rate, or backup data.
 
-They were refreshed from the `0.8.9` standalone source tree using
+They were refreshed from the `0.9.0` standalone source tree using
 [`NativeDocumentationScreenshotsInstrumentedTest`](../../android/app/src/androidTest/java/dev/deftmartian/runway/NativeDocumentationScreenshotsInstrumentedTest.kt).
 The fixture deliberately displays `0.0.0-screenshot` rather than a release build identity.
 
