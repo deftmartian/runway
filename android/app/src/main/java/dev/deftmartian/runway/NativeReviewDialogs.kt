@@ -67,7 +67,7 @@ internal fun WorkoutPreviewDialog(
                     Notice("This adds an open run without changing your recurring days or future weeks.")
                     PreviewPrescriptionRow("Run", preview.proposed)
                 } else {
-                    SettingRow("Load assessment", assessment.label)
+                    SettingRow("Training load", assessment.label)
                     preview.recommended?.let { PreviewPrescriptionRow("Generated", it) }
                     if (!adding) PreviewPrescriptionRow("Current", preview.current)
                     PreviewPrescriptionRow("Proposed", preview.proposed)
@@ -88,7 +88,11 @@ internal fun WorkoutPreviewDialog(
                     val after = previewPrescriptionMeasurement(change.after)
                     SettingRow("Affected workout", "$before → $after")
                 }
-                if (preview.requiresConfirmation) Notice("This change needs your explicit confirmation because it affects load, spacing, or prescription basis.")
+                if (preview.requiresConfirmation) {
+                    Notice(
+                        "This change affects training load, recovery time, or how a run is measured. Review it before applying.",
+                    )
+                }
                 if (spacingConflicts > 0) {
                     Notice(
                         "$spacingConflicts nearby run${if (spacingConflicts == 1) "" else "s"} may leave little recovery time.",
@@ -97,9 +101,9 @@ internal fun WorkoutPreviewDialog(
                 }
                 Text(
                     if (adding) {
-                        "This addition stays in the adjustment ledger, so it can be undone later."
+                        "History keeps a record of this change, so you can undo it later."
                     } else {
-                        "The original recommendation stays in the adjustment ledger, so this can be undone later."
+                        "History keeps the original recommendation, so you can undo this change later."
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -262,7 +266,7 @@ internal fun PlanDecisionDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 errorMessage?.let { Notice(it, isError = true) }
                 Text(planDecisionExplanation(pending.decision))
-                SettingRow("Current assessment", assessment.label)
+                SettingRow("Current status", assessment.label)
                 Text(
                     "Only future planned work changes. This recorded result remains unchanged.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -308,7 +312,7 @@ internal fun PlanDecisionPreviewDialog(
                         }
                     }
                     Text(
-                        "Only these future workouts change. The recorded result and original recommendation remain in the ledger.",
+                        "Only these future workouts change. The recorded result and original recommendation stay in History.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

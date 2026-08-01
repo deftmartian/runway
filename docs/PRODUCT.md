@@ -2,15 +2,15 @@
 
 ## Purpose
 
-runway is a private Android running decision ledger. It helps a self-coached runner understand a conservative plan, keep intentional edits separate from the generated recommendation, record actual work, and choose a visible next step when those differ.
+runway helps runners who coach themselves make a conservative plan, record what actually happened, and decide what—if anything—should change next. It can guide someone toward a race or help them keep a regular weekly running habit.
 
-It runs locally on one device. It has no account, server, subscription, social graph, web client, or cloud sync.
+runway stores every plan, run, import, and note on one Android device unless the runner explicitly exports a backup. It has no account, server, subscription, social graph, web client, or cloud sync.
 
 ## Product boundary
 
-runway is not live GPS tracking, route discovery, a wearable replacement, a generic activity log, a social fitness product, or a medical coach. A watch, phone, or another app can record a run; runway reconciles that record with a training plan or weekly routine.
+runway is not live GPS tracking, route discovery, a wearable replacement, a generic activity log, a social fitness product, or a medical coach. A watch, phone, or another app can record a run; runway helps fit that run back into a training plan or weekly routine.
 
-The product must not silently change future training because a runner missed, shortened, extended, moved, or imported an activity. It may offer conservative consequences. The runner chooses whether to apply one.
+The product must not silently change future training because a runner missed, shortened, extended, moved, or imported an activity. It may offer conservative next steps, but it applies one only after the runner confirms it.
 
 ## Planning model
 

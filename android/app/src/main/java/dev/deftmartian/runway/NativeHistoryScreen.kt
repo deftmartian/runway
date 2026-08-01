@@ -409,7 +409,7 @@ private fun CurrentPlanRecord(
             ) { Text(if (endPlanOptionOpen) "Hide end option" else "End plan") }
             if (endPlanOptionOpen) {
                 Text(
-                    "Stopping closes the future schedule without marking the goal complete. Recorded work stays in History.",
+                    "Stopping closes the future schedule without marking the goal complete. History keeps your recorded runs.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 TextButton(

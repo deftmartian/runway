@@ -27,7 +27,7 @@ internal fun HistoryDetailScreen(
                 if (routine) {
                     "Weekly schedule, changes, and recorded runs."
                 } else {
-                    "Plan phase, changes, recorded work, and their consequences."
+                    "What was planned, what changed, and what you recorded."
                 },
             )
         }
@@ -288,7 +288,7 @@ private fun HistoryWorkoutRecord(
             it.consequence?.let { consequence ->
                 Text(
                     listOfNotNull(consequence.deviation, consequence.appliedDecision ?: consequence.recommendedDecision)
-                        .joinToString(" · ").ifBlank { "Recorded consequence" },
+                        .joinToString(" · ").ifBlank { "Recorded outcome" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -355,7 +355,7 @@ private fun changeLabel(trigger: String?): String = when (trigger) {
     "rebalance", "rebalance_week" -> "Week rebalanced"
     "reduce_next" -> "Next run reduced"
     "next_rest" -> "Recovery day chosen"
-    "repeat_prescription" -> "Prescription repeated"
+    "repeat_prescription" -> "Planned run repeated"
     "keep_plan" -> "Plan kept"
     "feedback" -> "Feedback change"
     "link", "import_match" -> "Activity-linked change"

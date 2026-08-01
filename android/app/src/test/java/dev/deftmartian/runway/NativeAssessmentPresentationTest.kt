@@ -26,13 +26,13 @@ class NativeAssessmentPresentationTest {
 
     @Test
     fun `recorded outcomes use the consequence rather than raw load arithmetic`() {
-        assertEquals("Pain review", nativeConsequenceAssessment("pain_reported", "unsafe").label)
+        assertEquals("Pain reported", nativeConsequenceAssessment("pain_reported", "unsafe").label)
         assertEquals(
             "Recorded as planned",
             nativeConsequenceAssessment("completed_as_planned", "conservative").label,
         )
         assertEquals(
-            "Repeated-skip review",
+            "Several skipped runs",
             nativeConsequenceAssessment("repeated_miss", "aggressive").label,
         )
     }
@@ -40,7 +40,7 @@ class NativeAssessmentPresentationTest {
     @Test
     fun `non comparable timed activity is labelled needs review`() {
         assertEquals(
-            "Needs review",
+            "More information needed",
             nativeConsequenceAssessment("extra_activity", "moderate", "not_comparable").label,
         )
     }

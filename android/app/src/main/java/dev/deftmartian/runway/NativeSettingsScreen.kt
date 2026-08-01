@@ -500,21 +500,23 @@ internal fun usesStackedSettingsActionRow(availableWidthDp: Float, fontScale: Fl
 }
 
 internal fun runningCheckInSummary(context: NativeHealthContext): String = when {
-    context.currentPain && context.clinicianRestriction -> "Pain and clinician limit · new schedules paused"
-    context.currentPain -> "Pain now · new schedules paused"
-    context.clinicianRestriction -> "Clinician limit · new schedules paused"
-    context.recentInjury && context.recurringPain -> "Recent injury and recurring pain · more cautious ramp checks"
-    context.recentInjury -> "Recent injury · more cautious ramp checks"
-    context.recurringPain -> "Recurring pain · more cautious ramp checks"
-    context.notes.isNotBlank() -> "Private reminder only"
-    else -> "No limits reported"
+    context.currentPain && context.clinicianRestriction ->
+        "Pain reported and clinician's limit · setup will not schedule runs"
+    context.currentPain -> "Pain reported now · setup will not schedule runs"
+    context.clinicianRestriction -> "Clinician's running limit · setup will not schedule runs"
+    context.recentInjury && context.recurringPain ->
+        "Recent injury and recurring pain · distance increases checked more cautiously"
+    context.recentInjury -> "Recent injury · distance increases checked more cautiously"
+    context.recurringPain -> "Recurring pain · distance increases checked more cautiously"
+    context.notes.isNotBlank() -> "Private reminder · no effect on the schedule"
+    else -> "No running limits saved"
 }
 
 internal fun runningCheckInEffect(context: NativeHealthContext): String? = when {
     context.currentPain || context.clinicianRestriction ->
         "New setup saves the goal but does not create a schedule. Existing workouts stay recorded."
     context.recentInjury || context.recurringPain ->
-        "Distance prescriptions and edits to targeted runs use more cautious ramp checks. Foundation sessions and open routine runs stay unchanged."
+        "Distance plans and edits to runs with targets use more cautious increase checks. Foundation sessions and open routine runs stay unchanged."
     context.notes.isNotBlank() ->
         "The private reminder is for your reference only. It does not change workouts or scheduling."
     else -> null

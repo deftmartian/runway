@@ -78,7 +78,7 @@ internal fun FeedbackDialog(
     val routine = workout.planPhase == "routine"
     val storedFormatIssue =
         if (prescriptionKind == null || prescriptionKind == PrescriptionKind.REST) {
-            "This workout does not have a supported run prescription, so its result cannot be recorded."
+            "This planned run uses an unsupported format, so its result cannot be recorded."
         } else {
             null
         }
@@ -173,7 +173,7 @@ internal fun FeedbackDialog(
                             } else if (open) {
                                 "Record either measurement if it is useful. This run has no target to compare."
                             } else {
-                                "Enter what happened. Runway will compare it with the prescription and show whether it was near, under, or over plan."
+                                "Enter what happened. Runway will compare it with the planned amount and show whether it was near, under, or over plan."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -558,7 +558,7 @@ internal fun WorkoutEditDialog(
     val storedFormatIssue =
         when {
             currentPrescriptionKind == null ->
-                "This workout has an unsupported stored prescription and cannot be changed."
+                "This planned run uses an unsupported format and cannot be changed."
             currentWorkoutType == WorkoutType.RACE ->
                 "Race events are changed through goal setup."
             type == null ->

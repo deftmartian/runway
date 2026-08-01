@@ -4,11 +4,11 @@
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
 
-**A private Android running decision ledger for self-coached runners.**
+**Make a running plan, track what actually happens, and decide what comes next.**
 
-runway keeps conservative recommendations, deliberate edits, and completed work separate. A missed day, short run, extra run, or hard effort is recorded as it happened; future training changes only after the runner reviews and applies a choice. A weekly routine is different: it tracks chosen run days without prescribing load or changing itself.
+runway is for runners who coach themselves. Use it to build a conservative race plan or set a few regular running days each week. When a run does not go to plan, runway records what happened and lets you decide whether the rest of the schedule should change.
 
-It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer. The installed ledger and import processing are local, with no account, server, subscription, or cloud sync.
+runway stores and processes your training data on your Android phone. It needs no account, server, subscription, or cloud sync. It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer.
 
 | Calendar | Inbox |
 | --- | --- |
@@ -16,19 +16,19 @@ It is a native Kotlin and Jetpack Compose app for Android 8.0 and newer. The ins
 
 ## Plan, record, decide
 
-1. Build a conservative race plan from a repeatable baseline, a foundation phase, or timed calibration — or keep an open weekly running routine on chosen days.
-2. Move, edit, add, remove, reset, or undo future runs when the schedule changes.
+1. Choose a race goal or regular running days. For a race, start from a recent week of running, a run/walk foundation, or two short calibration weeks.
+2. When life changes, move, edit, add, remove, reset, or undo future runs.
 3. Record a run manually, share a GPX file, scan an approved folder, or import an optional Health Connect activity for review.
-4. Compare a prescription with what happened, then keep, reduce, rest, repeat, or rebalance through an explicit choice. Routine runs simply count as recorded, skipped, or extra; they do not alter future slots.
+4. Compare the planned run with what happened, then keep the schedule, ease back, rest, repeat, or rebalance. Weekly routines simply record whether you ran; they never change future days on their own.
 
-Calendar, Inbox, Stats, History, and Settings keep today's status, the next run, unresolved review work, past plans, and local controls in predictable places. Rest and recovery remain visible parts of the plan. runway provides decision support, not medical advice.
+Calendar shows what is coming up. Inbox is where you review imported runs and schedule changes. Stats and History show how the plan changed and what you actually did. Settings keeps imports, privacy, backups, and app details together. Rest and recovery are part of the plan, not missing data. runway supports your choices; it does not give medical advice.
 
 ## Private by design
 
-- GPX files are parsed locally; original input bytes are discarded after intake.
-- GPX and optional read-only Health Connect imports enter the Inbox before they can affect completed totals or future decisions.
+- runway parses GPX files on your phone and does not keep a copy of the original file.
+- You review every GPX or optional read-only Health Connect import in Inbox before it counts toward your training or offers a schedule change.
 - A selected GPX folder is scanned when runway returns to the foreground; Android background scans are best-effort, not a continuous folder watch.
-- Route and imported heart-rate retention have separate controls. Fresh profiles discard both; switching either control back to discard permanently clears only that type's retained and pending import data.
+- You choose separately whether runway keeps route and imported heart-rate details. New profiles discard both. Switching either control back to discard permanently clears only that type of saved and pending import data.
 - Backup and export are explicit plaintext files written to the location chosen in Android's document picker. Create a backup before moving to or resetting a phone, then restore it into runway on the replacement device. These files can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.
 
 See [Security and privacy](docs/SECURITY.md) for the full trust boundary and data controls.

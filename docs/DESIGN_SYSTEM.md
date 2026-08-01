@@ -2,7 +2,7 @@
 
 ## Product feel
 
-runway should feel like a private training instrument: calm, legible, and warm enough to invite regular use without becoming decorative or motivational. It reports the plan, the facts, and the next decision. It does not perform optimism, shame, or medical certainty.
+runway should feel calm, clear, and comfortable to return to. It shows what was planned, what happened, and what needs attention next. It does not perform optimism, shame, or medical certainty.
 
 ## Platform
 
@@ -31,7 +31,29 @@ Use the Android app bar for the current destination title. Keep the five primary
 
 ## Copy
 
-Every sentence must state a condition, action, consequence, or next decision. Prefer “This run is shorter than planned. Choose what changes next.” to vague or performative language. Avoid “smart,” “adaptive,” “optimized,” “signal,” fake warmth, and motivational pressure.
+Write calmly, directly, and without hurry. Be concise without becoming terse or mechanical. Product copy should sound natural when read aloud.
+
+- Lead with what the runner wants to know or do, not the architecture behind it.
+- Address the runner as “you” when that makes a sentence clearer. Name runway when the app performs an action.
+- Prefer everyday words. In product copy, use “history,” “planned run,” “result,” and “change” instead of internal terms such as “ledger,” “prescription,” “consequence,” “provenance,” or “surface.” Keep a technical term only when it is the clearest accurate name, and explain it on first use.
+- Put the condition first, then the effect or action: “If you discard routes, runway permanently removes saved route points.”
+- Give each message one primary job. State the important fact first and make the next action obvious.
+- Keep onboarding and empty states practical and welcoming. Make errors, pain guidance, privacy choices, and destructive confirmations more serious and explicit.
+- Avoid slogans, fake warmth, motivational pressure, jokes in errors, exclamation marks, and claims that something is “smart,” “adaptive,” “optimized,” “easy,” or “simple.”
+
+Every sentence should earn its place by stating a condition, fact, action, effect, or next step. Prefer “This run was shorter than planned. Choose whether the next run changes.” to vague or performative language.
+
+Examples:
+
+| Avoid | Prefer |
+| --- | --- |
+| “A private Android running decision ledger.” | “Make a running plan, track what actually happens, and decide what comes next.” |
+| “This addition stays in the adjustment ledger.” | “History keeps a record of this change, so you can undo it later.” |
+| “No routine week is available yet.” | “Your first routine week starts Monday. Open Calendar to see the runs.” |
+
+Review new copy in its actual screen. Read it aloud, check it at larger system text sizes, and ask whether someone unfamiliar with runway can explain what happens next. For important onboarding, health, privacy, or destructive messages, test comprehension rather than judging tone from source alone.
+
+This guidance adapts [Material's communication principles](https://codelabs.developers.google.com/codelabs/material-communication-guidance), the [Google voice and tone guide](https://developers.google.com/style/tone), and the [NHS guidance for effective app messages](https://service-manual.nhs.uk/content/writing-nhs-messages).
 
 Pain and hard-effort labels describe a runner's report, not a diagnosis. Use conservative, clear language and distinguish an offered plan change from one already applied.
 

@@ -149,7 +149,7 @@ internal fun planDecisionLabel(decision: String): String = when (decision) {
     "keep_plan" -> "Keep the plan"
     "reduce_next" -> "Reduce the next run"
     "next_rest" -> "Make the next run a rest day"
-    "repeat_prescription" -> "Repeat this prescription"
+    "repeat_prescription" -> "Use the same target again"
     "rebalance_week" -> "Rebalance this week"
     else -> decision.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
@@ -158,7 +158,7 @@ internal fun planDecisionExplanation(decision: String): String = when (decision)
     "keep_plan" -> "Leave future workouts as they are."
     "reduce_next" -> "Reduce the amount in the next compatible planned run."
     "next_rest" -> "Replace the next compatible planned run with rest."
-    "repeat_prescription" -> "Use this prescription again for the next compatible planned run."
+    "repeat_prescription" -> "Use the same target again for the next compatible planned run."
     "rebalance_week" -> "Spread the remaining work across compatible runs in this week."
     else -> "Apply this change to future planned work."
 }

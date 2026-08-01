@@ -22,7 +22,7 @@ internal fun nativeRampAssessment(risk: String?): NativeAssessmentPresentation =
         "Unsupported",
         "The calculated increase is outside runway’s plan-generation limits.",
     )
-    else -> NativeAssessmentPresentation("Recorded", "The plan assessment is recorded.")
+    else -> NativeAssessmentPresentation("Recorded", "This plan is saved without a weekly increase rating.")
 }
 
 internal fun nativeLoadAssessment(risk: String?): NativeAssessmentPresentation = when (risk) {
@@ -52,14 +52,14 @@ internal fun nativeConsequenceAssessment(
 ): NativeAssessmentPresentation =
     if (comparisonStatus == "not_comparable") {
         NativeAssessmentPresentation(
-            "Needs review",
-            "This timed plan needs recorded duration before its load can be compared.",
+            "More information needed",
+            "Add the run duration before runway compares it with this timed plan.",
         )
     } else
     when (kind) {
         "pain_reported" -> NativeAssessmentPresentation(
-            "Pain review",
-            "Pain was reported, so health guidance stays separate from load arithmetic.",
+            "Pain reported",
+            "Pain was reported for this run. The schedule is not medical clearance to keep running.",
         )
         "completed_as_planned" -> NativeAssessmentPresentation(
             "Recorded as planned",
@@ -70,31 +70,31 @@ internal fun nativeConsequenceAssessment(
             "This activity is linked for history and does not change the current plan.",
         )
         "hard_effort" -> NativeAssessmentPresentation(
-            "Hard-effort review",
-            "The planned amount was recorded, but the reported effort changes the next-workout advice.",
+            "Felt harder than planned",
+            "You completed the planned amount but marked the effort as hard. Review the next run before changing it.",
         )
         "shortfall" -> NativeAssessmentPresentation(
-            "Shortfall review",
-            "This workout was recorded below its planned amount; review the next prescription.",
+            "Shorter than planned",
+            "This run was recorded below its planned amount; review the next planned run.",
         )
         "repeated_shortfall" -> NativeAssessmentPresentation(
-            "Repeated-deviation review",
-            "More than one recent workout was shortened or skipped; review the next prescription.",
+            "Several runs changed",
+            "More than one recent run was shortened or skipped; review the next planned run.",
         )
         "skip_continue", "skip_reduce" -> NativeAssessmentPresentation(
-            "Skipped-run review",
-            "This planned run was skipped; review the next prescription.",
+            "Skipped run",
+            "This planned run was skipped; review the next planned run.",
         )
         "repeated_skip", "repeated_miss" -> NativeAssessmentPresentation(
-            "Repeated-skip review",
-            "More than one recent planned run was skipped; review the next prescription.",
+            "Several skipped runs",
+            "More than one recent planned run was skipped; review the next planned run.",
         )
         "load_spike" -> NativeAssessmentPresentation(
-            "Extra-load review",
-            "The recorded amount exceeded this workout prescription.",
+            "More than planned",
+            "The recorded amount was higher than the planned amount.",
         )
         else -> nativeLoadAssessment(risk).copy(
-            label = "Unplanned-run review",
-            description = "This run was not prescribed, so its recorded load is reviewed separately.",
+            label = "Run outside the schedule",
+            description = "This run was not on the schedule, so its training load is reviewed separately.",
         )
     }

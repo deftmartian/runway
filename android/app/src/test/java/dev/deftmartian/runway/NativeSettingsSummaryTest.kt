@@ -16,7 +16,7 @@ class NativeSettingsSummaryTest {
     @Test
     fun `running check-in summary states the saved consequence`() {
         assertEquals(
-            "Pain now · new schedules paused",
+            "Pain reported now · setup will not schedule runs",
             runningCheckInSummary(
                 NativeHealthContext(
                     recentInjury = false,
@@ -28,11 +28,14 @@ class NativeSettingsSummaryTest {
             ),
         )
         assertEquals(
-            "Recent injury · more cautious ramp checks",
+            "Recent injury · distance increases checked more cautiously",
             runningCheckInSummary(NativeHealthContext(recentInjury = true)),
         )
-        assertEquals("Private reminder only", runningCheckInSummary(NativeHealthContext(notes = "remember")))
-        assertEquals("No limits reported", runningCheckInSummary(NativeHealthContext()))
+        assertEquals(
+            "Private reminder · no effect on the schedule",
+            runningCheckInSummary(NativeHealthContext(notes = "remember")),
+        )
+        assertEquals("No running limits saved", runningCheckInSummary(NativeHealthContext()))
     }
 
     @Test
@@ -42,7 +45,7 @@ class NativeSettingsSummaryTest {
             runningCheckInEffect(NativeHealthContext(currentPain = true)),
         )
         assertEquals(
-            "Distance prescriptions and edits to targeted runs use more cautious ramp checks. Foundation sessions and open routine runs stay unchanged.",
+            "Distance plans and edits to runs with targets use more cautious increase checks. Foundation sessions and open routine runs stay unchanged.",
             runningCheckInEffect(NativeHealthContext(recurringPain = true)),
         )
         assertEquals(

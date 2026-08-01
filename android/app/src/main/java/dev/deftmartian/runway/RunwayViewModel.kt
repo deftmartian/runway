@@ -1307,7 +1307,7 @@ internal class RunwayViewModel(
         LocalDecisionIssue.NO_COMPATIBLE_WORKOUT ->
             "No compatible run remains in this week."
         LocalDecisionIssue.NO_REPEATABLE_PRESCRIPTION ->
-            "The original prescription cannot be repeated."
+            "The original target cannot be repeated."
         LocalDecisionIssue.NO_REDUCIBLE_AMOUNT ->
             "The next compatible run cannot be reduced safely."
         LocalDecisionIssue.ALREADY_APPLIED ->
