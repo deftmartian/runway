@@ -17,9 +17,9 @@ Repo: https://github.com/deftmartian/runway.git
 # these three values together for every release; the tag must match the source
 # and the version code must remain monotonic.
 Builds:
-  - versionName: 0.8.7
-    versionCode: 21
-    commit: v0.8.7
+  - versionName: 0.8.8
+    versionCode: 22
+    commit: v0.8.8
     subdir: android
     gradle:
       - yes
