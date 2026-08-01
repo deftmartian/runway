@@ -17,6 +17,52 @@ run_bounded() {
   python3 android/ci/run-with-timeout.py "$@"
 }
 
+compile_package() {
+  local package_name="$1"
+  local timeout_seconds="${2:-180}"
+  local output_file="$runner_temp/release-smoke-package-compile.txt"
+  local compile_status
+  local attempt=1
+
+  : >"$output_file"
+  while [ "$attempt" -le 2 ]; do
+    printf 'attempt %s\n' "$attempt" | tee -a "$output_file"
+    set +e
+    run_bounded "$timeout_seconds" adb -s "$serial" shell cmd package compile \
+      -m speed -f "$package_name" 2>&1 | tee -a "$output_file"
+    compile_status="${PIPESTATUS[0]}"
+    set -e
+    if [ "$compile_status" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$attempt" -eq 1 ] && grep -Fq 'Failure calling service package: Broken pipe' "$output_file"; then
+      echo "::warning title=Package service restarted::$package_name compilation will retry once after package-manager readiness."
+      local package_service_ready=false
+      for _ in {1..15}; do
+        if run_bounded 10 adb -s "$serial" shell pm path "$package_name" >/dev/null 2>&1; then
+          package_service_ready=true
+          break
+        fi
+        sleep 2
+      done
+      if [ "$package_service_ready" = true ]; then
+        attempt=$((attempt + 1))
+        continue
+      fi
+    fi
+
+    local output_tail
+    output_tail="$(
+      tail -n 12 "$output_file" |
+        tr '\r\n' '  ' |
+        cut -c 1-1800 |
+        sed 's/%/%25/g'
+    )"
+    echo "::error title=Package compilation failed::$package_name exited with status $compile_status. Output: $output_tail"
+    return "$compile_status"
+  done
+}
+
 sha256_file() {
   local file="$1"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -128,11 +174,24 @@ run_bounded 30 adb -s "$serial" shell getprop sys.boot_completed | grep -q '^1'
 run_bounded 30 adb -s "$serial" logcat -c
 stage='install ephemeral-signed candidate'
 run_bounded 180 adb -s "$serial" install -r "$installable_apk"
+stage='compile installed candidate'
+# Hosted emulators can hit a first-start ANR while compiling Compose and release dex. Compile the
+# installed production APK up front; the following force-stop still makes the launch itself cold.
+compile_package "$package_name" 600
 run_bounded 30 adb -s "$serial" shell am force-stop "$package_name"
 stage='cold-launch main activity'
 run_bounded 60 adb -s "$serial" shell am start -W \
   -n "$package_name/$activity_name" | tee "$runner_temp/release-smoke-start.txt"
-grep -q '^Status: ok$' "$runner_temp/release-smoke-start.txt"
+if ! grep -q '^Status: ok$' "$runner_temp/release-smoke-start.txt"; then
+  launch_tail="$(
+    tail -n 20 "$runner_temp/release-smoke-start.txt" |
+      tr '\r\n' '  ' |
+      cut -c 1-1800 |
+      sed 's/%/%25/g'
+  )"
+  echo "::error title=Release candidate did not launch::Unexpected am start result: $launch_tail"
+  exit 1
+fi
 
 sleep 2
 stage='verify foreground process and crash state'
