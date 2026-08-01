@@ -1,0 +1,6 @@
+Choose the days you want to run and keep an ongoing weekly routine without a race target.
+
+- Routine runs start open, with no required distance, duration, or pace.
+- Calendar, Stats, and History show scheduled days and recorded runs clearly.
+- Setup and training guidance use clearer language.
+- Startup and error messages remain readable in dark mode.
