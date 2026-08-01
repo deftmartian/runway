@@ -288,11 +288,11 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        compose.onNodeWithText("Build plan").assertIsDisplayed()
+        compose.onNodeWithText("Set up running").assertIsDisplayed()
         compose.onAllNodesWithText("Continue setup").assertCountEquals(0)
 
         selectSurface("Stats")
-        compose.onNodeWithText("Build plan").assertIsDisplayed()
+        compose.onNodeWithText("Set up running").assertIsDisplayed()
         compose.onAllNodesWithText("Continue setup").assertCountEquals(0)
     }
 
@@ -321,7 +321,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        compose.onNodeWithText("Build a plan before scheduling future runs.")
+        compose.onNodeWithText("Set up a plan or routine before scheduling future runs.")
             .assertIsDisplayed()
         compose.onAllNodesWithText("Add a run here").assertCountEquals(0)
     }
