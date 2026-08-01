@@ -27,14 +27,15 @@ class HistoryTruthInstrumentedTest {
         }
 
         val list = compose.onNode(hasScrollAction())
-        list.performScrollToNode(hasText("Generated · 2026-07-29 · Easy run"))
-        compose.onNodeWithText("Generated · 2026-07-29 · Easy run").assertIsDisplayed()
-        compose.onAllNodesWithText("2026-07-30 · Easy run").assertCountEquals(1)
+        val generatedLabel = "Generated · ${ledgerDate("2026-07-29")} · Easy run"
+        list.performScrollToNode(hasText(generatedLabel))
+        compose.onNodeWithText(generatedLabel).assertIsDisplayed()
+        compose.onAllNodesWithText("${ledgerDate("2026-07-30")} · Easy run").assertCountEquals(1)
         list.performScrollToNode(hasText("Current"))
         compose.onNodeWithText("Current").assertIsDisplayed()
         list.performScrollToNode(hasText("Before removal"))
         compose.onNodeWithText("Before removal").assertIsDisplayed()
-        compose.onAllNodesWithText("2026-08-02 · Easy run").assertCountEquals(1)
+        compose.onAllNodesWithText("${ledgerDate("2026-08-02")} · Easy run").assertCountEquals(1)
         list.performScrollToNode(hasText("Removed from the current plan"))
         compose.onNodeWithText("Removed from the current plan").assertIsDisplayed()
     }

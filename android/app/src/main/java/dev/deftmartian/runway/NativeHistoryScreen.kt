@@ -19,7 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -228,7 +227,7 @@ private fun OutsidePlanActivityRecord(activity: NativeActivity) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(activity.activityDate.orDash(), fontFamily = FontFamily.Monospace)
+            Text(ledgerDate(activity.activityDate))
             LedgerState("Accepted", LedgerEmphasis.Actual)
         }
         Text(
@@ -298,10 +297,10 @@ private fun CurrentPlanRecord(
         ) {
             Text(
                 listOfNotNull(plan?.startDate, plan?.targetDate)
+                    .map(::ledgerDate)
                     .joinToString(" → ")
                     .orDash(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
             )
             LedgerState(
                 if (targetReached) "Target date reached" else "In progress",
@@ -449,8 +448,8 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
     val plan = item.plan
     val summary = item.summary
     val state = plan?.status.orEmpty().replaceFirstChar(Char::uppercase).ifBlank { "Recorded" }
-    val closedOn = plan?.completedAt?.takeIf(String::isNotBlank)?.let { "Completed $it" }
-        ?: plan?.archivedAt?.takeIf(String::isNotBlank)?.let { "Stopped $it" }
+    val closedOn = plan?.completedAt?.takeIf(String::isNotBlank)?.let { "Completed ${ledgerDate(it)}" }
+        ?: plan?.archivedAt?.takeIf(String::isNotBlank)?.let { "Stopped ${ledgerDate(it)}" }
         ?: if (plan?.status == "active") "Current plan" else null
     SettingCard(item.goal?.title.orDash()) {
         Column(
@@ -458,9 +457,11 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                listOfNotNull(plan?.startDate, plan?.targetDate).joinToString(" → ").orDash(),
+                listOfNotNull(plan?.startDate, plan?.targetDate)
+                    .map(::ledgerDate)
+                    .joinToString(" → ")
+                    .orDash(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
             )
             LedgerState(
                 state,

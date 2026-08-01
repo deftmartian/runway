@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${RUNNER_TEMP:?Set RUNNER_TEMP to a writable diagnostics directory.}"
+mkdir -p "$RUNNER_TEMP"
+
 serial="emulator-${EMULATOR_PORT:-5554}"
 app_test_classes="$(python3 android/ci/discover-instrumentation-tests.py app)"
 data_test_classes="$(python3 android/ci/discover-instrumentation-tests.py data)"

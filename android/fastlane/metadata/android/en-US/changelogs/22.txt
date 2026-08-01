@@ -1,0 +1,4 @@
+Release reliability update.
+
+- Restores GitHub release publication after the signed APK gate succeeds.
+- No user-facing feature changes.

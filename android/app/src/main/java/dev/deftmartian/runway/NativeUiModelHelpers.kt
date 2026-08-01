@@ -214,3 +214,11 @@ internal fun monthLabel(month: String): String = runCatching {
 internal fun friendlyDate(date: String): String = runCatching {
     LocalDate.parse(date).format(DateTimeFormatter.ofPattern("EEEE, LLLL d", Locale.getDefault()))
 }.getOrDefault(date)
+
+/** History needs the year, but not the database-shaped ISO presentation. */
+internal fun ledgerDate(date: String?): String {
+    val value = date?.takeIf(String::isNotBlank)?.take(10) ?: return "—"
+    return runCatching {
+        LocalDate.parse(value).format(DateTimeFormatter.ofPattern("LLL d, uuuu", Locale.getDefault()))
+    }.getOrDefault(value)
+}

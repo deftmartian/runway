@@ -711,4 +711,4 @@ private fun CalendarPlanAction(
 internal fun usesStackedCalendarPlanActions(
     availableWidthDp: Float,
     fontScale: Float,
-): Boolean = availableWidthDp < 320f || fontScale > 1.15f
+): Boolean = availableWidthDp < 360f || fontScale > 1f

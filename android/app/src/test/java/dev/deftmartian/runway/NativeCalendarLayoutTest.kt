@@ -24,8 +24,8 @@ class NativeCalendarLayoutTest {
 
     @Test
     fun `secondary plan actions stack for narrow or enlarged layouts`() {
-        assertFalse(usesStackedCalendarPlanActions(344f, fontScale = 1f))
-        assertTrue(usesStackedCalendarPlanActions(304f, fontScale = 1f))
-        assertTrue(usesStackedCalendarPlanActions(344f, fontScale = 1.3f))
+        assertFalse(usesStackedCalendarPlanActions(360f, fontScale = 1f))
+        assertTrue(usesStackedCalendarPlanActions(359f, fontScale = 1f))
+        assertTrue(usesStackedCalendarPlanActions(400f, fontScale = 1.1f))
     }
 }

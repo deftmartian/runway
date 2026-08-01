@@ -1,0 +1,4 @@
+Release reliability update.
+
+- Strengthens hosted release-candidate smoke checks.
+- No user-facing feature changes.

@@ -10,7 +10,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -63,7 +62,10 @@ private fun PlanRecordSummary(detail: NativeHistoryDetail) {
         SettingRow("Phase", plan?.phase.orDash())
         SettingRow(
             "Dates",
-            listOfNotNull(plan?.startDate, plan?.targetDate).joinToString(" → ").orDash(),
+            listOfNotNull(plan?.startDate, plan?.targetDate)
+                .map(::ledgerDate)
+                .joinToString(" → ")
+                .orDash(),
         )
         SettingRow("State", lifecycleLabel(plan?.status, plan?.lifecycleReason))
         SettingRow("Goal", goalLabel(detail.goal?.distance))
@@ -83,7 +85,7 @@ private fun PhaseStartedRecord(detail: NativeHistoryDetail) {
             fontWeight = FontWeight.SemiBold,
         )
         detail.plan?.startDate?.let {
-            Text(it, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(ledgerDate(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -105,8 +107,7 @@ private fun PlanChangeRecord(change: NativeHistoryTimelineItem) {
                 emphasis,
             )
             Text(
-                change.createdAt?.take(10).orDash(),
-                fontFamily = FontFamily.Monospace,
+                ledgerDate(change.createdAt),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -124,7 +125,7 @@ private fun PlanChangeRecord(change: NativeHistoryTimelineItem) {
         change.reason?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (reversed) {
             Text(
-                "Reversed ${change.reversedAt.take(10)}${change.reversalReason?.takeIf(String::isNotBlank)?.let { ": $it" }.orEmpty()}",
+                "Reversed ${ledgerDate(change.reversedAt)}${change.reversalReason?.takeIf(String::isNotBlank)?.let { ": $it" }.orEmpty()}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -139,7 +140,7 @@ private fun HistoryWeekRecord(
 ) {
     SettingCard("Week ${week.weekNumber ?: 0}") {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(week.startDate.orDash(), fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(ledgerDate(week.startDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
             val flags = listOfNotNull(
                 if (week.isDownWeek == true) "Down week" else null,
                 if (week.isTaper == true) "Taper" else null,
@@ -170,7 +171,7 @@ private fun HistoryWeekRecord(
 private fun HistoryExtraActivityRecord(activity: NativeActivity) {
     LedgerSurface {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${activity.activityDate.orDash()} · Extra run", fontWeight = FontWeight.SemiBold)
+            Text("${ledgerDate(activity.activityDate)} · Extra run", fontWeight = FontWeight.SemiBold)
             LedgerState(
                 if (activity.pain == true) "Pain reported" else "Accepted",
                 if (activity.pain == true) LedgerEmphasis.Danger else LedgerEmphasis.Actual,
@@ -207,7 +208,7 @@ private fun HistoryWorkoutRecord(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    "${displayPrescription.scheduledDate.orDash()} · ${workoutTypeLabel(displayPrescription.type)}",
+                    "${ledgerDate(displayPrescription.scheduledDate)} · ${workoutTypeLabel(displayPrescription.type)}",
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -267,7 +268,7 @@ private fun HistoryPrescriptionRecord(
 ) {
     Text(
         if (showIdentity) {
-            "$label · ${prescription.scheduledDate.orDash()} · ${workoutTypeLabel(prescription.type)}"
+            "$label · ${ledgerDate(prescription.scheduledDate)} · ${workoutTypeLabel(prescription.type)}"
         } else {
             label
         },
@@ -323,9 +324,9 @@ private fun changeLabel(trigger: String?): String = when (trigger) {
 }
 private fun changeStateLabel(state: NativeHistoryWorkoutState?): String = when {
     state?.isRemoved == true -> "Removed from current plan"
-    state?.prescriptionKind == "rest" || state?.type == "rest" -> "${state.scheduledDate.orDash()} · Rest"
-    state?.prescriptionKind == "timed" -> "${state.scheduledDate.orDash()} · ${state.targetDurationSeconds?.let(::formatDuration).orDash()}"
-    else -> "${state?.scheduledDate.orDash()} · ${state?.targetDistanceMeters?.let(::formatDistance).orDash()}"
+    state?.prescriptionKind == "rest" || state?.type == "rest" -> "${ledgerDate(state.scheduledDate)} · Rest"
+    state?.prescriptionKind == "timed" -> "${ledgerDate(state.scheduledDate)} · ${state.targetDurationSeconds?.let(::formatDuration).orDash()}"
+    else -> "${ledgerDate(state?.scheduledDate)} · ${state?.targetDistanceMeters?.let(::formatDistance).orDash()}"
 }
 private fun workoutStateLabel(
     workout: NativeHistoryWorkout,

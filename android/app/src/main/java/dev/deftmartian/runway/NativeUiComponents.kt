@@ -148,7 +148,11 @@ internal fun WorkoutCard(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 workout.scheduledDate?.takeIf(String::isNotBlank)?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        friendlyDate(it),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text(type, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 workout.purpose?.takeIf(String::isNotBlank)?.let {
@@ -217,7 +221,11 @@ internal fun ActivityCard(
         activity.distanceMeters?.takeIf { it > 0 }?.let(::formatDistance),
         activity.durationSeconds?.let(::formatDuration),
     ).joinToString(" · ").ifBlank { "Recorded activity" }
-    val date = activity.occurredDate.orEmpty().ifBlank { activity.activityDate.orEmpty() }.ifBlank { "Activity" }
+    val date = activity.occurredDate.orEmpty()
+        .ifBlank { activity.activityDate.orEmpty() }
+        .takeIf(String::isNotBlank)
+        ?.let(::friendlyDate)
+        ?: "Activity"
     val state = when {
         activity.pain == true -> "Pain reported"
         activity.feltHard == true -> "Felt harder than expected"
@@ -287,7 +295,11 @@ internal fun WeekCard(week: NativeWeek, summary: NativeWeekSummary?) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("Week ${week.weekNumber ?: 0}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 week.startDate?.takeIf(String::isNotBlank)?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        friendlyDate(it),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             if (week.hasMixedLoad == true) {
@@ -314,7 +326,12 @@ internal fun WeekCard(week: NativeWeek, summary: NativeWeekSummary?) {
 @Composable
 internal fun SettingCard(title: String, content: @Composable () -> Unit) {
     LedgerSurface {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            title,
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
         Spacer(Modifier.height(12.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
     }
@@ -376,7 +393,9 @@ internal fun usesStackedSettingRow(
 internal fun SectionLabel(text: String) {
     Text(
         text,
-        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+        modifier = Modifier
+            .semantics { heading() }
+            .padding(top = 8.dp, bottom = 2.dp),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
     )

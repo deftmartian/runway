@@ -1,0 +1,4 @@
+Release reliability update.
+
+- Improves hosted-device verification for the release candidate.
+- No user-facing feature changes.

@@ -1,0 +1,6 @@
+Training ledger consistency update.
+
+- Keeps timed run duration and interval details in sync after plan decisions.
+- Repairs affected saved plans without overwriting later edits.
+- Restores saved goal values reliably and makes history dates easier to read.
+- Makes Health Connect disconnect safe to cancel.
