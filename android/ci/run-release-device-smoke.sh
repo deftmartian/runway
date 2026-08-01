@@ -11,14 +11,30 @@ readonly work_directory="$(mktemp -d "${runner_temp%/}/runway-release-smoke.XXXX
 readonly keystore="$work_directory/release-smoke.p12"
 readonly installable_apk="$work_directory/release-smoke.apk"
 readonly store_password='runway-release-smoke-only'
+stage='initialization'
 
 run_bounded() {
   python3 android/ci/run-with-timeout.py "$@"
 }
 
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    echo 'no SHA-256 command is available (expected sha256sum or shasum)' >&2
+    return 1
+  fi
+}
+
 collect_diagnostics() {
   local status="$?"
   if [ "$status" -ne 0 ]; then
+    printf 'stage=%s\nexit_status=%s\n' "$stage" "$status" \
+      >"$runner_temp/release-smoke-summary.txt"
+    echo "::error title=Release candidate smoke failed::Stage: $stage (exit $status)."
     adb devices -l >"$runner_temp/release-smoke-adb-devices.txt" 2>&1 || true
     adb -s "$serial" logcat -d >"$runner_temp/release-smoke-logcat.txt" 2>&1 || true
     adb -s "$serial" logcat -b events -d >"$runner_temp/release-smoke-events.txt" 2>&1 || true
@@ -46,7 +62,8 @@ done
 command -v adb >/dev/null
 command -v keytool >/dev/null
 
-readonly unsigned_hash="$(sha256sum "$unsigned_apk" | awk '{print $1}')"
+stage='inspect candidate identity'
+readonly unsigned_hash="$(sha256_file "$unsigned_apk")"
 readonly badging="$("$build_tools/aapt" dump badging "$unsigned_apk")"
 printf '%s\n' "$badging" | grep -E '^(package:|launchable-activity:)'
 readonly actual_package="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging")"
@@ -62,6 +79,7 @@ if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_NAME#v}" != "$actual_version
   exit 1
 fi
 
+stage='verify standalone permissions and alignment'
 readonly permissions="$("$build_tools/aapt" dump permissions "$unsigned_apk")"
 printf '%s\n' "$permissions"
 if grep -Eq 'android\.permission\.(INTERNET|ACCESS_NETWORK_STATE)' <<< "$permissions"; then
@@ -70,6 +88,7 @@ if grep -Eq 'android\.permission\.(INTERNET|ACCESS_NETWORK_STATE)' <<< "$permiss
 fi
 "$build_tools/zipalign" -c -P 16 4 "$unsigned_apk"
 
+stage='create ephemeral signing identity'
 keytool -genkeypair -noprompt \
   -storetype PKCS12 \
   -keystore "$keystore" \
@@ -81,6 +100,7 @@ keytool -genkeypair -noprompt \
   -validity 2 \
   -dname 'CN=Runway release smoke, O=Local CI, C=CA' >/dev/null
 chmod 600 "$keystore"
+stage='sign ephemeral install copy'
 "$build_tools/apksigner" sign \
   --ks "$keystore" \
   --ks-type PKCS12 \
@@ -92,25 +112,30 @@ chmod 600 "$keystore"
   --v3-signing-enabled true \
   --out "$installable_apk" \
   "$unsigned_apk"
+stage='verify ephemeral signature and candidate integrity'
 readonly verification="$("$build_tools/apksigner" verify --verbose --print-certs "$installable_apk")"
 printf '%s\n' "$verification"
 grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true$' <<< "$verification"
 grep -q '^Verified using v3 scheme (APK Signature Scheme v3): true$' <<< "$verification"
-[ "$(sha256sum "$unsigned_apk" | awk '{print $1}')" = "$unsigned_hash" ] || {
+[ "$(sha256_file "$unsigned_apk")" = "$unsigned_hash" ] || {
   echo 'smoke signing changed the canonical unsigned candidate' >&2
   exit 1
 }
 
+stage='wait for Android device'
 run_bounded 60 adb -s "$serial" wait-for-device
 run_bounded 30 adb -s "$serial" shell getprop sys.boot_completed | grep -q '^1'
 run_bounded 30 adb -s "$serial" logcat -c
+stage='install ephemeral-signed candidate'
 run_bounded 180 adb -s "$serial" install -r "$installable_apk"
 run_bounded 30 adb -s "$serial" shell am force-stop "$package_name"
+stage='cold-launch main activity'
 run_bounded 60 adb -s "$serial" shell am start -W \
   -n "$package_name/$activity_name" | tee "$runner_temp/release-smoke-start.txt"
 grep -q '^Status: ok$' "$runner_temp/release-smoke-start.txt"
 
 sleep 2
+stage='verify foreground process and crash state'
 readonly pid="$(run_bounded 20 adb -s "$serial" shell pidof "$package_name" | tr -d '\r')"
 test -n "$pid" || { echo 'release candidate process did not remain running' >&2; exit 1; }
 run_bounded 30 adb -s "$serial" shell dumpsys activity activities \
@@ -123,5 +148,6 @@ if run_bounded 30 adb -s "$serial" logcat -b events -d |
   exit 1
 fi
 
+stage='complete'
 printf 'Release candidate %s (%s) installed and launched on %s; unsigned SHA-256 %s\n' \
   "$actual_version_name" "$actual_version_code" "$serial" "$unsigned_hash"
