@@ -46,7 +46,7 @@ See [Security and privacy](docs/SECURITY.md) for the full trust boundary and dat
 
 ## Install
 
-Download the APK and matching `.sha256` file from the [latest release](https://github.com/deftmartian/runway/releases/latest), verify the checksum, and open the APK on the Android device. Releases signed with the same `dev.deftmartian.runway` certificate install as in-place updates.
+Download the APK with its matching `.sha256` and `.signer.txt` files from the [latest release](https://github.com/deftmartian/runway/releases/latest). Verify the checksum and signing certificate using the [Android release guide](android/docs/RELEASE.md), then open the APK on the device. Releases signed with the same `dev.deftmartian.runway` certificate install as in-place updates.
 
 Personal F-Droid repository operators should follow the [Android release guide](android/docs/RELEASE.md) so GitHub and F-Droid builds preserve the same application identity and update path.
 
