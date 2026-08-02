@@ -93,7 +93,8 @@ class LocalPlanLifecyclePreparationTest {
         assertEquals(2, LocalPlanLifecyclePreparation.normalizedRuns(review.baseline))
         assertEquals(RaceDistance.FIVE_K, LocalPlanLifecyclePreparation.raceDistance(5_000))
         assertEquals(RaceDistance.HALF, LocalPlanLifecyclePreparation.raceDistance(21_100))
-        assertEquals(null, LocalPlanLifecyclePreparation.raceDistance(21_097))
+        assertEquals(RaceDistance.HALF, LocalPlanLifecyclePreparation.raceDistance(21_097))
+        assertEquals(RaceDistance.MARATHON, LocalPlanLifecyclePreparation.raceDistance(42_195))
         assertTrue(LocalPlanLifecyclePreparation.validOperationId("retry-key"))
         assertFalse(LocalPlanLifecyclePreparation.validOperationId(""))
     }

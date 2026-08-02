@@ -3,6 +3,7 @@ package dev.deftmartian.runway
 import dev.deftmartian.runway.domain.GeneratedCalibrationPlan
 import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.GeneratedFoundationPlan
+import dev.deftmartian.runway.domain.RiskRating
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.data.LocalPlanCandidate
 import java.time.Instant
@@ -22,6 +23,73 @@ class StandaloneOnboardingAdapterTest {
         assertTrue(result.plan is GeneratedDistancePlan)
         assertEquals("2026-01-05", result.plan.startDate)
         assertEquals("2026-02-26", result.metadata.targetBounds?.minimum)
+    }
+
+    @Test fun `high increase plan is previewed and requires explicit confirmation`() {
+        val command = command(
+            startMode = "established",
+            raceDistance = "half",
+            targetDate = "2026-03-29",
+            currentWeeklyDistanceKm = "20",
+            currentRunsPerWeek = "3",
+            longestRecentRunKm = "10",
+        )
+
+        val preview = StandaloneOnboardingAdapter.preview(command, utcNow)
+            as StandaloneOnboardingOutcome.Planned
+        val previewPlan = preview.plan as GeneratedDistancePlan
+        assertEquals(RiskRating.AGGRESSIVE, previewPlan.risk)
+
+        val unconfirmed = StandaloneOnboardingAdapter.adapt(command, utcNow)
+            as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.HIGH_INCREASE_CONFIRMATION in
+                unconfirmed.fieldErrors.getValue(OnboardingField.PLAN_ASSESSMENT),
+        )
+
+        val confirmed = StandaloneOnboardingAdapter.adapt(
+            command.copy(
+                confirmedPlanKey = generatedPlanConfirmationKey(
+                    previewPlan,
+                ),
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Planned
+        assertEquals(preview.plan, confirmed.plan)
+
+        val movedSchedule = StandaloneOnboardingAdapter.adapt(
+            command.copy(
+                availability = listOf(1, 4, 6),
+                confirmedPlanKey = generatedPlanConfirmationKey(previewPlan),
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.HIGH_INCREASE_CONFIRMATION in
+                movedSchedule.fieldErrors.getValue(OnboardingField.PLAN_ASSESSMENT),
+        )
+    }
+
+    @Test fun `unsupported plan can be previewed but cannot be created`() {
+        val command = command(
+            startMode = "established",
+            raceDistance = "half",
+            targetDate = "2026-02-26",
+            currentWeeklyDistanceKm = "15",
+            currentRunsPerWeek = "3",
+            longestRecentRunKm = "10",
+        )
+
+        val preview = StandaloneOnboardingAdapter.preview(command, utcNow)
+            as StandaloneOnboardingOutcome.Planned
+        assertEquals(RiskRating.UNSAFE, preview.plan.risk)
+
+        val rejected = StandaloneOnboardingAdapter.adapt(command, utcNow)
+            as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.UNSUPPORTED_PLAN in
+                rejected.fieldErrors.getValue(OnboardingField.PLAN_ASSESSMENT),
+        )
     }
 
     @Test fun `foundation to goal keeps race target metadata while creating foundation phase`() {
@@ -93,6 +161,22 @@ class StandaloneOnboardingAdapterTest {
         assertTrue(OnboardingFieldError.CONCENTRATED_SCHEDULE_CONFIRMATION in concentrated.fieldErrors.getValue(OnboardingField.CONCENTRATED_SCHEDULE))
     }
 
+    @Test fun `established schedule preserves a recovery day after the long run`() {
+        val result = StandaloneOnboardingAdapter.adapt(
+            command(
+                startMode = "established",
+                targetDate = "2026-04-01",
+                availability = listOf(0, 1, 6),
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+
+        assertTrue(
+            OnboardingFieldError.RECOVERY_SPACING in
+                result.fieldErrors.getValue(OnboardingField.AVAILABILITY),
+        )
+    }
+
     @Test fun `pain or restriction returns pending goal instead of fabricating a phase`() {
         val result = StandaloneOnboardingAdapter.adapt(command(startMode = "established", targetDate = "2026-04-01", currentWeeklyDistanceKm = "", currentRunsPerWeek = "", longestRecentRunKm = "", currentPain = true, availability = listOf(2, 6)), utcNow)
         assertTrue(result is StandaloneOnboardingOutcome.PendingGoal)
@@ -120,6 +204,42 @@ class StandaloneOnboardingAdapterTest {
         assertTrue(OnboardingFieldError.REQUIRED in result.fieldErrors.getValue(OnboardingField.WEEKLY_DISTANCE))
         assertTrue(OnboardingFieldError.REQUIRED in result.fieldErrors.getValue(OnboardingField.RUNS_PER_WEEK))
         assertTrue(OnboardingFieldError.REQUIRED in result.fieldErrors.getValue(OnboardingField.LONGEST_RUN))
+    }
+
+    @Test fun `established baseline must describe one repeatable week`() {
+        val noRoomForOtherRuns = StandaloneOnboardingAdapter.adapt(
+            command(
+                startMode = "established",
+                targetDate = "2026-04-01",
+                currentWeeklyDistanceKm = "10",
+                currentRunsPerWeek = "3",
+                longestRecentRunKm = "10",
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.INCONSISTENT_BASELINE in
+                noRoomForOtherRuns.fieldErrors.getValue(OnboardingField.WEEKLY_DISTANCE),
+        )
+        assertTrue(
+            OnboardingFieldError.INCONSISTENT_BASELINE in
+                noRoomForOtherRuns.fieldErrors.getValue(OnboardingField.LONGEST_RUN),
+        )
+
+        val longestBelowAverage = StandaloneOnboardingAdapter.adapt(
+            command(
+                startMode = "established",
+                targetDate = "2026-04-01",
+                currentWeeklyDistanceKm = "30",
+                currentRunsPerWeek = "3",
+                longestRecentRunKm = "8",
+            ),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.INCONSISTENT_BASELINE in
+                longestBelowAverage.fieldErrors.getValue(OnboardingField.LONGEST_RUN),
+        )
     }
 
     @Test fun `foundation ignores established-only stale baseline fields`() {
@@ -287,27 +407,29 @@ class StandaloneOnboardingAdapterTest {
         longestRecentRunKm: String = "8",
         timeZone: String = "UTC",
         currentPain: Boolean = false,
+        confirmedPlanKey: String? = null,
     ) = CreatePlanCommand(
-        goalKind,
-        startMode,
-        raceDistance,
-        targetDate,
-        "finish_healthy",
-        currentWeeklyDistanceKm,
-        currentRunsPerWeek,
-        longestRecentRunKm,
-        "20",
-        availability,
-        "6",
-        timeZone,
-        false,
-        currentPain,
-        false,
-        false,
-        "",
-        false,
-        false,
-        "test-setup-operation",
-        1234,
+        goalKind = goalKind,
+        startMode = startMode,
+        raceDistance = raceDistance,
+        targetDate = targetDate,
+        priority = "finish_healthy",
+        currentWeeklyDistanceKm = currentWeeklyDistanceKm,
+        currentRunsPerWeek = currentRunsPerWeek,
+        longestRecentRunKm = longestRecentRunKm,
+        calibrationDurationMinutes = "20",
+        availability = availability,
+        preferredLongRunDay = "6",
+        timeZone = timeZone,
+        recentInjury = false,
+        currentPain = currentPain,
+        recurringPain = false,
+        medicalRestriction = false,
+        injuryNotes = "",
+        confirmConcentratedSchedule = false,
+        confirmedPlanKey = confirmedPlanKey,
+        confirmReplace = false,
+        operationId = "test-setup-operation",
+        occurredAtEpochMillis = 1234,
     )
 }

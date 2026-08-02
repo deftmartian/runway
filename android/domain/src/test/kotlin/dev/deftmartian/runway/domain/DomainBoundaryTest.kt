@@ -46,6 +46,39 @@ class DomainBoundaryTest {
         assertFalse(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection.copy(targetDate = "2026-03-12"), today))
     }
 
+    @Test fun `established baseline must describe one repeatable week`() {
+        assertTrue(isRepeatableWeekCoherent(10.0, 3, 5.0))
+        assertTrue(isRepeatableWeekCoherent(6.0, 3, 5.0))
+        assertTrue(isRepeatableWeekCoherent(15.0, 3, 5.0))
+        assertFalse(isRepeatableWeekCoherent(5.5, 3, 5.0))
+        assertFalse(isRepeatableWeekCoherent(15.1, 3, 5.0))
+
+        val today = LocalDate.parse("2026-01-01")
+        val established = OnboardingSelection(
+            goalKind = GoalKind.RACE,
+            startMode = StartMode.ESTABLISHED,
+            raceDistance = RaceDistance.FIVE_K,
+            targetDate = "2026-03-12",
+            availability = listOf(1, 3, 6),
+            timeZone = "America/Halifax",
+            injuryFlags = InjuryFlags(),
+            currentWeeklyDistanceKm = 10.0,
+            currentRunsPerWeek = 3,
+            longestRecentRunKm = 5.0,
+            preferredLongRunDay = 6,
+        )
+        assertFalse(OnboardingIssue.INVALID_ESTABLISHED_BASELINE in OnboardingValidation.validate(established, today))
+        assertTrue(OnboardingIssue.INVALID_ESTABLISHED_BASELINE in OnboardingValidation.validate(established.copy(currentWeeklyDistanceKm = 5.5), today))
+        assertTrue(OnboardingIssue.INVALID_ESTABLISHED_BASELINE in OnboardingValidation.validate(established.copy(currentWeeklyDistanceKm = 15.1), today))
+        assertTrue(
+            OnboardingIssue.INSUFFICIENT_RECOVERY_SPACING in OnboardingValidation.validate(
+                established.copy(availability = listOf(0, 1, 6)),
+                today,
+            ),
+        )
+        assertTrue(canLeaveRecoveryDayAfterLongRun(listOf(0, 1, 3, 5, 6), 5, 6, RaceDistance.HALF))
+    }
+
     @Test fun `weekly routine needs only one to seven unique weekdays`() {
         val today = LocalDate.parse("2026-01-01")
         val routine = OnboardingSelection(

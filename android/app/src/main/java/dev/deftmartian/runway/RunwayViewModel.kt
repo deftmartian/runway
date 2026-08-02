@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 import java.security.MessageDigest
@@ -1301,7 +1302,10 @@ internal class RunwayViewModel(
     }
 
     private suspend fun createPlan(command: CreatePlanCommand): String {
-        val outcome = StandaloneOnboardingAdapter.adapt(command)
+        val outcome = StandaloneOnboardingAdapter.adapt(
+            command,
+            Instant.ofEpochMilli(command.occurredAtEpochMillis),
+        )
         if (outcome is StandaloneOnboardingOutcome.Invalid) {
             val detail = outcome.fieldErrors.entries.joinToString("; ") { (field, errors) ->
                 val label = field.name.lowercase().replace('_', ' ')

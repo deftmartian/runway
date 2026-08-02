@@ -1,6 +1,26 @@
 package dev.deftmartian.runway.domain
 
-enum class RaceDistance { FIVE_K, TEN_K, HALF, MARATHON }
+enum class RaceDistance(val meters: Int) {
+    FIVE_K(5_000),
+    TEN_K(10_000),
+    HALF(21_100),
+    MARATHON(42_200),
+    ;
+
+    companion object {
+        /**
+         * Accepts canonical values and the half/marathon values persisted by released builds.
+         * Callers retain the stored row unchanged and use the returned typed value for planning.
+         */
+        fun fromStoredMeters(meters: Int?): RaceDistance? = when (meters) {
+            FIVE_K.meters -> FIVE_K
+            TEN_K.meters -> TEN_K
+            HALF.meters, 21_097 -> HALF
+            MARATHON.meters, 42_195 -> MARATHON
+            else -> null
+        }
+    }
+}
 enum class GoalKind { RACE, FOUNDATION, ROUTINE }
 enum class PlanPhase { DISTANCE, FOUNDATION, CALIBRATION, ROUTINE }
 enum class StartMode { ESTABLISHED, FOUNDATION_TO_GOAL, FOUNDATION_ONLY, CALIBRATION, ROUTINE }

@@ -10,6 +10,8 @@ Use native Jetpack Compose and Material 3. On Android 12+ use the device's dynam
 
 Use the Android app bar for the current destination title. Keep the five primary destinations in a bottom navigation bar on compact phones and an adaptive navigation rail at 600 dp and wider. Setup remains a focused flow without primary navigation.
 
+An established race-plan Review step must show the generated ramp evidence before the final action. Keep the evidence compact: first week, peak week, longest planned run, required/default ramp, assessment, and actionable warnings. Output outside the usual recommendation needs confirmation tied to that exact workout schedule; output outside the generation limit has no create action.
+
 ## Hierarchy
 
 - One primary decision per surface before secondary detail.

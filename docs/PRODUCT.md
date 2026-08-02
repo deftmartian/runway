@@ -18,7 +18,7 @@ The entry paths are:
 
 | Path | Starting point |
 | --- | --- |
-| Established baseline | A repeatable recent week with at least 3 km, two runs, and a completed longest run. |
+| Established baseline | One repeatable recent week with at least 3 km and two runs. Its weekly distance, run count, and longest run must describe the same week. |
 | Foundation then goal | The nine-week NHS Couch to 5K foundation before a distance plan. |
 | Foundation only | A route to 30 continuous minutes without inventing a distance goal. |
 | Timed calibration | Two repeatable easy run/walk sessions each week for two weeks when distance inputs would be guesswork. |
@@ -27,6 +27,8 @@ The entry paths are:
 The evidence behind these conservative rules, and the limits of what each source supports, are recorded in [Training sources](TRAINING_SOURCES.md).
 
 Defaults are recommendations, not constraints. The runner can change available days, timing, distance, duration, and individual future workouts within explicit guardrails. A weekly routine is a runner-chosen schedule, not a recommendation: its open runs have no prescribed amount.
+
+Before an established race plan is created, Setup shows its first week, peak week, longest planned run, required ramp, default ramp, assessment, and warnings. A plan outside the usual recommendation remains available only after the runner confirms that exact workout schedule. A plan outside the generation limit is not created; Setup directs the runner to move the race, choose a shorter goal, or change the starting point. If the local training date changes while Setup is open, the candidate is regenerated before it can be created.
 
 Setup includes an optional running check-in with explicit effects. Current pain or a clinician's running limit saves a new plan or routine goal without scheduling workouts. A recent injury or recurring pain makes distance-plan ramps and workout-edit checks more cautious; it does not alter fixed foundation, calibration, or open routine slots. A private reminder is stored but never interpreted. These choices can be reviewed in Settings, and changing them does not silently rewrite existing workouts.
 

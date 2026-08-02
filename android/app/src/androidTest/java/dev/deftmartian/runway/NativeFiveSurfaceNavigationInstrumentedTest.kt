@@ -5,7 +5,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
@@ -24,6 +26,7 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.deftmartian.runway.data.RetentionRepairNotice
+import java.time.Instant
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -234,6 +237,64 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Replace local runway data?").assertIsDisplayed()
         compose.onNodeWithText("Choose backup").performClick()
         compose.runOnIdle { assertTrue(restoreRequested) }
+    }
+
+    @Test
+    fun establishedHalfMarathonShowsTheGeneratedRampBeforeCreation() {
+        var submitted: CreatePlanCommand? = null
+        val payload = NativeOnboardingPayload(
+            initialValues = NativePlanInitialValues(
+                startMode = "established",
+                raceDistance = "half",
+                targetDate = "2026-11-22",
+                priority = "finish_healthy",
+                currentWeeklyDistanceKm = "25",
+                currentRunsPerWeek = "3",
+                longestRecentRunKm = "10",
+                calibrationDurationMinutes = null,
+                preferredLongRunDay = "6",
+                timeZone = "America/Halifax",
+                availability = listOf(1, 3, 6),
+                recentInjury = false,
+                currentPain = false,
+                recurringPain = false,
+                medicalRestriction = false,
+                injuryNotes = null,
+            ),
+            minimumTargetDate = null,
+            minimumCalibrationTargetDate = null,
+            minimumFoundationTargetDate = null,
+            maximumTargetDate = null,
+            currentGoal = null,
+        )
+        compose.setContent {
+            RunwayTheme {
+                SetupScreen(
+                    payload = payload,
+                    actionPending = false,
+                    onAction = { command -> submitted = command as CreatePlanCommand },
+                    onRestoreBackup = {},
+                    nowProvider = { Instant.parse("2026-08-02T12:00:00Z") },
+                )
+            }
+        }
+
+        repeat(3) { compose.onNodeWithText("Continue").performClick() }
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Training outline"))
+        compose.onNodeWithText("Training outline").assertIsDisplayed()
+        compose.onNodeWithText("Needs confirmation").assertIsDisplayed()
+        compose.onNodeWithText("25 km").assertIsDisplayed()
+        compose.onNodeWithText("Create plan").assertIsNotEnabled()
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Use this schedule as shown"))
+        compose.onNodeWithText("Use this schedule as shown").performClick()
+        compose.onNodeWithText("Create plan").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertTrue(submitted?.confirmedPlanKey?.isNotBlank() == true)
+            assertTrue(submitted?.raceDistance == "half")
+            assertTrue(submitted?.longestRecentRunKm == "10")
+        }
     }
 
     @Test

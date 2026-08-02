@@ -10,12 +10,6 @@ import kotlin.math.pow
 object TrainingPlanner {
     private const val maxPlanWeeks = 52
     private const val minimumRunMeters = 500
-    private val raceMeters = mapOf(
-        RaceDistance.FIVE_K to 5000,
-        RaceDistance.TEN_K to 10000,
-        RaceDistance.HALF to 21100,
-        RaceDistance.MARATHON to 42200,
-    )
     private val peakWeekly = mapOf(
         RaceDistance.FIVE_K to 14000,
         RaceDistance.TEN_K to 22000,
@@ -41,7 +35,7 @@ object TrainingPlanner {
         RaceDistance.MARATHON to TrainingSourceRefs.REI_MARATHON,
     )
 
-    fun getRaceMeters(distance: RaceDistance) = raceMeters.getValue(distance)
+    fun getRaceMeters(distance: RaceDistance) = distance.meters
 
     fun generatePlan(intake: PlannerIntake, today: LocalDate = LocalDate.now()): GeneratedPlan = when (intake) {
         is EstablishedTrainingIntake -> generateEstablished(intake, today)
@@ -266,15 +260,27 @@ object TrainingPlanner {
     ): Scheduled {
         val runDays = pickRunDays(intake)
         val dates = generateWeekDates(start, end)
-        val training = dates.filter { date ->
+        val eligibleTraining = dates.filter { date ->
             val isoDate = date.toString()
             val isAvailableRunDay = date.dayOfWeek.value % 7 in runDays
             val isRaceDay = isoDate == raceDate
             val isDayBeforeRace = raceDate != null && isoDate >= DateUtils.addDays(raceDate, -1)
             isAvailableRunDay && !isRaceDay && !isDayBeforeRace
         }
+        // The goal event supplies one of the runner's usual weekly runs; retain the
+        // earliest eligible training days before it rather than adding a full run week.
+        val training = if (raceDate == null) {
+            eligibleTraining
+        } else {
+            eligibleTraining.take(max(0, plannedRuns(intake) - 1))
+        }
         val allocation = if (raceDate != null) {
-            allocateEvenly(total, training.size)
+            // The event replaces one normal run. Scale the training-only taper budget to the
+            // remaining slots so two short easy runs do not absorb a three-run week's volume.
+            val raceWeekTrainingBudget = roundTrainingValueToInt(
+                total.toDouble() * training.size / plannedRuns(intake),
+            )
+            allocateEvenly(raceWeekTrainingBudget, training.size)
         } else {
             allocateRunDistances(
                 total,

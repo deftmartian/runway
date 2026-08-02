@@ -26,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -34,9 +36,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.OnboardingValidation
+import dev.deftmartian.runway.domain.RaceDistance
+import dev.deftmartian.runway.domain.RiskRating
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TargetDateBounds
+import dev.deftmartian.runway.domain.TrainingAssessments
+import dev.deftmartian.runway.domain.canLeaveRecoveryDayAfterLongRun
+import dev.deftmartian.runway.domain.isRepeatableWeekCoherent
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -55,6 +63,7 @@ internal fun SetupScreen(
     actionPending: Boolean,
     onAction: (MobileCommand) -> Unit,
     onRestoreBackup: () -> Unit,
+    nowProvider: () -> Instant = { Instant.now() },
 ) {
     val initial = payload?.initialValues
     var step by rememberSaveable { mutableIntStateOf(goalStep) }
@@ -80,6 +89,8 @@ internal fun SetupScreen(
     var injuryNotes by rememberSaveable { mutableStateOf(initial?.injuryNotes.orEmpty()) }
     var confirmReplace by rememberSaveable { mutableStateOf(false) }
     var confirmConcentrated by rememberSaveable { mutableStateOf(false) }
+    var confirmedHighIncreaseKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var dateChangedDuringSetup by rememberSaveable { mutableStateOf(false) }
     var confirmingRestore by rememberSaveable { mutableStateOf(false) }
     var choosingTargetDate by rememberSaveable { mutableStateOf(false) }
     var choosingTimeZone by rememberSaveable { mutableStateOf(false) }
@@ -94,8 +105,10 @@ internal fun SetupScreen(
     }
     val setupOperationScope = payload?.currentGoal?.id.orEmpty()
     val setupOperationId = rememberSaveable(setupOperationScope) { UUID.randomUUID().toString() }
-    val setupOccurredAtEpochMillis =
-        rememberSaveable(setupOperationScope) { System.currentTimeMillis() }
+    var setupOccurredAtEpochMillis by rememberSaveable(setupOperationScope) {
+        mutableLongStateOf(nowProvider().toEpochMilli())
+    }
+    val setupInstant = Instant.ofEpochMilli(setupOccurredAtEpochMillis)
     val listState = rememberLazyListState()
     val runningCheckIn = NativeHealthContext(
         recentInjury = recentInjury,
@@ -113,7 +126,7 @@ internal fun SetupScreen(
     val isRoutineGoal = startMode == "routine"
     val isFoundationGoal = startMode == "foundation_only"
     val isRaceGoal = !isRoutineGoal && !isFoundationGoal
-    val liveTargetBounds = setupTargetDateBounds(timeZone, startMode)
+    val liveTargetBounds = setupTargetDateBounds(timeZone, startMode, setupInstant)
     val minimumTargetDate = liveTargetBounds?.minimum ?: when (startMode) {
         "foundation_to_goal" -> payload?.minimumFoundationTargetDate
         "calibration" -> payload?.minimumCalibrationTargetDate
@@ -132,6 +145,7 @@ internal fun SetupScreen(
         preferredDay = preferredDay,
         timeZone = timeZone,
         healthBlocked = newPlanPaused,
+        raceDistance = raceDistance,
     )
     val concentratedSchedule = requiresConcentratedScheduleAcceptance(
         startMode = startMode,
@@ -139,8 +153,51 @@ internal fun SetupScreen(
         raceDistance = raceDistance,
         healthBlocked = newPlanPaused,
     )
+    val candidateCommand = CreatePlanCommand(
+        goalKind = when {
+            isRoutineGoal -> "routine"
+            isRaceGoal -> "race"
+            else -> "foundation"
+        },
+        startMode = startMode,
+        raceDistance = if (isRaceGoal) raceDistance else "",
+        targetDate = if (isRaceGoal) targetDate else "",
+        priority = priority,
+        currentWeeklyDistanceKm = weeklyKm,
+        currentRunsPerWeek = runsPerWeek,
+        longestRecentRunKm = longestKm,
+        calibrationDurationMinutes = calibrationMinutes,
+        availability = availability.sorted(),
+        preferredLongRunDay = preferredDay,
+        timeZone = timeZone,
+        recentInjury = recentInjury,
+        currentPain = currentPain,
+        recurringPain = recurringPain,
+        medicalRestriction = medicalRestriction,
+        injuryNotes = injuryNotes,
+        confirmConcentratedSchedule = confirmConcentrated,
+        confirmedPlanKey = null,
+        confirmReplace = confirmReplace,
+        operationId = setupOperationId,
+        occurredAtEpochMillis = setupOccurredAtEpochMillis,
+    )
+    val planPreview = remember(candidateCommand, setupOccurredAtEpochMillis) {
+        if (startMode != "established" || !isRaceGoal || newPlanPaused) {
+            null
+        } else {
+            (StandaloneOnboardingAdapter.preview(
+                candidateCommand,
+                setupInstant,
+            ) as? StandaloneOnboardingOutcome.Planned)?.plan as? GeneratedDistancePlan
+        }
+    }
+    val highIncreaseKey = planPreview?.let(::generatedPlanConfirmationKey)
+    val highIncreaseConfirmed =
+        highIncreaseKey != null && confirmedHighIncreaseKey == highIncreaseKey
     val currentGoalLabel = currentGoalStateLabel(payload?.currentGoal?.state)
+    val assessmentIssue = planAssessmentIssue(planPreview?.risk, highIncreaseConfirmed)
     val reviewIssue = when {
+        assessmentIssue != null -> assessmentIssue
         payload?.currentGoal != null && !confirmReplace ->
             "Confirm that the $currentGoalLabel will be archived."
         concentratedSchedule && !confirmConcentrated -> "Confirm the two-day schedule before creating this plan."
@@ -156,23 +213,20 @@ internal fun SetupScreen(
         if (step < reviewStep) {
             step += 1
         } else {
-            onAction(CreatePlanCommand(
-                goalKind = when {
-                    isRoutineGoal -> "routine"
-                    isRaceGoal -> "race"
-                    else -> "foundation"
-                },
-                startMode = startMode,
-                raceDistance = if (isRaceGoal) raceDistance else "", targetDate = if (isRaceGoal) targetDate else "",
-                priority = priority, currentWeeklyDistanceKm = weeklyKm, currentRunsPerWeek = runsPerWeek,
-                longestRecentRunKm = longestKm, calibrationDurationMinutes = calibrationMinutes,
-                availability = availability.sorted(), preferredLongRunDay = preferredDay, timeZone = timeZone,
-                recentInjury = recentInjury, currentPain = currentPain, recurringPain = recurringPain,
-                medicalRestriction = medicalRestriction, injuryNotes = injuryNotes,
-                confirmConcentratedSchedule = confirmConcentrated, confirmReplace = confirmReplace,
-                operationId = setupOperationId,
-                occurredAtEpochMillis = setupOccurredAtEpochMillis,
-            ))
+            val submissionInstant = nowProvider()
+            if (setupDateChanged(setupInstant, submissionInstant, timeZone)) {
+                setupOccurredAtEpochMillis = submissionInstant.toEpochMilli()
+                confirmedHighIncreaseKey = null
+                dateChangedDuringSetup = true
+                step = goalStep
+            } else {
+                onAction(
+                    candidateCommand.copy(
+                        confirmedPlanKey = highIncreaseKey.takeIf { highIncreaseConfirmed },
+                        occurredAtEpochMillis = submissionInstant.toEpochMilli(),
+                    ),
+                )
+            }
         }
     }
 
@@ -183,6 +237,11 @@ internal fun SetupScreen(
             bottomContentPadding = 92.dp,
         ) {
         item { SetupProgress(step, isRoutineGoal) }
+        if (dateChangedDuringSetup) {
+            item {
+                Notice("The date changed while Setup was open. Review the updated dates before creating the plan.")
+            }
+        }
         payload?.currentGoal?.let {
             item {
                 val title = it.title.orEmpty().ifBlank { currentGoalLabel }
@@ -260,7 +319,7 @@ internal fun SetupScreen(
                             if (startMode == "established") {
                                 NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
                                 NumberField("Current runs per week", runsPerWeek) { runsPerWeek = it }
-                                NumberField("Longest recent run (km)", longestKm) { longestKm = it }
+                                NumberField("Longest run in that week (km)", longestKm) { longestKm = it }
                             }
                             if (startMode == "calibration") {
                                 NumberField("Timed run duration (10–30 min)", calibrationMinutes) { calibrationMinutes = it }
@@ -379,6 +438,56 @@ internal fun SetupScreen(
                                 } else {
                                     "An active ${if (startMode == "calibration") "two-week calibration" else "training"} phase will be created now. You can edit future workouts after setup."
                                 },
+                            )
+                        }
+                    }
+                }
+                planPreview?.let { preview ->
+                    item {
+                        SetupSection(
+                            "Training outline",
+                            "Training totals exclude the race itself. Review the ramp before creating the plan.",
+                        ) {
+                            SettingRow("Plan length", "${preview.weeks.size} weeks")
+                            SettingRow(
+                                "First week",
+                                formatDistance(
+                                    preview.weeks.first().trainingTargetDistanceMeters.toDouble(),
+                                ),
+                            )
+                            SettingRow(
+                                "Peak planned week",
+                                formatDistance(preview.summary.peakMeters.toDouble()),
+                            )
+                            SettingRow(
+                                "Longest planned run",
+                                formatDistance(preview.summary.longRunPeakMeters.toDouble()),
+                            )
+                            SettingRow("Plan assessment", planAssessmentLabel(preview.risk))
+                            SettingRow(
+                                "Required and default",
+                                TrainingAssessments.formatRampEvidence(
+                                    preview.summary.requiredWeeklyIncreasePercent,
+                                    preview.summary.defaultWeeklyIncreasePercent,
+                                ),
+                            )
+                            preview.summary.warnings.forEach { warning -> Notice(warning) }
+                        }
+                    }
+                    if (preview.risk == RiskRating.AGGRESSIVE) {
+                        item {
+                            Notice(
+                                "At least one part of this plan is outside runway's usual recommendation. Review the ramp and warnings, move the race later if needed, or confirm the schedule as shown.",
+                            )
+                            CheckRow("Use this schedule as shown", highIncreaseConfirmed) { checked ->
+                                confirmedHighIncreaseKey = if (checked) highIncreaseKey else null
+                            }
+                        }
+                    }
+                    if (preview.risk == RiskRating.UNSAFE) {
+                        item {
+                            Notice(
+                                "This schedule is outside Runway's plan-generation limit. Move the race later, choose a shorter goal, or change the starting point.",
                             )
                         }
                     }
@@ -627,18 +736,55 @@ internal fun startingPointValidation(
     healthBlocked: Boolean,
 ): String? = when {
     mode == "established" && healthBlocked -> null
-    mode == "established" -> when {
-        weeklyKm.toDoubleOrNull()?.takeIf { it in 3.0..250.0 } == null ->
-            "Enter a repeatable week from 3 to 250 km."
-        runsPerWeek.toIntOrNull()?.takeIf { it in 2..5 } == null ->
-            "Enter a whole number from 2 to 5 current runs."
-        longestKm.toDoubleOrNull()?.takeIf { it > 0.0 && it <= 80.0 } == null ->
-            "Enter a positive recent longest run up to 80 km."
-        else -> null
+    mode == "established" -> {
+        val weekly = weeklyKm.toDoubleOrNull()
+        val runs = runsPerWeek.toIntOrNull()
+        val longest = longestKm.toDoubleOrNull()
+        when {
+            weekly?.takeIf { it in 3.0..250.0 } == null ->
+                "Enter a repeatable week from 3 to 250 km."
+            runs?.takeIf { it in 2..5 } == null ->
+                "Enter a whole number from 2 to 5 current runs."
+            longest?.takeIf { it > 0.0 && it <= 80.0 } == null ->
+                "Enter a positive longest run in that week up to 80 km."
+            !isRepeatableWeekCoherent(weekly, runs, longest) ->
+                "Make the weekly distance fit the longest run and number of runs in that week."
+            else -> null
+        }
     }
     mode == "calibration" && calibrationMinutes.toIntOrNull()?.takeIf { it in 10..30 } == null ->
         "Choose a whole timed check-in from 10 to 30 minutes."
     else -> null
+}
+
+internal fun planAssessmentIssue(
+    risk: RiskRating?,
+    confirmedHighIncrease: Boolean,
+): String? = when (risk) {
+    RiskRating.UNSAFE ->
+        "Choose a later race date, a shorter goal, or a different starting point."
+    RiskRating.AGGRESSIVE -> if (confirmedHighIncrease) {
+        null
+    } else {
+        "Confirm the schedule after reviewing its warnings, or change the plan inputs."
+    }
+    else -> null
+}
+
+internal fun planAssessmentLabel(risk: RiskRating): String = when (risk) {
+    RiskRating.CONSERVATIVE -> "Within default"
+    RiskRating.MODERATE -> "Above default"
+    RiskRating.AGGRESSIVE -> "Needs confirmation"
+    RiskRating.UNSAFE -> "Not supported"
+}
+
+internal fun setupDateChanged(
+    previewInstant: Instant,
+    submissionInstant: Instant,
+    timeZone: String,
+): Boolean {
+    val zone = runCatching { ZoneId.of(timeZone) }.getOrNull() ?: return false
+    return LocalDate.ofInstant(previewInstant, zone) != LocalDate.ofInstant(submissionInstant, zone)
 }
 
 internal fun scheduleValidation(
@@ -648,6 +794,7 @@ internal fun scheduleValidation(
     preferredDay: String,
     timeZone: String,
     healthBlocked: Boolean,
+    raceDistance: String = "5k",
 ): String? {
     val requiredDays = when (mode) {
         "routine" -> 1
@@ -663,6 +810,23 @@ internal fun scheduleValidation(
         mode == "established" && !healthBlocked &&
             runsPerWeek.toIntOrNull()?.let { availability.size < it } == true ->
             "Choose at least as many available days as current weekly runs."
+        mode == "established" && !healthBlocked &&
+            runsPerWeek.toIntOrNull()?.let { runs ->
+                preferredDay.toIntOrNull()?.let { longDay ->
+                    !canLeaveRecoveryDayAfterLongRun(
+                        availability,
+                        runs,
+                        longDay,
+                        when (raceDistance) {
+                            "half" -> RaceDistance.HALF
+                            "marathon" -> RaceDistance.MARATHON
+                            "10k" -> RaceDistance.TEN_K
+                            else -> RaceDistance.FIVE_K
+                        },
+                    )
+                }
+            } == true ->
+            "Choose another available day so the plan can leave the day after the long run free."
         else -> null
     }
 }

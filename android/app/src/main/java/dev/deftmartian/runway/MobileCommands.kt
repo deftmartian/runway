@@ -27,6 +27,7 @@ internal data class CreatePlanCommand(
     val medicalRestriction: Boolean,
     val injuryNotes: String,
     val confirmConcentratedSchedule: Boolean,
+    val confirmedPlanKey: String?,
     val confirmReplace: Boolean,
     /** Stable for one submitted setup attempt; a later setup receives a new identity. */
     val operationId: String,

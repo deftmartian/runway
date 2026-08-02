@@ -678,13 +678,7 @@ object LocalPlanLifecyclePreparation {
             availability.count { it != recoveryDay } >= runCount
         } ?: availability.firstOrNull() ?: 6
 
-    fun raceDistance(meters: Int?): RaceDistance? = when (meters) {
-        5_000 -> RaceDistance.FIVE_K
-        10_000 -> RaceDistance.TEN_K
-        21_100 -> RaceDistance.HALF
-        42_200 -> RaceDistance.MARATHON
-        else -> null
-    }
+    fun raceDistance(meters: Int?): RaceDistance? = RaceDistance.fromStoredMeters(meters)
 
     fun validOperationId(value: String): Boolean = value.isNotBlank() && value.length <= 256
 

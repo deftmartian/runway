@@ -114,6 +114,27 @@ class LocalOnboardingPresenterTest {
         assertEquals("2026-11-01", payload.initialValues?.targetDate)
     }
 
+    @Test
+    fun `released race distance values remain visible and editable`() {
+        val payload = LocalSettingsReadModel(
+            profile = profile(currentPain = false),
+            activePlan = null,
+            pendingGoal = LocalPendingGoalReadModel(
+                goalId = "pending-goal",
+                title = "Marathon later",
+                goalKind = "race",
+                startMode = "foundation_to_goal",
+                raceDistanceMeters = 42_195,
+                targetEpochDay = LocalDate.parse("2026-11-01").toEpochDay(),
+                priority = "finish_healthy",
+            ),
+            about = LocalAboutReadModel(versionName = null, buildRevision = null),
+        ).toNativeOnboardingPayload(Instant.parse("2026-07-30T12:00:00Z"))
+
+        assertEquals("Marathon", payload.currentGoal?.distance)
+        assertEquals("marathon", payload.initialValues?.raceDistance)
+    }
+
     private fun profile(currentPain: Boolean) = LocalProfileReadModel(
         timeZone = "America/Halifax",
         routeDataMode = "discard",

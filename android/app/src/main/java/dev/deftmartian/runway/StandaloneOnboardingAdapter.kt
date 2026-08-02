@@ -11,6 +11,7 @@ import dev.deftmartian.runway.domain.CalibrationIntake
 import dev.deftmartian.runway.domain.DateUtils
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
 import dev.deftmartian.runway.domain.FoundationIntake
+import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.GeneratedPlan
 import dev.deftmartian.runway.domain.GoalKind
 import dev.deftmartian.runway.domain.GoalPriority
@@ -20,9 +21,12 @@ import dev.deftmartian.runway.domain.OnboardingSelection
 import dev.deftmartian.runway.domain.OnboardingValidation
 import dev.deftmartian.runway.domain.PlannerIntake
 import dev.deftmartian.runway.domain.RaceDistance
+import dev.deftmartian.runway.domain.RiskRating
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TargetDateBounds
 import dev.deftmartian.runway.domain.TrainingPlanner
+import dev.deftmartian.runway.domain.canLeaveRecoveryDayAfterLongRun
+import dev.deftmartian.runway.domain.isRepeatableWeekCoherent
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -33,11 +37,14 @@ internal enum class OnboardingField {
     GOAL_KIND, START_MODE, RACE_DISTANCE, TARGET_DATE, PRIORITY,
     AVAILABILITY, TIME_ZONE, WEEKLY_DISTANCE, RUNS_PER_WEEK, LONGEST_RUN,
     LONG_RUN_DAY, CALIBRATION_DURATION, HEALTH_NOTES, CONCENTRATED_SCHEDULE,
+    PLAN_ASSESSMENT,
 }
 
 internal enum class OnboardingFieldError {
     INVALID_VALUE, INVALID_NUMBER, INVALID_DATE, OUT_OF_RANGE, REQUIRED,
     DUPLICATE_DAY, HEALTH_BLOCKS_PHASE, CONCENTRATED_SCHEDULE_CONFIRMATION,
+    HIGH_INCREASE_CONFIRMATION, UNSUPPORTED_PLAN, INCONSISTENT_BASELINE,
+    RECOVERY_SPACING,
 }
 
 internal data class StandaloneGoalMetadata(
@@ -73,6 +80,22 @@ internal sealed interface StandaloneOnboardingOutcome {
 /** Pure app-to-domain boundary. It neither writes state nor depends on UI controls. */
 internal object StandaloneOnboardingAdapter {
     fun adapt(command: CreatePlanCommand, now: Instant = Instant.now()): StandaloneOnboardingOutcome {
+        return evaluate(command, now, enforceConfirmations = true)
+    }
+
+    /**
+     * Produces the exact candidate shown on Setup's Review step without accepting its risk.
+     * Confirmation checks are intentionally deferred so the UI can explain the candidate first.
+     */
+    fun preview(command: CreatePlanCommand, now: Instant = Instant.now()): StandaloneOnboardingOutcome {
+        return evaluate(command, now, enforceConfirmations = false)
+    }
+
+    private fun evaluate(
+        command: CreatePlanCommand,
+        now: Instant,
+        enforceConfirmations: Boolean,
+    ): StandaloneOnboardingOutcome {
         val errors = linkedMapOf<OnboardingField, MutableSet<OnboardingFieldError>>()
         fun error(field: OnboardingField, value: OnboardingFieldError) {
             errors.getOrPut(field) { linkedSetOf() }.add(value)
@@ -151,11 +174,19 @@ internal object StandaloneOnboardingAdapter {
             goalKind, startMode, raceDistance, targetDate, command.availability, timeZone, flags,
             weeklyKm, runs, longestKm, longRunDay,
             calibrationMinutes ?: if (calibration && (flags.currentPain || flags.medicalRestriction)) 10 else null,
-            command.confirmConcentratedSchedule,
+            command.confirmConcentratedSchedule || !enforceConfirmations,
         )
         OnboardingValidation.validate(selection, today).forEach { issue -> mapIssue(issue, ::error) }
         if (needsEstablishedBaseline) {
-            validateEstablishedBaseline(command, weeklyKm, runs, longestKm, longRunDay, ::error)
+            validateEstablishedBaseline(
+                command,
+                weeklyKm,
+                runs,
+                longestKm,
+                longRunDay,
+                raceDistance,
+                ::error,
+            )
         }
         if (goalKind == GoalKind.RACE && raceDistance == null) error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.REQUIRED)
         if (goalKind == GoalKind.RACE && targetDate == null) error(OnboardingField.TARGET_DATE, OnboardingFieldError.REQUIRED)
@@ -178,7 +209,26 @@ internal object StandaloneOnboardingAdapter {
             StartMode.CALIBRATION -> CalibrationIntake(goalKind, raceDistance, command.availability, flags, requireNotNull(calibrationMinutes) * 60, startDate)
             StartMode.ROUTINE -> error("Routine setup does not use the training planner")
         }
-        return StandaloneOnboardingOutcome.Planned(metadata, intake, TrainingPlanner.generatePlan(intake, today))
+        val plan = TrainingPlanner.generatePlan(intake, today)
+        if (enforceConfirmations && plan is GeneratedDistancePlan) {
+            when {
+                plan.risk == RiskRating.UNSAFE ->
+                    error(OnboardingField.PLAN_ASSESSMENT, OnboardingFieldError.UNSUPPORTED_PLAN)
+                plan.risk == RiskRating.AGGRESSIVE &&
+                    command.confirmedPlanKey != generatedPlanConfirmationKey(plan) ->
+                    error(
+                        OnboardingField.PLAN_ASSESSMENT,
+                        OnboardingFieldError.HIGH_INCREASE_CONFIRMATION,
+                    )
+            }
+            if (errors.isNotEmpty()) {
+                return StandaloneOnboardingOutcome.Invalid(
+                    errors.mapValues { it.value.toSet() },
+                    bounds,
+                )
+            }
+        }
+        return StandaloneOnboardingOutcome.Planned(metadata, intake, plan)
     }
 
     private fun mapIssue(issue: OnboardingIssue, error: (OnboardingField, OnboardingFieldError) -> Unit) = when (issue) {
@@ -192,6 +242,8 @@ internal object StandaloneOnboardingAdapter {
         OnboardingIssue.INVALID_ESTABLISHED_BASELINE -> Unit
         OnboardingIssue.INVALID_CALIBRATION_DURATION -> error(OnboardingField.CALIBRATION_DURATION, OnboardingFieldError.OUT_OF_RANGE)
         OnboardingIssue.INVALID_LONG_RUN_DAY -> error(OnboardingField.LONG_RUN_DAY, OnboardingFieldError.INVALID_VALUE)
+        OnboardingIssue.INSUFFICIENT_RECOVERY_SPACING ->
+            error(OnboardingField.AVAILABILITY, OnboardingFieldError.RECOVERY_SPACING)
         OnboardingIssue.CONCENTRATED_SCHEDULE_NOT_CONFIRMED -> error(OnboardingField.CONCENTRATED_SCHEDULE, OnboardingFieldError.CONCENTRATED_SCHEDULE_CONFIRMATION)
         OnboardingIssue.HEALTH_BLOCKS_SCHEDULING -> Unit
     }
@@ -227,6 +279,7 @@ internal object StandaloneOnboardingAdapter {
         runs: Int?,
         longestKm: Double?,
         longRunDay: Int?,
+        raceDistance: RaceDistance?,
         error: (OnboardingField, OnboardingFieldError) -> Unit,
     ) {
         when {
@@ -244,10 +297,57 @@ internal object StandaloneOnboardingAdapter {
         if (longRunDay == null && command.preferredLongRunDay.isBlank()) {
             error(OnboardingField.LONG_RUN_DAY, OnboardingFieldError.REQUIRED)
         }
+        if (
+            weeklyKm != null && weeklyKm in 3.0..250.0 &&
+            runs != null && runs in 2..5 &&
+            longestKm != null && longestKm > 0.0 && longestKm <= 80.0 &&
+            !isRepeatableWeekCoherent(weeklyKm, runs, longestKm)
+        ) {
+            error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.INCONSISTENT_BASELINE)
+            error(OnboardingField.LONGEST_RUN, OnboardingFieldError.INCONSISTENT_BASELINE)
+        }
+        if (
+            runs != null && runs in 2..5 && longRunDay != null &&
+            !canLeaveRecoveryDayAfterLongRun(
+                command.availability,
+                runs,
+                longRunDay,
+                raceDistance,
+            )
+        ) {
+            error(OnboardingField.AVAILABILITY, OnboardingFieldError.RECOVERY_SPACING)
+        }
     }
     private fun nextPlanStartDate(today: LocalDate): String = today.plusDays(((8 - today.dayOfWeek.value) % 7).toLong()).toString()
     private val DECIMAL = Regex("(?:0|[1-9]\\d*)(?:\\.\\d+)?")
     private val WHOLE = Regex("(?:0|[1-9]\\d*)")
+}
+
+/**
+ * Stable description of the exact generated schedule a runner reviewed.
+ * This is an in-memory confirmation boundary, not a security credential.
+ */
+internal fun generatedPlanConfirmationKey(plan: GeneratedDistancePlan): String = buildString {
+    append(plan.startDate).append('|').append(plan.targetDate).append('|').append(plan.risk.name)
+    plan.weeks.forEach { week ->
+        append('|').append(week.weekNumber)
+            .append(':').append(week.startDate)
+            .append(':').append(week.trainingTargetDistanceMeters)
+            .append(':').append(week.eventDistanceMeters)
+            .append(':').append(week.targetDistanceMeters)
+            .append(':').append(week.longRunMeters)
+            .append(':').append(week.risk.name)
+            .append(':').append(week.isDownWeek)
+            .append(':').append(week.isTaper)
+        week.workouts.forEach { workout ->
+            append('[').append(workout.scheduledDate)
+                .append(':').append(workout.type.name)
+                .append(':').append(workout.targetDistanceMeters)
+                .append(':').append(workout.targetDurationSeconds ?: 0)
+                .append(':').append(workout.intensity)
+                .append(']')
+        }
+    }
 }
 
 /**
@@ -288,7 +388,7 @@ internal object StandaloneOnboardingPersistenceMapper {
                         goalKind = metadata.goalKind,
                         startMode = metadata.startMode,
                         goalTargetDate = metadata.targetDate,
-                        targetDistanceMeters = metadata.raceDistance?.meters(),
+                        targetDistanceMeters = metadata.raceDistance?.meters,
                         priority = metadata.priority,
                         createdAtEpochMillis = occurredAtEpochMillis,
                     ),
@@ -304,7 +404,7 @@ internal object StandaloneOnboardingPersistenceMapper {
                     updatedAtEpochMillis = occurredAtEpochMillis,
                     kind = metadata.goalKind.name.lowercase(),
                     startMode = metadata.startMode.name.lowercase(),
-                    raceDistanceMeters = metadata.raceDistance?.meters(),
+                    raceDistanceMeters = metadata.raceDistance?.meters,
                     priority = metadata.priority.storageValue(),
                 ),
             )
@@ -378,12 +478,6 @@ internal object StandaloneOnboardingPersistenceMapper {
         }}"
     }
 
-    private fun RaceDistance.meters(): Int = when (this) {
-        RaceDistance.FIVE_K -> 5_000
-        RaceDistance.TEN_K -> 10_000
-        RaceDistance.HALF -> 21_097
-        RaceDistance.MARATHON -> 42_195
-    }
     private fun RaceDistance.label(): String = when (this) {
         RaceDistance.FIVE_K -> "5K"
         RaceDistance.TEN_K -> "10K"

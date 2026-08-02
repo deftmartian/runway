@@ -2,6 +2,7 @@ package dev.deftmartian.runway
 
 import dev.deftmartian.runway.data.LocalSettingsReadModel
 import dev.deftmartian.runway.domain.OnboardingValidation
+import dev.deftmartian.runway.domain.RaceDistance
 import dev.deftmartian.runway.domain.StartMode
 import java.time.Instant
 import java.time.LocalDate
@@ -84,18 +85,18 @@ private fun Int?.toKilometreInput(): String? = this?.let { meters ->
     }
 }
 
-private fun Int?.toRaceDistanceWireValue(): String? = when (this) {
-    5_000 -> "5k"
-    10_000 -> "10k"
-    21_100 -> "half"
-    42_200 -> "marathon"
+private fun Int?.toRaceDistanceWireValue(): String? = when (RaceDistance.fromStoredMeters(this)) {
+    RaceDistance.FIVE_K -> "5k"
+    RaceDistance.TEN_K -> "10k"
+    RaceDistance.HALF -> "half"
+    RaceDistance.MARATHON -> "marathon"
     else -> null
 }
 
-private fun Int?.toRaceDistanceLabel(): String? = when (this) {
-    5_000 -> "5K"
-    10_000 -> "10K"
-    21_100 -> "Half marathon"
-    42_200 -> "Marathon"
+private fun Int?.toRaceDistanceLabel(): String? = when (RaceDistance.fromStoredMeters(this)) {
+    RaceDistance.FIVE_K -> "5K"
+    RaceDistance.TEN_K -> "10K"
+    RaceDistance.HALF -> "Half marathon"
+    RaceDistance.MARATHON -> "Marathon"
     else -> null
 }

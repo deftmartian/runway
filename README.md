@@ -19,6 +19,7 @@ runway is not a GPS tracker, wearable replacement, social feed, or medical coach
 ## A clear next step
 
 - Build toward a race or choose a few regular running days each week.
+- Review the starting week, peak, longest run, and ramp before creating a race plan.
 - See planned runs, completed work, and waiting decisions by date without filling the calendar with recovery entries.
 - Move, edit, add, or remove a future run when life changes.
 - Compare what was planned with what happened, then keep the schedule, ease back, rest, repeat, or rebalance.
