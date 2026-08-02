@@ -228,12 +228,12 @@ internal fun HealthContextDialog(
     )
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Running check-in") },
+        title = { Text("Running limits") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Text(
-                        "This is a setup safeguard, not a daily readiness score. Use it only when pain, an injury, or a clinician's limit affects running now. A pain report from a recent run can turn it on; clear it when it no longer reflects your situation.",
+                        "Save this only when one of these should affect future plan setup. Current pain or a clinician's limit pauses new scheduling; recent injury or recurring pain makes distance checks more cautious. Clear a saved limit when it no longer applies.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -276,7 +276,7 @@ internal fun HealthContextDialog(
                     )
                 },
                 enabled = !actionPending,
-            ) { Text("Save check-in") }
+            ) { Text("Save limits") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

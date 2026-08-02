@@ -506,7 +506,7 @@ private fun RoutineStatsAssessment(
     onOpenCalendar: () -> Unit,
 ) {
     history?.currentSignal?.healthNotice?.let { notice ->
-        SettingCard(notice.heading.orEmpty().ifBlank { "Running check-in" }) {
+        SettingCard(notice.heading.orEmpty().ifBlank { "Running limits" }) {
             Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -639,7 +639,7 @@ private fun StatsAssessment(history: NativeTrainingHistory?) {
     val weeks = history?.weeklySummaries.orEmpty()
     val signal = history?.currentSignal
     signal?.healthNotice?.let { notice ->
-        SettingCard(notice.heading.orEmpty().ifBlank { "Running check-in" }) {
+        SettingCard(notice.heading.orEmpty().ifBlank { "Running limits" }) {
             Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

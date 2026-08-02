@@ -6,11 +6,11 @@
 
 **Plan your running, bring in what you recorded, and decide what changes next.**
 
-runway is a private Android app for runners who plan their own training. Build toward a race or choose regular running days, then keep the plan, completed runs, recovery, and deliberate changes in one place.
+runway is an Android app for runners who plan their own training. Build toward a race or choose regular running days, then keep the plan, completed runs, recovery, and deliberate changes in one place.
 
 Keep recording with the app or watch you already use. Share one GPX file with runway or approve an export folder, and each new activity waits in Inbox until you review it. Optional read-only Health Connect import is available too.
 
-runway is not a GPS tracker, wearable replacement, social feed, or medical coach. It runs locally on Android 8.0 and newer with no account, server, subscription, or cloud sync.
+runway works with your existing recorder instead of replacing it. It runs locally on Android 8.0 and newer with no account, server, subscription, or cloud sync.
 
 | Calendar | Inbox |
 | --- | --- |
@@ -38,18 +38,13 @@ runway reads local GPX files; it does not record your route. You can share one f
 
 runway checks the approved folder when the app returns to the foreground. Optional background checks are best-effort rather than a continuous folder watch. Every imported activity goes to Inbox for review before it counts toward training or offers a schedule change.
 
-Under **Settings → Notifications**, you can turn on reminders for planned run days and alerts when a folder import is ready in Inbox. Android may delay either notification. An import alert means a best-effort scan found and imported a new file; it does not mean runway watches the folder continuously.
+Under **Settings → Notifications**, you can turn on reminders for planned run days and alerts when a folder import is ready in Inbox. Android may deliver background work and notifications later than requested.
 
-## Private by design
+## Your data
 
-- GPX activities are parsed on your phone; runway does not keep the original file.
-- Every GPX or optional read-only Health Connect activity waits in Inbox for your review before it counts toward training or offers a schedule change.
-- A selected GPX folder is scanned when runway returns to the foreground; Android background scans are best-effort, not a continuous folder watch.
-- Notifications are optional. Lock-screen text does not include route, heart-rate, distance, filename, or private-note details, and Android can delay or block delivery.
-- You choose separately whether runway keeps route and imported heart-rate details. New profiles discard both. Switching either control back to discard permanently clears only that type of saved and pending import data.
-- Backup and export are explicit plaintext files written to the location chosen in Android's document picker. Create a backup before moving to or resetting a phone, then restore it into runway on the replacement device. These files can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.
+Plans, runs, and preferences stay on this phone unless you create a backup or export. You choose whether imported route and heart-rate details are saved. Backup and export files are plaintext, so store them somewhere you trust.
 
-See [Security and privacy](docs/SECURITY.md) for the full trust boundary and data controls.
+See [Security and privacy](docs/SECURITY.md) for exact storage, permission, retention, and deletion behavior.
 
 <details>
 <summary><strong>More screens</strong></summary>
@@ -58,7 +53,7 @@ See [Security and privacy](docs/SECURITY.md) for the full trust boundary and dat
 | --- | --- |
 | ![Stats comparing planned and completed training](docs/images/runway-android-stats-light.png) | ![History showing current and past plan records](docs/images/runway-android-history-light.png) |
 | Settings | Larger screens |
-| ![Settings for training, imports, privacy, and local data](docs/images/runway-android-settings-dark.png) | ![Calendar using the adaptive navigation rail at 600 dp and wider](docs/images/runway-android-calendar-expanded-light.png) |
+| ![Settings for training, reminders, imports, and saved data](docs/images/runway-android-settings-dark.png) | ![Calendar using the adaptive navigation rail at 600 dp and wider](docs/images/runway-android-calendar-expanded-light.png) |
 
 </details>
 

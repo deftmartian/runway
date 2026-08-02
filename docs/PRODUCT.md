@@ -4,11 +4,9 @@
 
 runway helps runners who coach themselves make a conservative plan, record what actually happened, and decide what—if anything—should change next. It can guide someone toward a race or help them keep a regular weekly running habit.
 
-runway stores every plan, run, import, and note on one Android device unless the runner explicitly exports a backup. It has no account, server, subscription, social graph, web client, or cloud sync.
-
 ## Product boundary
 
-runway is not live GPS tracking, route discovery, a wearable replacement, a generic activity log, a social fitness product, or a medical coach. A watch, phone, or another app can record a run; runway helps fit that run back into a training plan or weekly routine.
+runway is not live GPS tracking, route discovery, a wearable replacement, a generic activity log, a social fitness product, or a medical coach. A watch, phone, or another app can record a run; runway helps fit that run back into a training plan or weekly routine. Plans, runs, imports, and notes stay on one Android device unless the runner explicitly creates a backup or export.
 
 The product must not silently change future training because a runner missed, shortened, extended, moved, or imported an activity. It may offer conservative next steps, but it applies one only after the runner confirms it.
 
@@ -30,9 +28,9 @@ Defaults are recommendations, not constraints. The runner can change available d
 
 Before an established race plan is created, Setup shows its first week, peak week, longest planned run, required ramp, default ramp, assessment, and warnings. A plan outside the usual recommendation remains available only after the runner confirms that exact workout schedule. A plan outside the generation limit is not created; Setup directs the runner to move the race, choose a shorter goal, or change the starting point. If the local training date changes while Setup is open, the candidate is regenerated before it can be created.
 
-Setup includes an optional running check-in with explicit effects. Current pain or a clinician's running limit saves a new plan or routine goal without scheduling workouts. A recent injury or recurring pain makes distance-plan ramps and workout-edit checks more cautious; it does not alter fixed foundation, calibration, or open routine slots. A private reminder is stored but never interpreted. These choices can be reviewed in Settings, and changing them does not silently rewrite existing workouts.
+Setup includes optional running limits with explicit effects. Current pain or a clinician's running limit saves a new plan or routine goal without scheduling workouts. A recent injury or recurring pain makes distance-plan ramps and workout-edit checks more cautious; it does not alter fixed foundation, calibration, or open routine slots. A private reminder is stored but never interpreted. These choices can be reviewed in Settings, and changing them does not silently rewrite existing workouts.
 
-When the running check-in blocks scheduling, runway keeps the pending goal visible so the runner can return to it or explicitly replace it. A pending or active goal is never archived as a side effect of merely opening setup.
+When a running limit blocks scheduling, runway keeps the pending goal visible so the runner can return to it or explicitly replace it. A pending or active goal is never archived as a side effect of merely opening setup.
 
 Finishing or archiving a plan leaves the training profile and recorded history intact. A weekly routine has no completion target; the runner explicitly archives it to end future slots. Either is a deliberate no-active-plan state, not unfinished onboarding: Calendar and Stats keep the record visible and offer a new plan or routine.
 
@@ -54,21 +52,17 @@ This distinction must remain visible in Calendar, Inbox, Stats, and History. Res
 2. **Inbox** — activity review, links, extra work, corrections, and unresolved plan decisions.
 3. **Stats** — generated/current/actual traces for prescriptions, or weekly scheduled/recorded/skipped counts for a routine, with plain-language context.
 4. **History** — plan or routine lifecycle, archived records, and auditable decisions.
-5. **Settings** — training setup, optional notifications, profile, privacy, imports, backup/export, erase, and local build information.
+5. **Settings** — training setup, optional notifications, imports, saved-data tools, and local build information.
 
 Onboarding is a focused setup flow, not a sixth destination.
 
-## Imports and privacy
+## Bring in runs
 
-Manual results, GPX shares, approved Storage Access Framework folders, and optional Health Connect readings all become local activity candidates. Intake is review-first. For a prescription, a candidate can be linked to a planned workout within three calendar days, counted as extra work, have its feedback recorded with that choice, or be deleted. An accepted unlinked run can return to review while its plan consequence remains unapplied; once a plan decision has been applied, that decision must be reversed through its own visible boundary first. For a weekly routine, accepted work is recorded against that week without a load consequence or automatic schedule change.
+Manual results, shared GPX files, approved GPX folders, and optional Health Connect readings all arrive in Inbox first. For a race plan, the runner links a candidate to a planned workout within three calendar days or counts it as extra work, records feedback, and then chooses whether the result should affect the plan. An accepted extra run can return to Inbox while its proposed plan change remains unapplied; an applied plan change must be undone first. For a weekly routine, accepted work counts toward that week without changing future run days.
 
 Gadgetbridge's automatic GPX export is the primary folder workflow. OpenTracks and other recorders can share GPX files or write them to a user-chosen directory; FitoTrack uses the directory path. This is a local file handoff, not a direct integration or continuous sync.
 
-GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. The runner can opt into a generic alert after a new folder activity is committed to Inbox for review. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data. When route retention is enabled, activity detail may draw a bounded, private trace directly from retained points. It uses no basemap, tile service, or network request and does not expose coordinates through accessibility text.
-
-Planned-run reminders are also optional. They use best-effort Android background work, re-check the current local plan before posting, and never promise an exact alarm time. Both notification types are off by default and require Android notification permission.
-
-Backup/export is explicit and plaintext. It is a user-owned recovery and portability tool, not sync.
+Folder checks and planned-run reminders use Android's best-effort background work. Exact permission, retention, notification, backup, and deletion behavior is specified in [Security and privacy](SECURITY.md).
 
 ## Non-goals
 

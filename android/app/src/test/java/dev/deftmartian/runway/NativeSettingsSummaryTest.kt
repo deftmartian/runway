@@ -77,7 +77,7 @@ class NativeSettingsSummaryTest {
     }
 
     @Test
-    fun `running check-in summary states the saved consequence`() {
+    fun `running limits summary states the saved consequence`() {
         assertEquals(
             "Pain reported now · setup will not schedule runs",
             runningCheckInSummary(
@@ -99,10 +99,13 @@ class NativeSettingsSummaryTest {
             runningCheckInSummary(NativeHealthContext(notes = "remember")),
         )
         assertEquals("No running limits saved", runningCheckInSummary(NativeHealthContext()))
+        assertFalse(hasRunningLimits(NativeHealthContext()))
+        assertTrue(hasRunningLimits(NativeHealthContext(recurringPain = true)))
+        assertTrue(hasRunningLimits(NativeHealthContext(notes = "remember")))
     }
 
     @Test
-    fun `running check-in effects distinguish scheduling ramp checks and private notes`() {
+    fun `running limit effects distinguish scheduling ramp checks and private notes`() {
         assertEquals(
             "New setup saves the goal but does not create a schedule. Existing workouts stay recorded.",
             runningCheckInEffect(NativeHealthContext(currentPain = true)),

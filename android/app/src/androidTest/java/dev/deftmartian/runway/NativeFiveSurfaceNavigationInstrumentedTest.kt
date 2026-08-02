@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
@@ -74,7 +75,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         assertSurface("Inbox", "Choose how each run counts, then decide whether its result changes the plan.")
         assertSurface("Stats", "Recorded runs and past plans.")
         assertSurface("History", "Current training schedule and past records.")
-        assertSurface("Settings", "Private training preferences and local data.")
+        assertSurface("Settings", "Update your plan, imports, reminders, and saved data.")
 
         selectSurface("History")
         compose.onNodeWithText("Plan options").performClick()
@@ -87,18 +88,16 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         selectSurface("Settings")
         compose.onNodeWithText("Training plan").performClick()
         compose.onNodeWithContentDescription("Back to Settings").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Private training preferences and local data.").assertIsDisplayed()
+        compose.onNodeWithText("Update your plan, imports, reminders, and saved data.").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Run reminders"))
         compose.onNodeWithText("Run reminders").assertIsDisplayed().performClick()
         compose.onNodeWithText(
             "Runway will check for a planned run around this time. Android may deliver the reminder later.",
         ).assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Privacy"))
-        compose.onNodeWithText("Privacy").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Heart-rate privacy"))
-        compose.onNodeWithText("Heart-rate privacy").assertIsDisplayed()
-        compose.onNodeWithText("Heart-rate privacy").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Imported heart-rate details"))
+        compose.onNodeWithText("Imported heart-rate details").assertIsDisplayed()
+        compose.onNodeWithText("Imported heart-rate details").performClick()
         compose.onNodeWithTag("heart-rate-privacy-dialog").assertIsDisplayed()
         compose.onNodeWithText("Discard imported heart-rate values").performClick()
         compose.onNodeWithText("Discard stored heart rate").assertIsDisplayed()
@@ -289,6 +288,10 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Use this schedule as shown"))
         compose.onNodeWithText("Use this schedule as shown").performClick()
+        compose.onNodeWithText("Use this schedule as shown").assertIsOn()
+        compose.onAllNodesWithText(
+            "Confirm the schedule after reviewing its warnings, or change the plan inputs.",
+        ).assertCountEquals(0)
         compose.onNodeWithText("Create plan").assertIsEnabled().performClick()
         compose.runOnIdle {
             assertTrue(submitted?.confirmedPlanKey?.isNotBlank() == true)
@@ -538,7 +541,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        compose.onNodeWithText("Privacy settings restored").assertIsDisplayed()
+        compose.onNodeWithText("Import settings restored").assertIsDisplayed()
         compose.onNodeWithText("Dismiss note").performClick()
         compose.runOnIdle { assertTrue(acknowledged) }
     }

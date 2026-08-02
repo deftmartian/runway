@@ -110,7 +110,7 @@ class NativeStatsLayoutTest {
     fun `short setting values retain the compact two-column layout`() {
         assertFalse(
             usesStackedSettingRow(
-                label = "Route privacy",
+                label = "Imported route details",
                 value = "Private",
                 monospace = false,
                 availableWidthDp = 328f,

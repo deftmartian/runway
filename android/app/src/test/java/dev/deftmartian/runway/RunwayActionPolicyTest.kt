@@ -115,7 +115,7 @@ class RunwayActionPolicyTest {
 
         assertTrue(message.contains("private route and heart-rate data"))
         assertTrue(message.contains("restored to Keep private"))
-        assertTrue(message.contains("Review Privacy in Settings"))
+        assertTrue(message.contains("Review Imports in Settings"))
         assertTrue(
             RetentionRepairNotice(
                 routeModeRestored = true,

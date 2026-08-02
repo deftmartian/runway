@@ -19,7 +19,7 @@ An established race-plan Review step must show the generated ramp evidence befor
 - Keep Inbox focused on unresolved review work; an imported activity must show what it will and will not change, and every decision counted from Calendar must remain reachable.
 - In Stats, lead with the comparison and plain meaning; charts support the decision rather than becoming the page.
 - In History, preserve the difference between generated, current, actual, and archived state.
-- In Settings, group Training, Notifications, Imports, Privacy, Data, Reset and removal, and About. About shows concise local app/build information, never network or account controls.
+- In Settings, group Training, Notifications, Imports, Data, Reset and removal, and About. Route and imported heart-rate retention belong with Imports as choices about saved import details. About shows concise local app/build information, never network or account controls.
 
 ## Components and interaction
 

@@ -202,10 +202,10 @@ internal fun SettingsScreen(
     var confirmingErase by rememberSaveable { mutableStateOf(false) }
 
     NativeList(loading = false) {
-        item { ScreenContext("Private training preferences and local data.") }
+        item { ScreenContext("Update your plan, imports, reminders, and saved data.") }
         state.retentionRepair?.let { repair ->
             item {
-                SettingCard("Privacy settings restored") {
+                SettingCard("Import settings restored") {
                     Text(
                         repair.settingsMessage(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -240,7 +240,12 @@ internal fun SettingsScreen(
                 SettingsActionRow("Heart rate", heartRateSummary(state.heartRate), "Edit", !actionPending) {
                     editingHeartRate = true
                 }
-                SettingsActionRow("Running check-in", runningCheckInSummary(state.healthContext), "Review", !actionPending) {
+                SettingsActionRow(
+                    "Running limits",
+                    runningCheckInSummary(state.healthContext),
+                    if (hasRunningLimits(state.healthContext)) "Change" else "Add",
+                    !actionPending,
+                ) {
                     editingHealthContext = true
                 }
             }
@@ -304,15 +309,11 @@ internal fun SettingsScreen(
                     !actionPending,
                     onClick = callbacks.onOpenHealthConnect,
                 )
-            }
-        }
-        item {
-            SettingsRail("Privacy") {
-                SettingsActionRow("Route privacy", state.routePrivacy.summary, "Change", !actionPending) {
+                SettingsActionRow("Imported route details", state.routePrivacy.summary, "Change", !actionPending) {
                     editingRoutePrivacy = true
                 }
                 SettingsActionRow(
-                    "Heart-rate privacy",
+                    "Imported heart-rate details",
                     state.heartRatePrivacy.summary,
                     "Change",
                     !actionPending,
@@ -682,6 +683,13 @@ internal fun runningCheckInSummary(context: NativeHealthContext): String = when 
     context.notes.isNotBlank() -> "Private reminder · no effect on the schedule"
     else -> "No running limits saved"
 }
+
+internal fun hasRunningLimits(context: NativeHealthContext): Boolean =
+    context.recentInjury ||
+        context.currentPain ||
+        context.recurringPain ||
+        context.clinicianRestriction ||
+        context.notes.isNotBlank()
 
 internal fun runningCheckInEffect(context: NativeHealthContext): String? = when {
     context.currentPain || context.clinicianRestriction ->

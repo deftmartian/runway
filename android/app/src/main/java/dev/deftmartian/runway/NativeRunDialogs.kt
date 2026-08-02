@@ -53,7 +53,7 @@ internal fun positiveRunMeasurementError(value: String, unit: String): String? {
 
 internal fun feedbackPlanChangeMessage(planPhase: String?): String =
     if (planPhase == "routine") {
-        "Hard effort and pain are saved in your record. A pain report also updates the running check-in; neither changes later routine days."
+        "Hard effort and pain are saved in your record. A pain report also updates your running limits; neither changes later routine days."
     } else {
         "These reports can offer conservative next-step options. Nothing changes until you choose and apply it."
     }

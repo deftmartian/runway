@@ -1582,13 +1582,13 @@ internal fun activityEvidenceRequestIsCurrent(
 internal fun RetentionRepairNotice.message(): String = when {
     routeModeRestored && heartRateModeRestored ->
         "Runway found private route and heart-rate data retained by an earlier setup. " +
-            "Both privacy settings were restored to Keep private. Review Privacy in Settings."
+            "Both saved-detail choices were restored to Keep private. Review Imports in Settings."
     routeModeRestored ->
-        "Runway found private route data retained by an earlier setup. Route privacy was " +
-            "restored to Keep private. Review Privacy in Settings."
+        "Runway found private route data retained by an earlier setup. The route-detail choice " +
+            "was restored to Keep private. Review Imports in Settings."
     else ->
-        "Runway found private heart-rate data retained by an earlier setup. Heart-rate privacy " +
-            "was restored to Keep private. Review Privacy in Settings."
+        "Runway found private heart-rate data retained by an earlier setup. The heart-rate-detail " +
+            "choice was restored to Keep private. Review Imports in Settings."
 }
 
 internal fun RetentionRepairNotice.settingsMessage(): String = when {
@@ -1596,10 +1596,10 @@ internal fun RetentionRepairNotice.settingsMessage(): String = when {
         "An earlier setup left private route and heart-rate data in storage while both settings " +
             "said Discard. Runway kept the data and restored both settings to Keep private."
     routeModeRestored ->
-        "An earlier setup left private route data in storage while Route privacy said Discard. " +
+        "An earlier setup left private route data in storage while Imported route details said Discard. " +
             "Runway kept the data and restored the setting to Keep private."
     else ->
-        "An earlier setup left private heart-rate data in storage while Heart-rate privacy said " +
+        "An earlier setup left private heart-rate data in storage while Imported heart-rate details said " +
             "Discard. Runway kept the data and restored the setting to Keep private."
 }
 

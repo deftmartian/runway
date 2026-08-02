@@ -53,7 +53,7 @@ class NativeRunValidationTest {
     @Test
     fun `future plan guidance follows the routine phase rather than its editable prescription`() {
         assertEquals(
-            "Hard effort and pain are saved in your record. A pain report also updates the running check-in; neither changes later routine days.",
+            "Hard effort and pain are saved in your record. A pain report also updates your running limits; neither changes later routine days.",
             feedbackPlanChangeMessage("routine"),
         )
         assertEquals(

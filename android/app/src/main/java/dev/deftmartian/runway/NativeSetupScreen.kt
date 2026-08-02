@@ -32,7 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -230,12 +229,12 @@ internal fun SetupScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        NativeList(
-            loading = actionPending,
-            state = listState,
-            bottomContentPadding = 92.dp,
-        ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f)) {
+            NativeList(
+                loading = actionPending,
+                state = listState,
+            ) {
         item { SetupProgress(step, isRoutineGoal) }
         if (dateChangedDuringSetup) {
             item {
@@ -330,11 +329,11 @@ internal fun SetupScreen(
                 }
                 item {
                     SetupSection(
-                        "Running check-in (optional)",
+                        "Running limits (optional)",
                         if (isRoutineGoal) {
-                            "A setup safeguard, not a daily readiness score. Current pain or a clinician's limit saves the routine without scheduling runs."
+                            "Use this if pain now or a clinician's limit should save the routine without scheduling runs."
                         } else {
-                            "A setup safeguard, not a daily readiness score. It can pause new scheduling or make distance changes more cautious."
+                            "Use this if an injury, recurring pain, or a clinician's limit should pause scheduling or make distance checks more cautious."
                         },
                     ) {
                         if (!healthContextExpanded) {
@@ -347,7 +346,7 @@ internal fun SetupScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = MaterialTheme.shapes.small,
                             ) {
-                                Text("Review running check-in")
+                                Text("Review running limits")
                             }
                         } else {
                             CheckRow("A recent injury still affects training", recentInjury) { recentInjury = it }
@@ -428,7 +427,9 @@ internal fun SetupScreen(
                             availability.sorted().joinToString { dayLabels[it].take(3) }.ifBlank { "None" },
                         )
                         SettingRow("Time zone", timeZone.ifBlank { "Not set" })
-                        SettingRow("Running check-in", runningCheckInSummary(runningCheckIn))
+                        if (hasRunningLimits(runningCheckIn)) {
+                            SettingRow("Running limits", runningCheckInSummary(runningCheckIn))
+                        }
                         if (newPlanPaused) {
                             Notice("Goal stays pending — no active workouts will be created now.")
                         } else {
@@ -508,11 +509,11 @@ internal fun SetupScreen(
                 }
                 reviewIssue?.let { item { ValidationText(it) } }
             }
+            }
         }
         }
         Surface(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
@@ -597,7 +598,7 @@ internal fun currentGoalStateLabel(state: String?): String =
 
 @Composable
 private fun SetupProgress(currentStep: Int, routine: Boolean) {
-    val labels = listOf("Goal", if (routine) "Running check-in" else "Starting point", "Schedule", "Review")
+    val labels = listOf("Goal", if (routine) "Running limits" else "Starting point", "Schedule", "Review")
     val stepNumber = currentStep + 1
     Column(
         modifier = Modifier
@@ -784,7 +785,7 @@ internal fun setupDateChanged(
     timeZone: String,
 ): Boolean {
     val zone = runCatching { ZoneId.of(timeZone) }.getOrNull() ?: return false
-    return LocalDate.ofInstant(previewInstant, zone) != LocalDate.ofInstant(submissionInstant, zone)
+    return previewInstant.atZone(zone).toLocalDate() != submissionInstant.atZone(zone).toLocalDate()
 }
 
 internal fun scheduleValidation(
