@@ -280,10 +280,10 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         repeat(3) { compose.onNodeWithText("Continue").performClick() }
 
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Training outline"))
-        compose.onNodeWithText("Training outline").assertIsDisplayed()
-        compose.onNodeWithText("Needs confirmation").assertIsDisplayed()
-        compose.onNodeWithText("25 km").assertIsDisplayed()
+        listOf("Training outline", "25 km", "Needs confirmation").forEach { text ->
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText(text))
+            compose.onNodeWithText(text).assertIsDisplayed()
+        }
         compose.onNodeWithText("Create plan").assertIsNotEnabled()
 
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Use this schedule as shown"))
