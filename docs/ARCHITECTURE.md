@@ -16,11 +16,11 @@ The application service wiring is intentionally small and explicit. UI code cons
 
 ## Ledger model
 
-Room persists the profile, plans, generated/current workouts, actual activity ledger, feedback, decisions, adjustment/undo records, imports, privacy choices, and metadata. The database is the local source of truth.
+Room persists the profile, plans, generated/current workouts, actual activity ledger, feedback, decisions, adjustment/undo records, imports, privacy choices, notification choices and delivery receipts, and metadata. The database is the local source of truth.
 
 Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
 
-Released Room schemas require explicit migration and upgrade tests. The v1-to-v2 migration preserves heart-rate data already stored by a released build under explicit private retention. The v2-to-v3 migration adds exact plan-setup receipts and repairs only the contradictory case where a discard setting coexists with retained private route or heart-rate evidence; it keeps the evidence, restores the matching private setting, and tells the runner. Fresh profiles still default to discard. Restore accepts exact released schema identities, upgrades v1 and v2 backups through the same immutable migrations, and is tested for a second no-op preparation. New unreleased schema work may be corrected before release; never invent a timestamp-based migration lineage.
+Released Room schemas require explicit migration and upgrade tests. Restore accepts every exact released schema identity, upgrades versions 1 through 5 through the same immutable migrations used for installed databases, and is tested for a second no-op preparation. Schema 6 adds device-local notification choices and a minimal delivery outbox without copying filenames, route data, heart-rate data, or private notes. New unreleased schema work may be corrected before release; never invent a timestamp-based migration lineage.
 
 ## Imports
 
@@ -29,6 +29,8 @@ GPX share and folder imports use a bounded local parser. Raw files are consumed 
 Health Connect is an optional read-only source for supported running and treadmill-running records. The app requests only the permissions it needs, treats route access separately, and brings additions, corrections, and deletions through the same review/confirmation boundary. A denied or revoked permission leaves the local ledger intact.
 
 Folder scans, one-off GPX intake, foreground/background Health Connect sync, destructive erase, and restore share one process-wide import-data boundary. Scheduler cancellation is not treated as proof that an active Room write has finished.
+
+A folder import creates its review-alert outbox row in the same Room transaction as the new activity. WorkManager retries can therefore deliver an alert after process interruption without treating notification state as training truth. Planned-run reminders schedule only the next eligible run and re-read the current plan before posting. Inbox and Calendar remain authoritative when Android delays or blocks a notification.
 
 ## Privacy and data management
 

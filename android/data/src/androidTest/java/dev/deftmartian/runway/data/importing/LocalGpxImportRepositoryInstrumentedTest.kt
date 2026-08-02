@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.deftmartian.runway.data.ProfileSettingsEntity
+import dev.deftmartian.runway.data.LocalNotificationRepository
 import dev.deftmartian.runway.data.RunwayLedgerDatabase
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.runBlocking
@@ -67,6 +68,37 @@ class LocalGpxImportRepositoryInstrumentedTest {
         assertEquals(2, database.activityLedgerDao().heartRateSamples(activityId, 10).size)
         assertEquals(130, activity.averageHeartRateBpm)
         assertEquals(140, activity.maxHeartRateBpm)
+    }
+
+    @Test
+    fun folderImportCommitsOneRetryableReviewAlertOnlyWhenOptedIn() = runBlocking {
+        database.profileSettingsDao().save(profile(routeMode = "discard", heartRateMode = "discard"))
+        val notifications = LocalNotificationRepository(database) { NOW_EPOCH_MILLIS }
+        notifications.updateFolderImportAlerts(true)
+        val repository = LocalGpxImportRepository(database) { NOW_EPOCH_MILLIS }
+
+        val manual = repository.import(
+            ByteArrayInputStream(gpx("45.004").toByteArray()),
+        )
+        assertTrue(manual is LocalGpxImportOutcome.Imported)
+        assertTrue(notifications.pendingFolderImportAlerts().isEmpty())
+
+        val first = repository.import(
+            ByteArrayInputStream(gpx("45.003").toByteArray()),
+            LocalGpxImportOrigin.Folder,
+        )
+        val duplicate = repository.import(
+            ByteArrayInputStream(gpx("45.003").toByteArray()),
+            LocalGpxImportOrigin.Folder,
+        )
+
+        assertTrue(first is LocalGpxImportOutcome.Imported)
+        assertTrue(duplicate is LocalGpxImportOutcome.Duplicate)
+        val pending = notifications.pendingFolderImportAlerts()
+        assertEquals(1, pending.size)
+        assertEquals((first as LocalGpxImportOutcome.Imported).activityId, pending.single().subjectId)
+        notifications.markDelivered(pending)
+        assertTrue(notifications.pendingFolderImportAlerts().isEmpty())
     }
 
     private fun profile(routeMode: String, heartRateMode: String) = ProfileSettingsEntity(

@@ -14,6 +14,69 @@ class NativeSettingsSummaryTest {
     }
 
     @Test
+    fun `training row covers routine active pending and empty states`() {
+        val routine = nativeTrainingSettingsRow(
+            NativeTrainingSettings.Active(
+                title = "Run three times a week",
+                phase = "routine",
+                startedOn = "2026-07-01",
+                targetDate = null,
+                runsPerWeek = 3,
+            ),
+        )
+        val active = nativeTrainingSettingsRow(
+            NativeTrainingSettings.Active(
+                title = "Autumn 10K",
+                phase = "distance",
+                startedOn = "2026-07-01",
+                targetDate = "2026-10-18",
+                runsPerWeek = 3,
+            ),
+        )
+        val pending = nativeTrainingSettingsRow(
+            NativeTrainingSettings.Pending("5K later", "2026-11-01"),
+        )
+
+        assertEquals("Weekly routine", routine.label)
+        assertTrue(routine.summary.contains("3 runs each week"))
+        assertEquals("Change", routine.action)
+        assertEquals("Training plan", active.label)
+        assertTrue(active.summary.contains("Autumn 10K"))
+        assertEquals("Goal setup", pending.label)
+        assertTrue(pending.summary.contains("No runs scheduled"))
+        assertEquals("Set up", nativeTrainingSettingsRow(NativeTrainingSettings.None).action)
+    }
+
+    @Test
+    fun `notification summaries distinguish off enabled and Android blocked`() {
+        assertEquals("Off", runReminderSummary(NativeNotificationSettings()))
+        assertTrue(
+            runReminderSummary(
+                NativeNotificationSettings(runReminderEnabled = true, runReminderMinuteOfDay = 480),
+            ).contains("planned run days"),
+        )
+        assertEquals(
+            "Blocked by Android",
+            runReminderSummary(
+                NativeNotificationSettings(runReminderEnabled = true, runReminderAllowed = false),
+            ),
+        )
+        assertEquals(
+            "New folder runs ready for Inbox review",
+            importAlertSummary(NativeNotificationSettings(folderImportAlertsEnabled = true)),
+        )
+        assertEquals(
+            "Blocked by Android",
+            importAlertSummary(
+                NativeNotificationSettings(
+                    folderImportAlertsEnabled = true,
+                    folderImportAlertsAllowed = false,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `running check-in summary states the saved consequence`() {
         assertEquals(
             "Pain reported now · setup will not schedule runs",

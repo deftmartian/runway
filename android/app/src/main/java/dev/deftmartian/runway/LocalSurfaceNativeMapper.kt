@@ -68,10 +68,7 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
                 )
             },
         ),
-        nextWorkout = nextWorkout?.toNativeWorkout(),
         activityCandidates = emptyList(),
-        pendingDecisionCount = pendingDecisionCount,
-        pendingDecisionCountIsExact = pendingDecisionCountIsExact,
         activePlanPhase = activePlanPhase?.name?.lowercase(),
     )
 }
@@ -468,14 +465,29 @@ internal fun LocalSettingsReadModel.toNativeSettingsState() = NativeSettingsStat
         clinicianRestriction = profile?.medicalRestriction == true,
         notes = profile?.privateNotes.orEmpty(),
     ),
-    activeRoutine = activePlan
-        ?.takeIf { it.phase == LocalPlanPhase.ROUTINE && it.state == LocalPlanState.ACTIVE }
+    notifications = NativeNotificationSettings(
+        runReminderEnabled = notificationPreferences.runReminderEnabled,
+        runReminderMinuteOfDay = notificationPreferences.runReminderMinuteOfDay,
+        folderImportAlertsEnabled = notificationPreferences.folderImportAlertsEnabled,
+    ),
+    training = activePlan
+        ?.takeIf { it.state == LocalPlanState.ACTIVE }
         ?.let {
-            NativeRoutineSettings(
+            NativeTrainingSettings.Active(
+                title = it.goalTitle,
+                phase = it.phase.name.lowercase(),
                 startedOn = LocalDate.ofEpochDay(it.startEpochDay).toString(),
+                targetDate = it.goalTargetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
                 runsPerWeek = it.sessionsPerWeek,
             )
-        },
+        }
+        ?: pendingGoal?.let {
+            NativeTrainingSettings.Pending(
+                title = it.title,
+                targetDate = it.targetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
+            )
+        }
+        ?: NativeTrainingSettings.None,
     appVersion = about.versionName ?: BuildConfig.VERSION_NAME,
     sourceCommit = about.buildRevision ?: BuildConfig.SOURCE_COMMIT,
 )

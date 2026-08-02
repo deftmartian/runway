@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +32,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.deftmartian.runway.data.RetentionRepairNotice
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /** The persisted values and capability summaries that the standalone Settings screen needs. */
 internal data class NativeSettingsState(
@@ -37,7 +43,8 @@ internal data class NativeSettingsState(
     val heartRatePrivacy: NativeHeartRatePrivacy = NativeHeartRatePrivacy.Discard,
     val heartRate: NativeHeartRateProfile = NativeHeartRateProfile(),
     val healthContext: NativeHealthContext = NativeHealthContext(),
-    val activeRoutine: NativeRoutineSettings? = null,
+    val training: NativeTrainingSettings = NativeTrainingSettings.None,
+    val notifications: NativeNotificationSettings = NativeNotificationSettings(),
     val folderImport: NativeImportConnection = NativeImportConnection.NotConnected,
     val healthConnectImport: NativeImportConnection = NativeImportConnection.NotConnected,
     val appVersion: String = BuildConfig.VERSION_NAME,
@@ -45,10 +52,75 @@ internal data class NativeSettingsState(
     val retentionRepair: RetentionRepairNotice? = null,
 )
 
-internal data class NativeRoutineSettings(
-    val startedOn: String?,
-    val runsPerWeek: Int?,
+internal data class NativeNotificationSettings(
+    val runReminderEnabled: Boolean = false,
+    val runReminderMinuteOfDay: Int = 8 * 60,
+    val folderImportAlertsEnabled: Boolean = false,
+    val runReminderAllowed: Boolean = true,
+    val folderImportAlertsAllowed: Boolean = true,
 )
+
+internal sealed interface NativeTrainingSettings {
+    data object None : NativeTrainingSettings
+
+    data class Active(
+        val title: String,
+        val phase: String,
+        val startedOn: String,
+        val targetDate: String?,
+        val runsPerWeek: Int?,
+    ) : NativeTrainingSettings
+
+    data class Pending(
+        val title: String,
+        val targetDate: String?,
+    ) : NativeTrainingSettings
+}
+
+internal data class NativeTrainingSettingsRow(
+    val label: String,
+    val summary: String,
+    val action: String,
+)
+
+internal fun nativeTrainingSettingsRow(training: NativeTrainingSettings): NativeTrainingSettingsRow =
+    when (training) {
+        NativeTrainingSettings.None -> NativeTrainingSettingsRow(
+            label = "Training plan",
+            summary = "No plan set",
+            action = "Set up",
+        )
+        is NativeTrainingSettings.Pending -> NativeTrainingSettingsRow(
+            label = "Goal setup",
+            summary = listOfNotNull(
+                training.title.takeIf(String::isNotBlank),
+                training.targetDate?.let { "target ${ledgerDate(it)}" },
+                "No runs scheduled",
+            ).joinToString(" · "),
+            action = "Review",
+        )
+        is NativeTrainingSettings.Active -> if (training.phase == "routine") {
+            NativeTrainingSettingsRow(
+                label = "Weekly routine",
+                summary = listOfNotNull(
+                    training.runsPerWeek?.let {
+                        "$it ${if (it == 1) "run" else "runs"} each week"
+                    },
+                    "Since ${ledgerDate(training.startedOn)}",
+                ).joinToString(" · "),
+                action = "Change",
+            )
+        } else {
+            NativeTrainingSettingsRow(
+                label = "Training plan",
+                summary = listOfNotNull(
+                    training.title.takeIf(String::isNotBlank),
+                    training.targetDate?.let { "target ${ledgerDate(it)}" },
+                ).joinToString(" · ").ifBlank { "Active plan" },
+                action = "Change",
+            )
+        }
+    }
 
 internal enum class NativeRoutePrivacy(val summary: String) {
     Discard("Route points are discarded after import"),
@@ -92,6 +164,9 @@ internal sealed interface NativeImportConnection {
 
 /** Explicit integration boundary: the screen owns no storage, import, or destructive operation. */
 internal data class NativeSettingsCallbacks(
+    val onOpenTrainingSetup: () -> Unit,
+    val onRunReminderChanged: (Boolean, Int) -> Unit,
+    val onFolderImportAlertsChanged: (Boolean) -> Unit,
     val onTimeZoneChanged: (String) -> Unit,
     val onRoutePrivacyChanged: (NativeRoutePrivacy) -> Unit,
     val onHeartRatePrivacyChanged: (NativeHeartRatePrivacy) -> Unit,
@@ -119,6 +194,7 @@ internal fun SettingsScreen(
     var editingHeartRatePrivacy by rememberSaveable { mutableStateOf(false) }
     var editingHeartRate by rememberSaveable { mutableStateOf(false) }
     var editingHealthContext by rememberSaveable { mutableStateOf(false) }
+    var editingRunReminder by rememberSaveable { mutableStateOf(false) }
     var confirmingBackup by rememberSaveable { mutableStateOf(false) }
     var confirmingRestore by rememberSaveable { mutableStateOf(false) }
     var confirmingExport by rememberSaveable { mutableStateOf(false) }
@@ -150,17 +226,14 @@ internal fun SettingsScreen(
         }
         item {
             SettingsRail("Training") {
-                state.activeRoutine?.let { routine ->
-                    SettingsValueRow(
-                        "Active routine",
-                        listOfNotNull(
-                            routine.runsPerWeek?.let {
-                                "$it ${if (it == 1) "run" else "runs"} each week"
-                            },
-                            routine.startedOn?.let { "ongoing since ${ledgerDate(it)}" },
-                        ).joinToString(" · ").ifBlank { "Weekly running routine · ongoing" },
-                    )
-                }
+                val trainingRow = nativeTrainingSettingsRow(state.training)
+                SettingsActionRow(
+                    trainingRow.label,
+                    trainingRow.summary,
+                    trainingRow.action,
+                    !actionPending,
+                    onClick = callbacks.onOpenTrainingSetup,
+                )
                 SettingsActionRow("Time zone", state.timeZone.ifBlank { "Not set" }, "Change", !actionPending) {
                     editingTimeZone = true
                 }
@@ -169,6 +242,48 @@ internal fun SettingsScreen(
                 }
                 SettingsActionRow("Running check-in", runningCheckInSummary(state.healthContext), "Review", !actionPending) {
                     editingHealthContext = true
+                }
+            }
+        }
+        item {
+            SettingsRail("Notifications") {
+                SettingsActionRow(
+                    "Run reminders",
+                    runReminderSummary(state.notifications),
+                    when {
+                        state.notifications.runReminderEnabled &&
+                            !state.notifications.runReminderAllowed -> "Allow"
+                        state.notifications.runReminderEnabled -> "Change"
+                        else -> "Set"
+                    },
+                    !actionPending,
+                ) {
+                    if (
+                        state.notifications.runReminderEnabled &&
+                        !state.notifications.runReminderAllowed
+                    ) {
+                        callbacks.onRunReminderChanged(
+                            true,
+                            state.notifications.runReminderMinuteOfDay,
+                        )
+                    } else {
+                        editingRunReminder = true
+                    }
+                }
+                SettingsActionRow(
+                    "Import review alerts",
+                    importAlertSummary(state.notifications),
+                    when {
+                        state.notifications.folderImportAlertsEnabled &&
+                            !state.notifications.folderImportAlertsAllowed -> "Allow"
+                        state.notifications.folderImportAlertsEnabled -> "Turn off"
+                        else -> "Turn on"
+                    },
+                    !actionPending,
+                ) {
+                    val turnOn = !state.notifications.folderImportAlertsEnabled ||
+                        !state.notifications.folderImportAlertsAllowed
+                    callbacks.onFolderImportAlertsChanged(turnOn)
                 }
             }
         }
@@ -313,6 +428,17 @@ internal fun SettingsScreen(
             editingHealthContext = false
         }
     }
+    if (editingRunReminder) {
+        RunReminderSettingsDialog(
+            settings = state.notifications,
+            actionPending = actionPending,
+            onDismiss = { editingRunReminder = false },
+            onSave = { enabled, minuteOfDay ->
+                editingRunReminder = false
+                callbacks.onRunReminderChanged(enabled, minuteOfDay)
+            },
+        )
+    }
     if (confirmingBackup) {
         LocalDocumentDialog(
             title = "Create a complete backup?",
@@ -379,6 +505,51 @@ internal fun SettingsScreen(
             },
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RunReminderSettingsDialog(
+    settings: NativeNotificationSettings,
+    actionPending: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (Boolean, Int) -> Unit,
+) {
+    val picker = rememberTimePickerState(
+        initialHour = settings.runReminderMinuteOfDay.coerceIn(0, 1_439) / 60,
+        initialMinute = settings.runReminderMinuteOfDay.coerceIn(0, 1_439) % 60,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Run reminders") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Runway will check for a planned run around this time. Android may deliver the reminder later.")
+                TimePicker(state = picker)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(true, picker.hour * 60 + picker.minute) },
+                enabled = !actionPending,
+            ) {
+                Text(if (settings.runReminderEnabled) "Save" else "Turn on")
+            }
+        },
+        dismissButton = {
+            Row {
+                if (settings.runReminderEnabled) {
+                    TextButton(
+                        onClick = { onSave(false, settings.runReminderMinuteOfDay) },
+                        enabled = !actionPending,
+                    ) {
+                        Text("Turn off")
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 @Composable
@@ -526,6 +697,26 @@ internal fun heartRateSummary(profile: NativeHeartRateProfile): String = when (p
     NativeHeartRateSource.NotConfigured -> "Not configured"
     NativeHeartRateSource.Estimated -> "Estimated profile · ${profile.maxHeartRateBpm ?: "—"} bpm max"
     NativeHeartRateSource.Custom -> "Custom profile · ${profile.maxHeartRateBpm ?: "—"} bpm max"
+}
+
+internal fun runReminderSummary(settings: NativeNotificationSettings): String = when {
+    settings.runReminderEnabled && !settings.runReminderAllowed -> "Blocked by Android"
+    settings.runReminderEnabled ->
+        "Around ${formatReminderTime(settings.runReminderMinuteOfDay)} on planned run days"
+    else -> "Off"
+}
+
+internal fun importAlertSummary(settings: NativeNotificationSettings): String = when {
+    settings.folderImportAlertsEnabled && !settings.folderImportAlertsAllowed ->
+        "Blocked by Android"
+    settings.folderImportAlertsEnabled -> "New folder runs ready for Inbox review"
+    else -> "Off"
+}
+
+internal fun formatReminderTime(minuteOfDay: Int): String {
+    val safeMinute = minuteOfDay.coerceIn(0, 1_439)
+    return LocalTime.of(safeMinute / 60, safeMinute % 60)
+        .format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
 }
 
 internal fun importConnectionSummary(connection: NativeImportConnection): String = when (connection) {

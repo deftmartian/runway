@@ -13,22 +13,24 @@ Use the Android app bar for the current destination title. Keep the five primary
 ## Hierarchy
 
 - One primary decision per surface before secondary detail.
-- Keep Calendar focused on today, next work, missed runs, and the exact count of unresolved Inbox decisions. For a weekly routine, lead with this week's scheduled, recorded, and skipped run count; an unrecorded passed slot is visible but not an alarm. Collapse secondary metrics behind a deliberate expansion.
+- Keep Calendar focused on the schedule and completed runs by date. Do not repeat today, next work, or Inbox counts above information already visible in the calendar and primary navigation.
 - Keep Inbox focused on unresolved review work; an imported activity must show what it will and will not change, and every decision counted from Calendar must remain reachable.
 - In Stats, lead with the comparison and plain meaning; charts support the decision rather than becoming the page.
 - In History, preserve the difference between generated, current, actual, and archived state.
-- In Settings, group Training, Imports, Privacy, Data, Reset and removal, and About. About shows concise local app/build information, never network or account controls.
+- In Settings, group Training, Notifications, Imports, Privacy, Data, Reset and removal, and About. About shows concise local app/build information, never network or account controls.
 
 ## Components and interaction
 
 - Prefer cards only when they separate decisions; avoid a wall of rounded containers.
 - On compact and medium widths, Calendar uses chronological day rows so the full run purpose and state can wrap. Calendar may use a wider centered canvas than other destinations. Use the seven-column month grid only at expanded widths where every cell remains readable. Day actions belong in the selected-day sheet.
-- Distinguish an unscheduled date ("No run planned") from an intentional planned rest ("Recovery day" or "Planned rest").
+- Keep the record-run action fixed at the lower right of Calendar and hide it while scrolling down; reveal it at the top or when scrolling back up. General goal replacement belongs in Settings, not Calendar or History.
+- Do not render recovery-only dates as Calendar entries. Keep planned rest in the underlying plan and history so this remains a presentation choice rather than a training change.
 - Forms use clear labels, units, sensible defaults, inline validation, and a visible save/cancel boundary. Invalid fields explain what must change; a disabled action alone is not validation.
 - Destructive actions say what local data will be removed and require confirmation.
 - Consequence choices show their precise affected workouts and remain reversible when safe.
 - Open routine runs show no distance, duration, pace, or implied load target. Recording, skipping, moving, or adding one must state that future routine slots stay unchanged.
 - Use progressive disclosure for technical import detail, retained route and heart-rate evidence, old plans, and raw metrics; do not hide the next decision.
+- Ask for Android notification permission only after the runner enables an alert. Describe reminders as best-effort, keep lock-screen text generic, and show when Android has blocked the relevant channel.
 - Support touch targets, keyboard navigation, screen readers, system font scaling, and both contrast modes.
 
 ## Copy

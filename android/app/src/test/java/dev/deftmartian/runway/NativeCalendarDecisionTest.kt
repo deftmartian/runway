@@ -5,91 +5,7 @@ import org.junit.Test
 
 class NativeCalendarDecisionTest {
     @Test
-    fun `current decision keeps a completed run visible on a planned rest day`() {
-        val summary = nativeCalendarDecisionSummary(
-            calendar = calendar(
-                workouts = listOf(workout("rest", "2026-07-29", "rest")),
-                activities = listOf(activity("extra", "2026-07-29")),
-            ),
-            nextWorkout = workout("next", "2026-07-31", "easy", purpose = "Easy run"),
-        )
-
-        assertEquals("Recorded on a rest day", summary.todayStatus)
-        assertEquals("Easy run", summary.nextStatus)
-        assertEquals("2026-07-31", summary.nextDate)
-    }
-
-    @Test
-    fun `current decision points review to the first genuinely missed run`() {
-        val summary = nativeCalendarDecisionSummary(
-            calendar = calendar(
-                workouts = listOf(
-                    workout("missed", "2026-07-27", "easy"),
-                    workout("recorded", "2026-07-28", "easy"),
-                    workout("today", "2026-07-29", "rest"),
-                    workout("removed", "2026-07-26", "easy", removed = true),
-                ),
-                activities = listOf(
-                    activity("linked", "2026-07-28", workoutId = "recorded"),
-                    activity("extra", "2026-07-29"),
-                ),
-            ),
-            nextWorkout = null,
-        )
-
-        assertEquals("Recorded on a rest day", summary.todayStatus)
-        assertEquals("No run planned", summary.nextStatus)
-        assertEquals(1, summary.reviewCount)
-        assertEquals("2026-07-27", summary.reviewDate)
-    }
-
-    @Test
-    fun `current decision preserves skipped and shortened workout outcomes`() {
-        val skipped = nativeCalendarDecisionSummary(
-            calendar = calendar(
-                workouts = listOf(
-                    workout("today", "2026-07-29", "easy", status = "skipped"),
-                ),
-                feedback = listOf(feedback("today")),
-            ),
-            nextWorkout = null,
-        )
-        val shortened = nativeCalendarDecisionSummary(
-            calendar = calendar(
-                workouts = listOf(
-                    workout("today", "2026-07-29", "easy", status = "shortened"),
-                ),
-                feedback = listOf(feedback("today", completedDistanceMeters = 2_000.0)),
-            ),
-            nextWorkout = null,
-        )
-
-        assertEquals("Skipped — review the next run", skipped.todayStatus)
-        assertEquals("Shortened to 2 km", shortened.todayStatus)
-    }
-
-    @Test
-    fun `skipped routine run remains a fact without next-run review language`() {
-        val summary = nativeCalendarDecisionSummary(
-            calendar = calendar(
-                workouts = listOf(
-                    workout(
-                        "routine-today",
-                        "2026-07-29",
-                        "easy",
-                        status = "skipped",
-                        planPhase = "routine",
-                    ),
-                ),
-            ),
-            nextWorkout = null,
-        )
-
-        assertEquals("Skipped", summary.todayStatus)
-    }
-
-    @Test
-    fun `open routine run is not repeated as both the next title and measurement`() {
+    fun `open routine run uses one durable calendar label`() {
         val next = workout(
             "routine-next",
             "2026-07-31",
@@ -101,58 +17,7 @@ class NativeCalendarDecisionTest {
             targetDistanceMeters = null,
         )
 
-        val summary = nativeCalendarDecisionSummary(calendar = calendar(emptyList()), nextWorkout = next)
-
-        assertEquals("Open run", summary.nextStatus)
-        assertEquals(null, summary.nextMeasurement)
         assertEquals("Open run", calendarWorkoutPlanSummary(next))
-    }
-
-    @Test
-    fun `current decision carries plan detail and pending run review`() {
-        val summary = nativeCalendarDecisionSummary(
-            calendar = calendar(
-                workouts = listOf(
-                    workout(
-                        id = "today",
-                        date = "2026-07-29",
-                        type = "easy",
-                        purpose = "Easy run",
-                        distanceMeters = 4_000.0,
-                    ),
-                ),
-            ),
-            nextWorkout = workout(
-                id = "next",
-                date = "2026-07-31",
-                type = "long",
-                purpose = "Long easy run",
-                distanceMeters = 6_000.0,
-            ),
-            inboxDecisionCount = 2,
-            inboxDecisionCountIsExact = false,
-        )
-
-        assertEquals("Planned", summary.todayStatus)
-        assertEquals("Easy run · 4 km", summary.todayPlan)
-        assertEquals("6 km", summary.nextMeasurement)
-        assertEquals(2, summary.inboxDecisionCount)
-        assertEquals(false, summary.inboxDecisionCountIsExact)
-    }
-
-    @Test
-    fun `an unscheduled day is distinct from planned recovery`() {
-        val unscheduled = nativeCalendarDecisionSummary(
-            calendar = calendar(emptyList()),
-            nextWorkout = null,
-        )
-        val recovery = nativeCalendarDecisionSummary(
-            calendar = calendar(listOf(workout("rest", "2026-07-29", "rest"))),
-            nextWorkout = null,
-        )
-
-        assertEquals("No run planned", unscheduled.todayStatus)
-        assertEquals("Recovery day", recovery.todayStatus)
     }
 
     @Test
@@ -183,8 +48,8 @@ class NativeCalendarDecisionTest {
 
         assertEquals("Long easy run · 6 km", planned.title)
         assertEquals("Planned", planned.detail)
-        assertEquals("Recovery day", recovery.title)
-        assertEquals("Planned rest", recovery.detail)
+        assertEquals("No run planned", recovery.title)
+        assertEquals(null, recovery.detail)
         assertEquals("No run planned", unscheduled.title)
         assertEquals(null, unscheduled.detail)
     }
@@ -293,14 +158,8 @@ class NativeCalendarDecisionTest {
             feedbackByWorkout = emptyMap(),
             routineDateIsPast = true,
         )
-        val summary = nativeCalendarDecisionSummary(
-            calendar = calendar(listOf(open)),
-            nextWorkout = null,
-        )
-
         assertEquals("— Not recorded", presentation.label)
         assertEquals(CalendarCellEmphasis.Neutral, presentation.emphasis)
-        assertEquals(0, summary.reviewCount)
     }
 
     @Test
@@ -327,27 +186,11 @@ class NativeCalendarDecisionTest {
         assertEquals(CalendarCellEmphasis.Review, presentation.emphasis)
     }
 
-    private fun calendar(
-        workouts: List<NativeWorkout>,
-        activities: List<NativeActivity> = emptyList(),
-        feedback: List<NativeWorkoutFeedback> = emptyList(),
-    ) = NativeCalendar(
-        month = "2026-07",
-        today = "2026-07-29",
-        previousMonth = "2026-06",
-        nextMonth = "2026-08",
-        workouts = workouts,
-        activities = activities,
-        feedback = feedback,
-    )
-
     private fun workout(
         id: String,
         date: String,
         type: String,
         purpose: String? = null,
-        removed: Boolean = false,
-        status: String = "planned",
         distanceMeters: Double? = null,
         planPhase: String? = null,
     ) = NativeWorkout(
@@ -356,7 +199,7 @@ class NativeCalendarDecisionTest {
         weekNumber = null,
         scheduledDate = date,
         type = type,
-        status = status,
+        status = "planned",
         targetDistanceMeters = distanceMeters,
         targetDurationSeconds = null,
         prescriptionKind = if (type == "rest") "rest" else "distance",
@@ -364,7 +207,7 @@ class NativeCalendarDecisionTest {
         intensity = if (type == "rest") "rest" else "easy",
         purpose = purpose,
         reason = null,
-        isRemoved = removed,
+        isRemoved = false,
         isEdited = false,
         adjustment = null,
         planPhase = planPhase,

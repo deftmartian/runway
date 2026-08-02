@@ -26,6 +26,7 @@ Review the `native-ui-screenshots` artifact from that same run before merging pr
 - Native Compose Calendar, Inbox, Stats, History, and Settings.
 - Optional Health Connect read access for supported running records; no writes.
 - GPX share intake and selected-folder scanning through the Storage Access Framework.
+- Optional planned-run reminders and folder-import review alerts. They use local notification channels, Android 13+ runtime permission, and best-effort WorkManager scheduling rather than exact alarms.
 - Separate, destructive route and imported-heart-rate retention controls.
 - Material You dynamic colour on supported Android versions, with accessible fallback themes.
 - Explicit plaintext backup/export through Android's document picker, plus local erase.

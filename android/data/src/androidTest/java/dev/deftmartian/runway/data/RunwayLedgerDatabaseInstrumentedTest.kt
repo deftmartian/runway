@@ -80,6 +80,8 @@ class RunwayLedgerDatabaseInstrumentedTest {
                     "import_digests",
                     "app_metadata",
                     "plan_setup_receipts",
+                    "notification_preferences",
+                    "notification_deliveries",
                 ),
             ),
         )
@@ -275,6 +277,11 @@ class RunwayLedgerDatabaseInstrumentedTest {
             HealthConnectMappingEntity("mapping-1", "health_connect", "record-1", activity.activityId, now, now, correctionPending = true),
         )
         database.appMetadataDao().save(AppMetadataEntity("schema_owner", "local", now))
+        val notifications = LocalNotificationRepository(database) { now }
+        notifications.updateRunReminder(enabled = true, minuteOfDay = 7 * 60)
+        notifications.enqueueRunReminder(
+            LocalRunReminderCandidate(20_000, listOf(workout.workoutId)),
+        )
 
         database.importLedgerDao().deleteImportedActivityToTombstone(activity.activityId, activity.source, "digest-1", now + 1)
         database.importLedgerDao().healthConnectMapping("health_connect", "record-1")!!.also { mapping ->
@@ -290,6 +297,8 @@ class RunwayLedgerDatabaseInstrumentedTest {
         assertNull(database.importLedgerDao().digest(activity.source, "digest-1"))
         assertNull(database.importLedgerDao().healthConnectMapping("health_connect", "record-1"))
         assertNull(database.appMetadataDao().value("schema_owner"))
+        assertEquals(LocalNotificationPreferences(), notifications.preferences())
+        assertTrue(notifications.pendingRunReminders().isEmpty())
         assertTrue(database.goalPlanDao().weeksForPlan(plan.planId, 10).isEmpty())
     }
 

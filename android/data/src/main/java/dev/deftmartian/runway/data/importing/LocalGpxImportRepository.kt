@@ -4,6 +4,9 @@ import androidx.room.withTransaction
 import dev.deftmartian.runway.data.ActivityEntity
 import dev.deftmartian.runway.data.HeartRateSampleEntity
 import dev.deftmartian.runway.data.ImportDigestEntity
+import dev.deftmartian.runway.data.NOTIFICATION_DELIVERY_PENDING
+import dev.deftmartian.runway.data.NOTIFICATION_KIND_FOLDER_IMPORT
+import dev.deftmartian.runway.data.NotificationDeliveryEntity
 import dev.deftmartian.runway.data.RouteSampleEntity
 import dev.deftmartian.runway.data.RunwayLedgerDatabase
 import dev.deftmartian.runway.data.isFutureLocalActivity
@@ -22,7 +25,10 @@ class LocalGpxImportRepository(
     private val database: RunwayLedgerDatabase,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
-    suspend fun import(input: InputStream): LocalGpxImportOutcome {
+    suspend fun import(
+        input: InputStream,
+        origin: LocalGpxImportOrigin = LocalGpxImportOrigin.Manual,
+    ): LocalGpxImportOutcome {
         val parsed = LocalGpxIntake.parse(input)
         return database.withTransaction {
             val now = nowEpochMillis()
@@ -40,6 +46,7 @@ class LocalGpxImportRepository(
                     now = now,
                     retainRoute = profile.routeDataMode == ROUTE_MODE_PRIVATE,
                     retainHeartRate = profile.heartRateDataMode == HEART_RATE_MODE_PRIVATE,
+                    origin = origin,
                     importDao = importDao,
                 )
                 else -> existing.asOutcome()
@@ -52,6 +59,7 @@ class LocalGpxImportRepository(
         now: Long,
         retainRoute: Boolean,
         retainHeartRate: Boolean,
+        origin: LocalGpxImportOrigin,
         importDao: dev.deftmartian.runway.data.ImportLedgerDao,
     ): LocalGpxImportOutcome {
         val activity = localGpxActivityEntity(parsed, now, retainRoute, retainHeartRate)
@@ -76,6 +84,22 @@ class LocalGpxImportRepository(
                 LocalGpxIntake.MAX_RETAINED_POINTS,
             )
         }
+        if (
+            origin == LocalGpxImportOrigin.Folder &&
+            database.notificationDao().preferences()?.folderImportAlertsEnabled == true
+        ) {
+            database.notificationDao().enqueue(
+                NotificationDeliveryEntity(
+                    deliveryId = "folder:${activity.activityId}",
+                    kind = NOTIFICATION_KIND_FOLDER_IMPORT,
+                    subjectId = activity.activityId,
+                    localEpochDay = null,
+                    state = NOTIFICATION_DELIVERY_PENDING,
+                    createdAtEpochMillis = now,
+                    deliveredAtEpochMillis = null,
+                ),
+            )
+        }
         return LocalGpxImportOutcome.Imported(activity.activityId)
     }
 
@@ -92,6 +116,8 @@ class LocalGpxImportRepository(
         const val HEART_RATE_MODE_PRIVATE = "private"
     }
 }
+
+enum class LocalGpxImportOrigin { Manual, Folder }
 
 sealed interface LocalGpxImportOutcome {
     data class Imported(val activityId: String) : LocalGpxImportOutcome

@@ -19,6 +19,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.deftmartian.runway.data.RetentionRepairNotice
 import org.junit.Assert.assertTrue
@@ -72,12 +75,22 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         selectSurface("History")
         compose.onNodeWithText("Plan options").performClick()
+        compose.onAllNodesWithText("Change goal").assertCountEquals(0)
         compose.onNodeWithText("Open plan record").performClick()
         compose.onNodeWithText("Test goal").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to History").performClick()
         compose.onNodeWithText("Current training schedule and past records.").assertIsDisplayed()
 
         selectSurface("Settings")
+        compose.onNodeWithText("Training plan").performClick()
+        compose.onNodeWithContentDescription("Back to Settings").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Private training preferences and local data.").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Run reminders"))
+        compose.onNodeWithText("Run reminders").assertIsDisplayed().performClick()
+        compose.onNodeWithText(
+            "Runway will check for a planned run around this time. Android may deliver the reminder later.",
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Privacy"))
         compose.onNodeWithText("Privacy").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Heart-rate privacy"))
@@ -94,7 +107,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     @Test
-    fun compactCalendarUsesReadableDayRowsAndKeepsRestExplicit() {
+    fun compactCalendarUsesReadableDayRowsHidesRecoveryEntriesAndAutoHidesRecordAction() {
         val easyRun = calendarWorkout(
             id = "easy",
             date = "2026-08-15",
@@ -125,7 +138,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                                     activities = emptyList(),
                                     feedback = emptyList(),
                                 ),
-                                nextWorkout = easyRun,
                                 activityCandidates = emptyList(),
                             ),
                         ),
@@ -148,6 +160,22 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         compose.onAllNodesWithText("Your plan and completed runs by date.").assertCountEquals(0)
         compose.onAllNodesWithText("Schedule run").assertCountEquals(0)
+        compose.onAllNodesWithText("Change goal").assertCountEquals(0)
+        val calendarList = compose.onNode(hasScrollAction())
+        calendarList.performTouchInput { swipeUp() }
+        compose.waitUntil(timeoutMillis = 2_000) {
+            compose.onAllNodes(hasContentDescription("Record a run"))
+                .fetchSemanticsNodes().isEmpty()
+        }
+        calendarList.performTouchInput { swipeDown() }
+        compose.waitUntil(timeoutMillis = 2_000) {
+            compose.onAllNodes(hasContentDescription("Record a run"))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Record a run").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Add a run manually").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("calendar-day-ledger"))
         compose.onNodeWithTag("calendar-day-ledger").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Long easy run · 6 km"))
@@ -156,8 +184,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             hasTestTag("calendar-ledger-day-2026-08-15") and
                 hasContentDescription("Long easy run · 6 km", substring = true),
         ).assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Recovery day"))
-        compose.onNodeWithText("Recovery day").assertIsDisplayed()
+        compose.onAllNodesWithText("Recovery day").assertCountEquals(0)
         compose.onNodeWithTag("calendar-month-grid").assertDoesNotExist()
         compose.onNode(hasScrollAction())
             .performScrollToNode(hasTestTag("calendar-quiet-week-2026-08-23"))
@@ -328,7 +355,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                             activities = emptyList(),
                             feedback = emptyList(),
                         ),
-                        nextWorkout = null,
                         activityCandidates = emptyList(),
                     ),
                 )
@@ -476,7 +502,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             onboardingRequired = false,
             hasActivePlan = true,
             calendar = null,
-            nextWorkout = null,
             activityCandidates = emptyList(),
         ))
         NativeDestination.Inbox -> NativeSurface.Inbox(NativeReviewPayload(

@@ -12,6 +12,8 @@ Backup and export use Android's document picker. The runner chooses the destinat
 
 The app requests no broad storage permission. A folder import uses a read-only Storage Access Framework tree grant selected by the runner. The grant can be revoked in Android settings. Share intake consumes a supplied file; it does not retain original raw GPX bytes.
 
+Android notification permission is optional and requested only when the runner enables an alert. runway does not request Calendar permission and does not read or write the device calendar. Notification text uses private lock-screen visibility and omits route, heart-rate, distance, filename, schedule detail beyond the current run day, and private notes.
+
 ## Health Connect
 
 Health Connect access is optional and read-only. Permissions are scoped to the records runway needs. Route permission is separate and route samples are retained only when the profile permits it. Permission denial or revocation must fail safely without deleting unrelated local history.
@@ -23,6 +25,7 @@ Health Connect access is optional and read-only. Permissions are scoped to the r
 - Route discard clears retained and pending route samples together.
 - Imported-heart-rate discard clears retained summaries, counts, detailed samples, and pending correction evidence together. Heart-rate profile zones are separate and remain.
 - Backup and export are user-initiated plaintext files. The product must warn before writing them and never present them as encrypted.
+- Disabling an alert clears its pending local deliveries. Removing imported runs cancels import-review notifications and clears their delivery history; a full reset also cancels run reminders and clears notification choices and delivery state.
 - Removing imported runs and resetting runway first stop import work, release the selected-folder grant, and revoke Health Connect access. If Android cannot confirm those changes, data deletion does not proceed. A later database failure is reported as a partial result because platform permissions and Room cannot be rolled back atomically.
 
 ## Secure engineering
@@ -39,4 +42,4 @@ Use the repository's [private vulnerability-reporting form](https://github.com/d
 
 ## Release checks
 
-Before a public APK, verify the current build on an emulator and at least one practical device: first launch/onboarding, all five destinations, data erase/backup warning, GPX share and folder grant/revocation, Health Connect permission/revocation, route discard, upgrade preservation, large text, and TalkBack. Keep private activity samples out of the repository and release record.
+Before a public APK, verify the current build on an emulator and at least one practical device: first launch/onboarding, all five destinations, notification permission and per-channel blocking, notification navigation, background GPX review alerts, data erase/backup warning, GPX share and folder grant/revocation, Health Connect permission/revocation, route discard, upgrade preservation, large text, and TalkBack. Keep private activity samples out of the repository and release record.

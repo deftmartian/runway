@@ -124,9 +124,6 @@ internal fun HistoryScreen(
                             onDestinationSelected(NativeDestination.Calendar)
                         },
                         onOpenPlan = onOpenPlan,
-                        onChangeGoal = {
-                            onDestinationSelected(NativeDestination.Setup)
-                        },
                         onStop = {
                             confirmation = NativeHistoryConfirmation.Stop
                         },
@@ -288,7 +285,6 @@ private fun CurrentPlanRecord(
     actionPending: Boolean,
     onOpenCalendar: () -> Unit,
     onOpenPlan: (String) -> Unit,
-    onChangeGoal: () -> Unit,
     onStop: () -> Unit,
 ) {
     val plan = item.plan
@@ -359,12 +355,6 @@ private fun CurrentPlanRecord(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Open routine record") }
             }
-            OutlinedButton(
-                onClick = onChangeGoal,
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text("Change routine") }
             TextButton(
                 onClick = onStop,
                 enabled = !actionPending,
@@ -392,16 +382,6 @@ private fun CurrentPlanRecord(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Open plan record") }
             }
-            Text(
-                "A replacement goal archives this plan only after you confirm the new schedule.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(
-                onClick = onChangeGoal,
-                enabled = !actionPending,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Change goal") }
             TextButton(
                 onClick = { endPlanOptionOpen = !endPlanOptionOpen },
                 enabled = !actionPending,

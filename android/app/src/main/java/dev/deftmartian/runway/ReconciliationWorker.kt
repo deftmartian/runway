@@ -6,6 +6,7 @@ import androidx.work.Data
 import androidx.work.WorkerParameters
 import dev.deftmartian.runway.data.importing.LocalGpxImportException
 import dev.deftmartian.runway.data.importing.LocalGpxImportFailure
+import dev.deftmartian.runway.data.importing.LocalGpxImportOrigin
 import dev.deftmartian.runway.data.importing.LocalGpxImportOutcome
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -27,6 +28,7 @@ class ReconciliationWorker(
     }
 
     private suspend fun importNextCandidate(): Result {
+        RunwayNotificationManager.deliverPendingFolderImportAlerts(applicationContext)
         val treeStore = TreeAccessStore(applicationContext)
         val treeState = treeStore.currentState()
         if (treeState !is TreeAccessState.Connected) {
@@ -71,7 +73,7 @@ class ReconciliationWorker(
         val candidate = ready.first
         val outcome = try {
             applicationContext.contentResolver.openInputStream(candidate.uri)?.use { input ->
-                applicationContext.runwayServices.gpxImports.import(input)
+                applicationContext.runwayServices.gpxImports.import(input, LocalGpxImportOrigin.Folder)
             } ?: return success(STATE_PROVIDER_ERROR)
         } catch (_: SecurityException) {
             ReconciliationScheduler.disablePeriodic(applicationContext)
@@ -103,6 +105,7 @@ class ReconciliationWorker(
         return when (outcome) {
             is LocalGpxImportOutcome.Imported -> {
                 index.markHandled(candidate)
+                RunwayNotificationManager.deliverPendingFolderImportAlerts(applicationContext)
                 terminal(STATE_IMPORTED, remaining(candidates), scan.summary)
             }
             is LocalGpxImportOutcome.Duplicate -> {

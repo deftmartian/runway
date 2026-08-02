@@ -25,9 +25,15 @@ class NativeCalendarLayoutTest {
     }
 
     @Test
-    fun `secondary plan actions stack for narrow or enlarged layouts`() {
-        assertFalse(usesStackedCalendarPlanActions(360f, fontScale = 1f))
-        assertTrue(usesStackedCalendarPlanActions(359f, fontScale = 1f))
-        assertTrue(usesStackedCalendarPlanActions(400f, fontScale = 1.1f))
+    fun `record run action hides down and returns up or at the top`() {
+        val top = CalendarScrollPosition(0, 0)
+        val lower = CalendarScrollPosition(2, 20)
+        val farther = CalendarScrollPosition(3, 0)
+
+        assertFalse(calendarRecordRunFabVisibleAfterScroll(top, lower, true))
+        assertFalse(calendarRecordRunFabVisibleAfterScroll(lower, farther, false))
+        assertTrue(calendarRecordRunFabVisibleAfterScroll(farther, lower, false))
+        assertTrue(calendarRecordRunFabVisibleAfterScroll(lower, top, false))
+        assertFalse(calendarRecordRunFabVisibleAfterScroll(lower, lower, false))
     }
 }

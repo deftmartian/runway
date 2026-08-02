@@ -7,6 +7,7 @@ import dev.deftmartian.runway.data.LocalConsequenceDecisionRepository
 import dev.deftmartian.runway.data.LocalDataManagementRepository
 import dev.deftmartian.runway.data.LocalPlanLifecycleRepository
 import dev.deftmartian.runway.data.LocalPlanSetupRepository
+import dev.deftmartian.runway.data.LocalNotificationRepository
 import dev.deftmartian.runway.data.LocalPrivacyRepository
 import dev.deftmartian.runway.data.LocalProfileRepository
 import dev.deftmartian.runway.data.LocalRoutineRepository
@@ -27,6 +28,11 @@ class RunwayApplication : Application(), Configuration.Provider {
     val services: RunwayServices by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         RunwayServices(this)
     }
+
+    override fun onCreate() {
+        super.onCreate()
+        RunwayNotificationManager.createChannels(this)
+    }
 }
 
 class RunwayServices(application: Application) {
@@ -43,6 +49,7 @@ class RunwayServices(application: Application) {
     val consequenceDecisions = LocalConsequenceDecisionRepository(database)
     val planLifecycle = LocalPlanLifecycleRepository(database)
     val gpxImports = LocalGpxImportRepository(database)
+    val notifications = LocalNotificationRepository(database)
     val healthConnect = LocalHealthConnectRepository(database)
     val dataManagement = LocalDataManagementRepository(database)
     val surfaces = LocalSurfaceRepository(

@@ -87,12 +87,18 @@ internal class NativeSurfaceLoader(
                 }
                 NativeDestination.Settings -> {
                     val settings = reads.settings()
+                    val nativeSettings = settings.toNativeSettingsState()
                     SurfaceLoadResult(
                         NativeSurface.Settings(
-                            settings.toNativeSettingsState().copy(
+                            nativeSettings.copy(
                                 folderImport = reads.folderImportStatus(),
                                 healthConnectImport = reads.healthConnectStatus(
                                     settings.pendingHealthConnect.size,
+                                ),
+                                notifications = nativeSettings.notifications.copy(
+                                    runReminderAllowed = reads.runReminderNotificationsAllowed(),
+                                    folderImportAlertsAllowed =
+                                        reads.folderImportNotificationsAllowed(),
                                 ),
                             ),
                         ),
@@ -179,6 +185,8 @@ internal interface NativeSurfaceReads {
     suspend fun settings(): LocalSettingsReadModel
     fun folderImportStatus(): NativeImportConnection
     suspend fun healthConnectStatus(pendingChangeCount: Int): NativeImportConnection
+    fun runReminderNotificationsAllowed(): Boolean = true
+    fun folderImportNotificationsAllowed(): Boolean = true
 }
 
 private class RunwayNativeSurfaceReads(
@@ -263,6 +271,18 @@ private class RunwayNativeSurfaceReads(
             }
         }
     }
+
+    override fun runReminderNotificationsAllowed(): Boolean =
+        RunwayNotificationManager.notificationsAllowed(
+            context,
+            RunwayNotificationManager.RUN_REMINDER_CHANNEL_ID,
+        )
+
+    override fun folderImportNotificationsAllowed(): Boolean =
+        RunwayNotificationManager.notificationsAllowed(
+            context,
+            RunwayNotificationManager.IMPORT_REVIEW_CHANNEL_ID,
+        )
 }
 
 private fun LocalHistoryReadModel.merge(

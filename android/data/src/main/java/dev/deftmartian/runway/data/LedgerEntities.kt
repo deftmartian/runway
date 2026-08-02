@@ -988,3 +988,39 @@ data class PlanSetupReceiptEntity(
     val planId: String?,
     val committedAtEpochMillis: Long,
 )
+
+/** Device-local notification choices. They are kept separate from training and health settings. */
+@Entity(tableName = "notification_preferences")
+data class NotificationPreferencesEntity(
+    @PrimaryKey val singletonId: Int = SINGLETON_ID,
+    val runReminderEnabled: Boolean,
+    val runReminderMinuteOfDay: Int,
+    val folderImportAlertsEnabled: Boolean,
+    val updatedAtEpochMillis: Long,
+) {
+    companion object {
+        const val SINGLETON_ID = 1
+        const val DEFAULT_REMINDER_MINUTE_OF_DAY = 8 * 60
+    }
+}
+
+/**
+ * A small outbox makes notification delivery retryable without copying training measurements,
+ * routes, filenames, or health data into notification state.
+ */
+@Entity(
+    tableName = "notification_deliveries",
+    indices = [
+        Index(value = ["kind", "state"]),
+        Index(value = ["kind", "subjectId"], unique = true),
+    ],
+)
+data class NotificationDeliveryEntity(
+    @PrimaryKey val deliveryId: String,
+    val kind: String,
+    val subjectId: String,
+    val localEpochDay: Long?,
+    val state: String,
+    val createdAtEpochMillis: Long,
+    val deliveredAtEpochMillis: Long?,
+)

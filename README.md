@@ -19,7 +19,7 @@ runway is not a GPS tracker, wearable replacement, social feed, or medical coach
 ## A clear next step
 
 - Build toward a race or choose a few regular running days each week.
-- See planned runs, recovery days, completed work, and waiting decisions by date.
+- See planned runs, completed work, and waiting decisions by date without filling the calendar with recovery entries.
 - Move, edit, add, or remove a future run when life changes.
 - Compare what was planned with what happened, then keep the schedule, ease back, rest, repeat, or rebalance.
 - Look back at the original plan, every deliberate change, and the work you completed.
@@ -37,11 +37,14 @@ runway reads local GPX files; it does not record your route. You can share one f
 
 runway checks the approved folder when the app returns to the foreground. Optional background checks are best-effort rather than a continuous folder watch. Every imported activity goes to Inbox for review before it counts toward training or offers a schedule change.
 
+Under **Settings → Notifications**, you can turn on reminders for planned run days and alerts when a folder import is ready in Inbox. Android may delay either notification. An import alert means a best-effort scan found and imported a new file; it does not mean runway watches the folder continuously.
+
 ## Private by design
 
 - GPX activities are parsed on your phone; runway does not keep the original file.
 - Every GPX or optional read-only Health Connect activity waits in Inbox for your review before it counts toward training or offers a schedule change.
 - A selected GPX folder is scanned when runway returns to the foreground; Android background scans are best-effort, not a continuous folder watch.
+- Notifications are optional. Lock-screen text does not include route, heart-rate, distance, filename, or private-note details, and Android can delay or block delivery.
 - You choose separately whether runway keeps route and imported heart-rate details. New profiles discard both. Switching either control back to discard permanently clears only that type of saved and pending import data.
 - Backup and export are explicit plaintext files written to the location chosen in Android's document picker. Create a backup before moving to or resetting a phone, then restore it into runway on the replacement device. These files can contain sensitive training history, notes, routes, and heart-rate data; a cloud-backed document provider can move them off the device.
 

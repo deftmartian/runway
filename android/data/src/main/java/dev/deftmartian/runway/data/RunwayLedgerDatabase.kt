@@ -46,8 +46,10 @@ import androidx.room.RoomDatabase
         ImportDigestEntity::class,
         AppMetadataEntity::class,
         PlanSetupReceiptEntity::class,
+        NotificationPreferencesEntity::class,
+        NotificationDeliveryEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class RunwayLedgerDatabase : RoomDatabase() {
@@ -58,13 +60,14 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
     abstract fun importLedgerDao(): ImportLedgerDao
     abstract fun appMetadataDao(): AppMetadataDao
     abstract fun planSetupReceiptDao(): PlanSetupReceiptDao
+    abstract fun notificationDao(): NotificationDao
     abstract fun maintenanceDao(): LedgerMaintenanceDao
 
     companion object {
         const val DATABASE_NAME = "runway-ledger.db"
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
         /** Room's schema identity for [SCHEMA_VERSION], also recorded in the exported schema JSON. */
-        const val SCHEMA_IDENTITY_HASH = "fea8a2db594ad0114134c3a0300d77c5"
+        const val SCHEMA_IDENTITY_HASH = "0aa6f2dc38b8ed3915692bb90d7315c8"
 
         fun create(context: Context): RunwayLedgerDatabase = Room.databaseBuilder(
             context.applicationContext,
@@ -75,6 +78,7 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
             RunwayLedgerMigrations.V2_TO_V3,
             RunwayLedgerMigrations.V3_TO_V4,
             RunwayLedgerMigrations.V4_TO_V5,
+            RunwayLedgerMigrations.V5_TO_V6,
         ).build()
     }
 }

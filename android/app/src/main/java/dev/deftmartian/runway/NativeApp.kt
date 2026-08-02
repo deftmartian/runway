@@ -27,7 +27,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -59,6 +64,8 @@ internal fun RunwayNativeApp(
     onCreateBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
     onExportData: () -> Unit,
+    onRunReminderChanged: (Boolean, Int) -> Unit = { _, _ -> },
+    onFolderImportAlertsChanged: (Boolean) -> Unit = {},
     onTimeZoneChanged: (String) -> Unit,
     onRoutePrivacyChanged: (NativeRoutePrivacy) -> Unit,
     onHeartRatePrivacyChanged: (NativeHeartRatePrivacy) -> Unit,
@@ -89,6 +96,8 @@ internal fun RunwayNativeApp(
         onCreateBackup = onCreateBackup,
         onRestoreBackup = onRestoreBackup,
         onExportData = onExportData,
+        onRunReminderChanged = onRunReminderChanged,
+        onFolderImportAlertsChanged = onFolderImportAlertsChanged,
         onTimeZoneChanged = onTimeZoneChanged,
         onRoutePrivacyChanged = onRoutePrivacyChanged,
         onHeartRatePrivacyChanged = onHeartRatePrivacyChanged,
@@ -157,6 +166,8 @@ private fun NativeProductShell(
     onCreateBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
     onExportData: () -> Unit,
+    onRunReminderChanged: (Boolean, Int) -> Unit,
+    onFolderImportAlertsChanged: (Boolean) -> Unit,
     onTimeZoneChanged: (String) -> Unit,
     onRoutePrivacyChanged: (NativeRoutePrivacy) -> Unit,
     onHeartRatePrivacyChanged: (NativeHeartRatePrivacy) -> Unit,
@@ -166,8 +177,19 @@ private fun NativeProductShell(
     onEraseAllData: () -> Unit,
     onAcknowledgeRetentionRepair: () -> Unit,
 ) {
-    val parent = state.surface.navigationParent()
-    BackHandler(enabled = parent != null) { parent?.let(onDestinationSelected) }
+    var setupReturnDestination by rememberSaveable {
+        mutableStateOf<NativeDestination?>(null)
+    }
+    LaunchedEffect(state.destination) {
+        if (state.destination != NativeDestination.Setup) setupReturnDestination = null
+    }
+    val parent = state.surface.navigationParent(setupReturnDestination)
+    fun returnToParent() {
+        val destination = parent ?: return
+        setupReturnDestination = null
+        onDestinationSelected(destination)
+    }
+    BackHandler(enabled = parent != null, onBack = ::returnToParent)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val navigationLayout = nativeNavigationLayoutForWidth(maxWidth.value)
         val showPrimaryNavigation = state.destination != NativeDestination.Setup
@@ -181,7 +203,7 @@ private fun NativeProductShell(
                     TopAppBar(
                         navigationIcon = {
                             parent?.let {
-                                IconButton(onClick = { onDestinationSelected(it) }) {
+                                IconButton(onClick = ::returnToParent) {
                                     Icon(
                                         painterResource(R.drawable.ic_arrow_back),
                                         "Back to ${it.label}",
@@ -271,6 +293,12 @@ private fun NativeProductShell(
                             state = surface.payload ?: NativeSettingsState(),
                             actionPending = state.actionPending,
                             callbacks = NativeSettingsCallbacks(
+                                onOpenTrainingSetup = {
+                                    setupReturnDestination = NativeDestination.Settings
+                                    onDestinationSelected(NativeDestination.Setup)
+                                },
+                                onRunReminderChanged = onRunReminderChanged,
+                                onFolderImportAlertsChanged = onFolderImportAlertsChanged,
                                 onTimeZoneChanged = onTimeZoneChanged,
                                 onRoutePrivacyChanged = onRoutePrivacyChanged,
                                 onHeartRatePrivacyChanged = onHeartRatePrivacyChanged,
@@ -376,8 +404,11 @@ private fun NativeNavigationLabel(destination: NativeDestination) {
     )
 }
 
-internal fun NativeSurface.navigationParent(): NativeDestination? = when (this) {
+internal fun NativeSurface.navigationParent(
+    setupReturnDestination: NativeDestination? = null,
+): NativeDestination? = when (this) {
     is NativeSurface.Setup ->
-        if (payload?.currentGoal?.state == "active") NativeDestination.History else null
+        setupReturnDestination
+            ?: if (payload?.currentGoal?.state == "active") NativeDestination.History else null
     else -> destination.navigationParent
 }

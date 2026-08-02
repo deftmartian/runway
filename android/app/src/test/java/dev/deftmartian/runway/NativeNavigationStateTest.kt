@@ -5,6 +5,20 @@ import org.junit.Test
 
 class NativeNavigationStateTest {
     @Test
+    fun `notification actions open only their bounded product destination`() {
+        assertEquals(
+            NativeDestination.Calendar,
+            notificationDestination(MainActivity.ACTION_OPEN_CALENDAR),
+        )
+        assertEquals(
+            NativeDestination.Inbox,
+            notificationDestination(MainActivity.ACTION_OPEN_INBOX),
+        )
+        assertEquals(null, notificationDestination("dev.deftmartian.runway.UNKNOWN"))
+        assertEquals(null, notificationDestination(null))
+    }
+
+    @Test
     fun `restoration keeps a detail only when its local plan identity is present`() {
         assertEquals(
             NativeDestination.HistoryDetail,
@@ -57,6 +71,30 @@ class NativeNavigationStateTest {
         )
 
         assertEquals(NativeDestination.History, surface.navigationParent())
+    }
+
+    @Test
+    fun `settings origin overrides the generic active goal parent`() {
+        val surface = NativeSurface.Setup(
+            NativeOnboardingPayload(
+                initialValues = null,
+                minimumTargetDate = null,
+                minimumCalibrationTargetDate = null,
+                minimumFoundationTargetDate = null,
+                maximumTargetDate = null,
+                currentGoal = NativeGoalSummary(
+                    title = "10 km",
+                    targetDate = "2026-10-01",
+                    state = "active",
+                    risk = null,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeDestination.Settings,
+            surface.navigationParent(NativeDestination.Settings),
+        )
     }
 
     @Test

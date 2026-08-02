@@ -399,12 +399,6 @@ internal fun calendarLedgerDayPresentation(
             stateDescription = "recorded",
             emphasis = base.emphasis,
         )
-        activeWorkouts.isNotEmpty() && runWorkouts.isEmpty() -> CalendarLedgerDayPresentation(
-            title = "Recovery day",
-            detail = "Planned rest",
-            stateDescription = "planned recovery day",
-            emphasis = base.emphasis,
-        )
         routineDateIsPast && runWorkouts.any { it.planPhase == "routine" } ->
             CalendarLedgerDayPresentation(
                 title = if (runWorkouts.size == 1) {
@@ -668,9 +662,6 @@ internal fun calendarDayPresentation(
             "✓ ${amount.takeUnless { it == "Plan details" } ?: "Done"}"
         }
         return CalendarDayPresentation(label, "recorded", CalendarCellEmphasis.Actual)
-    }
-    if (activeWorkouts.isNotEmpty() && runWorkouts.isEmpty()) {
-        return CalendarDayPresentation("— Rest", "rest", CalendarCellEmphasis.Neutral)
     }
     if (routineDateIsPast && runWorkouts.any { it.planPhase == "routine" }) {
         return CalendarDayPresentation("— Not recorded", "not recorded", CalendarCellEmphasis.Neutral)

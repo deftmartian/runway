@@ -348,6 +348,7 @@ internal class RunwayViewModel(
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
             result.onSuccess { message ->
                 mutableState.value = current.copy(actionPending = false, completedAction = command.action, notice = NativeNotice(message))
+                reconcileRunReminders()
                 if (command is CreatePlanCommand) {
                     calendarMonthWasSelected = false
                     savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
@@ -483,7 +484,34 @@ internal class RunwayViewModel(
         }
     }
 
-    fun updateTimeZone(value: String) = mutateSetting { services.profile.updateTimeZone(value) }
+    fun updateTimeZone(value: String) = mutateSetting(rescheduleRunReminder = true) {
+        services.profile.updateTimeZone(value)
+    }
+    fun updateRunReminder(enabled: Boolean, minuteOfDay: Int) = mutateNotificationSetting(
+        rescheduleRunReminder = true,
+    ) {
+        services.notifications.updateRunReminder(enabled, minuteOfDay)
+        if (!enabled) RunwayNotificationManager.cancelRunReminder(getApplication())
+    }
+
+    fun updateFolderImportAlerts(enabled: Boolean) = mutateNotificationSetting {
+        services.notifications.updateFolderImportAlerts(enabled)
+        if (enabled) {
+            RunwayNotificationManager.deliverPendingFolderImportAlerts(getApplication())
+        } else {
+            RunwayNotificationManager.cancelImportReview(getApplication())
+        }
+    }
+
+    fun notificationPermissionDenied() {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        mutableState.value = ready.copy(
+            notice = NativeNotice(
+                "Notifications are still off. Allow them in Android settings to use alerts.",
+                isError = true,
+            ),
+        )
+    }
     fun updateRoutePrivacy(value: NativeRoutePrivacy) {
         val mode = if (value == NativeRoutePrivacy.KeepPrivate) {
             RouteDataMode.Private
@@ -571,6 +599,8 @@ internal class RunwayViewModel(
         viewModelScope.launch {
             localResult {
                 withContext(Dispatchers.IO) {
+                    RunReminderScheduler.cancelAndWait(getApplication())
+                    RunwayNotificationManager.cancelAll(getApplication())
                     services.importSources.disconnectBeforeErase {
                         services.dataManagement.eraseAllTrainingData()
                     }
@@ -583,6 +613,7 @@ internal class RunwayViewModel(
                     load(NativeDestination.Setup)
                 }
                 .onFailure { error ->
+                    reconcileRunReminders()
                     val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
                     mutableState.value = current.copy(
                         actionPending = false,
@@ -606,10 +637,13 @@ internal class RunwayViewModel(
             localResult {
                 withContext(Dispatchers.IO) {
                     services.importSources.disconnectBeforeErase {
-                        services.dataManagement.eraseImportedActivityData()
+                        services.dataManagement.eraseImportedActivityData().also {
+                            services.notifications.clearFolderImportDeliveryHistory()
+                        }
                     }
                 }
             }.onSuccess { outcome ->
+                RunwayNotificationManager.cancelImportReview(getApplication())
                 val current = mutableState.value as? RunwayUiState.Ready
                 if (current != null) {
                     mutableState.value = current.copy(
@@ -697,9 +731,15 @@ internal class RunwayViewModel(
         viewModelScope.launch {
             val result = localResult {
                 withContext(Dispatchers.IO) {
-                    services.importSources.disconnectBeforeRestore {
+                    RunReminderScheduler.cancelAndWait(getApplication())
+                    RunwayNotificationManager.cancelAll(getApplication())
+                    val outcome = services.importSources.disconnectBeforeRestore {
                         services.dataManagement.restoreFromDocument(context, uri)
                     }
+                    if (outcome is LocalRestoreResult.Rejected && !outcome.restartRequired) {
+                        RunReminderScheduler.reconcile(getApplication())
+                    }
+                    outcome
                 }
             }
             result.onSuccess { outcome ->
@@ -725,6 +765,7 @@ internal class RunwayViewModel(
                     savedStateHandle[SAVED_RESTART_AFTER_RESTORE] = true
                 }
             }.onFailure { error ->
+                reconcileRunReminders()
                 val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
                 mutableState.value = current.copy(
                     actionPending = false,
@@ -776,7 +817,10 @@ internal class RunwayViewModel(
         }
     }
 
-    private fun mutateSetting(block: suspend () -> LocalProfileUpdateResult) {
+    private fun mutateSetting(
+        rescheduleRunReminder: Boolean = false,
+        block: suspend () -> LocalProfileUpdateResult,
+    ) {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
@@ -786,6 +830,7 @@ internal class RunwayViewModel(
                     requireProfileUpdate(block())
                 }
             }.onSuccess {
+                if (rescheduleRunReminder) reconcileRunReminders()
                 val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
                 mutableState.value = current.copy(
                     actionPending = false,
@@ -799,6 +844,53 @@ internal class RunwayViewModel(
                     notice = NativeNotice("That setting could not be saved. Check the values and try again.", true),
                 )
             }
+        }
+    }
+
+    private fun mutateNotificationSetting(
+        rescheduleRunReminder: Boolean = false,
+        block: suspend () -> Unit,
+    ) {
+        val ready = mutableState.value as? RunwayUiState.Ready ?: return
+        if (ready.actionPending) return
+        mutableState.value = ready.copy(actionPending = true, notice = null)
+        viewModelScope.launch {
+            localResult {
+                withContext(Dispatchers.IO) {
+                    block()
+                    !rescheduleRunReminder || RunReminderScheduler.reconcile(getApplication())
+                }
+            }.onSuccess { scheduleReady ->
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onSuccess
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(
+                        if (scheduleReady) {
+                            "Notification setting saved."
+                        } else {
+                            "The reminder is saved, but Android could not schedule it. runway will try again when you reopen the app."
+                        },
+                        isError = !scheduleReady,
+                    ),
+                )
+                refresh()
+            }.onFailure {
+                val current = mutableState.value as? RunwayUiState.Ready ?: return@onFailure
+                mutableState.value = current.copy(
+                    actionPending = false,
+                    notice = NativeNotice(
+                        "That notification setting could not be saved. Try again.",
+                        true,
+                    ),
+                )
+                refresh()
+            }
+        }
+    }
+
+    private fun reconcileRunReminders() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { RunReminderScheduler.reconcile(getApplication()) }
         }
     }
 

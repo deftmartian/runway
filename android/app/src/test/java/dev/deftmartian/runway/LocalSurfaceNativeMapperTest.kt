@@ -1,6 +1,8 @@
 package dev.deftmartian.runway
 
 import dev.deftmartian.runway.data.LocalLoadReadModel
+import dev.deftmartian.runway.data.LocalAboutReadModel
+import dev.deftmartian.runway.data.LocalActivePlanReadModel
 import dev.deftmartian.runway.data.LocalCalendarReadModel
 import dev.deftmartian.runway.data.LocalCurrentSignalReadModel
 import dev.deftmartian.runway.data.LocalHealthNoticeReadModel
@@ -11,8 +13,10 @@ import dev.deftmartian.runway.data.LocalHistoryReadModel
 import dev.deftmartian.runway.data.LocalPlanPhase
 import dev.deftmartian.runway.data.LocalPlanHistoryReadModel
 import dev.deftmartian.runway.data.LocalPlanState
+import dev.deftmartian.runway.data.LocalNotificationPreferences
 import dev.deftmartian.runway.data.LocalPrescriptionReadModel
 import dev.deftmartian.runway.data.LocalStatsReadModel
+import dev.deftmartian.runway.data.LocalSettingsReadModel
 import dev.deftmartian.runway.data.LocalTimedBlockReadModel
 import dev.deftmartian.runway.data.LocalTimedIntervalStructureReadModel
 import dev.deftmartian.runway.data.LocalTimedSegmentReadModel
@@ -22,8 +26,46 @@ import dev.deftmartian.runway.data.LocalWorkoutReadModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class LocalSurfaceNativeMapperTest {
+    @Test
+    fun `settings projection keeps training and notification state explicit`() {
+        val start = LocalDate.parse("2026-07-01").toEpochDay()
+        val native = LocalSettingsReadModel(
+            profile = null,
+            activePlan = LocalActivePlanReadModel(
+                planId = "routine",
+                goalId = "routine-goal",
+                goalTitle = "Three runs each week",
+                goalKind = "routine",
+                startMode = "routine",
+                raceDistanceMeters = null,
+                goalTargetEpochDay = null,
+                goalPriority = "consistency",
+                phase = LocalPlanPhase.ROUTINE,
+                state = LocalPlanState.ACTIVE,
+                startEpochDay = start,
+                endEpochDay = null,
+                riskAssessment = null,
+                latestLifecycleEvent = null,
+                sessionsPerWeek = 3,
+            ),
+            about = LocalAboutReadModel(versionName = "test", buildRevision = "abc1234"),
+            notificationPreferences = LocalNotificationPreferences(
+                runReminderEnabled = true,
+                runReminderMinuteOfDay = 7 * 60,
+                folderImportAlertsEnabled = true,
+            ),
+        ).toNativeSettingsState()
+
+        assertTrue(native.training is NativeTrainingSettings.Active)
+        assertEquals(3, (native.training as NativeTrainingSettings.Active).runsPerWeek)
+        assertEquals(true, native.notifications.runReminderEnabled)
+        assertEquals(7 * 60, native.notifications.runReminderMinuteOfDay)
+        assertEquals(true, native.notifications.folderImportAlertsEnabled)
+    }
+
     @Test
     fun `calendar projection carries the active routine discriminator without inference`() {
         val native = LocalCalendarReadModel(

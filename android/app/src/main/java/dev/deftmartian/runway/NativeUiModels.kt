@@ -17,10 +17,7 @@ internal data class NativeCalendarPayload(
     val onboardingRequired: Boolean?,
     val hasActivePlan: Boolean,
     val calendar: NativeCalendar?,
-    val nextWorkout: NativeWorkout?,
     val activityCandidates: List<NativeWorkout>,
-    val pendingDecisionCount: Int = 0,
-    val pendingDecisionCountIsExact: Boolean = true,
     val activePlanPhase: String? = null,
 )
 

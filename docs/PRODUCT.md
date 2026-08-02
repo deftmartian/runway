@@ -44,15 +44,15 @@ Timed plan headlines show a coarse five-minute estimate for scheduling. The stor
 
 For a weekly routine, **current** is the runner's chosen schedule and individual future changes; **actual** is recorded, skipped, and extra runs. A passed open slot is factual, not a debt: it remains not recorded unless the runner marks it skipped or moves it. A run on another day counts toward that week's frequency without changing a future slot. Routine counts show the weekly recorded total and, when they differ, separate scheduled-day and other-day runs; distance, duration, and heart rate remain optional observations rather than targets. Stats and routine detail show at most the most recent 52 weeks and label that scope; older rows remain in the local ledger and backup.
 
-This distinction must remain visible in Calendar, Inbox, Stats, and History. Rest is a planned state, not the absence of data.
+This distinction must remain visible in Calendar, Inbox, Stats, and History. Rest remains an intentional state in the plan record, but Calendar does not render recovery-only dates as entries because they add no run action.
 
 ## Surfaces
 
-1. **Calendar** — today, next workout or routine slot, unresolved Inbox decisions, month/day detail, edits, feedback, and results.
+1. **Calendar** — the month schedule, completed runs, day detail, edits, feedback, and a floating action for recording a run.
 2. **Inbox** — activity review, links, extra work, corrections, and unresolved plan decisions.
 3. **Stats** — generated/current/actual traces for prescriptions, or weekly scheduled/recorded/skipped counts for a routine, with plain-language context.
 4. **History** — plan or routine lifecycle, archived records, and auditable decisions.
-5. **Settings** — training profile, privacy, imports, backup/export, erase, and local build information.
+5. **Settings** — training setup, optional notifications, profile, privacy, imports, backup/export, erase, and local build information.
 
 Onboarding is a focused setup flow, not a sixth destination.
 
@@ -62,7 +62,9 @@ Manual results, GPX shares, approved Storage Access Framework folders, and optio
 
 Gadgetbridge's automatic GPX export is the primary folder workflow. OpenTracks and other recorders can share GPX files or write them to a user-chosen directory; FitoTrack uses the directory path. This is a local file handoff, not a direct integration or continuous sync.
 
-GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data. When route retention is enabled, activity detail may draw a bounded, private trace directly from retained points. It uses no basemap, tile service, or network request and does not expose coordinates through accessibility text.
+GPX parsing is local and bounded. An approved folder is scanned when runway has access; background work is best-effort and is not a promise to watch a filesystem continuously. The runner can opt into a generic alert after a new folder activity is committed to Inbox for review. Health Connect is optional, read-only, and requests routes separately. Fresh profiles discard imported route and heart-rate detail. The runner can opt into private on-device retention; switching back to discard permanently removes the corresponding retained and pending import data. When route retention is enabled, activity detail may draw a bounded, private trace directly from retained points. It uses no basemap, tile service, or network request and does not expose coordinates through accessibility text.
+
+Planned-run reminders are also optional. They use best-effort Android background work, re-check the current local plan before posting, and never promise an exact alarm time. Both notification types are off by default and require Android notification permission.
 
 Backup/export is explicit and plaintext. It is a user-owned recovery and portability tool, not sync.
 
@@ -72,4 +74,5 @@ Backup/export is explicit and plaintext. It is a user-owned recovery and portabi
 - Medical diagnosis, injury treatment, readiness clearance, or individualized physiological prescription.
 - Automatic plan changes without review and confirmation.
 - Accounts, sign-in, remote API, web/PWA, browser wrapper, cloud backup, or multi-device synchronization.
+- Android Calendar access, calendar export, or a second editable copy of the runway schedule.
 - A generic multi-sport tracker. Running and treadmill-running remain the supported activity scope.

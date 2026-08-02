@@ -460,6 +460,7 @@ class RoomLocalSurfaceLedgerReader(
                     todayEpochDay,
                 ),
                 pendingHealthConnect = pendingHealthConnect(MAX_PENDING_HEALTH_CONNECT),
+                notificationPreferences = database.notificationDao().preferences(),
             )
         }
 

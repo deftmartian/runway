@@ -538,6 +538,7 @@ data class LocalSettingsReadModel(
     val pendingGoal: LocalPendingGoalReadModel? = null,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val pendingHealthConnect: List<LocalHealthConnectPendingReadModel> = emptyList(),
+    val notificationPreferences: LocalNotificationPreferences = LocalNotificationPreferences(),
 )
 
 /**
@@ -651,6 +652,7 @@ data class LocalSettingsLedgerSlice(
     val pendingGoal: GoalEntity? = null,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val pendingHealthConnect: List<LocalHealthConnectPendingReadModel> = emptyList(),
+    val notificationPreferences: NotificationPreferencesEntity? = null,
 )
 
 interface LocalSurfaceLedgerReader {
@@ -1520,6 +1522,14 @@ object LocalSurfaceMappers {
             pendingGoal = pendingGoal,
             phaseReview = slice.phaseReview,
             pendingHealthConnect = slice.pendingHealthConnect,
+            notificationPreferences = slice.notificationPreferences?.let {
+                LocalNotificationPreferences(
+                    runReminderEnabled = it.runReminderEnabled,
+                    runReminderMinuteOfDay =
+                        normalizedReminderMinuteOfDay(it.runReminderMinuteOfDay),
+                    folderImportAlertsEnabled = it.folderImportAlertsEnabled,
+                )
+            } ?: LocalNotificationPreferences(),
         )
     }
 

@@ -13,6 +13,7 @@ object RunwayLedgerMigrations {
     const val V3_IDENTITY_HASH = "e07bbca67f5da673e81167f32b14d51a"
     /** v4 was a repair-only lineage boundary and retained v3's Room schema identity. */
     const val V4_IDENTITY_HASH = "e07bbca67f5da673e81167f32b14d51a"
+    const val V5_IDENTITY_HASH = "fea8a2db594ad0114134c3a0300d77c5"
     const val V1_TO_V2_SQL =
         "ALTER TABLE profile_settings ADD COLUMN heartRateDataMode TEXT NOT NULL DEFAULT 'private'"
     const val CREATE_PLAN_SETUP_RECEIPTS_SQL =
@@ -81,6 +82,34 @@ object RunwayLedgerMigrations {
         """
     const val CREATE_ROUTINE_SCHEDULE_DAYS_PLAN_INDEX_SQL =
         "CREATE INDEX index_routine_schedule_days_planId ON routine_schedule_days (planId)"
+    const val CREATE_NOTIFICATION_PREFERENCES_SQL =
+        """
+        CREATE TABLE notification_preferences (
+            singletonId INTEGER NOT NULL,
+            runReminderEnabled INTEGER NOT NULL,
+            runReminderMinuteOfDay INTEGER NOT NULL,
+            folderImportAlertsEnabled INTEGER NOT NULL,
+            updatedAtEpochMillis INTEGER NOT NULL,
+            PRIMARY KEY(singletonId)
+        )
+        """
+    const val CREATE_NOTIFICATION_DELIVERIES_SQL =
+        """
+        CREATE TABLE notification_deliveries (
+            deliveryId TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            subjectId TEXT NOT NULL,
+            localEpochDay INTEGER,
+            state TEXT NOT NULL,
+            createdAtEpochMillis INTEGER NOT NULL,
+            deliveredAtEpochMillis INTEGER,
+            PRIMARY KEY(deliveryId)
+        )
+        """
+    const val CREATE_NOTIFICATION_DELIVERIES_KIND_STATE_INDEX_SQL =
+        "CREATE INDEX index_notification_deliveries_kind_state ON notification_deliveries (kind, state)"
+    const val CREATE_NOTIFICATION_DELIVERIES_KIND_SUBJECT_INDEX_SQL =
+        "CREATE UNIQUE INDEX index_notification_deliveries_kind_subjectId ON notification_deliveries (kind, subjectId)"
 
     private val v2ToV3Sql = listOf(
         CREATE_PLAN_SETUP_RECEIPTS_SQL,
@@ -245,5 +274,19 @@ object RunwayLedgerMigrations {
     fun applyV4ToV5(execSql: (String) -> Unit) {
         execSql(CREATE_ROUTINE_SCHEDULE_DAYS_SQL)
         execSql(CREATE_ROUTINE_SCHEDULE_DAYS_PLAN_INDEX_SQL)
+    }
+
+    /** Adds opt-in notification preferences and a privacy-minimal, retryable delivery outbox. */
+    val V5_TO_V6: Migration = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            applyV5ToV6(db::execSQL)
+        }
+    }
+
+    fun applyV5ToV6(execSql: (String) -> Unit) {
+        execSql(CREATE_NOTIFICATION_PREFERENCES_SQL)
+        execSql(CREATE_NOTIFICATION_DELIVERIES_SQL)
+        execSql(CREATE_NOTIFICATION_DELIVERIES_KIND_STATE_INDEX_SQL)
+        execSql(CREATE_NOTIFICATION_DELIVERIES_KIND_SUBJECT_INDEX_SQL)
     }
 }
