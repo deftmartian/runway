@@ -2,7 +2,7 @@
 
 [![Android CI](https://github.com/deftmartian/runway/actions/workflows/android.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/android.yml)
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
-[![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1f758f.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1f758f.svg)](LICENSE)
 
 **Plan your running, bring in what you recorded, and decide what changes next.**
 
@@ -87,6 +87,6 @@ See [Android development](docs/ANDROID.md) for device tests and module responsib
 
 ## License
 
-Copyright © 2026 runway contributors.
+Copyright © 2026 deftmartian.
 
-runway is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`).
+runway is licensed under the [MIT License](LICENSE) (`MIT`).

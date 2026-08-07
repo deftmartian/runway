@@ -39,4 +39,4 @@ Do not include private activity data, backups, credentials, or reproduction file
 
 ## License
 
-By contributing, you agree that your contribution is licensed under the repository's [AGPL-3.0-only](LICENSE) terms.
+By contributing, you agree that your contribution is licensed under the repository's [MIT](LICENSE) terms.

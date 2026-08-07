@@ -1,7 +1,7 @@
 Categories:
   - Sports & Health
-License: AGPL-3.0-only
-AuthorName: runway contributors
+License: MIT
+AuthorName: deftmartian
 SourceCode: https://github.com/deftmartian/runway
 IssueTracker: https://github.com/deftmartian/runway/issues
 # The repository index key is separate from the APK key. This app's APK must be
