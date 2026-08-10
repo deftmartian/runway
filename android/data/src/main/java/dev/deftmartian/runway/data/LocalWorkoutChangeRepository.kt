@@ -572,47 +572,55 @@ object LocalWorkoutChangeMapper {
         after: Boolean,
     ): WorkoutProposal {
         val prescription = enumValue<PrescriptionKind>(
-            if (after) effect.newPrescriptionKind else effect.previousPrescriptionKind,
+            select(after, effect.newPrescriptionKind, effect.previousPrescriptionKind),
         )
         return WorkoutProposal(
-            weekId = if (after) newWeekId else previousWeekId,
+            weekId = select(after, newWeekId, previousWeekId),
             scheduledDate = LocalDate.ofEpochDay(
-                requireNotNull(if (after) effect.newScheduledEpochDay else effect.previousScheduledEpochDay),
+                requireNotNull(select(after, effect.newScheduledEpochDay, effect.previousScheduledEpochDay)),
             ),
-            type = enumValue(if (after) effect.newWorkoutType else effect.previousWorkoutType),
+            type = enumValue(select(after, effect.newWorkoutType, effect.previousWorkoutType)),
             prescriptionKind = prescription,
             targetDistanceMeters =
-                (if (after) effect.newDistanceMeters else effect.previousDistanceMeters) ?: 0,
+                select(after, effect.newDistanceMeters, effect.previousDistanceMeters) ?: 0,
             targetDurationSeconds =
-                if (after) effect.newDurationSeconds else effect.previousDurationSeconds,
-            intervalStructure = if (prescription == PrescriptionKind.TIMED) {
-                TimedIntervalStructure(
-                    warmupSeconds =
-                        (if (after) effect.newWarmupSeconds else effect.previousWarmupSeconds) ?: 0,
-                    cooldownSeconds =
-                        (if (after) effect.newCooldownSeconds else effect.previousCooldownSeconds) ?: 0,
-                    blocks = blocks.map { block ->
-                        RunWalkBlock(
-                            block.repetitions,
-                            block.segments.map {
-                                PrescriptionSegment(
-                                    enumValue(it.segmentType),
-                                    requireNotNull(it.targetDurationSeconds),
-                                )
-                            },
+                select(after, effect.newDurationSeconds, effect.previousDurationSeconds),
+            intervalStructure = effectIntervalStructure(effect, blocks, after, prescription),
+            intensity = select(after, effect.newIntensity, effect.previousIntensity)
+                ?: if (prescription == PrescriptionKind.REST) "rest" else "easy",
+            purpose = select(after, effect.newPurpose, effect.previousPurpose).orEmpty(),
+            reason = select(after, effect.newReason, effect.previousReason).orEmpty(),
+            sourceRefs = references.map { it.sourceLocator ?: it.sourceName },
+            isRemoved = select(after, effect.newStatus, effect.previousStatus) == WORKOUT_STATE_TOMBSTONED,
+        )
+    }
+
+    private fun effectIntervalStructure(
+        effect: AdjustmentWorkoutEffectEntity,
+        blocks: List<StoredWorkoutBlock>,
+        after: Boolean,
+        prescription: PrescriptionKind,
+    ): TimedIntervalStructure? {
+        if (prescription != PrescriptionKind.TIMED) return null
+        return TimedIntervalStructure(
+            warmupSeconds = select(after, effect.newWarmupSeconds, effect.previousWarmupSeconds) ?: 0,
+            cooldownSeconds = select(after, effect.newCooldownSeconds, effect.previousCooldownSeconds) ?: 0,
+            blocks = blocks.map { block ->
+                RunWalkBlock(
+                    block.repetitions,
+                    block.segments.map {
+                        PrescriptionSegment(
+                            enumValue(it.segmentType),
+                            requireNotNull(it.targetDurationSeconds),
                         )
                     },
                 )
-            } else null,
-            intensity = (if (after) effect.newIntensity else effect.previousIntensity)
-                ?: if (prescription == PrescriptionKind.REST) "rest" else "easy",
-            purpose = (if (after) effect.newPurpose else effect.previousPurpose).orEmpty(),
-            reason = (if (after) effect.newReason else effect.previousReason).orEmpty(),
-            sourceRefs = references.map { it.sourceLocator ?: it.sourceName },
-            isRemoved =
-                (if (after) effect.newStatus else effect.previousStatus) == WORKOUT_STATE_TOMBSTONED,
+            },
         )
     }
+
+    private fun <T> select(after: Boolean, newValue: T, previousValue: T): T =
+        if (after) newValue else previousValue
 
     fun blocks(proposal: WorkoutProposal): List<StoredWorkoutBlock> =
         proposal.intervalStructure?.blocks.orEmpty().map {

@@ -385,33 +385,16 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     private fun lastFolderCheckStatus(): String {
         val record = ReconciliationStatusStore(this).load()
             ?: return getString(R.string.last_check_never)
-        val message = getString(
-            when (record.state) {
-                ReconciliationWorker.STATE_IMPORTED -> R.string.last_check_imported
-                ReconciliationWorker.STATE_DUPLICATE -> R.string.last_check_duplicate
-                ReconciliationWorker.STATE_DELETED_PREVIOUSLY ->
-                    R.string.last_check_deleted_previously
-                ReconciliationWorker.STATE_INVALID -> R.string.last_check_invalid
-                ReconciliationWorker.STATE_TOO_LARGE -> R.string.last_check_too_large
-                ReconciliationWorker.STATE_FUTURE_ACTIVITY -> R.string.last_check_future
-                ReconciliationWorker.STATE_NO_CANDIDATES -> R.string.last_check_empty
-                ReconciliationWorker.STATE_SETUP_REQUIRED -> R.string.last_check_setup_required
-                ReconciliationWorker.STATE_PERMISSION_REQUIRED ->
-                    R.string.last_check_permission_required
-                ReconciliationWorker.STATE_PROVIDER_ERROR -> R.string.last_check_provider_error
-                ReconciliationWorker.STATE_SCAN_LIMIT -> R.string.last_check_scan_limit
-                ReconciliationWorker.STATE_SETTLING -> R.string.last_check_settling
-                ReconciliationWorker.STATE_RETRYING -> R.string.last_check_retrying
-                ReconciliationWorker.STATE_STALE_FOLDER -> R.string.last_check_stale
-                else -> R.string.last_check_unknown
-            },
-        )
+        val message = getString(folderStatusMessageResource(record.state))
         return if (record.scanTruncated && record.state != ReconciliationWorker.STATE_SCAN_LIMIT) {
             getString(R.string.last_check_scan_limit_suffix, message)
         } else {
             message
         }
     }
+
+    private fun folderStatusMessageResource(state: String) = FOLDER_STATUS_MESSAGES[state]
+        ?: R.string.last_check_unknown
 
     private fun healthSyncStatus(result: HealthSyncResult): Int = when (result) {
         HealthSyncResult.Synced -> R.string.health_connect_synced
@@ -444,3 +427,20 @@ class NativeFolderSettingsActivity : ComponentActivity() {
         private const val PENDING_ROUTE_RECORD_KEY = "pending_route_record_id"
     }
 }
+
+private val FOLDER_STATUS_MESSAGES = mapOf(
+    ReconciliationWorker.STATE_IMPORTED to R.string.last_check_imported,
+    ReconciliationWorker.STATE_DUPLICATE to R.string.last_check_duplicate,
+    ReconciliationWorker.STATE_DELETED_PREVIOUSLY to R.string.last_check_deleted_previously,
+    ReconciliationWorker.STATE_INVALID to R.string.last_check_invalid,
+    ReconciliationWorker.STATE_TOO_LARGE to R.string.last_check_too_large,
+    ReconciliationWorker.STATE_FUTURE_ACTIVITY to R.string.last_check_future,
+    ReconciliationWorker.STATE_NO_CANDIDATES to R.string.last_check_empty,
+    ReconciliationWorker.STATE_SETUP_REQUIRED to R.string.last_check_setup_required,
+    ReconciliationWorker.STATE_PERMISSION_REQUIRED to R.string.last_check_permission_required,
+    ReconciliationWorker.STATE_PROVIDER_ERROR to R.string.last_check_provider_error,
+    ReconciliationWorker.STATE_SCAN_LIMIT to R.string.last_check_scan_limit,
+    ReconciliationWorker.STATE_SETTLING to R.string.last_check_settling,
+    ReconciliationWorker.STATE_RETRYING to R.string.last_check_retrying,
+    ReconciliationWorker.STATE_STALE_FOLDER to R.string.last_check_stale,
+)

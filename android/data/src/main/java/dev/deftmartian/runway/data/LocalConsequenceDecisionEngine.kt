@@ -23,24 +23,7 @@ object LocalConsequenceDecisionEngine {
             input.todayEpochDay,
         )
         val changes = try {
-            when (input.decision) {
-                PlanDecision.KEEP_PLAN -> emptyList()
-                PlanDecision.REDUCE_NEXT -> eligible.firstOrNull()?.let { listOf(reduce(it, input.consequence, 1)) }
-                PlanDecision.NEXT_REST -> eligible.firstOrNull()?.let { listOf(rest(it)) }
-                PlanDecision.REPEAT_PRESCRIPTION -> {
-                    val origin = input.originWorkout
-                        ?.takeIf { it.currentWorkoutType !in setOf("rest", "race") }
-                        ?: return rejected(LocalDecisionIssue.NO_REPEATABLE_PRESCRIPTION)
-                    eligible.firstOrNull()?.let { listOf(repeat(it, origin)) }
-                }
-                PlanDecision.REBALANCE_WEEK -> {
-                    val end = LocalDate.ofEpochDay(input.originEpochDay)
-                        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).plusDays(6).toEpochDay()
-                    val affected = eligible.filter { it.currentScheduledEpochDay <= end && compatible(input.consequence, it) }
-                    if (affected.isEmpty()) return rejected(LocalDecisionIssue.NO_COMPATIBLE_WORKOUT)
-                    affected.map { reduce(it, input.consequence, affected.size) }
-                }
-            }
+            proposedChanges(input, eligible)
         } catch (error: LocalDecisionProjectionException) {
             return rejected(error.issue)
         } ?: return rejected(LocalDecisionIssue.NO_FUTURE_WORKOUT)
@@ -50,6 +33,42 @@ object LocalConsequenceDecisionEngine {
             decision = input.decision,
             changes = changes,
         )
+    }
+
+    private fun proposedChanges(
+        input: LocalDecisionInput,
+        eligible: List<WorkoutEntity>,
+    ): List<LocalWorkoutDecisionChange>? = when (input.decision) {
+        PlanDecision.KEEP_PLAN -> emptyList()
+        PlanDecision.REDUCE_NEXT -> eligible.firstOrNull()?.let { listOf(reduce(it, input.consequence, 1)) }
+        PlanDecision.NEXT_REST -> eligible.firstOrNull()?.let { listOf(rest(it)) }
+        PlanDecision.REPEAT_PRESCRIPTION -> repeatChanges(input, eligible)
+        PlanDecision.REBALANCE_WEEK -> rebalanceChanges(input, eligible)
+    }
+
+    private fun repeatChanges(
+        input: LocalDecisionInput,
+        eligible: List<WorkoutEntity>,
+    ): List<LocalWorkoutDecisionChange>? {
+        val origin = input.originWorkout
+            ?.takeIf { it.currentWorkoutType !in setOf("rest", "race") }
+            ?: throw LocalDecisionProjectionException(LocalDecisionIssue.NO_REPEATABLE_PRESCRIPTION)
+        return eligible.firstOrNull()?.let { listOf(repeat(it, origin)) }
+    }
+
+    private fun rebalanceChanges(
+        input: LocalDecisionInput,
+        eligible: List<WorkoutEntity>,
+    ): List<LocalWorkoutDecisionChange> {
+        val end = LocalDate.ofEpochDay(input.originEpochDay)
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).plusDays(6).toEpochDay()
+        val affected = eligible.filter {
+            it.currentScheduledEpochDay <= end && compatible(input.consequence, it)
+        }
+        if (affected.isEmpty()) {
+            throw LocalDecisionProjectionException(LocalDecisionIssue.NO_COMPATIBLE_WORKOUT)
+        }
+        return affected.map { reduce(it, input.consequence, affected.size) }
     }
 
     fun apply(

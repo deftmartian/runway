@@ -17,12 +17,12 @@ class LocalRoutineRepository(
         throughEpochDay: Long,
         updatedAtEpochMillis: Long,
     ): LocalRoutineHorizonResult = database.withTransaction {
-        if (planId.isBlank() || updatedAtEpochMillis < 0) {
+        if (invalidHorizonRequest(planId, updatedAtEpochMillis)) {
             return@withTransaction LocalRoutineHorizonResult.Rejected
         }
         val plans = database.goalPlanDao()
         val plan = plans.plan(planId) ?: return@withTransaction LocalRoutineHorizonResult.Rejected
-        if (plan.state != "active" || plan.phaseType != "routine" || plan.endEpochDay != null) {
+        if (!isActiveRoutine(plan)) {
             return@withTransaction LocalRoutineHorizonResult.Rejected
         }
         val days = plans.routineScheduleDays(planId).map(RoutineScheduleDayEntity::dayOfWeek)
@@ -35,6 +35,31 @@ class LocalRoutineRepository(
         if (last.startEpochDay > targetStart.toEpochDay()) {
             return@withTransaction LocalRoutineHorizonResult.Unchanged
         }
+        val addedWeeks = extendHorizon(
+            plans,
+            plan,
+            last,
+            targetStart,
+            normalizedDays,
+            updatedAtEpochMillis,
+        )
+        if (addedWeeks == 0) LocalRoutineHorizonResult.Unchanged else LocalRoutineHorizonResult.Extended(addedWeeks)
+    }
+
+    private fun invalidHorizonRequest(planId: String, updatedAtEpochMillis: Long) =
+        planId.isBlank() || updatedAtEpochMillis < 0
+
+    private fun isActiveRoutine(plan: PlanEntity) =
+        plan.state == "active" && plan.phaseType == "routine" && plan.endEpochDay == null
+
+    private suspend fun extendHorizon(
+        plans: GoalPlanDao,
+        plan: PlanEntity,
+        last: PlanWeekEntity,
+        targetStart: LocalDate,
+        normalizedDays: List<Int>,
+        updatedAtEpochMillis: Long,
+    ): Int {
         var nextStart = LocalDate.ofEpochDay(last.startEpochDay).plusWeeks(1)
         var ordinal = last.ordinal + 1
         var addedWeeks = 0
@@ -42,13 +67,13 @@ class LocalRoutineRepository(
             val week = RoutinePlanPersistenceMapper.week(plan, nextStart, ordinal)
             plans.appendRoutineWeek(
                 week,
-                RoutinePlanPersistenceMapper.openWorkouts(planId, week, normalizedDays, updatedAtEpochMillis),
+                RoutinePlanPersistenceMapper.openWorkouts(plan.planId, week, normalizedDays, updatedAtEpochMillis),
             )
             addedWeeks += 1
             nextStart = nextStart.plusWeeks(1)
             ordinal += 1
         }
-        if (addedWeeks == 0) LocalRoutineHorizonResult.Unchanged else LocalRoutineHorizonResult.Extended(addedWeeks)
+        return addedWeeks
     }
 }
 

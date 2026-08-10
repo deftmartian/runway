@@ -340,11 +340,16 @@ internal fun feedbackMeasurementIssue(
         return LocalTrainingMutationIssue.INVALID_MEASUREMENT
     }
     if (workout.currentPrescriptionKind == "open") return null
-    return if ((workout.currentDurationSeconds ?: 0) > 0) {
-        LocalTrainingMutationIssue.COMPLETED_DURATION_REQUIRED.takeIf { command.completedDurationSeconds == null }
-    } else {
-        LocalTrainingMutationIssue.COMPLETED_DISTANCE_REQUIRED.takeIf { command.completedDistanceMeters == null }
-    }
+    return requiredMeasurementIssue(workout, command)
+}
+
+private fun requiredMeasurementIssue(
+    workout: WorkoutEntity,
+    command: LocalWorkoutFeedbackCommand,
+) = if ((workout.currentDurationSeconds ?: 0) > 0) {
+    LocalTrainingMutationIssue.COMPLETED_DURATION_REQUIRED.takeIf { command.completedDurationSeconds == null }
+} else {
+    LocalTrainingMutationIssue.COMPLETED_DISTANCE_REQUIRED.takeIf { command.completedDistanceMeters == null }
 }
 
 internal fun manualMeasurementIssue(command: LocalManualRunCommand): LocalTrainingMutationIssue? = when {

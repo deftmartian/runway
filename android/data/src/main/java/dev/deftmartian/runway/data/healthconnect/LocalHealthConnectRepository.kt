@@ -2,6 +2,7 @@ package dev.deftmartian.runway.data.healthconnect
 
 import androidx.room.withTransaction
 import dev.deftmartian.runway.data.ACTIVITY_REVIEW_STATE_ACCEPTED
+import dev.deftmartian.runway.data.ActivityLedgerDao
 import dev.deftmartian.runway.data.ActivityEntity
 import dev.deftmartian.runway.data.HealthConnectMappingEntity
 import dev.deftmartian.runway.data.HealthConnectPendingHeartRateSampleEntity
@@ -128,45 +129,17 @@ class LocalHealthConnectRepository(
         val importDao = database.importLedgerDao()
         val activityDao = database.activityLedgerDao()
         val storedMapping = importDao.healthConnectMapping(provider, observation.recordId)
-        // A candidate may have been deleted through its own local workflow. It is not a reason to
-        // block a later provider reconciliation; clear only that stale relationship.
-        val canonicalMapping = storedMapping?.let { mapping ->
-            if (
-                mapping.duplicateCandidateActivityId != null &&
-                activityDao.activity(mapping.duplicateCandidateActivityId) == null
-            ) {
-                val cleared = mapping.copy(duplicateCandidateActivityId = null)
-                importDao.saveHealthConnectMapping(cleared)
-                cleared
-            } else {
-                mapping
-            }
-        }
-        val candidate = when (observation) {
-            // Duplicate detection is deliberately a new-record decision. A subsequent provider
-            // update reconciles the already-owned Health Connect review rather than discovering a
-            // second relationship after the fact.
-            is HealthConnectObservation.RunningUpsert -> canonicalMapping?.duplicateCandidateActivityId
-                ?: if (canonicalMapping == null) activityDao.findConservativeDuplicateCandidate(observation) else null
-            is HealthConnectObservation.Deleted -> canonicalMapping?.duplicateCandidateActivityId
-        }
+        val canonicalMapping = canonicalMapping(storedMapping, importDao, activityDao)
+        val candidate = duplicateCandidate(observation, canonicalMapping, activityDao)
 
         val state = canonicalMapping.toRecordState(database, candidate)
-        val routeChanged = observation is HealthConnectObservation.RunningUpsert &&
-            observation.routeObserved &&
-            profile.routeDataMode == ROUTE_MODE_PRIVATE &&
-            state.activity != null &&
-            canonicalMapping?.activityId?.let { activityId ->
-                val activity = activityDao.activity(activityId)
-                if (activity?.routeStartEndRedacted == true) {
-                    false
-                } else {
-                    val retained = observation.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES)
-                    val existing = activityDao.routeSamples(activityId, MAX_RETAINED_ROUTE_SAMPLES)
-                        .map(RouteSampleEntity::toLocalHealthConnectRoutePoint)
-                    retained != existing
-                }
-            } == true
+        val routeChanged = routeChanged(
+            observation,
+            profile.routeDataMode,
+            state.activity != null,
+            canonicalMapping,
+            activityDao,
+        )
         val outcome = LocalHealthConnectReconciler.reduce(
             observation = observation,
             state = state,
@@ -182,6 +155,49 @@ class LocalHealthConnectRepository(
             now = now,
         )
         LocalHealthConnectPersistenceResult.Applied(outcome)
+    }
+
+    private suspend fun canonicalMapping(
+        stored: HealthConnectMappingEntity?,
+        importDao: ImportLedgerDao,
+        activityDao: ActivityLedgerDao,
+    ): HealthConnectMappingEntity? {
+        val candidateId = stored?.duplicateCandidateActivityId ?: return stored
+        if (activityDao.activity(candidateId) != null) return stored
+        val cleared = stored.copy(duplicateCandidateActivityId = null)
+        importDao.saveHealthConnectMapping(cleared)
+        return cleared
+    }
+
+    private suspend fun duplicateCandidate(
+        observation: HealthConnectObservation,
+        mapping: HealthConnectMappingEntity?,
+        activityDao: ActivityLedgerDao,
+    ): String? = when (observation) {
+        // Duplicate detection is deliberately a new-record decision. A subsequent provider
+        // update reconciles the already-owned Health Connect review rather than discovering a
+        // second relationship after the fact.
+        is HealthConnectObservation.RunningUpsert -> mapping?.duplicateCandidateActivityId
+            ?: if (mapping == null) activityDao.findConservativeDuplicateCandidate(observation) else null
+        is HealthConnectObservation.Deleted -> mapping?.duplicateCandidateActivityId
+    }
+
+    private suspend fun routeChanged(
+        observation: HealthConnectObservation,
+        routeDataMode: String,
+        activityPresent: Boolean,
+        mapping: HealthConnectMappingEntity?,
+        activityDao: ActivityLedgerDao,
+    ): Boolean {
+        val upsert = observation as? HealthConnectObservation.RunningUpsert ?: return false
+        if (!upsert.routeObserved || routeDataMode != ROUTE_MODE_PRIVATE || !activityPresent) return false
+        val activityId = mapping?.activityId ?: return false
+        val activity = activityDao.activity(activityId)
+        if (activity?.routeStartEndRedacted == true) return false
+        val retained = upsert.route.boundEvenly(MAX_RETAINED_ROUTE_SAMPLES)
+        val existing = activityDao.routeSamples(activityId, MAX_RETAINED_ROUTE_SAMPLES)
+            .map(RouteSampleEntity::toLocalHealthConnectRoutePoint)
+        return retained != existing
     }
 
     /** Resolves a duplicate candidate without ever merging or mutating the existing local run. */

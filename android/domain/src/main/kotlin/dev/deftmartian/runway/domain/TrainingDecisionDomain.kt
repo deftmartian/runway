@@ -66,6 +66,26 @@ object Consequences {
     )
 
     fun calculate(input: FeedbackInput): Consequence {
+        validateInput(input)
+        val comparison = compare(input)
+        return when (comparison.deviation) {
+            Deviation.OVER -> overConsequence(input, comparison)
+            Deviation.SHORT -> shortConsequence(input, comparison)
+            Deviation.SKIPPED -> skippedConsequence(input, comparison)
+            Deviation.NEAR_PLAN -> nearPlanConsequence(input, comparison)
+            Deviation.NOT_APPLICABLE -> notApplicableConsequence(input, comparison)
+            else -> buildConsequence(
+                input,
+                comparison,
+                ConsequenceKind.COMPLETED_AS_PLANNED,
+                0,
+                Risk.CONSERVATIVE,
+                PlanDecision.KEEP_PLAN,
+            )
+        }
+    }
+
+    private fun validateInput(input: FeedbackInput) {
         require(input.targetDistanceMeters >= 0 && input.weekTargetDistanceMeters >= 0)
         require(input.targetDurationSeconds == null || input.targetDurationSeconds > 0)
         require(input.completedDistanceMeters == null || input.completedDistanceMeters >= 0)
@@ -74,27 +94,22 @@ object Consequences {
         if (input.status == FeedbackStatus.SKIPPED) {
             require(input.completedDistanceMeters in listOf(null, 0) && input.completedDurationSeconds == null)
         }
-        val comparison = compare(input)
-        val repeatedSkip = input.recentSkippedWorkouts > 0
-        val repeatedShortfall = input.recentSkippedWorkouts + input.recentShortenedWorkouts > 0
-        val weekly = comparison.delta()
-        fun result(
-            kind: ConsequenceKind,
-            adjustment: Int,
-            risk: Risk,
-            decision: PlanDecision,
-            options: Set<PlanDecision> =
-                if (kind in setOf(ConsequenceKind.COMPLETED_AS_PLANNED, ConsequenceKind.NEEDS_REVIEW)) {
-                    setOf(PlanDecision.KEEP_PLAN)
-                } else {
-                    material
-                },
-        ) = Consequence(
+    }
+
+    private fun buildConsequence(
+        input: FeedbackInput,
+        comparison: Comparison,
+        kind: ConsequenceKind,
+        adjustment: Int,
+        risk: Risk,
+        decision: PlanDecision,
+        options: Set<PlanDecision> = defaultOptions(kind),
+    ) = Consequence(
             kind = kind,
             deviation = comparison.deviation,
             metric = comparison.metric,
             actualDifference = comparison.difference,
-            weeklyLoadDelta = weekly,
+            weeklyLoadDelta = comparison.delta(),
             nextRunAdjustment =
                 if (!comparison.comparable && !input.feltHard) {
                     null
@@ -107,91 +122,116 @@ object Consequences {
             comparisonStatus = "not_comparable".takeUnless { comparison.comparable },
             planChangeAvailable = comparison.comparable || input.feltHard,
         )
-        return when (comparison.deviation) {
-            Deviation.OVER -> {
-                val guardrail = if (comparison.metric == LoadMetric.DISTANCE) {
-                    max(input.weekTargetDistanceMeters, input.targetDistanceMeters).coerceAtLeast(1)
-                } else {
-                    comparison.target.coerceAtLeast(1)
-                }
-                val crosses = comparison.difference.toDouble() / guardrail > .10
-                val severe = comparison.actual >= comparison.target * 2
-                val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
-                val reduction = -max(minimumReduction, roundTrainingValueToInt(comparison.difference * .5))
-                val risk = when {
-                    input.feltHard && crosses && severe -> Risk.UNSAFE
-                    crosses -> Risk.AGGRESSIVE
-                    else -> Risk.MODERATE
-                }
-                val decision = if (crosses) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
-                result(ConsequenceKind.LOAD_SPIKE, reduction, risk, decision)
-            }
-            Deviation.SHORT -> {
-                val large = abs(comparison.difference) > comparison.target * .4 || comparison.actual == 0
-                val kind = if (repeatedShortfall) {
-                    ConsequenceKind.REPEATED_SHORTFALL
-                } else {
-                    ConsequenceKind.SHORTFALL
-                }
-                val multiplier = if (input.feltHard || repeatedShortfall) .35 else .25
-                val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 500
-                val reduction = -max(
-                    minimumReduction,
-                    roundTrainingValueToInt(abs(comparison.difference) * multiplier),
-                )
-                val risk = if (large || input.feltHard || repeatedShortfall) Risk.MODERATE else Risk.CONSERVATIVE
-                val decision = if (input.feltHard || repeatedShortfall) {
-                    PlanDecision.REPEAT_PRESCRIPTION
-                } else {
-                    PlanDecision.KEEP_PLAN
-                }
-                result(kind, reduction, risk, decision)
-            }
-            Deviation.SKIPPED -> {
-                val kind = when {
-                    repeatedSkip -> ConsequenceKind.REPEATED_SKIP
-                    input.choice == PlanDecision.REDUCE_NEXT -> ConsequenceKind.SKIP_REDUCE
-                    else -> ConsequenceKind.SKIP_CONTINUE
-                }
-                val multiplier = if (input.feltHard) .3 else .2
-                val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 500
-                val reduction = -max(
-                    minimumReduction,
-                    roundTrainingValueToInt(comparison.target * multiplier),
-                )
-                val elevated = input.feltHard || repeatedSkip
-                val risk = if (elevated) Risk.MODERATE else Risk.CONSERVATIVE
-                val decision = if (elevated) PlanDecision.REPEAT_PRESCRIPTION else PlanDecision.KEEP_PLAN
-                result(kind, reduction, risk, decision)
-            }
-            Deviation.NEAR_PLAN -> if (input.feltHard) {
-                val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
-                val reduction = -max(minimumReduction, roundTrainingValueToInt(comparison.target * .15))
-                result(ConsequenceKind.HARD_EFFORT, reduction, Risk.MODERATE, PlanDecision.REDUCE_NEXT)
-            } else {
-                result(ConsequenceKind.COMPLETED_AS_PLANNED, 0, Risk.CONSERVATIVE, PlanDecision.KEEP_PLAN)
-            }
-            Deviation.NOT_APPLICABLE -> if (input.feltHard) {
-                result(
-                    ConsequenceKind.HARD_EFFORT,
-                    -max(
-                        if (comparison.metric == LoadMetric.DURATION) 300 else 1_000,
-                        roundTrainingValueToInt(comparison.target * .15),
-                    ),
-                    Risk.MODERATE,
-                    PlanDecision.REDUCE_NEXT,
-                    setOf(PlanDecision.KEEP_PLAN, PlanDecision.REDUCE_NEXT, PlanDecision.NEXT_REST),
-                )
-            } else {
-                result(
-                    ConsequenceKind.NEEDS_REVIEW,
-                    0,
-                    Risk.MODERATE,
-                    PlanDecision.KEEP_PLAN,
-                )
-            }
-            else -> result(ConsequenceKind.COMPLETED_AS_PLANNED, 0, Risk.CONSERVATIVE, PlanDecision.KEEP_PLAN)
+
+    private fun defaultOptions(kind: ConsequenceKind): Set<PlanDecision> =
+        if (kind in setOf(ConsequenceKind.COMPLETED_AS_PLANNED, ConsequenceKind.NEEDS_REVIEW)) {
+            setOf(PlanDecision.KEEP_PLAN)
+        } else {
+            material
         }
+
+    private fun overConsequence(input: FeedbackInput, comparison: Comparison): Consequence {
+        val guardrail = if (comparison.metric == LoadMetric.DISTANCE) {
+            max(input.weekTargetDistanceMeters, input.targetDistanceMeters).coerceAtLeast(1)
+        } else {
+            comparison.target.coerceAtLeast(1)
+        }
+        val crosses = comparison.difference.toDouble() / guardrail > .10
+        val severe = comparison.actual >= comparison.target * 2
+        val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
+        val reduction = -max(minimumReduction, roundTrainingValueToInt(comparison.difference * .5))
+        val risk = when {
+            input.feltHard && crosses && severe -> Risk.UNSAFE
+            crosses -> Risk.AGGRESSIVE
+            else -> Risk.MODERATE
+        }
+        val decision = if (crosses) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
+        return buildConsequence(input, comparison, ConsequenceKind.LOAD_SPIKE, reduction, risk, decision)
+    }
+
+    private fun shortConsequence(input: FeedbackInput, comparison: Comparison): Consequence {
+        val repeated = input.recentSkippedWorkouts + input.recentShortenedWorkouts > 0
+        val large = abs(comparison.difference) > comparison.target * .4 || comparison.actual == 0
+        val kind = if (repeated) ConsequenceKind.REPEATED_SHORTFALL else ConsequenceKind.SHORTFALL
+        val multiplier = if (input.feltHard || repeated) .35 else .25
+        val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 500
+        val reduction = -max(
+            minimumReduction,
+            roundTrainingValueToInt(abs(comparison.difference) * multiplier),
+        )
+        val needsRepeat = input.feltHard || repeated
+        val risk = if (large || needsRepeat) Risk.MODERATE else Risk.CONSERVATIVE
+        val decision = if (needsRepeat) {
+            PlanDecision.REPEAT_PRESCRIPTION
+        } else {
+            PlanDecision.KEEP_PLAN
+        }
+        return buildConsequence(input, comparison, kind, reduction, risk, decision)
+    }
+
+    private fun skippedConsequence(input: FeedbackInput, comparison: Comparison): Consequence {
+        val repeated = input.recentSkippedWorkouts > 0
+        val kind = when {
+            repeated -> ConsequenceKind.REPEATED_SKIP
+            input.choice == PlanDecision.REDUCE_NEXT -> ConsequenceKind.SKIP_REDUCE
+            else -> ConsequenceKind.SKIP_CONTINUE
+        }
+        val multiplier = if (input.feltHard) .3 else .2
+        val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 500
+        val reduction = -max(
+            minimumReduction,
+            roundTrainingValueToInt(comparison.target * multiplier),
+        )
+        val elevated = input.feltHard || repeated
+        val risk = if (elevated) Risk.MODERATE else Risk.CONSERVATIVE
+        val decision = if (elevated) PlanDecision.REPEAT_PRESCRIPTION else PlanDecision.KEEP_PLAN
+        return buildConsequence(input, comparison, kind, reduction, risk, decision)
+    }
+
+    private fun nearPlanConsequence(input: FeedbackInput, comparison: Comparison): Consequence {
+        if (!input.feltHard) {
+            return buildConsequence(
+                input,
+                comparison,
+                ConsequenceKind.COMPLETED_AS_PLANNED,
+                0,
+                Risk.CONSERVATIVE,
+                PlanDecision.KEEP_PLAN,
+            )
+        }
+        val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
+        val reduction = -max(minimumReduction, roundTrainingValueToInt(comparison.target * .15))
+        return buildConsequence(
+            input,
+            comparison,
+            ConsequenceKind.HARD_EFFORT,
+            reduction,
+            Risk.MODERATE,
+            PlanDecision.REDUCE_NEXT,
+        )
+    }
+
+    private fun notApplicableConsequence(input: FeedbackInput, comparison: Comparison): Consequence {
+        if (!input.feltHard) {
+            return buildConsequence(
+                input,
+                comparison,
+                ConsequenceKind.NEEDS_REVIEW,
+                0,
+                Risk.MODERATE,
+                PlanDecision.KEEP_PLAN,
+            )
+        }
+        val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
+        return buildConsequence(
+            input,
+            comparison,
+            ConsequenceKind.HARD_EFFORT,
+            -max(minimumReduction, roundTrainingValueToInt(comparison.target * .15)),
+            Risk.MODERATE,
+            PlanDecision.REDUCE_NEXT,
+            setOf(PlanDecision.KEEP_PLAN, PlanDecision.REDUCE_NEXT, PlanDecision.NEXT_REST),
+        )
     }
 
     /**
@@ -229,15 +269,27 @@ object Consequences {
 
     fun decisionEffect(consequence: Consequence, decision: PlanDecision, target: DecisionTarget, shareCount: Int = 1): DecisionEffect? {
         if (decision !in setOf(PlanDecision.REDUCE_NEXT, PlanDecision.REBALANCE_WEEK)) return null
-        val metric = if ((target.targetDurationSeconds ?: 0) > 0) LoadMetric.DURATION else LoadMetric.DISTANCE
-        val previous = if (metric == LoadMetric.DURATION) target.targetDurationSeconds ?: 0 else target.targetDistanceMeters
+        val (metric, previous) = target.metricAndValue()
         if (previous <= 0) return null
         val matching = consequence.nextRunAdjustment?.takeIf { it.metric == metric }?.value?.let(::abs) ?: 0
-        val total = matching.takeIf { it > 0 } ?: if (metric == LoadMetric.DURATION) max(300, roundTrainingValueToInt(previous * .15)) else 500
+        val total = matching.takeIf { it > 0 } ?: defaultReduction(metric, previous)
         val reduction = if (decision == PlanDecision.REBALANCE_WEEK) ceil(total.toDouble() / max(1, shareCount)).toInt() else total
-        val next = max(if (metric == LoadMetric.DURATION) 600 else 500, previous - reduction)
+        val next = max(minimumTarget(metric), previous - reduction)
         return DecisionEffect(metric, previous, next - previous, next)
     }
+
+    private fun DecisionTarget.metricAndValue(): Pair<LoadMetric, Int> =
+        if ((targetDurationSeconds ?: 0) > 0) {
+            LoadMetric.DURATION to (targetDurationSeconds ?: 0)
+        } else {
+            LoadMetric.DISTANCE to targetDistanceMeters
+        }
+
+    private fun defaultReduction(metric: LoadMetric, previous: Int): Int =
+        if (metric == LoadMetric.DURATION) max(300, roundTrainingValueToInt(previous * .15)) else 500
+
+    private fun minimumTarget(metric: LoadMetric): Int =
+        if (metric == LoadMetric.DURATION) 600 else 500
 
     private data class Comparison(
         val deviation: Deviation,
@@ -254,12 +306,11 @@ object Consequences {
             if (metric == LoadMetric.NONE) null else LoadDelta(metric, value)
     }
     private fun compare(input: FeedbackInput): Comparison {
-        val metric = if ((input.targetDurationSeconds ?: 0) > 0) LoadMetric.DURATION else LoadMetric.DISTANCE
-        val target = if (metric == LoadMetric.DURATION) input.targetDurationSeconds ?: 0 else input.targetDistanceMeters
+        val metric = input.loadMetric()
+        val target = input.targetFor(metric)
         if (input.status == FeedbackStatus.SKIPPED) return Comparison(Deviation.SKIPPED, metric, -target, target, 0)
         if (target <= 0) return Comparison(Deviation.NOT_APPLICABLE, LoadMetric.NONE, 0, 0, 0)
-        val recordedActual =
-            if (metric == LoadMetric.DURATION) input.completedDurationSeconds else input.completedDistanceMeters
+        val recordedActual = input.actualFor(metric)
         if (recordedActual == null) {
             return Comparison(
                 deviation = Deviation.NOT_APPLICABLE,
@@ -275,12 +326,23 @@ object Consequences {
         // TypeScript deliberately compares the exact fractional 15% threshold. Rounding here
         // changes the result at boundaries such as 9,999 m (1,499.85 m tolerance).
         val threshold = max(if (metric == LoadMetric.DURATION) 300.0 else 500.0, target * .15)
-        val deviation = when {
-            difference < -threshold -> Deviation.SHORT
-            difference > threshold -> Deviation.OVER
-            else -> Deviation.NEAR_PLAN
-        }
+        val deviation = deviationFor(difference, threshold)
         return Comparison(deviation, metric, difference, target, actual)
+    }
+
+    private fun FeedbackInput.loadMetric(): LoadMetric =
+        if ((targetDurationSeconds ?: 0) > 0) LoadMetric.DURATION else LoadMetric.DISTANCE
+
+    private fun FeedbackInput.targetFor(metric: LoadMetric): Int =
+        if (metric == LoadMetric.DURATION) targetDurationSeconds ?: 0 else targetDistanceMeters
+
+    private fun FeedbackInput.actualFor(metric: LoadMetric): Int? =
+        if (metric == LoadMetric.DURATION) completedDurationSeconds else completedDistanceMeters
+
+    private fun deviationFor(difference: Int, threshold: Double): Deviation = when {
+        difference < -threshold -> Deviation.SHORT
+        difference > threshold -> Deviation.OVER
+        else -> Deviation.NEAR_PLAN
     }
 }
 
@@ -288,21 +350,44 @@ data class MatchActivity(val activityDate: LocalDate, val distanceMeters: Int, v
 data class MatchWorkout(val id: String, val scheduledDate: LocalDate, val targetDistanceMeters: Int, val targetDurationSeconds: Int? = null)
 const val ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS = 3L
 
+private data class RankedWorkoutMatch(val workout: MatchWorkout, val dateDifference: Long, val loadDifference: Double)
+
 fun selectAutoWorkoutMatch(activity: MatchActivity, candidates: Iterable<MatchWorkout>): String? {
-    val ranked = candidates.mapNotNull { candidate ->
-        val ratio = if (candidate.targetDistanceMeters > 0) {
-            val difference = abs(activity.distanceMeters - candidate.targetDistanceMeters)
-            difference.takeIf { it <= max(500.0, candidate.targetDistanceMeters * .15) }?.toDouble()?.div(candidate.targetDistanceMeters)
-        } else if ((candidate.targetDurationSeconds ?: 0) > 0 && (activity.durationSeconds ?: 0) > 0) {
-            val difference = abs((activity.durationSeconds ?: 0) - (candidate.targetDurationSeconds ?: 0))
-            difference.takeIf { it <= max(300.0, (candidate.targetDurationSeconds ?: 0) * .15) }?.toDouble()?.div(candidate.targetDurationSeconds ?: 1)
-        } else null
-        ratio?.let { Triple(candidate, abs(java.time.temporal.ChronoUnit.DAYS.between(activity.activityDate, candidate.scheduledDate)), it) }
-    }.sortedWith(compareBy<Triple<MatchWorkout, Long, Double>> { it.second }.thenBy { it.third }.thenBy { it.first.id })
+    val ranked = candidates.mapNotNull { candidate -> rankedWorkoutMatch(activity, candidate) }
+        .sortedWith(
+            compareBy<RankedWorkoutMatch> { it.dateDifference }
+                .thenBy { it.loadDifference }
+                .thenBy { it.workout.id },
+        )
     val best = ranked.firstOrNull() ?: return null
     val second = ranked.getOrNull(1)
-    return if (second != null && second.second == best.second && abs(second.third - best.third) < 1e-12) null else best.first.id
+    return if (second?.ties(best) == true) null else best.workout.id
 }
+
+private fun rankedWorkoutMatch(activity: MatchActivity, workout: MatchWorkout): RankedWorkoutMatch? {
+    val ratio = workoutMatchRatio(activity, workout) ?: return null
+    val days = abs(java.time.temporal.ChronoUnit.DAYS.between(activity.activityDate, workout.scheduledDate))
+    return RankedWorkoutMatch(workout, days, ratio)
+}
+
+private fun workoutMatchRatio(activity: MatchActivity, workout: MatchWorkout): Double? {
+    if (workout.targetDistanceMeters > 0) {
+        val difference = abs(activity.distanceMeters - workout.targetDistanceMeters)
+        return difference.takeIf { it <= max(500.0, workout.targetDistanceMeters * .15) }
+            ?.toDouble()
+            ?.div(workout.targetDistanceMeters)
+    }
+    val targetDuration = workout.targetDurationSeconds ?: 0
+    val actualDuration = activity.durationSeconds ?: 0
+    if (targetDuration <= 0 || actualDuration <= 0) return null
+    val difference = abs(actualDuration - targetDuration)
+    return difference.takeIf { it <= max(300.0, targetDuration * .15) }
+        ?.toDouble()
+        ?.div(targetDuration)
+}
+
+private fun RankedWorkoutMatch.ties(other: RankedWorkoutMatch): Boolean =
+    dateDifference == other.dateDifference && abs(loadDifference - other.loadDifference) < 1e-12
 
 data class ExtraActivityInput(val distanceMeters: Int, val durationSeconds: Int? = null, val feltHard: Boolean = false)
 data class ExtraActivityTargets(val nextRunTargetDistanceMeters: Int, val nextRunTargetDurationSeconds: Int? = null, val weekTargetDistanceMeters: Int, val weekTargetDurationSeconds: Int)
@@ -319,51 +404,60 @@ fun historicalExtraActivityReview(consequence: Consequence) =
 fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraActivityTargets): Consequence {
     val timed = (targets.nextRunTargetDurationSeconds ?: 0) > 0
     val missingNative = if (timed) (input.durationSeconds ?: 0) <= 0 else input.distanceMeters <= 0
-    val metric = if (timed) LoadMetric.DURATION else LoadMetric.DISTANCE
     if (missingNative) {
-        val next = if (timed) targets.nextRunTargetDurationSeconds ?: 0 else targets.nextRunTargetDistanceMeters
-        val adjustment = when {
-            input.feltHard -> {
-                val minimumReduction = if (timed) 300 else 1_000
-                LoadDelta(metric, -max(minimumReduction, roundTrainingValueToInt(next * .15)))
-            }
-            else -> null
-        }
-        val kind = ConsequenceKind.EXTRA_ACTIVITY
-        val risk = Risk.MODERATE
-        val decision = if (input.feltHard) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
-        val options = when {
-            adjustment != null -> setOf(
-                PlanDecision.KEEP_PLAN,
-                PlanDecision.REDUCE_NEXT,
-                PlanDecision.NEXT_REST,
-            )
-            else -> setOf(PlanDecision.KEEP_PLAN, PlanDecision.NEXT_REST)
-        }
-        return Consequence(
-            kind,
-            Deviation.UNPLANNED,
-            LoadMetric.NONE,
-            0,
-            null,
-            adjustment,
-            risk,
-            decision,
-            options,
-            comparisonStatus = "not_comparable",
-        )
+        return missingExtraActivityConsequence(input, targets, timed)
     }
-    val actual = if (timed) input.durationSeconds ?: 0 else input.distanceMeters
-    val weekly = if (timed) targets.weekTargetDurationSeconds else targets.weekTargetDistanceMeters
-    val share = if (weekly > 0) actual.toDouble() / weekly else 0.0
+    return comparableExtraActivityConsequence(input, targets, timed)
+}
+
+private fun missingExtraActivityConsequence(
+    input: ExtraActivityInput,
+    targets: ExtraActivityTargets,
+    timed: Boolean,
+): Consequence {
+    val metric = if (timed) LoadMetric.DURATION else LoadMetric.DISTANCE
     val next = if (timed) targets.nextRunTargetDurationSeconds ?: 0 else targets.nextRunTargetDistanceMeters
+    val adjustment = input.feltHard.takeIf { it }?.let {
+        val minimumReduction = if (timed) 300 else 1_000
+        LoadDelta(metric, -max(minimumReduction, roundTrainingValueToInt(next * .15)))
+    }
+    val decision = if (input.feltHard) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
+    val options = if (adjustment != null) {
+        setOf(PlanDecision.KEEP_PLAN, PlanDecision.REDUCE_NEXT, PlanDecision.NEXT_REST)
+    } else {
+        setOf(PlanDecision.KEEP_PLAN, PlanDecision.NEXT_REST)
+    }
+    return Consequence(
+        ConsequenceKind.EXTRA_ACTIVITY,
+        Deviation.UNPLANNED,
+        LoadMetric.NONE,
+        0,
+        null,
+        adjustment,
+        Risk.MODERATE,
+        decision,
+        options,
+        comparisonStatus = "not_comparable",
+    )
+}
+
+private fun comparableExtraActivityConsequence(
+    input: ExtraActivityInput,
+    targets: ExtraActivityTargets,
+    timed: Boolean,
+): Consequence {
+    val metric = if (timed) LoadMetric.DURATION else LoadMetric.DISTANCE
+    val actual = extraActivityActual(input, timed)
+    val weekly = extraActivityWeeklyTarget(targets, timed)
+    val share = if (weekly > 0) actual.toDouble() / weekly else 0.0
+    val next = extraActivityNextTarget(targets, timed)
     val minimumReduction = if (timed) 300 else 1_000
     val adjustmentMultiplier = if (input.feltHard) .6 else .5
     val adjustment = -min(
         next,
         max(minimumReduction, roundTrainingValueToInt(actual * adjustmentMultiplier)),
     )
-    val risk = if (input.feltHard && share > .2) Risk.UNSAFE else if (share > .1) Risk.AGGRESSIVE else if (input.feltHard) Risk.MODERATE else Risk.CONSERVATIVE
+    val risk = extraActivityRisk(input.feltHard, share)
     val decision = if (share > .1 || input.feltHard) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
     return Consequence(
         ConsequenceKind.EXTRA_ACTIVITY,
@@ -381,6 +475,22 @@ fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraA
             PlanDecision.REBALANCE_WEEK,
         ),
     )
+}
+
+private fun extraActivityActual(input: ExtraActivityInput, timed: Boolean) =
+    if (timed) input.durationSeconds ?: 0 else input.distanceMeters
+
+private fun extraActivityWeeklyTarget(targets: ExtraActivityTargets, timed: Boolean) =
+    if (timed) targets.weekTargetDurationSeconds else targets.weekTargetDistanceMeters
+
+private fun extraActivityNextTarget(targets: ExtraActivityTargets, timed: Boolean) =
+    if (timed) targets.nextRunTargetDurationSeconds ?: 0 else targets.nextRunTargetDistanceMeters
+
+private fun extraActivityRisk(feltHard: Boolean, share: Double): Risk = when {
+    feltHard && share > .2 -> Risk.UNSAFE
+    share > .1 -> Risk.AGGRESSIVE
+    feltHard -> Risk.MODERATE
+    else -> Risk.CONSERVATIVE
 }
 
 enum class PrescriptionKind { DISTANCE, TIMED, OPEN, REST }
@@ -540,37 +650,42 @@ object WorkoutEdits {
         require(proposal.purpose.trim().length in 2..120)
         require(proposal.type != WorkoutType.RACE) { "Race events are changed through goal setup." }
         when (proposal.prescriptionKind) {
-            PrescriptionKind.REST -> require(
-                proposal.type == WorkoutType.REST &&
-                    proposal.intensity == "rest" &&
-                    proposal.targetDistanceMeters == 0 &&
-                    proposal.targetDurationSeconds == null &&
-                    proposal.intervalStructure == null,
-            )
-            PrescriptionKind.DISTANCE -> require(
-                proposal.type !in setOf(WorkoutType.REST, WorkoutType.RACE) &&
-                    proposal.intensity == "easy" &&
-                    proposal.targetDistanceMeters in 100..100_000 &&
-                    proposal.targetDurationSeconds == null &&
-                    proposal.intervalStructure == null,
-            )
-            PrescriptionKind.TIMED -> require(
-                proposal.type !in setOf(WorkoutType.REST, WorkoutType.RACE) &&
-                    proposal.intensity == "easy" &&
-                    proposal.targetDistanceMeters == 0 &&
-                    proposal.targetDurationSeconds != null &&
-                    proposal.targetDurationSeconds in 600..21_600 &&
-                    validIntervals(proposal.intervalStructure, proposal.targetDurationSeconds),
-            )
-            PrescriptionKind.OPEN -> require(
-                proposal.type == WorkoutType.EASY &&
-                    proposal.intensity == "easy" &&
-                    proposal.targetDistanceMeters == 0 &&
-                    proposal.targetDurationSeconds == null &&
-                    proposal.intervalStructure == null,
-            )
+            PrescriptionKind.REST -> require(validRestProposal(proposal))
+            PrescriptionKind.DISTANCE -> require(validDistanceProposal(proposal))
+            PrescriptionKind.TIMED -> require(validTimedProposal(proposal))
+            PrescriptionKind.OPEN -> require(validOpenProposal(proposal))
         }
     }
+
+    private fun validRestProposal(proposal: WorkoutProposal): Boolean =
+        proposal.type == WorkoutType.REST &&
+            proposal.intensity == "rest" &&
+            proposal.targetDistanceMeters == 0 &&
+            proposal.targetDurationSeconds == null &&
+            proposal.intervalStructure == null
+
+    private fun validDistanceProposal(proposal: WorkoutProposal): Boolean =
+        proposal.type !in setOf(WorkoutType.REST, WorkoutType.RACE) &&
+            proposal.intensity == "easy" &&
+            proposal.targetDistanceMeters in 100..100_000 &&
+            proposal.targetDurationSeconds == null &&
+            proposal.intervalStructure == null
+
+    private fun validTimedProposal(proposal: WorkoutProposal): Boolean {
+        val duration = proposal.targetDurationSeconds ?: return false
+        return proposal.type !in setOf(WorkoutType.REST, WorkoutType.RACE) &&
+            proposal.intensity == "easy" &&
+            proposal.targetDistanceMeters == 0 &&
+            duration in 600..21_600 &&
+            validIntervals(proposal.intervalStructure, duration)
+    }
+
+    private fun validOpenProposal(proposal: WorkoutProposal): Boolean =
+        proposal.type == WorkoutType.EASY &&
+            proposal.intensity == "easy" &&
+            proposal.targetDistanceMeters == 0 &&
+            proposal.targetDurationSeconds == null &&
+            proposal.intervalStructure == null
     fun rampRisk(percent: Double): Risk {
         return when {
             percent > 18 -> Risk.UNSAFE
@@ -590,13 +705,7 @@ object WorkoutEdits {
         val after = weekLoad(selectedAfter, proposed.weekId)
         val delta = if (proposed.prescriptionKind == PrescriptionKind.TIMED) after.durationSeconds - before.durationSeconds else after.distanceMeters - before.distanceMeters
         val candidates = selectedAfter.filter { state ->
-            state.id != selected.id &&
-                state.current.weekId == proposed.weekId &&
-                !state.current.scheduledDate.isBefore(today) &&
-                state.status == "planned" &&
-                !state.current.isRemoved &&
-                state.current.type != WorkoutType.RACE &&
-                state.current.prescriptionKind == proposed.prescriptionKind
+            isRebalanceCandidate(state, selected, proposed, today)
         }
         if (delta == 0 || candidates.isEmpty()) return emptyMap()
         val share = roundTrainingValueToInt(delta.toDouble() / candidates.size)
@@ -616,6 +725,30 @@ object WorkoutEdits {
             }
         }
     }
+
+    private fun isRebalanceCandidate(
+        state: EffectiveWorkoutState,
+        selected: EffectiveWorkoutState,
+        proposed: WorkoutProposal,
+        today: LocalDate,
+    ): Boolean =
+        belongsToRebalanceSet(state, selected, proposed) &&
+            isMutablePlannedWorkout(state, today)
+
+    private fun belongsToRebalanceSet(
+        state: EffectiveWorkoutState,
+        selected: EffectiveWorkoutState,
+        proposed: WorkoutProposal,
+    ): Boolean =
+        state.id != selected.id &&
+            state.current.weekId == proposed.weekId &&
+            state.current.prescriptionKind == proposed.prescriptionKind
+
+    private fun isMutablePlannedWorkout(state: EffectiveWorkoutState, today: LocalDate): Boolean =
+        !state.current.scheduledDate.isBefore(today) &&
+            state.status == "planned" &&
+            !state.current.isRemoved &&
+            state.current.type != WorkoutType.RACE
     private fun change(before: EffectiveWorkoutState, after: EffectiveWorkoutState, states: List<EffectiveWorkoutState>, selected: Boolean): WorkoutChange {
         val a = metric(before.current)
         val b = metric(after.current)

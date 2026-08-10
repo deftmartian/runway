@@ -142,33 +142,41 @@ object OnboardingValidation {
         if (hasInvalidEstablishedBaseline(selection)) {
             issues += OnboardingIssue.INVALID_ESTABLISHED_BASELINE
         }
-        if (selection.preferredLongRunDay == null || selection.preferredLongRunDay !in selection.availability) {
+        if (hasInvalidLongRunDay(selection)) {
             issues += OnboardingIssue.INVALID_LONG_RUN_DAY
         }
-        if (
-            selection.currentRunsPerWeek != null &&
-            selection.availability.size < selection.currentRunsPerWeek
-        ) {
+        if (hasTooFewAvailableDays(selection)) {
             issues += OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS
         }
-        if (
-            selection.currentRunsPerWeek != null &&
-            selection.preferredLongRunDay != null &&
-            !canLeaveRecoveryDayAfterLongRun(
-                selection.availability,
-                selection.currentRunsPerWeek,
-                selection.preferredLongRunDay,
-                selection.raceDistance,
-            )
-        ) {
+        if (hasInsufficientRecoverySpacing(selection)) {
             issues += OnboardingIssue.INSUFFICIENT_RECOVERY_SPACING
         }
-        val isLongDistanceGoal =
-            selection.raceDistance == RaceDistance.HALF || selection.raceDistance == RaceDistance.MARATHON
-        if (isLongDistanceGoal && selection.currentRunsPerWeek == 2 && !selection.confirmConcentratedSchedule) {
+        if (requiresConcentratedScheduleConfirmation(selection)) {
             issues += OnboardingIssue.CONCENTRATED_SCHEDULE_NOT_CONFIRMED
         }
     }
+
+    private fun hasInvalidLongRunDay(selection: OnboardingSelection): Boolean =
+        selection.preferredLongRunDay == null || selection.preferredLongRunDay !in selection.availability
+
+    private fun hasTooFewAvailableDays(selection: OnboardingSelection): Boolean =
+        selection.currentRunsPerWeek?.let { selection.availability.size < it } == true
+
+    private fun hasInsufficientRecoverySpacing(selection: OnboardingSelection): Boolean {
+        val runsPerWeek = selection.currentRunsPerWeek ?: return false
+        val longRunDay = selection.preferredLongRunDay ?: return false
+        return !canLeaveRecoveryDayAfterLongRun(
+            selection.availability,
+            runsPerWeek,
+            longRunDay,
+            selection.raceDistance,
+        )
+    }
+
+    private fun requiresConcentratedScheduleConfirmation(selection: OnboardingSelection): Boolean =
+        selection.raceDistance in setOf(RaceDistance.HALF, RaceDistance.MARATHON) &&
+            selection.currentRunsPerWeek == 2 &&
+            !selection.confirmConcentratedSchedule
 
     private fun hasInvalidEstablishedBaseline(selection: OnboardingSelection): Boolean {
         val weeklyDistance = selection.currentWeeklyDistanceKm

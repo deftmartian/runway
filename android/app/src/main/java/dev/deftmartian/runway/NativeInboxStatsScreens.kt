@@ -507,52 +507,82 @@ private fun RoutineStatsAssessment(
 ) {
     val week = routineCurrentWeek(history)
     if (routineWeekIsWaiting(week)) {
-        SettingCard("Your routine is ready") {
-            Text(
-                routineWaitingMessage(routineStartDate, history?.todayIso),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
-                onClick = onOpenCalendar,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text("Open calendar")
-            }
-        }
+        RoutineWaitingAssessment(routineStartDate, history?.todayIso, onOpenCalendar)
         return
     }
     requireNotNull(week)
+    RoutineCurrentWeekAssessment(week, runsPerWeek)
+}
+
+@Composable
+private fun RoutineWaitingAssessment(
+    routineStartDate: String?,
+    todayIso: String?,
+    onOpenCalendar: () -> Unit,
+) {
+    SettingCard("Your routine is ready") {
+        Text(
+            routineWaitingMessage(routineStartDate, todayIso),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = onOpenCalendar,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+        ) {
+            Text("Open calendar")
+        }
+    }
+}
+
+@Composable
+private fun RoutineCurrentWeekAssessment(week: NativeWeekSummary, runsPerWeek: Int?) {
     val planned = week.plannedRuns ?: 0
     val extras = week.extraRuns ?: 0
-    val plannedRecorded = week.plannedRunsRecorded
-        ?: ((week.completedRuns ?: 0) - extras).coerceAtLeast(0)
+    val plannedRecorded = routinePlannedRecorded(week, extras)
     val recorded = week.completedRuns ?: 0
     SettingCard("This week") {
-        runsPerWeek?.takeIf { it > 0 }?.let {
-            SettingRow("Default goal", "$it ${if (it == 1) "run" else "runs"} each week")
-        }
-        SettingRow(
-            "Runs recorded",
-            if (planned > 0) "$recorded of $planned this week" else recorded.toString(),
-        )
-        if (extras > 0) {
-            SettingRow("On scheduled days", plannedRecorded.toString())
-            SettingRow("On other days", extras.toString())
-        }
-        if ((week.skippedRuns ?: 0) > 0) SettingRow("Marked skipped", week.skippedRuns.toString())
-        if ((week.missedRuns ?: 0) > 0) SettingRow("Not recorded", week.missedRuns.toString())
-        week.completedDistanceMeters?.takeIf { it > 0 }?.let {
-            SettingRow("Recorded distance", formatDistance(it))
-        }
-        week.completedDurationSeconds?.takeIf { it > 0 }?.let {
-            SettingRow("Recorded time", formatDuration(it))
-        }
+        RoutineRunCountRows(runsPerWeek, planned, recorded, plannedRecorded, extras, week)
+        RoutineRecordedLoadRows(week)
         Text(
             "Add or remove an open run to change one week's goal. Moving one between weeks changes both affected weeks.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+private fun routinePlannedRecorded(week: NativeWeekSummary, extras: Int) =
+    week.plannedRunsRecorded ?: ((week.completedRuns ?: 0) - extras).coerceAtLeast(0)
+
+@Composable
+private fun RoutineRunCountRows(
+    runsPerWeek: Int?,
+    planned: Int,
+    recorded: Int,
+    plannedRecorded: Int,
+    extras: Int,
+    week: NativeWeekSummary,
+) {
+    runsPerWeek?.takeIf { it > 0 }?.let {
+        SettingRow("Default goal", "$it ${if (it == 1) "run" else "runs"} each week")
+    }
+    SettingRow("Runs recorded", if (planned > 0) "$recorded of $planned this week" else recorded.toString())
+    if (extras > 0) {
+        SettingRow("On scheduled days", plannedRecorded.toString())
+        SettingRow("On other days", extras.toString())
+    }
+    if ((week.skippedRuns ?: 0) > 0) SettingRow("Marked skipped", week.skippedRuns.toString())
+    if ((week.missedRuns ?: 0) > 0) SettingRow("Not recorded", week.missedRuns.toString())
+}
+
+@Composable
+private fun RoutineRecordedLoadRows(week: NativeWeekSummary) {
+    week.completedDistanceMeters?.takeIf { it > 0 }?.let {
+        SettingRow("Recorded distance", formatDistance(it))
+    }
+    week.completedDurationSeconds?.takeIf { it > 0 }?.let {
+        SettingRow("Recorded time", formatDuration(it))
     }
 }
 
@@ -633,34 +663,42 @@ private fun LazyListScope.FirstRunStats(
 private fun StatsAssessment(history: NativeTrainingHistory?) {
     val weeks = history?.weeklySummaries.orEmpty()
     val signal = history?.currentSignal
-    if (weeks.isNotEmpty()) {
-        val plannedRuns = weeks.sumOf { it.plannedRuns ?: 0 }
-        val completedRuns = weeks.sumOf { it.completedRuns ?: 0 }
-        val missedRuns = weeks.sumOf { it.missedRuns ?: 0 }
-        val skippedRuns = weeks.sumOf { it.skippedRuns ?: 0 }
-        val plannedDistance = weeks.sumOf { it.targetDistanceMeters ?: 0.0 }
-        val completedDistance = weeks.sumOf { it.completedDistanceMeters ?: 0.0 }
-        SettingCard("Plan versus actual") {
-            SettingRow("Recorded / scheduled", "$completedRuns / $plannedRuns")
-            SettingRow("Recorded distance", formatDistance(completedDistance))
-            if (plannedDistance > 0) SettingRow("Planned distance", formatDistance(plannedDistance))
-            SettingRow("Missed / skipped", "$missedRuns / $skippedRuns")
-        }
-    }
+    if (weeks.isNotEmpty()) PlanActualAssessment(weeks)
     if (signal != null && history.hasAcceptedActivities == true) {
-        val assessment = if (signal.source == "plan") {
-            nativeRampAssessment(signal.risk)
-        } else {
-            nativeLoadAssessment(signal.risk)
-        }
-        SettingCard("Current status") {
-            Text(assessment.label, style = MaterialTheme.typography.titleMedium)
-            Text(assessment.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (signal.reasons.isNotEmpty()) {
-                Text("Reasons", style = MaterialTheme.typography.labelLarge)
-                signal.reasons.forEach {
-                    Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        CurrentSignalAssessment(signal)
+    }
+}
+
+@Composable
+private fun PlanActualAssessment(weeks: List<NativeWeekSummary>) {
+    val plannedRuns = weeks.sumOf { it.plannedRuns ?: 0 }
+    val completedRuns = weeks.sumOf { it.completedRuns ?: 0 }
+    val missedRuns = weeks.sumOf { it.missedRuns ?: 0 }
+    val skippedRuns = weeks.sumOf { it.skippedRuns ?: 0 }
+    val plannedDistance = weeks.sumOf { it.targetDistanceMeters ?: 0.0 }
+    val completedDistance = weeks.sumOf { it.completedDistanceMeters ?: 0.0 }
+    SettingCard("Plan versus actual") {
+        SettingRow("Recorded / scheduled", "$completedRuns / $plannedRuns")
+        SettingRow("Recorded distance", formatDistance(completedDistance))
+        if (plannedDistance > 0) SettingRow("Planned distance", formatDistance(plannedDistance))
+        SettingRow("Missed / skipped", "$missedRuns / $skippedRuns")
+    }
+}
+
+@Composable
+private fun CurrentSignalAssessment(signal: NativeCurrentSignal) {
+    val assessment = if (signal.source == "plan") {
+        nativeRampAssessment(signal.risk)
+    } else {
+        nativeLoadAssessment(signal.risk)
+    }
+    SettingCard("Current status") {
+        Text(assessment.label, style = MaterialTheme.typography.titleMedium)
+        Text(assessment.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (signal.reasons.isNotEmpty()) {
+            Text("Reasons", style = MaterialTheme.typography.labelLarge)
+            signal.reasons.forEach {
+                Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

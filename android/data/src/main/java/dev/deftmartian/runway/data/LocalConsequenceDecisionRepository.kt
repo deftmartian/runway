@@ -167,81 +167,107 @@ class LocalConsequenceDecisionRepository(
         val activityDao = database.activityLedgerDao()
         val planDao = database.goalPlanDao()
         return when (source.kind) {
-            LocalDecisionSourceKind.WorkoutFeedback -> {
-                val feedback = activityDao.workoutFeedbackById(source.sourceId) ?: return null
-                if (feedback.recordedAtEpochMillis.toString() != source.version) return null
-                val stored = activityDao.workoutFeedbackConsequence(source.sourceId) ?: return null
-                val workout = planDao.workout(feedback.workoutId) ?: return null
-                val plan = planDao.plan(workout.planId)?.takeIf { it.state == "active" } ?: return null
-                val consequence = stored.toCanonicalConsequence(
-                    activityDao.workoutFeedbackConsequenceOptions(source.sourceId, MAX_OPTIONS),
-                ) ?: return null
-                LocalDecisionInput(
-                    source = source,
-                    decision = decision,
-                    consequence = consequence,
-                    originEpochDay = workout.currentScheduledEpochDay,
-                    todayEpochDay = today.toEpochDay(),
-                    originWorkout = workout,
-                    candidates = planDao.visibleWorkoutsForPlan(plan.planId, limit = MAX_PLAN_WORKOUTS),
-                )
-            }
-            LocalDecisionSourceKind.Activity -> {
-                val activity = activityDao.activity(source.sourceId)
-                    ?.takeIf {
-                        it.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED &&
-                            it.linkedWorkoutId == null &&
-                            it.extraPlanImpactConfirmed
-                    } ?: return null
-                val feedback = activityDao.activityFeedback(activity.activityId)
-                val currentVersion =
-                    (feedback?.recordedAtEpochMillis ?: activity.updatedAtEpochMillis).toString()
-                if (currentVersion != source.version) return null
-                val stored = activityDao.activityConsequence(activity.activityId) ?: return null
-                val plan = planDao.activePlans(limit = 2).singleOrNull() ?: return null
-                val candidates = planDao.visibleWorkoutsForPlan(plan.planId, limit = MAX_PLAN_WORKOUTS)
-                val activityDate = Instant.ofEpochMilli(activity.occurredAtEpochMillis).atZone(zone).toLocalDate()
-                val next = eligibleFutureDecisionWorkouts(
-                    candidates = candidates,
-                    originEpochDay = activityDate.toEpochDay(),
-                    todayEpochDay = today.toEpochDay(),
-                ).firstOrNull()
-                val weekStart = activityDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-                val week = candidates.filter {
-                    it.currentScheduledEpochDay in weekStart.toEpochDay()..weekStart.plusDays(6).toEpochDay()
-                }
-                val calculated = calculateExtraActivityConsequence(
-                    ExtraActivityInput(
-                        distanceMeters = activity.distanceMeters ?: 0,
-                        durationSeconds = activity.durationSeconds,
-                        feltHard = feedback?.feltHard == true,
-                    ),
-                    ExtraActivityTargets(
-                        nextRunTargetDistanceMeters = next?.currentDistanceMeters ?: 0,
-                        nextRunTargetDurationSeconds = next?.currentDurationSeconds,
-                        weekTargetDistanceMeters = week.canonicalDistanceLoad(),
-                        weekTargetDurationSeconds = week.canonicalDurationLoad(),
-                    ),
-                ).let { consequence ->
-                    if (next == null || isHistoricalExtraActivity(activityDate, today)) {
-                        historicalExtraActivityReview(consequence)
-                    } else {
-                        consequence
-                    }
-                }
-                val options = activityDao.activityConsequenceOptions(activity.activityId, MAX_OPTIONS)
-                if (!stored.matches(calculated, options, activity)) return null
-                LocalDecisionInput(
-                    source = source,
-                    decision = decision,
-                    consequence = calculated,
-                    originEpochDay = activityDate.toEpochDay(),
-                    todayEpochDay = today.toEpochDay(),
-                    originWorkout = null,
-                    candidates = candidates,
-                )
-            }
+            LocalDecisionSourceKind.WorkoutFeedback -> canonicalWorkoutFeedbackInput(
+                source, decision, today.toEpochDay(), activityDao, planDao,
+            )
+            LocalDecisionSourceKind.Activity -> canonicalActivityInput(
+                source, decision, today.toEpochDay(), zone, activityDao, planDao,
+            )
         }
+    }
+
+    private suspend fun canonicalWorkoutFeedbackInput(
+        source: LocalDecisionSource,
+        decision: PlanDecision,
+        todayEpochDay: Long,
+        activityDao: ActivityLedgerDao,
+        planDao: GoalPlanDao,
+    ): LocalDecisionInput? {
+        val feedback = activityDao.workoutFeedbackById(source.sourceId) ?: return null
+        if (feedback.recordedAtEpochMillis.toString() != source.version) return null
+        val stored = activityDao.workoutFeedbackConsequence(source.sourceId) ?: return null
+        val workout = planDao.workout(feedback.workoutId) ?: return null
+        val plan = planDao.plan(workout.planId)?.takeIf { it.state == "active" } ?: return null
+        val consequence = stored.toCanonicalConsequence(
+            activityDao.workoutFeedbackConsequenceOptions(source.sourceId, MAX_OPTIONS),
+        ) ?: return null
+        return LocalDecisionInput(
+            source = source,
+            decision = decision,
+            consequence = consequence,
+            originEpochDay = workout.currentScheduledEpochDay,
+            todayEpochDay = todayEpochDay,
+            originWorkout = workout,
+            candidates = planDao.visibleWorkoutsForPlan(plan.planId, limit = MAX_PLAN_WORKOUTS),
+        )
+    }
+
+    private suspend fun canonicalActivityInput(
+        source: LocalDecisionSource,
+        decision: PlanDecision,
+        todayEpochDay: Long,
+        zone: ZoneId,
+        activityDao: ActivityLedgerDao,
+        planDao: GoalPlanDao,
+    ): LocalDecisionInput? {
+        val activity = activityDao.activity(source.sourceId)
+            ?.takeIf(::isDecisionEligibleActivity) ?: return null
+        val feedback = activityDao.activityFeedback(activity.activityId)
+        val currentVersion = (feedback?.recordedAtEpochMillis ?: activity.updatedAtEpochMillis).toString()
+        if (currentVersion != source.version) return null
+        val stored = activityDao.activityConsequence(activity.activityId) ?: return null
+        val plan = planDao.activePlans(limit = 2).singleOrNull() ?: return null
+        val candidates = planDao.visibleWorkoutsForPlan(plan.planId, limit = MAX_PLAN_WORKOUTS)
+        val activityDate = Instant.ofEpochMilli(activity.occurredAtEpochMillis).atZone(zone).toLocalDate()
+        val calculated = extraActivityConsequence(activity, feedback, candidates, activityDate, todayEpochDay)
+        val options = activityDao.activityConsequenceOptions(activity.activityId, MAX_OPTIONS)
+        if (!stored.matches(calculated, options, activity)) return null
+        return LocalDecisionInput(
+            source = source,
+            decision = decision,
+            consequence = calculated,
+            originEpochDay = activityDate.toEpochDay(),
+            todayEpochDay = todayEpochDay,
+            originWorkout = null,
+            candidates = candidates,
+        )
+    }
+
+    private fun isDecisionEligibleActivity(activity: ActivityEntity) =
+        activity.reviewState == ACTIVITY_REVIEW_STATE_ACCEPTED &&
+            activity.linkedWorkoutId == null &&
+            activity.extraPlanImpactConfirmed
+
+    private fun extraActivityConsequence(
+        activity: ActivityEntity,
+        feedback: ActivityFeedbackEntity?,
+        candidates: List<WorkoutEntity>,
+        activityDate: java.time.LocalDate,
+        todayEpochDay: Long,
+    ): Consequence {
+        val next = eligibleFutureDecisionWorkouts(
+            candidates,
+            activityDate.toEpochDay(),
+            todayEpochDay,
+        ).firstOrNull()
+        val weekStart = activityDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val week = candidates.filter {
+            it.currentScheduledEpochDay in weekStart.toEpochDay()..weekStart.plusDays(6).toEpochDay()
+        }
+        val consequence = calculateExtraActivityConsequence(
+            ExtraActivityInput(activity.distanceMeters ?: 0, activity.durationSeconds, feedback?.feltHard == true),
+            ExtraActivityTargets(
+                next?.currentDistanceMeters ?: 0,
+                next?.currentDurationSeconds,
+                week.canonicalDistanceLoad(),
+                week.canonicalDurationLoad(),
+            ),
+        )
+        val historical = next == null || isHistoricalExtraActivity(
+            activityDate,
+            java.time.LocalDate.ofEpochDay(todayEpochDay),
+        )
+        return if (historical) historicalExtraActivityReview(consequence) else consequence
     }
 
     private suspend fun currentSource(

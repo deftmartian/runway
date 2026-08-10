@@ -245,97 +245,18 @@ internal fun HeartRateProfileDialog(
         onDismissRequest = onDismiss,
         title = { Text("Heart-rate profile") },
         text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    Text(
-                        "This optional display profile never changes a plan. Age-based values are population estimates, not measured limits or a health assessment.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                item {
-                    ChoiceRow(
-                        "Estimate zones from age",
-                        source == NativeHeartRateSource.Estimated,
-                    ) { source = NativeHeartRateSource.Estimated }
-                    ChoiceRow(
-                        "Enter zones manually",
-                        source == NativeHeartRateSource.Custom,
-                    ) { source = NativeHeartRateSource.Custom }
-                }
-                if (source == NativeHeartRateSource.Estimated) {
-                    item {
-                        NumberField("Age", age) { age = it.substringBefore(".") }
-                        Text(
-                            "Sex is optional and only changes the age-based estimate.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        ChoiceRow(
-                            "Not specified",
-                            sexForEstimate == NativeSexForEstimate.NotSpecified,
-                        ) { sexForEstimate = NativeSexForEstimate.NotSpecified }
-                        ChoiceRow(
-                            "Female",
-                            sexForEstimate == NativeSexForEstimate.Female,
-                        ) { sexForEstimate = NativeSexForEstimate.Female }
-                        ChoiceRow(
-                            "Male",
-                            sexForEstimate == NativeSexForEstimate.Male,
-                        ) { sexForEstimate = NativeSexForEstimate.Male }
-                    }
-                    item {
-                        if (estimate == null) {
-                            Text(
-                                "Enter an age from 18 to 100.",
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        } else {
-                            Text(
-                                "Estimated maximum ${estimate.maxHeartRateBpm} bpm. Zone starts: " +
-                                    "${estimate.zone2FloorBpm}, ${estimate.zone3FloorBpm}, " +
-                                    "${estimate.zone4FloorBpm}, ${estimate.zone5FloorBpm} bpm.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                } else {
-                    item {
-                        NumberField("Max heart rate", max) { max = it.substringBefore(".") }
-                        NumberField("Easy zone starts", z2) { z2 = it.substringBefore(".") }
-                        NumberField("Steady zone starts", z3) { z3 = it.substringBefore(".") }
-                        NumberField("Hard zone starts", z4) { z4 = it.substringBefore(".") }
-                        NumberField("Max zone starts", z5) { z5 = it.substringBefore(".") }
-                    }
-                }
-                item {
-                    OutlinedButton(
-                        onClick = { onSubmit(NativeHeartRateProfile()) },
-                        enabled = !actionPending,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Clear profile")
-                    }
-                }
-            }
+            HeartRateProfileContent(
+                source, { source = it }, sexForEstimate, { sexForEstimate = it },
+                age, { age = it }, estimate, max, { max = it }, z2, { z2 = it },
+                z3, { z3 = it }, z4, { z4 = it }, z5, { z5 = it },
+                actionPending, onSubmit,
+            )
         },
         confirmButton = {
             Button(
                 onClick = {
                     onSubmit(
-                        if (source == NativeHeartRateSource.Estimated) {
-                            requireNotNull(estimate)
-                        } else {
-                            NativeHeartRateProfile(
-                                source = NativeHeartRateSource.Custom,
-                                sexForEstimates = current.sexForEstimates,
-                                ageYears = current.ageYears,
-                                maxHeartRateBpm = max.toInt(),
-                                zone2FloorBpm = z2.toInt(),
-                                zone3FloorBpm = z3.toInt(),
-                                zone4FloorBpm = z4.toInt(),
-                                zone5FloorBpm = z5.toInt(),
-                            )
-                        },
+                        heartRateProfileSubmission(source, estimate, current, max, z2, z3, z4, z5),
                     )
                 },
                 enabled = !actionPending && canSave,
@@ -344,6 +265,142 @@ internal fun HeartRateProfileDialog(
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun HeartRateProfileContent(
+    source: NativeHeartRateSource,
+    onSourceChange: (NativeHeartRateSource) -> Unit,
+    sex: NativeSexForEstimate,
+    onSexChange: (NativeSexForEstimate) -> Unit,
+    age: String,
+    onAgeChange: (String) -> Unit,
+    estimate: NativeHeartRateProfile?,
+    max: String,
+    onMaxChange: (String) -> Unit,
+    z2: String,
+    onZ2Change: (String) -> Unit,
+    z3: String,
+    onZ3Change: (String) -> Unit,
+    z4: String,
+    onZ4Change: (String) -> Unit,
+    z5: String,
+    onZ5Change: (String) -> Unit,
+    actionPending: Boolean,
+    onSubmit: (NativeHeartRateProfile) -> Unit,
+) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Text(
+                "This optional display profile never changes a plan. Age-based values are population estimates, not measured limits or a health assessment.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item {
+            ChoiceRow("Estimate zones from age", source == NativeHeartRateSource.Estimated) {
+                onSourceChange(NativeHeartRateSource.Estimated)
+            }
+            ChoiceRow("Enter zones manually", source == NativeHeartRateSource.Custom) {
+                onSourceChange(NativeHeartRateSource.Custom)
+            }
+        }
+        if (source == NativeHeartRateSource.Estimated) {
+            item { EstimatedHeartRateFields(age, onAgeChange, sex, onSexChange) }
+            item { EstimatedHeartRateSummary(estimate) }
+        } else {
+            item {
+                CustomHeartRateFields(
+                    max, onMaxChange, z2, onZ2Change, z3, onZ3Change,
+                    z4, onZ4Change, z5, onZ5Change,
+                )
+            }
+        }
+        item {
+            OutlinedButton(
+                onClick = { onSubmit(NativeHeartRateProfile()) },
+                enabled = !actionPending,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Clear profile") }
+        }
+    }
+}
+
+@Composable
+private fun EstimatedHeartRateFields(
+    age: String,
+    onAgeChange: (String) -> Unit,
+    sex: NativeSexForEstimate,
+    onSexChange: (NativeSexForEstimate) -> Unit,
+) {
+    NumberField("Age", age) { onAgeChange(it.substringBefore(".")) }
+    Text(
+        "Sex is optional and only changes the age-based estimate.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
+    ChoiceRow("Not specified", sex == NativeSexForEstimate.NotSpecified) {
+        onSexChange(NativeSexForEstimate.NotSpecified)
+    }
+    ChoiceRow("Female", sex == NativeSexForEstimate.Female) { onSexChange(NativeSexForEstimate.Female) }
+    ChoiceRow("Male", sex == NativeSexForEstimate.Male) { onSexChange(NativeSexForEstimate.Male) }
+}
+
+@Composable
+private fun EstimatedHeartRateSummary(estimate: NativeHeartRateProfile?) {
+    if (estimate == null) {
+        Text("Enter an age from 18 to 100.", color = MaterialTheme.colorScheme.error)
+    } else {
+        Text(
+            "Estimated maximum ${estimate.maxHeartRateBpm} bpm. Zone starts: " +
+                "${estimate.zone2FloorBpm}, ${estimate.zone3FloorBpm}, " +
+                "${estimate.zone4FloorBpm}, ${estimate.zone5FloorBpm} bpm.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun CustomHeartRateFields(
+    max: String,
+    onMaxChange: (String) -> Unit,
+    z2: String,
+    onZ2Change: (String) -> Unit,
+    z3: String,
+    onZ3Change: (String) -> Unit,
+    z4: String,
+    onZ4Change: (String) -> Unit,
+    z5: String,
+    onZ5Change: (String) -> Unit,
+) {
+    NumberField("Max heart rate", max) { onMaxChange(it.substringBefore(".")) }
+    NumberField("Easy zone starts", z2) { onZ2Change(it.substringBefore(".")) }
+    NumberField("Steady zone starts", z3) { onZ3Change(it.substringBefore(".")) }
+    NumberField("Hard zone starts", z4) { onZ4Change(it.substringBefore(".")) }
+    NumberField("Max zone starts", z5) { onZ5Change(it.substringBefore(".")) }
+}
+
+private fun heartRateProfileSubmission(
+    source: NativeHeartRateSource,
+    estimate: NativeHeartRateProfile?,
+    current: NativeHeartRateProfile,
+    max: String,
+    z2: String,
+    z3: String,
+    z4: String,
+    z5: String,
+) = if (source == NativeHeartRateSource.Estimated) {
+    requireNotNull(estimate)
+} else {
+    NativeHeartRateProfile(
+        source = NativeHeartRateSource.Custom,
+        sexForEstimates = current.sexForEstimates,
+        ageYears = current.ageYears,
+        maxHeartRateBpm = max.toInt(),
+        zone2FloorBpm = z2.toInt(),
+        zone3FloorBpm = z3.toInt(),
+        zone4FloorBpm = z4.toInt(),
+        zone5FloorBpm = z5.toInt(),
     )
 }
 
@@ -382,13 +439,13 @@ internal fun customHeartRateValuesAreValid(
     val zone3 = zone3FloorBpm ?: return false
     val zone4 = zone4FloorBpm ?: return false
     val zone5 = zone5FloorBpm ?: return false
-    return maximum in 120..230 &&
-        zone2 in 60..220 &&
-        zone3 in 70..230 &&
-        zone4 in 80..240 &&
-        zone5 in 90..250 &&
-        zone2 < zone3 &&
-        zone3 < zone4 &&
-        zone4 < zone5 &&
-        zone5 <= maximum
+    return heartRateValuesAreInRange(maximum, zone2, zone3, zone4, zone5) &&
+        heartRateZonesAreOrdered(maximum, zone2, zone3, zone4, zone5)
 }
+
+private fun heartRateValuesAreInRange(maximum: Int, zone2: Int, zone3: Int, zone4: Int, zone5: Int) =
+    maximum in 120..230 && zone2 in 60..220 && zone3 in 70..230 &&
+        zone4 in 80..240 && zone5 in 90..250
+
+private fun heartRateZonesAreOrdered(maximum: Int, zone2: Int, zone3: Int, zone4: Int, zone5: Int) =
+    zone2 < zone3 && zone3 < zone4 && zone4 < zone5 && zone5 <= maximum

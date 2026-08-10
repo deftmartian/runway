@@ -35,31 +35,35 @@ def discover(source_root: Path) -> list[str]:
 
     test_classes: list[str] = []
     for source in sources:
-        if source.suffix != ".kt":
-            raise DiscoveryError(
-                f"instrumented test discovery supports Kotlin sources only: {source}",
-            )
-        if not source.name.endswith("Test.kt"):
-            raise DiscoveryError(
-                f"instrumented test source must use the *Test.kt convention: {source}",
-            )
-
-        text = source.read_text(encoding="utf-8")
-        package_match = PACKAGE_PATTERN.search(text)
-        if package_match is None:
-            raise DiscoveryError(f"instrumented test has no package declaration: {source}")
-
-        declared_classes = TOP_LEVEL_CLASS_PATTERN.findall(text)
-        if declared_classes != [source.stem]:
-            raise DiscoveryError(
-                "instrumented test source must contain exactly one matching top-level class: "
-                f"{source}",
-            )
-        test_classes.append(f"{package_match.group(1)}.{source.stem}")
+        test_classes.append(discover_class(source))
 
     if len(test_classes) != len(set(test_classes)):
         raise DiscoveryError("instrumented test discovery produced duplicate class names")
     return test_classes
+
+
+def discover_class(source: Path) -> str:
+    if source.suffix != ".kt":
+        raise DiscoveryError(
+            f"instrumented test discovery supports Kotlin sources only: {source}",
+        )
+    if not source.name.endswith("Test.kt"):
+        raise DiscoveryError(
+            f"instrumented test source must use the *Test.kt convention: {source}",
+        )
+
+    text = source.read_text(encoding="utf-8")
+    package_match = PACKAGE_PATTERN.search(text)
+    if package_match is None:
+        raise DiscoveryError(f"instrumented test has no package declaration: {source}")
+
+    declared_classes = TOP_LEVEL_CLASS_PATTERN.findall(text)
+    if declared_classes != [source.stem]:
+        raise DiscoveryError(
+            "instrumented test source must contain exactly one matching top-level class: "
+            f"{source}",
+        )
+    return f"{package_match.group(1)}.{source.stem}"
 
 
 def main() -> int:

@@ -183,110 +183,133 @@ private fun CalendarDayLedger(
     ) {
         weeks.filter(List<LocalDate>::isNotEmpty).forEach { days ->
             val weekId = days.first().toString()
-            val containsToday = days.any { it.toString() == today }
-            val containsSelection = days.any { it.toString() == selectedDay }
-            val quiet = days.none { date ->
-                val value = date.toString()
-                workoutsByDate[value].orEmpty().any { it.isRemoved != true } ||
-                    activitiesByDate[value].orEmpty().isNotEmpty()
-            }
-            val expanded = !quiet || containsToday || containsSelection || weekId in expandedQuietWeeks
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                Column {
-                    if (quiet && !containsToday && !containsSelection) {
-                        Surface(
-                            onClick = {
-                                expandedQuietWeeks = ArrayList(expandedQuietWeeks).apply {
-                                    if (expanded) remove(weekId) else add(weekId)
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("calendar-quiet-week-$weekId")
-                                .semantics(mergeDescendants = true) {
-                                    contentDescription =
-                                        "${calendarWeekRangeLabel(days, locale)}. " +
-                                            "No runs planned or recorded. " +
-                                            if (expanded) "Hide days" else "Show days"
-                                    role = Role.Button
-                                },
-                            color = Color.Transparent,
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        calendarWeekRangeLabel(days, locale),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    Text(
-                                        "No runs planned or recorded",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Text(
-                                    if (expanded) "Hide" else "Show days",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                calendarWeekRangeLabel(days, locale),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            if (containsToday) {
-                                Text(
-                                    "This week",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
+            CalendarLedgerWeek(
+                days, today, selectedDay, workoutsByDate, activitiesByDate,
+                feedbackByWorkout, locale, weekId in expandedQuietWeeks,
+                onToggle = { expanded ->
+                    expandedQuietWeeks = ArrayList(expandedQuietWeeks).apply {
+                        if (expanded) remove(weekId) else add(weekId)
                     }
-                    if (expanded) {
-                        days.forEachIndexed { index, date ->
-                            if (index > 0 || quiet) {
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            }
-                            val dateValue = date.toString()
-                            CalendarLedgerDayRow(
-                                date = date,
-                                isToday = dateValue == today,
-                                isPast = dateValue < today,
-                                isSelected = dateValue == selectedDay,
-                                workouts = workoutsByDate[dateValue].orEmpty(),
-                                activities = activitiesByDate[dateValue].orEmpty(),
-                                feedbackByWorkout = feedbackByWorkout,
-                                locale = locale,
-                                onClick = { onDaySelected(dateValue) },
-                            )
-                        }
-                    }
-                }
+                },
+                onDaySelected = onDaySelected,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarLedgerWeek(
+    days: List<LocalDate>,
+    today: String,
+    selectedDay: String?,
+    workoutsByDate: Map<String, List<NativeWorkout>>,
+    activitiesByDate: Map<String, List<NativeActivity>>,
+    feedbackByWorkout: Map<String, NativeWorkoutFeedback>,
+    locale: java.util.Locale,
+    explicitlyExpanded: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onDaySelected: (String) -> Unit,
+) {
+    val weekId = days.first().toString()
+    val containsToday = days.any { it.toString() == today }
+    val containsSelection = days.any { it.toString() == selectedDay }
+    val quiet = calendarWeekIsQuiet(days, workoutsByDate, activitiesByDate)
+    val expanded = !quiet || containsToday || containsSelection || explicitlyExpanded
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column {
+            CalendarLedgerWeekHeader(
+                days, locale, weekId, quiet, containsToday, containsSelection, expanded,
+            ) { onToggle(expanded) }
+            if (expanded) {
+                CalendarLedgerWeekDays(
+                    days, today, selectedDay, quiet, workoutsByDate, activitiesByDate,
+                    feedbackByWorkout, locale, onDaySelected,
+                )
             }
         }
+    }
+}
+
+private fun calendarWeekIsQuiet(
+    days: List<LocalDate>,
+    workoutsByDate: Map<String, List<NativeWorkout>>,
+    activitiesByDate: Map<String, List<NativeActivity>>,
+) = days.none { date ->
+    val value = date.toString()
+    workoutsByDate[value].orEmpty().any { it.isRemoved != true } ||
+        activitiesByDate[value].orEmpty().isNotEmpty()
+}
+
+@Composable
+private fun CalendarLedgerWeekHeader(
+    days: List<LocalDate>,
+    locale: java.util.Locale,
+    weekId: String,
+    quiet: Boolean,
+    containsToday: Boolean,
+    containsSelection: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    if (quiet && !containsToday && !containsSelection) {
+        Surface(
+            onClick = onToggle,
+            modifier = Modifier.fillMaxWidth().testTag("calendar-quiet-week-$weekId")
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "${calendarWeekRangeLabel(days, locale)}. " +
+                        "No runs planned or recorded. " + if (expanded) "Hide days" else "Show days"
+                    role = Role.Button
+                },
+            color = Color.Transparent,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(calendarWeekRangeLabel(days, locale), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text("No runs planned or recorded", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (expanded) "Hide" else "Show days", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(calendarWeekRangeLabel(days, locale), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            if (containsToday) Text("This week", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun CalendarLedgerWeekDays(
+    days: List<LocalDate>,
+    today: String,
+    selectedDay: String?,
+    quiet: Boolean,
+    workoutsByDate: Map<String, List<NativeWorkout>>,
+    activitiesByDate: Map<String, List<NativeActivity>>,
+    feedbackByWorkout: Map<String, NativeWorkoutFeedback>,
+    locale: java.util.Locale,
+    onDaySelected: (String) -> Unit,
+) {
+    days.forEachIndexed { index, date ->
+        if (index > 0 || quiet) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        val dateValue = date.toString()
+        CalendarLedgerDayRow(
+            date, dateValue == today, dateValue < today, dateValue == selectedDay,
+            workoutsByDate[dateValue].orEmpty(), activitiesByDate[dateValue].orEmpty(),
+            feedbackByWorkout, locale, { onDaySelected(dateValue) },
+        )
     }
 }
 
@@ -635,53 +658,62 @@ internal fun calendarDayPresentation(
     val activeWorkouts = workouts.filter { it.isRemoved != true }
     val runWorkouts = activeWorkouts.filter { it.type != "rest" }
     val feedback = runWorkouts.mapNotNull { feedbackByWorkout[it.id.orEmpty()] }
-    val reviewNeeded =
-        activities.any { it.reviewState == "review" || it.consequence.hasUnappliedPlanDecision() } ||
-            feedback.any { it.consequence.hasUnappliedPlanDecision() }
-    if (reviewNeeded) {
+    if (calendarReviewNeeded(activities, feedback)) {
         return CalendarDayPresentation("! Review", "needs review", CalendarCellEmphasis.Review)
     }
-    if (feedback.isNotEmpty()) {
-        return when {
-            feedback.any { it.completionState == "skipped" } ->
-                CalendarDayPresentation("— Skipped", "skipped", CalendarCellEmphasis.Neutral)
-            feedback.any { it.completionState == "shortened" } ->
-                CalendarDayPresentation("↘ Short", "shortened", CalendarCellEmphasis.Actual)
-            else -> CalendarDayPresentation("✓ Done", "completed", CalendarCellEmphasis.Actual)
-        }
-    }
-    if (activities.isNotEmpty()) {
-        val label = if (activities.size > 1) {
-            "✓ ${activities.size} done"
-        } else {
-            val activity = activities.single()
-            val amount = formatPrescriptionMeasurement(
-                activity.distanceMeters,
-                activity.durationSeconds,
-            )
-            "✓ ${amount.takeUnless { it == "Plan details" } ?: "Done"}"
-        }
-        return CalendarDayPresentation(label, "recorded", CalendarCellEmphasis.Actual)
-    }
+    feedbackPresentation(feedback)?.let { return it }
+    activityPresentation(activities)?.let { return it }
     if (routineDateIsPast && runWorkouts.any { it.planPhase == "routine" }) {
         return CalendarDayPresentation("— Not recorded", "not recorded", CalendarCellEmphasis.Neutral)
     }
     if (runWorkouts.any { it.isEdited == true }) {
         return CalendarDayPresentation("↺ Edited", "edited plan", CalendarCellEmphasis.Planned)
     }
-    if (runWorkouts.isNotEmpty()) {
-        val label = if (runWorkouts.size > 1) {
-            "${runWorkouts.size} runs"
-        } else {
-            formatPlannedPrescriptionMeasurement(
-                runWorkouts.single().targetDistanceMeters,
-                runWorkouts.single().targetDurationSeconds,
-                open = runWorkouts.single().prescriptionKind == "open",
-            ).takeUnless { it == "Plan details" } ?: "Run"
-        }
-        return CalendarDayPresentation(label, "planned", CalendarCellEmphasis.Planned)
+    return plannedRunPresentation(runWorkouts)
+}
+
+private fun calendarReviewNeeded(
+    activities: List<NativeActivity>,
+    feedback: List<NativeWorkoutFeedback>,
+) = activities.any { it.reviewState == "review" || it.consequence.hasUnappliedPlanDecision() } ||
+    feedback.any { it.consequence.hasUnappliedPlanDecision() }
+
+private fun feedbackPresentation(feedback: List<NativeWorkoutFeedback>): CalendarDayPresentation? {
+    if (feedback.isEmpty()) return null
+    return when {
+        feedback.any { it.completionState == "skipped" } ->
+            CalendarDayPresentation("— Skipped", "skipped", CalendarCellEmphasis.Neutral)
+        feedback.any { it.completionState == "shortened" } ->
+            CalendarDayPresentation("↘ Short", "shortened", CalendarCellEmphasis.Actual)
+        else -> CalendarDayPresentation("✓ Done", "completed", CalendarCellEmphasis.Actual)
     }
-    return CalendarDayPresentation(null, null, CalendarCellEmphasis.Neutral)
+}
+
+private fun activityPresentation(activities: List<NativeActivity>): CalendarDayPresentation? {
+    if (activities.isEmpty()) return null
+    val label = if (activities.size > 1) {
+        "✓ ${activities.size} done"
+    } else {
+        val activity = activities.single()
+        val amount = formatPrescriptionMeasurement(activity.distanceMeters, activity.durationSeconds)
+        "✓ ${amount.takeUnless { it == "Plan details" } ?: "Done"}"
+    }
+    return CalendarDayPresentation(label, "recorded", CalendarCellEmphasis.Actual)
+}
+
+private fun plannedRunPresentation(runWorkouts: List<NativeWorkout>): CalendarDayPresentation {
+    if (runWorkouts.isEmpty()) return CalendarDayPresentation(null, null, CalendarCellEmphasis.Neutral)
+    val label = if (runWorkouts.size > 1) {
+        "${runWorkouts.size} runs"
+    } else {
+        val workout = runWorkouts.single()
+        formatPlannedPrescriptionMeasurement(
+            workout.targetDistanceMeters,
+            workout.targetDurationSeconds,
+            open = workout.prescriptionKind == "open",
+        ).takeUnless { it == "Plan details" } ?: "Run"
+    }
+    return CalendarDayPresentation(label, "planned", CalendarCellEmphasis.Planned)
 }
 
 private fun NativeConsequence?.hasUnappliedPlanDecision(): Boolean =

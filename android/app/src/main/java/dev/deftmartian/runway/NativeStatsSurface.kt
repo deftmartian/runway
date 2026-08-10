@@ -495,33 +495,7 @@ internal fun NativeNoActiveStats(summary: NativeNoActiveStatsSummary) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         EmptyCard(summary.statusMessage)
         summary.recordedHistory?.let { recorded ->
-            SettingCard("Recorded history") {
-                Text(
-                    "Completed and accepted work kept by runway. With no active plan, these are facts rather than a plan comparison.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                SettingRow("Recorded runs", (recorded.totalRuns ?: 0).toString())
-                SettingRow("Recorded distance", formatDistance(recorded.totalDistanceMeters ?: 0.0))
-                if ((recorded.totalDurationSeconds ?: 0.0) > 0.0) {
-                    SettingRow("Recorded time", formatDuration(recorded.totalDurationSeconds ?: 0.0))
-                }
-                if ((recorded.longestRunMeters ?: 0.0) > 0.0) {
-                    SettingRow("Longest recorded run", formatDistance(recorded.longestRunMeters ?: 0.0))
-                }
-                if ((recorded.archivedPlanRuns ?: 0) > 0) {
-                    SettingRow(
-                        "Archived-plan work",
-                        "${recorded.archivedPlanRuns ?: 0} runs · ${formatDistance(recorded.archivedPlanDistanceMeters ?: 0.0)}",
-                    )
-                }
-                if ((recorded.unlinkedRuns ?: 0) > 0) {
-                    SettingRow(
-                        "Unmatched records",
-                        "${recorded.unlinkedRuns ?: 0} runs · ${formatDistance(recorded.unlinkedDistanceMeters ?: 0.0)}",
-                    )
-                }
-            }
+            NativeRecordedHistory(recorded)
         }
         summary.acceptedHeartRate?.let { sample ->
             SettingCard("Accepted heart-rate context") {
@@ -543,5 +517,46 @@ internal fun NativeNoActiveStats(summary: NativeNoActiveStatsSummary) {
                 sample.latest?.maxHeartRate?.let { SettingRow("Latest maximum", "$it bpm") }
             }
         }
+    }
+}
+
+@Composable
+private fun NativeRecordedHistory(recorded: NativeRecordedHistorySummary) {
+    SettingCard("Recorded history") {
+        Text(
+            "Completed and accepted work kept by runway. With no active plan, these are facts rather than a plan comparison.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SettingRow("Recorded runs", (recorded.totalRuns ?: 0).toString())
+        SettingRow("Recorded distance", formatDistance(recorded.totalDistanceMeters ?: 0.0))
+        NativeRecordedLoadRows(recorded)
+        NativeRecordedProvenanceRows(recorded)
+    }
+}
+
+@Composable
+private fun NativeRecordedLoadRows(recorded: NativeRecordedHistorySummary) {
+    if ((recorded.totalDurationSeconds ?: 0.0) > 0.0) {
+        SettingRow("Recorded time", formatDuration(recorded.totalDurationSeconds ?: 0.0))
+    }
+    if ((recorded.longestRunMeters ?: 0.0) > 0.0) {
+        SettingRow("Longest recorded run", formatDistance(recorded.longestRunMeters ?: 0.0))
+    }
+}
+
+@Composable
+private fun NativeRecordedProvenanceRows(recorded: NativeRecordedHistorySummary) {
+    if ((recorded.archivedPlanRuns ?: 0) > 0) {
+        SettingRow(
+            "Archived-plan work",
+            "${recorded.archivedPlanRuns ?: 0} runs · ${formatDistance(recorded.archivedPlanDistanceMeters ?: 0.0)}",
+        )
+    }
+    if ((recorded.unlinkedRuns ?: 0) > 0) {
+        SettingRow(
+            "Unmatched records",
+            "${recorded.unlinkedRuns ?: 0} runs · ${formatDistance(recorded.unlinkedDistanceMeters ?: 0.0)}",
+        )
     }
 }

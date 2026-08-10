@@ -77,89 +77,12 @@ internal fun ActivityDetailSheet(
                 fontWeight = FontWeight.SemiBold,
             )
             ActivitySummary(activity)
-
-            if (activity.reviewState == "review") {
-                Text("How did this run feel?", fontWeight = FontWeight.SemiBold)
-                CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
-                Text("Where does this run belong?", fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (linkCandidates.isEmpty()) {
-                    Text("No planned workout within three days is available for this run.")
-                } else {
-                    linkCandidates.forEach { workout ->
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    LinkActivityCommand(
-                                        activityId = activity.id.orEmpty(),
-                                        workoutId = workout.id.orEmpty(),
-                                        feltHard = feltHard,
-                                    ),
-                                )
-                            },
-                            enabled = !actionPending && activity.id != null && workout.id != null,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Link: ${workout.scheduledDate.orDash()} · ${workout.purpose.orDash()}")
-                        }
-                    }
-                }
-                Button(
-                    onClick = {
-                        onAction(
-                            ConfirmActivityExtraCommand(
-                                activityId = activity.id.orEmpty(),
-                                feltHard = feltHard,
-                            ),
-                        )
-                    },
-                    enabled = !actionPending && activity.id != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Count as an extra run") }
-            } else if (!activity.workoutId.isNullOrBlank()) {
-                OutlinedButton(
-                    onClick = { onAction(UnlinkActivityCommand(activity.id.orEmpty())) },
-                    enabled = !actionPending && activity.id != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Unlink from planned run") }
-                Text("Unlinking returns this run to Inbox review. It stops counting until you accept a new role.")
-            } else if (
-                activity.extraPlanImpactConfirmed == true &&
-                    activity.consequence?.appliedDecision == null
-            ) {
-                OutlinedButton(
-                    onClick = { onAction(ReturnExtraActivityToReviewCommand(activity.id.orEmpty())) },
-                    enabled = !actionPending && activity.id != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Return extra run to review") }
-                Text(
-                    "This keeps the recorded run and feedback, but stops counting it in actual " +
-                        "totals and removes its unapplied plan options until you choose its role again.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (activity.reviewState != "review") {
-                Text("Correct recorded feedback", fontWeight = FontWeight.SemiBold)
-                if (activity.consequence?.appliedDecision != null) {
-                    Text(
-                        "This updates the run record. It does not undo or recalculate the plan " +
-                            "choice already applied from the earlier feedback.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
-                OutlinedButton(
-                    onClick = {
-                        onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard))
-                    },
-                    enabled = !actionPending && activity.id != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Save feedback correction") }
-            }
+            ActivityRoleControls(
+                activity, linkCandidates, feltHard, { feltHard = it }, actionPending, onAction,
+            )
+            ActivityFeedbackCorrection(
+                activity, feltHard, { feltHard = it }, actionPending, onAction,
+            )
 
             ActivityProvenance(activity)
             ActivityHeartRate(activity, evidence)
@@ -192,6 +115,119 @@ internal fun ActivityDetailSheet(
             },
         )
     }
+}
+
+@Composable
+private fun ActivityRoleControls(
+    activity: NativeActivity,
+    linkCandidates: List<NativeWorkout>,
+    feltHard: Boolean,
+    onFeltHardChange: (Boolean) -> Unit,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) = when {
+    activity.reviewState == "review" -> ActivityReviewControls(
+        activity, linkCandidates, feltHard, onFeltHardChange, actionPending, onAction,
+    )
+    !activity.workoutId.isNullOrBlank() -> ActivityUnlinkControl(activity, actionPending, onAction)
+    activity.extraPlanImpactConfirmed == true && activity.consequence?.appliedDecision == null ->
+        ActivityReturnToReviewControl(activity, actionPending, onAction)
+    else -> Unit
+}
+
+@Composable
+private fun ActivityReviewControls(
+    activity: NativeActivity,
+    linkCandidates: List<NativeWorkout>,
+    feltHard: Boolean,
+    onFeltHardChange: (Boolean) -> Unit,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) {
+    Text("How did this run feel?", fontWeight = FontWeight.SemiBold)
+    CheckRow("This run felt harder than expected", feltHard, onFeltHardChange)
+    Text("Where does this run belong?", fontWeight = FontWeight.SemiBold)
+    Text(
+        "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (linkCandidates.isEmpty()) {
+        Text("No planned workout within three days is available for this run.")
+    } else {
+        linkCandidates.forEach { workout ->
+            OutlinedButton(
+                onClick = {
+                    onAction(LinkActivityCommand(activity.id.orEmpty(), workout.id.orEmpty(), feltHard))
+                },
+                enabled = !actionPending && activity.id != null && workout.id != null,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Link: ${workout.scheduledDate.orDash()} · ${workout.purpose.orDash()}") }
+        }
+    }
+    Button(
+        onClick = {
+            onAction(ConfirmActivityExtraCommand(activity.id.orEmpty(), feltHard))
+        },
+        enabled = !actionPending && activity.id != null,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Count as an extra run") }
+}
+
+@Composable
+private fun ActivityUnlinkControl(
+    activity: NativeActivity,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) {
+    OutlinedButton(
+        onClick = { onAction(UnlinkActivityCommand(activity.id.orEmpty())) },
+        enabled = !actionPending && activity.id != null,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Unlink from planned run") }
+    Text("Unlinking returns this run to Inbox review. It stops counting until you accept a new role.")
+}
+
+@Composable
+private fun ActivityReturnToReviewControl(
+    activity: NativeActivity,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) {
+    OutlinedButton(
+        onClick = { onAction(ReturnExtraActivityToReviewCommand(activity.id.orEmpty())) },
+        enabled = !actionPending && activity.id != null,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Return extra run to review") }
+    Text(
+        "This keeps the recorded run and feedback, but stops counting it in actual " +
+            "totals and removes its unapplied plan options until you choose its role again.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun ActivityFeedbackCorrection(
+    activity: NativeActivity,
+    feltHard: Boolean,
+    onFeltHardChange: (Boolean) -> Unit,
+    actionPending: Boolean,
+    onAction: (MobileCommand) -> Unit,
+) {
+    if (activity.reviewState == "review") return
+    Text("Correct recorded feedback", fontWeight = FontWeight.SemiBold)
+    if (activity.consequence?.appliedDecision != null) {
+        Text(
+            "This updates the run record. It does not undo or recalculate the plan " +
+                "choice already applied from the earlier feedback.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    CheckRow("This run felt harder than expected", feltHard, onFeltHardChange)
+    OutlinedButton(
+        onClick = { onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard)) },
+        enabled = !actionPending && activity.id != null,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Save feedback correction") }
 }
 
 /**
@@ -297,44 +333,63 @@ private fun ActivityRouteDisclosure(
     val disclosure = evidence?.disclosure
     if (route == null && disclosure == null && evidence?.routeTrace == null) return
     SettingCard("Private activity detail") {
-        if (route != null || disclosure?.routeTraceRetained != null || evidence?.routeTrace != null) {
-            val message = if (route?.traceRetained == true || disclosure?.routeTraceRetained == true) {
+        ActivityRouteTrace(route, disclosure, evidence, loading, failed, onRetry)
+        ActivityRouteMetadata(route, disclosure)
+        ActivityHeartRateRetention(disclosure)
+    }
+}
+
+@Composable
+private fun ActivityRouteTrace(
+    route: NativeRouteSummary?,
+    disclosure: NativeActivityDisclosure?,
+    evidence: NativeActivityEvidence?,
+    loading: Boolean,
+    failed: Boolean,
+    onRetry: () -> Unit,
+) {
+    val retained = route?.traceRetained == true || disclosure?.routeTraceRetained == true
+    if (route != null || disclosure?.routeTraceRetained != null || evidence?.routeTrace != null) {
+        Text(
+            if (retained) {
                 "This private route trace is drawn on this phone. Runway does not contact a map or tile service."
-            } else {
-                "No route trace is retained for this activity."
-            }
-            Text(message)
+            } else "No route trace is retained for this activity.",
+        )
+    }
+    when {
+        evidence?.routeTrace != null -> PrivateRouteTrace(requireNotNull(evidence.routeTrace))
+        loading -> {
+            CircularProgressIndicator()
+            Text("Loading the private route trace…")
         }
-        when {
-            evidence?.routeTrace != null -> PrivateRouteTrace(requireNotNull(evidence.routeTrace))
-            loading -> {
-                CircularProgressIndicator()
-                Text("Loading the private route trace…")
-            }
-            failed && (route?.traceRetained == true || disclosure?.routeTraceRetained == true) -> {
-                Text("The private route trace could not be loaded.")
-                OutlinedButton(
-                    onClick = onRetry,
-                    shape = MaterialTheme.shapes.small,
-                ) { Text("Try again") }
-            }
+        failed && retained -> {
+            Text("The private route trace could not be loaded.")
+            OutlinedButton(onClick = onRetry, shape = MaterialTheme.shapes.small) { Text("Try again") }
         }
-        (disclosure?.routePointCount ?: route?.pointCount)?.let {
-            SettingRow("Imported route points", it.toString(), monospace = true)
-        }
-        if (disclosure?.hasElevation == true || route?.hasElevation == true) {
-            SettingRow("Elevation", "Present in import")
-        }
-        if (disclosure?.startEndRedacted == true || route?.startEndRedacted == true) {
-            Text("Start and end details are redacted.")
-        }
-        disclosure?.heartRateSeriesRetained?.let {
-            SettingRow(
-                "Heart-rate samples",
-                if (it) "${disclosure.heartRateSampleCount ?: 0} retained" else "Not retained",
-                monospace = it,
-            )
-        }
+    }
+}
+
+@Composable
+private fun ActivityRouteMetadata(route: NativeRouteSummary?, disclosure: NativeActivityDisclosure?) {
+    (disclosure?.routePointCount ?: route?.pointCount)?.let {
+        SettingRow("Imported route points", it.toString(), monospace = true)
+    }
+    if (disclosure?.hasElevation == true || route?.hasElevation == true) {
+        SettingRow("Elevation", "Present in import")
+    }
+    if (disclosure?.startEndRedacted == true || route?.startEndRedacted == true) {
+        Text("Start and end details are redacted.")
+    }
+}
+
+@Composable
+private fun ActivityHeartRateRetention(disclosure: NativeActivityDisclosure?) {
+    disclosure?.heartRateSeriesRetained?.let {
+        SettingRow(
+            "Heart-rate samples",
+            if (it) "${disclosure.heartRateSampleCount ?: 0} retained" else "Not retained",
+            monospace = it,
+        )
     }
 }
 

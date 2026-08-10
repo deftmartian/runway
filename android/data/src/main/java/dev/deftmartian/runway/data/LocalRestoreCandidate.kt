@@ -12,41 +12,30 @@ import java.io.FileInputStream
  * no-op.
  */
 internal object LocalRestoreCandidate {
+    private val releasedIdentityHashes = mapOf(
+        1 to RunwayLedgerMigrations.V1_IDENTITY_HASH,
+        2 to RunwayLedgerMigrations.V2_IDENTITY_HASH,
+        3 to RunwayLedgerMigrations.V3_IDENTITY_HASH,
+        4 to RunwayLedgerMigrations.V4_IDENTITY_HASH,
+        5 to RunwayLedgerMigrations.V5_IDENTITY_HASH,
+    )
+
     fun prepare(candidate: File): String? {
         headerError(candidate)?.let { return it }
         return when (val inspection = inspect(candidate)) {
             is Inspection.Invalid -> inspection.reason
-            is Inspection.Valid -> when {
-                inspection.version == RunwayLedgerDatabase.SCHEMA_VERSION &&
-                    inspection.identityHash == RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH -> null
-                inspection.version == 1 &&
-                    inspection.identityHash == RunwayLedgerMigrations.V1_IDENTITY_HASH -> {
-                    migrationError(candidate, fromVersion = 1)
-                        ?: currentSchemaError(candidate)
-                }
-                inspection.version == 2 &&
-                    inspection.identityHash == RunwayLedgerMigrations.V2_IDENTITY_HASH -> {
-                    migrationError(candidate, fromVersion = 2)
-                        ?: currentSchemaError(candidate)
-                }
-                inspection.version == 3 &&
-                    inspection.identityHash == RunwayLedgerMigrations.V3_IDENTITY_HASH -> {
-                    migrationError(candidate, fromVersion = 3)
-                        ?: currentSchemaError(candidate)
-                }
-                inspection.version == 4 &&
-                    inspection.identityHash == RunwayLedgerMigrations.V4_IDENTITY_HASH -> {
-                    migrationError(candidate, fromVersion = 4)
-                        ?: currentSchemaError(candidate)
-                }
-                inspection.version == 5 &&
-                    inspection.identityHash == RunwayLedgerMigrations.V5_IDENTITY_HASH -> {
-                    migrationError(candidate, fromVersion = 5)
-                        ?: currentSchemaError(candidate)
-                }
-                else -> unsupportedLineageMessage(inspection)
-            }
+            is Inspection.Valid -> prepareValidCandidate(candidate, inspection)
         }
+    }
+
+    private fun prepareValidCandidate(candidate: File, inspection: Inspection.Valid): String? {
+        if (inspection.version == RunwayLedgerDatabase.SCHEMA_VERSION &&
+            inspection.identityHash == RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH
+        ) return null
+        val releasedHash = releasedIdentityHashes[inspection.version]
+        if (releasedHash != inspection.identityHash) return unsupportedLineageMessage(inspection)
+        return migrationError(candidate, fromVersion = inspection.version)
+            ?: currentSchemaError(candidate)
     }
 
     fun currentSchemaError(candidate: File): String? {

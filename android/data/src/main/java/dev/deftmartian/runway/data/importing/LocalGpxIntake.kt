@@ -359,20 +359,8 @@ private class DoctypeRejectingInputStream(input: InputStream) : FilterInputStrea
     private fun inspect(value: Int) {
         recent.append(value.toChar().uppercaseChar())
         if (recent.length > 9) recent.deleteCharAt(0)
-        if (inComment) {
-            if (recent.endsWith("-->")) {
-                inComment = false
-                recent.clear()
-            }
-            return
-        }
-        if (inCdata) {
-            if (recent.endsWith("]]>")) {
-                inCdata = false
-                recent.clear()
-            }
-            return
-        }
+        if (inComment) return finishCommentIfNeeded()
+        if (inCdata) return finishCdataIfNeeded()
         if (recent.endsWith("<!--")) {
             inComment = true
             recent.clear()
@@ -384,6 +372,20 @@ private class DoctypeRejectingInputStream(input: InputStream) : FilterInputStrea
             return
         }
         if (recent.endsWith("<!DOCTYPE") || recent.endsWith("<!ENTITY")) throw DoctypeRejectedException()
+    }
+
+    private fun finishCommentIfNeeded() {
+        if (recent.endsWith("-->")) {
+            inComment = false
+            recent.clear()
+        }
+    }
+
+    private fun finishCdataIfNeeded() {
+        if (recent.endsWith("]]>")) {
+            inCdata = false
+            recent.clear()
+        }
     }
 }
 private class DoctypeRejectedException : RuntimeException()

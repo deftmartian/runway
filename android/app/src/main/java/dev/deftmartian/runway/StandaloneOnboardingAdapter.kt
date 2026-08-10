@@ -263,41 +263,73 @@ internal object StandaloneOnboardingAdapter {
         requireLongRunDay: Boolean,
         error: (OnboardingField, OnboardingFieldError) -> Unit,
     ) {
-        when {
-            weeklyKm == null && command.currentWeeklyDistanceKm.isBlank() -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.REQUIRED)
-            weeklyKm != null && weeklyKm !in 3.0..250.0 -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.OUT_OF_RANGE)
-        }
-        when {
-            runs == null && command.currentRunsPerWeek.isBlank() -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.REQUIRED)
-            runs != null && runs !in 2..5 -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.OUT_OF_RANGE)
-        }
-        when {
-            longestKm == null && command.longestRecentRunKm.isBlank() -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.REQUIRED)
-            longestKm != null && (longestKm <= 0.0 || longestKm > 80.0) -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.OUT_OF_RANGE)
-        }
-        if (requireLongRunDay && longRunDay == null && command.preferredLongRunDay.isBlank()) {
+        validateWeeklyDistance(command.currentWeeklyDistanceKm, weeklyKm, error)
+        validateRunsPerWeek(command.currentRunsPerWeek, runs, error)
+        validateLongestRun(command.longestRecentRunKm, longestKm, error)
+        if (longRunDayIsMissing(command, longRunDay, requireLongRunDay)) {
             error(OnboardingField.LONG_RUN_DAY, OnboardingFieldError.REQUIRED)
         }
-        if (
-            weeklyKm != null && weeklyKm in 3.0..250.0 &&
-            runs != null && runs in 2..5 &&
-            longestKm != null && longestKm > 0.0 && longestKm <= 80.0 &&
-            !isRepeatableWeekCoherent(weeklyKm, runs, longestKm)
-        ) {
+        if (baselineIsInconsistent(weeklyKm, runs, longestKm)) {
             error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.INCONSISTENT_BASELINE)
             error(OnboardingField.LONGEST_RUN, OnboardingFieldError.INCONSISTENT_BASELINE)
         }
-        if (
-            requireLongRunDay && runs != null && runs in 2..5 && longRunDay != null &&
-            !canLeaveRecoveryDayAfterLongRun(
-                command.availability,
-                runs,
-                longRunDay,
-                raceDistance,
-            )
-        ) {
+        if (recoverySpacingIsInvalid(command, runs, longRunDay, raceDistance, requireLongRunDay)) {
             error(OnboardingField.AVAILABILITY, OnboardingFieldError.RECOVERY_SPACING)
         }
+    }
+
+    private fun validateWeeklyDistance(
+        raw: String,
+        value: Double?,
+        error: (OnboardingField, OnboardingFieldError) -> Unit,
+    ) = when {
+        value == null && raw.isBlank() -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.REQUIRED)
+        value != null && value !in 3.0..250.0 -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.OUT_OF_RANGE)
+        else -> Unit
+    }
+
+    private fun validateRunsPerWeek(
+        raw: String,
+        value: Int?,
+        error: (OnboardingField, OnboardingFieldError) -> Unit,
+    ) = when {
+        value == null && raw.isBlank() -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.REQUIRED)
+        value != null && value !in 2..5 -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.OUT_OF_RANGE)
+        else -> Unit
+    }
+
+    private fun validateLongestRun(
+        raw: String,
+        value: Double?,
+        error: (OnboardingField, OnboardingFieldError) -> Unit,
+    ) = when {
+        value == null && raw.isBlank() -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.REQUIRED)
+        value != null && value !in 0.0..80.0 -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.OUT_OF_RANGE)
+        value == 0.0 -> error(OnboardingField.LONGEST_RUN, OnboardingFieldError.OUT_OF_RANGE)
+        else -> Unit
+    }
+
+    private fun longRunDayIsMissing(
+        command: CreatePlanCommand,
+        longRunDay: Int?,
+        required: Boolean,
+    ) = required && longRunDay == null && command.preferredLongRunDay.isBlank()
+
+    private fun baselineIsInconsistent(weeklyKm: Double?, runs: Int?, longestKm: Double?): Boolean {
+        val complete = weeklyKm != null && weeklyKm in 3.0..250.0 &&
+            runs != null && runs in 2..5 && longestKm != null && longestKm > 0.0 && longestKm <= 80.0
+        return complete && !isRepeatableWeekCoherent(requireNotNull(weeklyKm), requireNotNull(runs), requireNotNull(longestKm))
+    }
+
+    private fun recoverySpacingIsInvalid(
+        command: CreatePlanCommand,
+        runs: Int?,
+        longRunDay: Int?,
+        raceDistance: RaceDistance?,
+        required: Boolean,
+    ): Boolean {
+        if (!required || runs == null || runs !in 2..5 || longRunDay == null) return false
+        return !canLeaveRecoveryDayAfterLongRun(command.availability, runs, longRunDay, raceDistance)
     }
     private fun nextPlanStartDate(today: LocalDate): String = today.plusDays(((8 - today.dayOfWeek.value) % 7).toLong()).toString()
     private val DECIMAL = Regex("(?:0|[1-9]\\d*)(?:\\.\\d+)?")

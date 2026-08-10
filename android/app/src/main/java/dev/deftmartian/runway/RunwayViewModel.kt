@@ -1042,7 +1042,13 @@ internal class RunwayViewModel(
                     command.recordId,
                 )
         }
-        return when (result) {
+        healthConnectResolutionSuccess(result)?.let { return it }
+        throw healthConnectResolutionFailure(result)
+    }
+
+    private fun healthConnectResolutionSuccess(
+        result: LocalHealthConnectPendingResolutionResult,
+    ): String? = when (result) {
             is LocalHealthConnectPendingResolutionResult.CorrectionAccepted ->
                 "The updated Health Connect record is now the accepted activity."
             is LocalHealthConnectPendingResolutionResult.CorrectionRejected ->
@@ -1051,22 +1057,30 @@ internal class RunwayViewModel(
                 "The activity was removed from runway."
             is LocalHealthConnectPendingResolutionResult.ProviderDeletionRetained ->
                 "The activity remains in runway as a local record."
-            is LocalHealthConnectPendingResolutionResult.MappingMissing ->
-                throw IllegalStateException("That Health Connect change no longer exists.")
-            is LocalHealthConnectPendingResolutionResult.ActivityMissing ->
-                throw IllegalStateException("The activity for that Health Connect change is missing.")
-            is LocalHealthConnectPendingResolutionResult.UnexpectedActivityState ->
-                throw IllegalStateException("Review the activity before resolving its source change.")
-            is LocalHealthConnectPendingResolutionResult.UnexpectedActivitySource ->
-                throw IllegalStateException("That record no longer belongs to Health Connect.")
-            is LocalHealthConnectPendingResolutionResult.IncompletePendingState ->
-                throw IllegalStateException("The pending Health Connect record is incomplete. Import again.")
             is LocalHealthConnectPendingResolutionResult.AlreadyResolved ->
                 "That Health Connect change was already resolved."
-            is LocalHealthConnectPendingResolutionResult.WrongPendingAction ->
-                throw IllegalStateException("The Health Connect change has changed. Review it again.")
+            else -> null
         }
-    }
+
+    private fun healthConnectResolutionFailure(
+        result: LocalHealthConnectPendingResolutionResult,
+    ): IllegalStateException = IllegalStateException(
+        when (result) {
+            is LocalHealthConnectPendingResolutionResult.MappingMissing ->
+                "That Health Connect change no longer exists."
+            is LocalHealthConnectPendingResolutionResult.ActivityMissing ->
+                "The activity for that Health Connect change is missing."
+            is LocalHealthConnectPendingResolutionResult.UnexpectedActivityState ->
+                "Review the activity before resolving its source change."
+            is LocalHealthConnectPendingResolutionResult.UnexpectedActivitySource ->
+                "That record no longer belongs to Health Connect."
+            is LocalHealthConnectPendingResolutionResult.IncompletePendingState ->
+                "The pending Health Connect record is incomplete. Import again."
+            is LocalHealthConnectPendingResolutionResult.WrongPendingAction ->
+                "The Health Connect change has changed. Review it again."
+            else -> "That Health Connect change could not be resolved."
+        },
+    )
 
     private suspend fun resolveHealthConnectDuplicate(
         command: ResolveHealthConnectDuplicateCommand,

@@ -151,37 +151,9 @@ internal fun HistoryLifecycleConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val title = when (confirmation) {
-        NativeHistoryConfirmation.UseBaseline -> "Use this recorded starting point?"
-        NativeHistoryConfirmation.ContinuePhase ->
-            if (phase == "calibration") "Continue calibration?" else "Add another beginner week?"
-        NativeHistoryConfirmation.Complete -> "Mark this plan complete?"
-        NativeHistoryConfirmation.Stop ->
-            if (phase == "routine") "End weekly running routine?" else "Stop this plan?"
-    }
-    val explanation = when (confirmation) {
-        NativeHistoryConfirmation.UseBaseline ->
-            "runway will build the proposed race phase from these accepted activities. The resulting workouts remain editable."
-        NativeHistoryConfirmation.ContinuePhase ->
-            "runway will extend the current phase using its latest schedule. No race phase will be created yet."
-        NativeHistoryConfirmation.Complete ->
-            "The schedule will close as completed. Recorded work remains in History, even when some workouts were not done."
-        NativeHistoryConfirmation.Stop ->
-            if (phase == "routine") {
-                "The future routine schedule will close without being marked complete. Recorded runs remain in History."
-            } else {
-                "The goal will stop without being marked complete. Recorded work remains in History, and no plan becomes active until you build another one."
-            }
-    }
-    val confirmLabel = when (confirmation) {
-        NativeHistoryConfirmation.UseBaseline -> "Confirm and build"
-        NativeHistoryConfirmation.ContinuePhase ->
-            if (phase == "calibration") "Continue calibration" else "Add week"
-        NativeHistoryConfirmation.Complete -> "Mark complete"
-        NativeHistoryConfirmation.Stop ->
-            if (phase == "routine") "End routine"
-            else goalTitle?.takeIf(String::isNotBlank)?.let { "Stop $it" } ?: "Stop plan"
-    }
+    val title = historyConfirmationTitle(confirmation, phase)
+    val explanation = historyConfirmationExplanation(confirmation, phase)
+    val confirmLabel = historyConfirmationLabel(confirmation, goalTitle, phase)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -193,4 +165,47 @@ internal fun HistoryLifecycleConfirmationDialog(
             TextButton(onClick = onDismiss, enabled = !actionPending) { Text("Cancel") }
         },
     )
+}
+
+private fun historyConfirmationTitle(confirmation: NativeHistoryConfirmation, phase: String?) =
+    when (confirmation) {
+        NativeHistoryConfirmation.UseBaseline -> "Use this recorded starting point?"
+        NativeHistoryConfirmation.ContinuePhase ->
+            if (phase == "calibration") "Continue calibration?" else "Add another beginner week?"
+        NativeHistoryConfirmation.Complete -> "Mark this plan complete?"
+        NativeHistoryConfirmation.Stop ->
+            if (phase == "routine") "End weekly running routine?" else "Stop this plan?"
+    }
+
+private fun historyConfirmationExplanation(
+    confirmation: NativeHistoryConfirmation,
+    phase: String?,
+) = when (confirmation) {
+    NativeHistoryConfirmation.UseBaseline ->
+        "runway will build the proposed race phase from these accepted activities. The resulting workouts remain editable."
+    NativeHistoryConfirmation.ContinuePhase ->
+        "runway will extend the current phase using its latest schedule. No race phase will be created yet."
+    NativeHistoryConfirmation.Complete ->
+        "The schedule will close as completed. Recorded work remains in History, even when some workouts were not done."
+    NativeHistoryConfirmation.Stop -> if (phase == "routine") {
+        "The future routine schedule will close without being marked complete. Recorded runs remain in History."
+    } else {
+        "The goal will stop without being marked complete. Recorded work remains in History, and no plan becomes active until you build another one."
+    }
+}
+
+private fun historyConfirmationLabel(
+    confirmation: NativeHistoryConfirmation,
+    goalTitle: String?,
+    phase: String?,
+) = when (confirmation) {
+    NativeHistoryConfirmation.UseBaseline -> "Confirm and build"
+    NativeHistoryConfirmation.ContinuePhase ->
+        if (phase == "calibration") "Continue calibration" else "Add week"
+    NativeHistoryConfirmation.Complete -> "Mark complete"
+    NativeHistoryConfirmation.Stop -> if (phase == "routine") {
+        "End routine"
+    } else {
+        goalTitle?.takeIf(String::isNotBlank)?.let { "Stop $it" } ?: "Stop plan"
+    }
 }

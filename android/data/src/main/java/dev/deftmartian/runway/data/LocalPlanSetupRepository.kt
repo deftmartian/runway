@@ -219,26 +219,45 @@ object LocalPlanSetupPreparation {
     }
 
     private fun validateGraph(graph: GeneratedPlanPersistenceGraph): Result {
-        if (graph.goal.state != "active" || graph.plan.state != "active") {
+        if (!generatedGraphIsActive(graph)) {
             return Invalid(LocalPlanSetupError.GENERATED_GRAPH_MUST_USE_ACTIVE_STATE)
         }
-        if (!validId(graph.plan.planId) || graph.plan.goalId != graph.goal.goalId ||
-            graph.weeks.any { !validId(it.weekId) || it.planId != graph.plan.planId } ||
-            graph.workouts.any { !validId(it.workoutId) || it.planId != graph.plan.planId } ||
-            graph.workouts.any { workout -> graph.weeks.none { it.weekId == workout.weekId } } ||
-            graph.planSummaryWarnings.any { it.planId != graph.plan.planId } ||
-            graph.planSourceReferences.any { it.planId != graph.plan.planId } ||
-            graph.blocks.any { block -> graph.workouts.none { it.workoutId == block.workoutId } } ||
-            graph.segments.any { segment -> graph.blocks.none { it.blockId == segment.blockId } } ||
-            graph.workoutSourceReferences.any { ref -> graph.workouts.none { it.workoutId == ref.workoutId } }
-        ) return Invalid(LocalPlanSetupError.INVALID_GENERATED_GRAPH)
+        if (generatedGraphHasInvalidReferences(graph)) return invalidGeneratedGraph()
 
         val identities = graph.weeks.map { it.weekId } + graph.workouts.map { it.workoutId } +
             graph.blocks.map { it.blockId } + graph.segments.map { it.segmentId } +
             graph.planSummaryWarnings.map { it.warningId } + graph.planSourceReferences.map { it.referenceId } +
             graph.workoutSourceReferences.map { it.referenceId }
-        return if (identities.size == identities.distinct().size) Ready else Invalid(LocalPlanSetupError.INVALID_GENERATED_GRAPH)
+        return if (identities.size == identities.distinct().size) Ready else invalidGeneratedGraph()
     }
+
+    private fun generatedGraphIsActive(graph: GeneratedPlanPersistenceGraph) =
+        graph.goal.state == "active" && graph.plan.state == "active"
+
+    private fun generatedGraphHasInvalidReferences(graph: GeneratedPlanPersistenceGraph): Boolean =
+        invalidGeneratedPlanIdentity(graph) ||
+            invalidGeneratedWeeks(graph) ||
+            invalidGeneratedWorkouts(graph) ||
+            invalidGeneratedChildren(graph)
+
+    private fun invalidGeneratedPlanIdentity(graph: GeneratedPlanPersistenceGraph) =
+        !validId(graph.plan.planId) || graph.plan.goalId != graph.goal.goalId
+
+    private fun invalidGeneratedWeeks(graph: GeneratedPlanPersistenceGraph) =
+        graph.weeks.any { !validId(it.weekId) || it.planId != graph.plan.planId }
+
+    private fun invalidGeneratedWorkouts(graph: GeneratedPlanPersistenceGraph) =
+        graph.workouts.any { !validId(it.workoutId) || it.planId != graph.plan.planId } ||
+            graph.workouts.any { workout -> graph.weeks.none { it.weekId == workout.weekId } } ||
+            graph.planSummaryWarnings.any { it.planId != graph.plan.planId } ||
+            graph.planSourceReferences.any { it.planId != graph.plan.planId }
+
+    private fun invalidGeneratedChildren(graph: GeneratedPlanPersistenceGraph) =
+        graph.blocks.any { block -> graph.workouts.none { it.workoutId == block.workoutId } } ||
+            graph.segments.any { segment -> graph.blocks.none { it.blockId == segment.blockId } } ||
+            graph.workoutSourceReferences.any { ref -> graph.workouts.none { it.workoutId == ref.workoutId } }
+
+    private fun invalidGeneratedGraph() = Invalid(LocalPlanSetupError.INVALID_GENERATED_GRAPH)
 
     private fun validateRoutineGraph(graph: RoutinePlanPersistenceGraph): Result {
         if (

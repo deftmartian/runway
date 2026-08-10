@@ -50,7 +50,57 @@ object TrainingPlanner {
         }
     }
 
-    fun generateEstablished(intake: EstablishedTrainingIntake, today: LocalDate = LocalDate.now()): GeneratedDistancePlan {
+    private data class EstablishedPlanContext(
+        val start: String,
+        val availableWeeks: Int,
+        val taperWeeks: Int,
+        val peakDistance: Int,
+        val peakLongRun: Int,
+        val initialLongRun: Int,
+        val requiredRampPercent: Double,
+        val initialRisk: RiskRating,
+        val defaultRampPercent: Double,
+        val normalRamp: Double,
+    )
+
+    private data class EstablishedWeekState(
+        var previousDistance: Int,
+        var previousLongRun: Int,
+        var peakDistance: Int,
+        var peakLongRun: Int,
+    )
+
+    private data class EstablishedWeekFrame(
+        val number: Int,
+        val start: String,
+        val end: String,
+        val taper: Boolean,
+        val down: Boolean,
+        val taperPosition: Int,
+        val raceDate: String?,
+    )
+
+    private data class EstablishedWeekTargets(val distance: Int, val longRun: Int)
+
+    private data class EstablishedCompletionFlags(
+        val readinessShortfall: Boolean,
+        val marathonBaselineShortfall: Boolean,
+        val concentratedSchedule: Boolean,
+    )
+
+    fun generateEstablished(
+        intake: EstablishedTrainingIntake,
+        today: LocalDate = LocalDate.now(),
+    ): GeneratedDistancePlan {
+        val context = establishedPlanContext(intake, today)
+        val weeks = generateEstablishedWeeks(intake, context)
+        return completeEstablishedPlan(intake, context, weeks)
+    }
+
+    private fun establishedPlanContext(
+        intake: EstablishedTrainingIntake,
+        today: LocalDate,
+    ): EstablishedPlanContext {
         assertSupportedBaseline(intake)
         val start = intake.startDate ?: nextPlanWeekStart(today)
         val planDays = DateUtils.daysBetween(start, intake.targetDate) + 1
@@ -65,89 +115,160 @@ object TrainingPlanner {
         val initialLong = min(intake.longestRecentRunMeters, min(intake.currentWeeklyDistanceMeters, longPeak))
         val required = max(requiredBuildRamp(intake.currentWeeklyDistanceMeters, peak, buildWeeks), requiredBuildRamp(initialLong, longPeak, buildWeeks))
         val initialRisk = if (availableWeeks < 8 && intake.currentWeeklyDistanceMeters < peak * .55) RiskRating.UNSAFE else classifyRamp(required)
-        val warnings = warnings(intake, availableWeeks, required, initialRisk).toMutableList()
         val defaultRampPercent = priorityRampCap(intake) * 100
         val normalRamp = min(required, defaultRampPercent) / 100
+        return EstablishedPlanContext(
+            start,
+            availableWeeks,
+            taper,
+            peak,
+            longPeak,
+            initialLong,
+            required,
+            initialRisk,
+            defaultRampPercent,
+            normalRamp,
+        )
+    }
+
+    private fun generateEstablishedWeeks(
+        intake: EstablishedTrainingIntake,
+        context: EstablishedPlanContext,
+    ): List<GeneratedWeek> {
         val weeks = mutableListOf<GeneratedWeek>()
-        var previousDistance = intake.currentWeeklyDistanceMeters
-        var previousLong = initialLong
-        var peakDistance = previousDistance
-        var peakTrainingLong = previousLong
-        repeat(availableWeeks) { index ->
-            val number = index + 1
-            val isTaper = number > availableWeeks - taper
-            val down = !isTaper && number % 4 == 0
-            val taperPosition = if (isTaper) number - (availableWeeks - taper) else 0
-            val weekStart = DateUtils.addDays(start, (index * 7).toLong())
-            val nominalEnd = DateUtils.addDays(weekStart, 6)
-            val weekEnd = if (nominalEnd < intake.targetDate) nominalEnd else intake.targetDate
-            val raceWeek = intake.targetDate >= weekStart && intake.targetDate <= weekEnd
-            val rampedDistance = if (number == 1) {
-                intake.currentWeeklyDistanceMeters
-            } else {
-                roundTrainingValueToInt(previousDistance * (1 + normalRamp))
-            }
-            val buildDistance = min(peak, rampedDistance)
-            val budget = when {
-                isTaper -> taperTarget(peakDistance, taperPosition, taper)
-                down -> roundTrainingValueToInt(buildDistance * .85)
-                else -> buildDistance
-            }
-            val rampLong = if (number == 1) initialLong else roundTrainingValueToInt(previousLong * (1 + normalRamp))
-            val adjustedLong = if (down) roundTrainingValueToInt(rampLong * .85) else rampLong
-            val desiredLong = if (isTaper) {
-                taperTarget(peakTrainingLong, taperPosition, taper)
-            } else {
-                min(longPeak, adjustedLong)
-            }
-            val scheduled = createWeekWorkouts(intake, weekStart, weekEnd, budget, desiredLong, if (raceWeek) intake.targetDate else null)
-            val training = scheduled.workouts.filter { it.type != WorkoutType.RACE }.sumOf { it.targetDistanceMeters }
-            val event = scheduled.workouts.filter { it.type == WorkoutType.RACE }.sumOf { it.targetDistanceMeters }
-            val longRunRamp = if (scheduled.longRun > 0) {
-                percentIncrease(previousLong, scheduled.longRun)
-            } else {
-                0.0
-            }
-            val risk = classifyRamp(max(percentIncrease(previousDistance, training), longRunRamp))
-            val totalDistance = scheduled.workouts.sumOf { it.targetDistanceMeters }
-            val totalDuration = scheduled.workouts.sumOf { it.targetDurationSeconds ?: 0 }
-            weeks += GeneratedWeek(
-                number,
-                weekStart,
-                training,
-                event,
-                totalDistance,
-                totalDuration,
-                scheduled.longRun,
-                risk,
-                down,
-                isTaper,
-                scheduled.workouts,
-            )
-            previousDistance = training
-            if (scheduled.longRun > 0) previousLong = scheduled.longRun
-            if (!isTaper) {
-                peakDistance = max(peakDistance, training)
-                peakTrainingLong = max(peakTrainingLong, scheduled.longRun)
-            }
+        val state = EstablishedWeekState(
+            intake.currentWeeklyDistanceMeters,
+            context.initialLongRun,
+            intake.currentWeeklyDistanceMeters,
+            context.initialLongRun,
+        )
+        repeat(context.availableWeeks) { index ->
+            val frame = establishedWeekFrame(intake, context, index)
+            val week = generateEstablishedWeek(intake, context, state, frame)
+            weeks += week
+            updateEstablishedWeekState(state, week)
         }
+        return weeks
+    }
+
+    private fun establishedWeekFrame(
+        intake: EstablishedTrainingIntake,
+        context: EstablishedPlanContext,
+        index: Int,
+    ): EstablishedWeekFrame {
+        val number = index + 1
+        val taper = number > context.availableWeeks - context.taperWeeks
+        val start = DateUtils.addDays(context.start, (index * 7).toLong())
+        val nominalEnd = DateUtils.addDays(start, 6)
+        val end = if (nominalEnd < intake.targetDate) nominalEnd else intake.targetDate
+        val raceWeek = intake.targetDate >= start && intake.targetDate <= end
+        return EstablishedWeekFrame(
+            number,
+            start,
+            end,
+            taper,
+            !taper && number % 4 == 0,
+            if (taper) number - (context.availableWeeks - context.taperWeeks) else 0,
+            intake.targetDate.takeIf { raceWeek },
+        )
+    }
+
+    private fun generateEstablishedWeek(
+        intake: EstablishedTrainingIntake,
+        context: EstablishedPlanContext,
+        state: EstablishedWeekState,
+        frame: EstablishedWeekFrame,
+    ): GeneratedWeek {
+        val targets = establishedWeekTargets(intake, context, state, frame)
+        val scheduled = createWeekWorkouts(
+            intake,
+            frame.start,
+            frame.end,
+            targets.distance,
+            targets.longRun,
+            frame.raceDate,
+        )
+        val training = scheduled.workouts
+            .filter { it.type != WorkoutType.RACE }
+            .sumOf { it.targetDistanceMeters }
+        val event = scheduled.workouts
+            .filter { it.type == WorkoutType.RACE }
+            .sumOf { it.targetDistanceMeters }
+        val longRunRamp = scheduled.longRun
+            .takeIf { it > 0 }
+            ?.let { percentIncrease(state.previousLongRun, it) }
+            ?: 0.0
+        val risk = classifyRamp(max(percentIncrease(state.previousDistance, training), longRunRamp))
+        return GeneratedWeek(
+            frame.number,
+            frame.start,
+            training,
+            event,
+            scheduled.workouts.sumOf { it.targetDistanceMeters },
+            scheduled.workouts.sumOf { it.targetDurationSeconds ?: 0 },
+            scheduled.longRun,
+            risk,
+            frame.down,
+            frame.taper,
+            scheduled.workouts,
+        )
+    }
+
+    private fun establishedWeekTargets(
+        intake: EstablishedTrainingIntake,
+        context: EstablishedPlanContext,
+        state: EstablishedWeekState,
+        frame: EstablishedWeekFrame,
+    ): EstablishedWeekTargets {
+        val rampedDistance = if (frame.number == 1) {
+            intake.currentWeeklyDistanceMeters
+        } else {
+            roundTrainingValueToInt(state.previousDistance * (1 + context.normalRamp))
+        }
+        val buildDistance = min(context.peakDistance, rampedDistance)
+        val distance = when {
+            frame.taper -> taperTarget(state.peakDistance, frame.taperPosition, context.taperWeeks)
+            frame.down -> roundTrainingValueToInt(buildDistance * .85)
+            else -> buildDistance
+        }
+        val rampedLongRun = if (frame.number == 1) {
+            context.initialLongRun
+        } else {
+            roundTrainingValueToInt(state.previousLongRun * (1 + context.normalRamp))
+        }
+        val adjustedLongRun = if (frame.down) roundTrainingValueToInt(rampedLongRun * .85) else rampedLongRun
+        val longRun = if (frame.taper) {
+            taperTarget(state.peakLongRun, frame.taperPosition, context.taperWeeks)
+        } else {
+            min(context.peakLongRun, adjustedLongRun)
+        }
+        return EstablishedWeekTargets(distance, longRun)
+    }
+
+    private fun updateEstablishedWeekState(state: EstablishedWeekState, week: GeneratedWeek) {
+        state.previousDistance = week.trainingTargetDistanceMeters
+        if (week.longRunMeters > 0) state.previousLongRun = week.longRunMeters
+        if (!week.isTaper) {
+            state.peakDistance = max(state.peakDistance, week.trainingTargetDistanceMeters)
+            state.peakLongRun = max(state.peakLongRun, week.longRunMeters)
+        }
+    }
+
+    private fun completeEstablishedPlan(
+        intake: EstablishedTrainingIntake,
+        context: EstablishedPlanContext,
+        weeks: List<GeneratedWeek>,
+    ): GeneratedDistancePlan {
         val generatedPeak = weeks.maxOf { it.trainingTargetDistanceMeters }
         val generatedLong = weeks.maxOf { it.longRunMeters }
-        if (generatedPeak < peak * .95) warnings += "The available weeks do not allow the usual peak distance for this goal. Move the target date or choose a shorter distance."
-        val readiness = generatedLong < longRunFloor(intake.raceDistance)
-        if (readiness) warnings += "The longest planned run is low for this race distance. Keep the goal completion-oriented or move the date."
-        val marathonShortfall = intake.raceDistance == RaceDistance.MARATHON && (intake.currentWeeklyDistanceMeters < 32000 || intake.longestRecentRunMeters < 20000)
-        if (marathonShortfall) warnings += "Marathon goals need a stronger recent base than shorter races. Build consistency first or move the date."
-        val concentrated = (intake.raceDistance == RaceDistance.HALF || intake.raceDistance == RaceDistance.MARATHON) && plannedRuns(intake) < 3
-        if (concentrated) warnings += "Two run days concentrate a high-volume goal into unusually large sessions. Add a third available day, choose a shorter goal, or explicitly accept the higher load concentration."
-        var risk = highestRisk(listOf(initialRisk, highestRisk(weeks.map { it.risk })))
-        if (marathonShortfall) risk = elevateRisk(risk, RiskRating.UNSAFE) else if (readiness) risk = elevateRisk(risk, RiskRating.AGGRESSIVE)
-        if (concentrated) risk = elevateRisk(risk, RiskRating.AGGRESSIVE)
+        val flags = establishedCompletionFlags(intake, generatedLong)
+        val warnings = establishedPlanWarnings(intake, context, generatedPeak, flags)
+        val risk = establishedPlanRisk(context.initialRisk, weeks, flags)
         val summary = DistanceSummary(
             intake.currentWeeklyDistanceMeters,
             generatedPeak,
-            oneDecimal(required),
-            oneDecimal(defaultRampPercent),
+            oneDecimal(context.requiredRampPercent),
+            oneDecimal(context.defaultRampPercent),
             generatedLong,
             warnings,
         )
@@ -157,7 +278,51 @@ object TrainingPlanner {
             raceRefs.getValue(intake.raceDistance),
             TrainingSourceRefs.RRCA,
         )
-        return GeneratedDistancePlan(start, intake.targetDate, weeks, risk, summary, sources)
+        return GeneratedDistancePlan(context.start, intake.targetDate, weeks, risk, summary, sources)
+    }
+
+    private fun establishedCompletionFlags(
+        intake: EstablishedTrainingIntake,
+        generatedLong: Int,
+    ) = EstablishedCompletionFlags(
+        readinessShortfall = generatedLong < longRunFloor(intake.raceDistance),
+        marathonBaselineShortfall = intake.raceDistance == RaceDistance.MARATHON &&
+            (intake.currentWeeklyDistanceMeters < 32000 || intake.longestRecentRunMeters < 20000),
+        concentratedSchedule = intake.raceDistance in setOf(RaceDistance.HALF, RaceDistance.MARATHON) &&
+            plannedRuns(intake) < 3,
+    )
+
+    private fun establishedPlanWarnings(
+        intake: EstablishedTrainingIntake,
+        context: EstablishedPlanContext,
+        generatedPeak: Int,
+        flags: EstablishedCompletionFlags,
+    ): MutableList<String> {
+        val result = warnings(
+            intake,
+            context.availableWeeks,
+            context.requiredRampPercent,
+            context.initialRisk,
+        ).toMutableList()
+        if (generatedPeak < context.peakDistance * .95) result += "The available weeks do not allow the usual peak distance for this goal. Move the target date or choose a shorter distance."
+        if (flags.readinessShortfall) result += "The longest planned run is low for this race distance. Keep the goal completion-oriented or move the date."
+        if (flags.marathonBaselineShortfall) result += "Marathon goals need a stronger recent base than shorter races. Build consistency first or move the date."
+        if (flags.concentratedSchedule) result += "Two run days concentrate a high-volume goal into unusually large sessions. Add a third available day, choose a shorter goal, or explicitly accept the higher load concentration."
+        return result
+    }
+
+    private fun establishedPlanRisk(
+        initialRisk: RiskRating,
+        weeks: List<GeneratedWeek>,
+        flags: EstablishedCompletionFlags,
+    ): RiskRating {
+        var result = highestRisk(listOf(initialRisk, highestRisk(weeks.map { it.risk })))
+        result = when {
+            flags.marathonBaselineShortfall -> elevateRisk(result, RiskRating.UNSAFE)
+            flags.readinessShortfall -> elevateRisk(result, RiskRating.AGGRESSIVE)
+            else -> result
+        }
+        return if (flags.concentratedSchedule) elevateRisk(result, RiskRating.AGGRESSIVE) else result
     }
 
     fun generateCalibration(intake: CalibrationIntake, today: LocalDate = LocalDate.now()): GeneratedCalibrationPlan {

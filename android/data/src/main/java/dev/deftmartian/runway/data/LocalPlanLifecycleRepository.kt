@@ -683,15 +683,7 @@ object LocalPlanLifecyclePreparation {
         availabilityDays: List<Int>,
         todayEpochDay: Long,
     ): PreparedLocalRacePlan? {
-        if (
-            phasePlan.state != "active" ||
-            phasePlan.phaseType != "calibration" ||
-            goal.kind != "race" ||
-            review.goalKind != GoalKind.RACE ||
-            !PhaseTransitions.canUseDistancePlannerBaseline(review.baseline)
-        ) {
-            return null
-        }
+        if (!canPrepareRacePlan(phasePlan, goal, review)) return null
         val targetEpochDay = goal.targetDateEpochDay ?: return null
         val distance = raceDistance(goal.raceDistanceMeters) ?: return null
         val startEpochDay = nextSchedulingBoundary(todayEpochDay)
@@ -755,6 +747,16 @@ object LocalPlanLifecyclePreparation {
             ),
         )
     }
+
+    private fun canPrepareRacePlan(
+        phasePlan: PlanEntity,
+        goal: GoalEntity,
+        review: PreparedLocalPhaseReview,
+    ) = phasePlan.state == "active" &&
+        phasePlan.phaseType == "calibration" &&
+        goal.kind == "race" &&
+        review.goalKind == GoalKind.RACE &&
+        PhaseTransitions.canUseDistancePlannerBaseline(review.baseline)
 
     /** Monday is the plan boundary; a later day starts at the following Monday. */
     fun nextSchedulingBoundary(todayEpochDay: Long): Long {

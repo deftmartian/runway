@@ -592,6 +592,15 @@ internal class HealthConnectSyncCoordinator(
     private val maximumChangePages: Int = MAX_HEALTH_CONNECT_CHANGE_PAGES_PER_SYNC,
     private val maximumChanges: Int = MAX_HEALTH_CONNECT_CHANGES_PER_SYNC,
 ) {
+    private data class ChangeSyncState(
+        var current: HealthConnectCursor,
+        var resetAttempted: Boolean = false,
+        var fullWindowRefreshed: Boolean,
+        var changePages: Int = 0,
+        var sourceChanges: Int = 0,
+        val seenChangeTokens: MutableSet<String> = mutableSetOf(current.token),
+    )
+
     init {
         require(maximumChangePages > 0)
         require(maximumChanges > 0)
@@ -616,59 +625,78 @@ internal class HealthConnectSyncCoordinator(
 
     private suspend fun syncAvailable(): HealthSyncResult {
         if (!gateway.hasPermissions()) return HealthSyncResult.PermissionRequired
-        var resetAttempted = false
         val storedCursor = cursor.load()
-        var fullWindowRefreshed = storedCursor == null
-        var current = storedCursor ?: bootstrap() ?: return HealthSyncResult.NeedsAttention
-        val seenChangeTokens = mutableSetOf(current.token)
-        var changePages = 0
-        var sourceChanges = 0
+        val current = storedCursor ?: bootstrap() ?: return HealthSyncResult.NeedsAttention
+        return syncChanges(ChangeSyncState(current, fullWindowRefreshed = storedCursor == null))
+    }
+
+    private suspend fun syncChanges(state: ChangeSyncState): HealthSyncResult {
         while (true) {
-            changePages += 1
-            if (changePages > maximumChangePages) {
-                throw HealthConnectSourceLimitException(
-                    "Health Connect change log exceeded its bounded page limit.",
-                )
-            }
-            val batch = gateway.changes(current.token)
+            state.changePages += 1
+            assertPageLimit(state.changePages)
+            val batch = gateway.changes(state.current.token)
             if (batch.expired) {
-                if (resetAttempted) return HealthSyncResult.Retryable
-                resetAttempted = true
-                cursor.clear()
-                current = bootstrap() ?: return HealthSyncResult.NeedsAttention
-                seenChangeTokens.clear()
-                seenChangeTokens += current.token
-                changePages = 0
-                sourceChanges = 0
-                fullWindowRefreshed = true
+                resetExpiredCursor(state)?.let { return it }
                 continue
             }
-            if (batch.sourceChangeCount < 0 || batch.sourceChangeCount > maximumChanges - sourceChanges) {
-                throw HealthConnectSourceLimitException(
-                    "Health Connect change log exceeded its bounded record limit.",
-                )
-            }
-            if (batch.hasMore && !seenChangeTokens.add(batch.nextToken)) {
-                throw HealthConnectSourceLimitException(
-                    "Health Connect repeated a change-log token.",
-                )
-            }
-            sourceChanges += batch.sourceChangeCount
-            // Metric records have no session foreign key. Re-read the bounded window so a metric
-            // edit becomes an idempotent local session upsert rather than stale derived data.
-            if (batch.metricChanged && !fullWindowRefreshed) {
-                if (!persist(batch = gateway.initialRuns(now().minus(30, ChronoUnit.DAYS)))) {
-                    return HealthSyncResult.NeedsAttention
-                }
-                fullWindowRefreshed = true
-            }
+            acceptBatchBounds(batch, state)
+            if (!refreshMetricWindowIfNeeded(batch, state)) return HealthSyncResult.NeedsAttention
             if (!persist(batch.upserts) || !persistDeletes(batch.deletes)) return HealthSyncResult.NeedsAttention
-            current = HealthConnectCursor(batch.nextToken)
-            cursor.save(current)
+            state.current = HealthConnectCursor(batch.nextToken)
+            cursor.save(state.current)
             if (!batch.hasMore) break
         }
         cursor.clearNeedsAttention()
         return HealthSyncResult.Synced
+    }
+
+    private fun assertPageLimit(changePages: Int) {
+        if (changePages > maximumChangePages) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect change log exceeded its bounded page limit.",
+            )
+        }
+    }
+
+    private suspend fun resetExpiredCursor(state: ChangeSyncState): HealthSyncResult? {
+        if (state.resetAttempted) return HealthSyncResult.Retryable
+        state.resetAttempted = true
+        cursor.clear()
+        state.current = bootstrap() ?: return HealthSyncResult.NeedsAttention
+        state.seenChangeTokens.clear()
+        state.seenChangeTokens += state.current.token
+        state.changePages = 0
+        state.sourceChanges = 0
+        state.fullWindowRefreshed = true
+        return null
+    }
+
+    private fun acceptBatchBounds(batch: HealthConnectBatch, state: ChangeSyncState) {
+        if (batch.sourceChangeCount < 0 ||
+            batch.sourceChangeCount > maximumChanges - state.sourceChanges
+        ) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect change log exceeded its bounded record limit.",
+            )
+        }
+        if (batch.hasMore && !state.seenChangeTokens.add(batch.nextToken)) {
+            throw HealthConnectSourceLimitException(
+                "Health Connect repeated a change-log token.",
+            )
+        }
+        state.sourceChanges += batch.sourceChangeCount
+    }
+
+    private suspend fun refreshMetricWindowIfNeeded(
+        batch: HealthConnectBatch,
+        state: ChangeSyncState,
+    ): Boolean {
+        if (!batch.metricChanged || state.fullWindowRefreshed) return true
+        // Metric records have no session foreign key. Re-read the bounded window so a metric
+        // edit becomes an idempotent local session upsert rather than stale derived data.
+        if (!persist(batch = gateway.initialRuns(now().minus(30, ChronoUnit.DAYS)))) return false
+        state.fullWindowRefreshed = true
+        return true
     }
 
     private suspend fun bootstrap(): HealthConnectCursor? {
