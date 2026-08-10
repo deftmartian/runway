@@ -231,7 +231,9 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        compose.onNodeWithText("Restore a backup instead").performClick()
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasText("Restore a backup instead"))
+        compose.onNodeWithText("Restore a backup instead").assertIsDisplayed().performClick()
         compose.onNodeWithText("Replace local runway data?").assertIsDisplayed()
         compose.onNodeWithText("Choose backup").performClick()
         compose.runOnIdle { assertTrue(restoreRequested) }
@@ -346,12 +348,14 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasText("Restore a backup instead"))
         compose.onNodeWithText("Restore a backup instead").assertIsDisplayed()
         compose.runOnIdle { loadPayload?.invoke(existingPayload) }
 
         compose.onNodeWithText("Replacing Existing 10K plan keeps its history and archives the current plan after confirmation.")
             .assertIsDisplayed()
-        compose.onNodeWithText("Prepare for a race").assertIsSelected()
+        compose.onNodeWithText("Train for a distance").assertIsSelected()
         compose.onNodeWithText("10K").assertIsSelected()
         compose.onNodeWithText("5K").assertIsNotSelected()
         compose.onNodeWithText("Build consistency").assertIsSelected()
