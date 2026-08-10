@@ -215,7 +215,6 @@ class LocalConsequenceDecisionRepository(
                         distanceMeters = activity.distanceMeters ?: 0,
                         durationSeconds = activity.durationSeconds,
                         feltHard = feedback?.feltHard == true,
-                        pain = feedback?.pain == true,
                     ),
                     ExtraActivityTargets(
                         nextRunTargetDistanceMeters = next?.currentDistanceMeters ?: 0,

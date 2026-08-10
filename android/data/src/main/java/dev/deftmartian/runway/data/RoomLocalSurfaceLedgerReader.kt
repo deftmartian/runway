@@ -1076,7 +1076,6 @@ class RoomLocalSurfaceLedgerReader(
         val active = plan?.takeIf { it.plan.state == "active" } ?: return null
         val end = active.plan.endEpochDay ?: return null
         val phase = when (active.plan.phaseType) {
-            "foundation" -> LocalPlanPhase.FOUNDATION
             "calibration" -> LocalPlanPhase.CALIBRATION
             else -> return null
         }

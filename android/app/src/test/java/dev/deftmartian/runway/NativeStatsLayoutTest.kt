@@ -151,7 +151,6 @@ class NativeStatsLayoutTest {
         completedRuns = 0,
         missedRuns = 0,
         skippedRuns = 0,
-        painFlags = 0,
         hardFlags = 0,
         averagePaceSecondsPerKm = null,
         averageHeartRate = null,

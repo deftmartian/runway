@@ -385,6 +385,7 @@ internal fun CalendarScreen(
             },
             onPlanDecision = { pendingDecision = it },
             canAddWorkout = payload?.hasActivePlan == true,
+            routine = routine,
             onAddWorkout = {
                 showSelectedDay = false
                 addWorkoutDate = date

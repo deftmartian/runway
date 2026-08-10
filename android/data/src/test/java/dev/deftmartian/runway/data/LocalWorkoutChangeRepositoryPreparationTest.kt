@@ -25,8 +25,8 @@ class LocalWorkoutChangeRepositoryPreparationTest {
         val request = LocalWorkoutChangeRequest.Edit(stored.entity.workoutId, proposed)
         val preparer = LocalWorkoutChangePreparer()
 
-        val first = preparer.prepare(ledger(listOf(stored)), request, today, hasInjuryRisk = false)
-        val second = preparer.prepare(ledger(listOf(stored)), request, today, hasInjuryRisk = false)
+        val first = preparer.prepare(ledger(listOf(stored)), request, today)
+        val second = preparer.prepare(ledger(listOf(stored)), request, today)
 
         assertEquals(first.previewToken, second.previewToken)
         assertTrue(first.preview.requiresConfirmation)
@@ -62,7 +62,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
             ledger(listOf(stored)),
             LocalWorkoutChangeRequest.Reset("workout-1"),
             today,
-            hasInjuryRisk = false,
         )
 
         assertEquals(generated, prepared.preview.proposed)
@@ -130,7 +129,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
                 ),
             ),
             today,
-            false,
         )
         val persisted = LocalWorkoutChangePersistenceMapper()
             .map(prepared, "adjustment-timed", "decision-timed", 789)
@@ -155,13 +153,11 @@ class LocalWorkoutChangeRepositoryPreparationTest {
             ledger(listOf(selected, compatible)),
             LocalWorkoutChangeRequest.Edit("selected", proposed, rebalanceCompatibleWeek = false),
             today,
-            false,
         )
         val withRebalance = LocalWorkoutChangePreparer().prepare(
             ledger(listOf(selected, compatible)),
             LocalWorkoutChangeRequest.Edit("selected", proposed, rebalanceCompatibleWeek = true),
             today,
-            false,
         )
 
         assertEquals(1, noRebalance.preview.workoutChanges.size)
@@ -189,7 +185,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
             ledger(listOf(stored)).copy(weeks = ledger(listOf(stored)).weeks + secondWeek),
             LocalWorkoutChangeRequest.Edit("workout-1", moved),
             today,
-            false,
         )
 
         assertEquals("week-2", prepared.preview.proposed.weekId)
@@ -210,7 +205,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
                 ledger(listOf(valid.copy(hasResult = true))),
                 LocalWorkoutChangeRequest.Remove("workout-1"),
                 today,
-                false,
             )
         }
         assertFailure {
@@ -218,7 +212,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
                 ledger(listOf(valid), state = "archived"),
                 LocalWorkoutChangeRequest.Remove("workout-1"),
                 today,
-                false,
             )
         }
         assertFailure {
@@ -229,7 +222,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
                     distance("week-1", today.plusDays(3), 1_000, "New"),
                 ),
                 today,
-                false,
             )
         }
         val race = stored(
@@ -241,7 +233,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
                 ledger(listOf(race)),
                 LocalWorkoutChangeRequest.Remove("race"),
                 today,
-                false,
             )
         }
         val past = stored("past", distance("week-1", today.minusDays(1), 5_000, "Past"))
@@ -250,7 +241,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
                 ledger(listOf(past)),
                 LocalWorkoutChangeRequest.Remove("past"),
                 today,
-                false,
             )
         }
     }
@@ -272,7 +262,6 @@ class LocalWorkoutChangeRepositoryPreparationTest {
             ledger(emptyList()),
             LocalWorkoutChangeRequest.Add("added-1", proposed),
             today,
-            false,
         )
         val change = prepared.preview.workoutChanges.single()
         assertTrue(change.before.isRemoved)

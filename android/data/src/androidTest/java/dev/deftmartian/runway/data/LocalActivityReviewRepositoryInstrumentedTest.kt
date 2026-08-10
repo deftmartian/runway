@@ -35,15 +35,15 @@ class LocalActivityReviewRepositoryInstrumentedTest {
     fun tearDown() = database.close()
 
     @Test
-    fun reviewOnlyPainFeedbackDoesNotSetCurrentPain() = runBlocking {
+    fun reviewFeedbackStoresHardEffortWithoutHealthState() = runBlocking {
         database.activityLedgerDao().saveActivity(activity("review", reviewState = "review"))
 
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { 2_000 })
-            .updateFeedback("review", feltHard = false, pain = true)
+            .updateFeedback("review", feltHard = true)
 
         assertFalse(assertFeedbackUpdated(result).appliedDecisionPreserved)
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
-        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("review")).pain)
+        assertFalse(requireNotNull(database.activityLedgerDao().activityFeedback("review")).pain)
     }
 
     @Test
@@ -69,7 +69,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         )
 
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { 2_000 })
-            .updateFeedback("accepted", feltHard = true, pain = false)
+            .updateFeedback("accepted", feltHard = true)
 
         assertEquals(true, assertFeedbackUpdated(result).appliedDecisionPreserved)
         val stored = requireNotNull(database.activityLedgerDao().activityConsequence("accepted"))
@@ -89,14 +89,13 @@ class LocalActivityReviewRepositoryInstrumentedTest {
             activityId = "linked-now",
             workoutId = "linked-workout",
             feltHard = true,
-            pain = true,
         )
 
         check(result is LocalActivityReviewResult.Linked)
         val feedback = requireNotNull(database.activityLedgerDao().activityFeedback("linked-now"))
         assertEquals(true, feedback.feltHard)
-        assertEquals(true, feedback.pain)
-        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(feedback.pain)
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
     }
 
     @Test
@@ -110,7 +109,6 @@ class LocalActivityReviewRepositoryInstrumentedTest {
             activityId = "routine-linked",
             workoutId = "routine-workout",
             feltHard = true,
-            pain = true,
         )
 
         check(result is LocalActivityReviewResult.Linked)
@@ -120,7 +118,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         assertEquals(2_000, feedback.completedDistanceMeters)
         assertEquals(900, feedback.completedDurationSeconds)
         assertFalse(requireNotNull(database.activityLedgerDao().workoutFeedbackConsequence(feedback.feedbackId)).planChangeAvailable)
-        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
     }
 
     @Test
@@ -132,14 +130,14 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         val before = requireNotNull(database.goalPlanDao().workout("routine-future"))
 
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { now })
-            .confirmAsExtra("routine-extra", feltHard = true, pain = true)
+            .confirmAsExtra("routine-extra", feltHard = true)
 
         check(result is LocalActivityReviewResult.AcceptedExtra)
         assertFalse(result.consequence.planChangeAvailable)
         val consequence = requireNotNull(database.activityLedgerDao().activityConsequence("routine-extra"))
         assertFalse(consequence.planChangeAvailable)
         assertEquals(before, database.goalPlanDao().workout("routine-future"))
-        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
     }
 
     @Test
@@ -149,11 +147,11 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         )
         val repository = LocalActivityReviewRepository(database, nowEpochMillis = { now })
 
-        val accepted = repository.confirmAsExtra("extra-now", feltHard = true, pain = true)
+        val accepted = repository.confirmAsExtra("extra-now", feltHard = true)
 
         check(accepted is LocalActivityReviewResult.AcceptedExtra)
         assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).feltHard)
-        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
+        assertFalse(requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
         assertNotNull(database.activityLedgerDao().activityConsequence("extra-now"))
         database.activityLedgerDao().saveActivityConsequenceOption(
             ActivityConsequenceOptionEntity("extra-now", "keep_plan"),
@@ -166,7 +164,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         assertEquals("review", activity.reviewState)
         assertFalse(activity.extraPlanImpactConfirmed)
         assertNull(activity.acceptedAtEpochMillis)
-        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
+        assertFalse(requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
         assertNull(database.activityLedgerDao().activityConsequence("extra-now"))
         assertEquals(emptyList<ActivityConsequenceOptionEntity>(), database.activityLedgerDao().activityConsequenceOptions("extra-now", 10))
 
@@ -175,7 +173,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         check(rerun is LocalActivityReviewResult.Rejected)
         assertEquals(LocalActivityReviewIssue.ACTIVITY_NOT_ACCEPTED_EXTRA, rerun.issue)
         assertEquals("review", requireNotNull(database.activityLedgerDao().activity("extra-now")).reviewState)
-        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
+        assertFalse(requireNotNull(database.activityLedgerDao().activityFeedback("extra-now")).pain)
     }
 
     @Test
@@ -220,11 +218,11 @@ class LocalActivityReviewRepositoryInstrumentedTest {
         )
 
         val result = LocalActivityReviewRepository(database, nowEpochMillis = { now })
-            .updateFeedback("old-accepted", feltHard = false, pain = true)
+            .updateFeedback("old-accepted", feltHard = false)
 
         assertFalse(assertFeedbackUpdated(result).appliedDecisionPreserved)
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
-        assertEquals(true, requireNotNull(database.activityLedgerDao().activityFeedback("old-accepted")).pain)
+        assertFalse(requireNotNull(database.activityLedgerDao().activityFeedback("old-accepted")).pain)
     }
 
     @Test
@@ -237,7 +235,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
                 occurredAtEpochMillis = epochMillis(today.minusDays(8)),
             ),
         )
-        repository.updateFeedback("old-extra", feltHard = false, pain = true)
+        repository.updateFeedback("old-extra", feltHard = false)
         repository.confirmAsExtra("old-extra")
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
 
@@ -248,9 +246,9 @@ class LocalActivityReviewRepositoryInstrumentedTest {
                 occurredAtEpochMillis = epochMillis(today.minusDays(7)),
             ),
         )
-        repository.updateFeedback("recent-extra", feltHard = false, pain = true)
+        repository.updateFeedback("recent-extra", feltHard = false)
         repository.confirmAsExtra("recent-extra")
-        assertEquals(true, requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
     }
 
     @Test
@@ -265,7 +263,7 @@ class LocalActivityReviewRepositoryInstrumentedTest {
             ),
         )
         val repository = LocalActivityReviewRepository(database, nowEpochMillis = { now })
-        repository.updateFeedback("old-linked", feltHard = false, pain = true)
+        repository.updateFeedback("old-linked", feltHard = false)
 
         val result = repository.link("old-linked", "old-workout")
 

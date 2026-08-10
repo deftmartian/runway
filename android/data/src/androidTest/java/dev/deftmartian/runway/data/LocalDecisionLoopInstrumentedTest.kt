@@ -3,11 +3,11 @@ package dev.deftmartian.runway.data
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import dev.deftmartian.runway.domain.FoundationIntake
-import dev.deftmartian.runway.domain.GeneratedFoundationPlan
+import dev.deftmartian.runway.domain.CalibrationIntake
+import dev.deftmartian.runway.domain.GeneratedCalibrationPlan
 import dev.deftmartian.runway.domain.GoalKind
-import dev.deftmartian.runway.domain.InjuryFlags
 import dev.deftmartian.runway.domain.PlanDecision
+import dev.deftmartian.runway.domain.RaceDistance
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TrainingPlanner
 import java.time.LocalDate
@@ -41,7 +41,7 @@ class LocalDecisionLoopInstrumentedTest {
 
     @Test
     fun setupReviewExtraAndPlanDecisionStayConsistentAcrossEveryLedgerSurface() = runBlocking {
-        val graph = generatedFoundationGraph()
+        val graph = generatedLearningGraph()
         val setupResult = LocalPlanSetupRepository(database).setUp(
             LocalPlanSetupRequest(
                 operationId = "decision-loop-setup",
@@ -79,7 +79,6 @@ class LocalDecisionLoopInstrumentedTest {
                 occurredDate = today,
                 distanceMeters = 1_000,
                 durationSeconds = 600,
-                pain = true,
             ),
         )
         assertTrue(recorded is LocalTrainingMutationResult.ManualRunRecorded)
@@ -151,25 +150,25 @@ class LocalDecisionLoopInstrumentedTest {
         assertEquals(0, surfaces.calendar(from, through).pendingDecisionCount)
     }
 
-    private fun generatedFoundationGraph(): GeneratedPlanPersistenceGraph {
+    private fun generatedLearningGraph(): GeneratedPlanPersistenceGraph {
         val generated = TrainingPlanner.generatePlan(
-            FoundationIntake(
-                startMode = StartMode.FOUNDATION_ONLY,
-                goalKind = GoalKind.FOUNDATION,
-                raceDistance = null,
+            CalibrationIntake(
+                goalKind = GoalKind.RACE,
+                raceDistance = RaceDistance.FIVE_K,
                 availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
                 startDate = today.toString(),
             ),
-        ) as GeneratedFoundationPlan
+        ) as GeneratedCalibrationPlan
         return GeneratedPlanPersistenceMapper.map(
             generated,
             GeneratedPlanGoalMetadata(
                 goalId = "decision-loop-goal",
                 planId = "decision-loop-plan",
-                title = "Foundation",
-                goalKind = GoalKind.FOUNDATION,
-                startMode = StartMode.FOUNDATION_ONLY,
+                title = "5K baseline learning",
+                goalKind = GoalKind.RACE,
+                startMode = StartMode.CALIBRATION,
+                goalTargetDate = today.plusWeeks(12).toString(),
+                targetDistanceMeters = 5_000,
                 createdAtEpochMillis = now,
             ),
         )

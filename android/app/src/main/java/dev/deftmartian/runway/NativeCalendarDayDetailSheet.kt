@@ -37,6 +37,7 @@ internal fun CalendarDayDetailSheet(
     onOpenActivity: (NativeActivity) -> Unit,
     onPlanDecision: (PendingPlanDecision) -> Unit,
     canAddWorkout: Boolean,
+    routine: Boolean,
     onAddWorkout: () -> Unit,
 ) {
     val activityPlacement = placeCalendarActivities(workouts, activities)
@@ -57,6 +58,13 @@ internal fun CalendarDayDetailSheet(
             )
             if (workouts.isEmpty() && activities.isEmpty()) {
                 Text("No run is planned or recorded for this day.")
+            }
+            if (routine && date > today) {
+                Text(
+                    "The number of open runs in a week is its goal. Add or remove one here, or move one between weeks; other weeks stay unchanged.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (date > today && canAddWorkout) {
                 OutlinedButton(

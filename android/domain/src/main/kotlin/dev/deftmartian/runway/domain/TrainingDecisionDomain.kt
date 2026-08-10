@@ -21,7 +21,6 @@ enum class ConsequenceKind {
     REPEATED_SKIP,
     LOAD_SPIKE,
     HARD_EFFORT,
-    PAIN_REPORTED,
     ROUTINE_RUN_RECORDED,
     EXTRA_ACTIVITY,
     NEEDS_REVIEW,
@@ -36,7 +35,6 @@ data class FeedbackInput(
     val completedDurationSeconds: Int? = null,
     val status: FeedbackStatus,
     val feltHard: Boolean = false,
-    val pain: Boolean = false,
     val choice: PlanDecision? = null,
     val recentSkippedWorkouts: Int = 0,
     val recentShortenedWorkouts: Int = 0,
@@ -98,7 +96,7 @@ object Consequences {
             actualDifference = comparison.difference,
             weeklyLoadDelta = weekly,
             nextRunAdjustment =
-                if (!comparison.comparable && !input.pain && !input.feltHard) {
+                if (!comparison.comparable && !input.feltHard) {
                     null
                 } else {
                     comparison.adjustment(adjustment)
@@ -107,23 +105,8 @@ object Consequences {
             recommendedDecision = decision,
             options = options,
             comparisonStatus = "not_comparable".takeUnless { comparison.comparable },
-            planChangeAvailable = comparison.comparable || input.pain || input.feltHard,
+            planChangeAvailable = comparison.comparable || input.feltHard,
         )
-        if (input.pain) {
-            val target = if (comparison.metric == LoadMetric.DURATION) {
-                input.targetDurationSeconds ?: 0
-            } else {
-                input.targetDistanceMeters
-            }
-            val minimumReduction = if (comparison.metric == LoadMetric.DURATION) 300 else 1_000
-            return result(
-                ConsequenceKind.PAIN_REPORTED,
-                -max(target, minimumReduction),
-                Risk.UNSAFE,
-                PlanDecision.NEXT_REST,
-                material - PlanDecision.REPEAT_PRESCRIPTION,
-            )
-        }
         return when (comparison.deviation) {
             Deviation.OVER -> {
                 val guardrail = if (comparison.metric == LoadMetric.DISTANCE) {
@@ -219,11 +202,10 @@ object Consequences {
     fun recordRoutine(
         status: FeedbackStatus,
         feltHard: Boolean = false,
-        pain: Boolean = false,
     ): Consequence {
         val kind = when (status) {
             FeedbackStatus.DONE, FeedbackStatus.SHORTENED, FeedbackStatus.SKIPPED ->
-                if (pain) ConsequenceKind.PAIN_REPORTED else ConsequenceKind.ROUTINE_RUN_RECORDED
+                ConsequenceKind.ROUTINE_RUN_RECORDED
         }
         return Consequence(
             kind = kind,
@@ -232,11 +214,7 @@ object Consequences {
             actualDifference = 0,
             weeklyLoadDelta = null,
             nextRunAdjustment = null,
-            risk = when {
-                pain -> Risk.UNSAFE
-                feltHard -> Risk.MODERATE
-                else -> Risk.CONSERVATIVE
-            },
+            risk = if (feltHard) Risk.MODERATE else Risk.CONSERVATIVE,
             recommendedDecision = PlanDecision.KEEP_PLAN,
             options = setOf(PlanDecision.KEEP_PLAN),
             comparisonStatus = "not_comparable",
@@ -326,7 +304,7 @@ fun selectAutoWorkoutMatch(activity: MatchActivity, candidates: Iterable<MatchWo
     return if (second != null && second.second == best.second && abs(second.third - best.third) < 1e-12) null else best.first.id
 }
 
-data class ExtraActivityInput(val distanceMeters: Int, val durationSeconds: Int? = null, val feltHard: Boolean = false, val pain: Boolean = false)
+data class ExtraActivityInput(val distanceMeters: Int, val durationSeconds: Int? = null, val feltHard: Boolean = false)
 data class ExtraActivityTargets(val nextRunTargetDistanceMeters: Int, val nextRunTargetDurationSeconds: Int? = null, val weekTargetDistanceMeters: Int, val weekTargetDurationSeconds: Int)
 fun isHistoricalExtraActivity(activityDate: LocalDate, today: LocalDate) =
     activityDate.isBefore(today.minusDays(7))
@@ -345,22 +323,16 @@ fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraA
     if (missingNative) {
         val next = if (timed) targets.nextRunTargetDurationSeconds ?: 0 else targets.nextRunTargetDistanceMeters
         val adjustment = when {
-            input.pain -> null
             input.feltHard -> {
                 val minimumReduction = if (timed) 300 else 1_000
                 LoadDelta(metric, -max(minimumReduction, roundTrainingValueToInt(next * .15)))
             }
             else -> null
         }
-        val kind = if (input.pain) ConsequenceKind.PAIN_REPORTED else ConsequenceKind.EXTRA_ACTIVITY
-        val risk = if (input.pain) Risk.UNSAFE else Risk.MODERATE
-        val decision = when {
-            input.pain -> PlanDecision.NEXT_REST
-            input.feltHard -> PlanDecision.REDUCE_NEXT
-            else -> PlanDecision.KEEP_PLAN
-        }
+        val kind = ConsequenceKind.EXTRA_ACTIVITY
+        val risk = Risk.MODERATE
+        val decision = if (input.feltHard) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
         val options = when {
-            input.pain -> setOf(PlanDecision.KEEP_PLAN, PlanDecision.NEXT_REST)
             adjustment != null -> setOf(
                 PlanDecision.KEEP_PLAN,
                 PlanDecision.REDUCE_NEXT,
@@ -391,28 +363,6 @@ fun calculateExtraActivityConsequence(input: ExtraActivityInput, targets: ExtraA
         next,
         max(minimumReduction, roundTrainingValueToInt(actual * adjustmentMultiplier)),
     )
-    if (input.pain) {
-        val painReduction = -max(
-            max(minimumReduction, next),
-            roundTrainingValueToInt(actual * .5),
-        )
-        return Consequence(
-            ConsequenceKind.PAIN_REPORTED,
-            Deviation.UNPLANNED,
-            metric,
-            actual,
-            LoadDelta(metric, actual),
-            LoadDelta(metric, painReduction),
-            Risk.UNSAFE,
-            PlanDecision.NEXT_REST,
-            setOf(
-                PlanDecision.KEEP_PLAN,
-                PlanDecision.REDUCE_NEXT,
-                PlanDecision.NEXT_REST,
-                PlanDecision.REBALANCE_WEEK,
-            ),
-        )
-    }
     val risk = if (input.feltHard && share > .2) Risk.UNSAFE else if (share > .1) Risk.AGGRESSIVE else if (input.feltHard) Risk.MODERATE else Risk.CONSERVATIVE
     val decision = if (share > .1 || input.feltHard) PlanDecision.REDUCE_NEXT else PlanDecision.KEEP_PLAN
     return Consequence(
@@ -509,7 +459,6 @@ object WorkoutEdits {
         weeks: List<EditWeek>,
         today: LocalDate,
         rebalance: Boolean = false,
-        hasInjuryRisk: Boolean = false,
         operation: String = "edit",
     ): EditPreview {
         assertProposal(proposed)
@@ -580,7 +529,7 @@ object WorkoutEdits {
             rebalanced.keys.toList(),
             round1(share * 100),
             ramp,
-            rampRisk(ramp, hasInjuryRisk),
+            rampRisk(ramp),
             basis,
             risk,
             requiresConfirmation,
@@ -622,12 +571,11 @@ object WorkoutEdits {
             )
         }
     }
-    fun rampRisk(percent: Double, injury: Boolean = false): Risk {
-        val injuryOffset = if (injury) 2 else 0
+    fun rampRisk(percent: Double): Risk {
         return when {
-            percent > 18 - injuryOffset -> Risk.UNSAFE
-            percent > 12 - injuryOffset -> Risk.AGGRESSIVE
-            percent > 8 - injuryOffset -> Risk.MODERATE
+            percent > 18 -> Risk.UNSAFE
+            percent > 12 -> Risk.AGGRESSIVE
+            percent > 8 -> Risk.MODERATE
             else -> Risk.CONSERVATIVE
         }
     }

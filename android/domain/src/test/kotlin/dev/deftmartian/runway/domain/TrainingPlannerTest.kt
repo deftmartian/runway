@@ -6,10 +6,9 @@ import org.junit.Test
 import java.time.LocalDate
 
 class TrainingPlannerTest {
-    private val flags = InjuryFlags(recentInjury = true)
     private val established = EstablishedTrainingIntake(
         priority = GoalPriority.FINISH_HEALTHY,
-        availability = listOf(1, 3, 6), injuryFlags = flags, raceDistance = RaceDistance.HALF,
+        availability = listOf(1, 3, 6), raceDistance = RaceDistance.HALF,
         targetDate = "2026-09-01", currentWeeklyDistanceMeters = 12000, currentRunsPerWeek = 3,
         longestRecentRunMeters = 8000, preferredLongRunDay = 6, startDate = "2026-05-11"
     )
@@ -36,7 +35,7 @@ class TrainingPlannerTest {
             val long = week.workouts.first { it.type == WorkoutType.LONG }
             week.workouts.firstOrNull { it.scheduledDate == DateUtils.addDays(long.scheduledDate, 1) }?.type == WorkoutType.REST
         })
-        assertEquals(5.5, plan.summary.defaultWeeklyIncreasePercent, 0.0)
+        assertEquals(7.5, plan.summary.defaultWeeklyIncreasePercent, 0.0)
     }
 
     @Test fun `race week counts the goal event toward the preserved run frequency`() {
@@ -81,7 +80,6 @@ class TrainingPlannerTest {
         val intake = EstablishedTrainingIntake(
             priority = GoalPriority.FINISH_HEALTHY,
             availability = listOf(1, 3, 6),
-            injuryFlags = InjuryFlags(),
             raceDistance = RaceDistance.HALF,
             targetDate = "2026-11-22",
             currentWeeklyDistanceMeters = 25_000,
@@ -120,58 +118,19 @@ class TrainingPlannerTest {
         assertTrue(later.risk.ordinal < RiskRating.AGGRESSIVE.ordinal)
     }
 
-    @Test fun `foundation and calibration remain timed rather than fabricated distance`() {
-        val foundation = TrainingPlanner.generateFoundation(FoundationIntake(StartMode.FOUNDATION_ONLY, GoalKind.FOUNDATION, null, listOf(1, 3, 6), InjuryFlags(), "2026-05-11"))
-        assertEquals("2026-07-12", foundation.targetDate)
-        assertEquals(9, foundation.weeks.size)
-        assertEquals(27, foundation.weeks.sumOf { it.workouts.count { workout -> workout.type == WorkoutType.EASY } })
-        assertTrue(foundation.weeks.flatMap { it.workouts }.all { it.targetDistanceMeters == 0 })
-        val calibration = TrainingPlanner.generateCalibration(CalibrationIntake(GoalKind.RACE, RaceDistance.FIVE_K, listOf(2, 6), InjuryFlags(), 1200, "2026-05-11"))
+    @Test fun `calibration uses open runs rather than fabricated distance or duration`() {
+        val calibration = TrainingPlanner.generateCalibration(CalibrationIntake(GoalKind.RACE, RaceDistance.FIVE_K, listOf(2, 6), "2026-05-11"))
         assertEquals("2026-05-24", calibration.targetDate)
         assertEquals(4, calibration.weeks.sumOf { it.workouts.count { workout -> workout.type == WorkoutType.EASY } })
-        assertTrue(calibration.weeks.flatMap { it.workouts }.filter { it.type == WorkoutType.EASY }.all { it.targetDurationSeconds == 1200 && it.targetDistanceMeters == 0 })
-    }
-
-    @Test fun `foundation keeps source interval totals exact behind coarse presentation`() {
-        val foundation = TrainingPlanner.generateFoundation(
-            FoundationIntake(
-                StartMode.FOUNDATION_ONLY,
-                GoalKind.FOUNDATION,
-                null,
-                listOf(1, 3, 6),
-                InjuryFlags(),
-                "2026-05-11",
-            ),
-        )
-        val runs = foundation.weeks.flatMap { week -> week.workouts.filter { it.type == WorkoutType.EASY } }
-
-        assertEquals(
-            listOf(
-                1_710, 1_710, 1_710,
-                1_740, 1_740, 1_740,
-                1_500, 1_500, 1_500,
-                1_890, 1_890, 1_890,
-                1_860, 1_860, 1_800,
-                2_040, 1_980, 2_100,
-                2_100, 2_100, 2_100,
-                2_280, 2_280, 2_280,
-                2_400, 2_400, 2_400,
-            ),
-            runs.map { it.targetDurationSeconds },
-        )
-        assertTrue(runs.all { workout ->
-            val prescription = workout.prescription as WorkoutPrescription.Timed
-            val intervalTotal = prescription.warmupSeconds + prescription.cooldownSeconds +
-                prescription.blocks.sumOf { block ->
-                    block.repetitions * block.segments.sumOf(PrescriptionSegment::durationSeconds)
-                }
-            prescription.totalDurationSeconds == workout.targetDurationSeconds &&
-                intervalTotal == workout.targetDurationSeconds
+        assertTrue(calibration.weeks.flatMap { it.workouts }.filter { it.type == WorkoutType.EASY }.all {
+            it.prescription == WorkoutPrescription.Open &&
+                it.targetDurationSeconds == null &&
+                it.targetDistanceMeters == 0
         })
     }
 
     @Test(expected = IllegalArgumentException::class) fun `phase sessions require rest-day spacing`() {
-        TrainingPlanner.generateFoundation(FoundationIntake(StartMode.FOUNDATION_ONLY, GoalKind.FOUNDATION, null, listOf(1, 2, 3), InjuryFlags(), "2026-05-11"))
+        TrainingPlanner.generateCalibration(CalibrationIntake(GoalKind.RACE, RaceDistance.FIVE_K, listOf(1, 2), "2026-05-11"))
     }
 
     @Test fun `fixed today starts on next full week`() {

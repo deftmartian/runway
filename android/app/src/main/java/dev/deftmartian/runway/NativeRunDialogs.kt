@@ -53,9 +53,9 @@ internal fun positiveRunMeasurementError(value: String, unit: String): String? {
 
 internal fun feedbackPlanChangeMessage(planPhase: String?): String =
     if (planPhase == "routine") {
-        "Hard effort and pain are saved in your record. A pain report also updates your running limits; neither changes later routine days."
+        "An unusually hard effort is saved with this result. Use Calendar to change the open-run goal for an affected week."
     } else {
-        "These reports can offer conservative next-step options. Nothing changes until you choose and apply it."
+        "An unusually hard effort can offer a smaller next run. You can also move the next run later in Calendar. Nothing changes until you choose it."
     }
 
 internal fun workoutPurposeInputError(value: String): String? =
@@ -102,7 +102,6 @@ internal fun FeedbackDialog(
         )
     }
     var harderThanExpected by rememberSaveable { mutableStateOf(false) }
-    var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
     val distanceError = when {
         status == FeedbackStatus.SKIPPED || !open -> null
         else -> boundedRunMeasurementError(distance, false, 0.1, 100.0, "km")
@@ -186,11 +185,6 @@ internal fun FeedbackDialog(
                     }
                 }
                 item {
-                    CheckRow("Pain during or after this run", painDuringOrAfter) {
-                        painDuringOrAfter = it
-                    }
-                }
-                item {
                     Text(
                         feedbackPlanChangeMessage(workout.planPhase),
                         style = MaterialTheme.typography.bodySmall,
@@ -207,7 +201,6 @@ internal fun FeedbackDialog(
                             workoutId = workout.id.orEmpty(),
                             status = status,
                             feltHard = harderThanExpected,
-                            pain = painDuringOrAfter,
                             completedDistanceKm =
                                 if (status != FeedbackStatus.SKIPPED && (open || !timed)) {
                                     distance.toDoubleOrNull()
@@ -243,7 +236,6 @@ internal fun ManualRunDialog(
     var distance by rememberSaveable { mutableStateOf("") }
     var duration by rememberSaveable { mutableStateOf("") }
     var harderThanExpected by rememberSaveable { mutableStateOf(false) }
-    var painDuringOrAfter by rememberSaveable { mutableStateOf(false) }
     val distanceNumber = distance.toDoubleOrNull()
     val durationNumber = duration.toDoubleOrNull()
     val dateError = isoDateInputError(date)
@@ -317,11 +309,6 @@ internal fun ManualRunDialog(
                         harderThanExpected = it
                     }
                 }
-                item {
-                    CheckRow("Pain during or after this run", painDuringOrAfter) {
-                        painDuringOrAfter = it
-                    }
-                }
             }
         },
         confirmButton = {
@@ -333,7 +320,6 @@ internal fun ManualRunDialog(
                             distanceKm = distanceNumber,
                             durationMinutes = durationNumber,
                             feltHard = harderThanExpected,
-                            pain = painDuringOrAfter,
                         ),
                     )
                 },
@@ -391,7 +377,7 @@ internal fun WorkoutAddDialog(
                 item {
                     Text(
                         if (routine) {
-                            "This adds one open run. It does not change your recurring days or any other week."
+                            "This adds one open run to this week's goal. It does not change any other week."
                         } else {
                             "Runway will show the weekly-load effect before adding it."
                         },
@@ -471,7 +457,7 @@ internal fun WorkoutAddDialog(
                 },
                 enabled = !actionPending && valid,
             ) {
-                Text("Review addition")
+                Text(if (routine) "Review weekly goal" else "Review addition")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -513,6 +499,7 @@ internal fun WorkoutEditDialog(
 ) {
     val currentPrescriptionKind = workout.prescriptionKind.toPrescriptionKindOrNull()
     val currentWorkoutType = workout.type.toWorkoutTypeOrNull()
+    val routine = workout.planPhase == "routine"
     var scheduledDate by rememberSaveable { mutableStateOf(workout.scheduledDate.orEmpty()) }
     var type by rememberSaveable { mutableStateOf(currentWorkoutType) }
     var prescriptionKind by rememberSaveable {
@@ -596,8 +583,10 @@ internal fun WorkoutEditDialog(
                 }
                 item {
                     Text(
-                        if (open) {
-                            "This run has no prescribed amount. You can move it, change its purpose, or give this one run a distance or time target."
+                        if (routine) {
+                            "Move this open run to another day, or remove it from this week's goal. Distance and duration stay unprescribed."
+                        } else if (open) {
+                            "This run has no prescribed amount. You can move it or change its purpose."
                         } else {
                             "Runway will show the weekly-load effect before applying this change."
                         },
@@ -614,7 +603,7 @@ internal fun WorkoutEditDialog(
                         singleLine = true,
                     )
                 }
-                item {
+                if (!routine) item {
                     Text("Workout type", style = MaterialTheme.typography.labelLarge)
                     listOf(
                         WorkoutType.EASY to "Easy run",
@@ -631,7 +620,7 @@ internal fun WorkoutEditDialog(
                             }
                         }
                 }
-                if (!isRest) {
+                if (!isRest && !routine) {
                     item {
                         Text("Target", style = MaterialTheme.typography.labelLarge)
                         ChoiceRow("Open run", open) {
@@ -658,7 +647,7 @@ internal fun WorkoutEditDialog(
                         }
                     }
                 }
-                item {
+                if (!routine) item {
                     OutlinedTextField(
                         value = purpose,
                         onValueChange = { purpose = it.take(120) },
@@ -683,7 +672,7 @@ internal fun WorkoutEditDialog(
                 }
                 item {
                     TextButton(onClick = onRemove, enabled = !actionPending) {
-                        Text("Remove this workout")
+                        Text(if (routine) "Remove from this week's goal" else "Remove this workout")
                     }
                 }
             }
@@ -701,17 +690,19 @@ internal fun WorkoutEditDialog(
                             workoutId = workout.id.orEmpty(),
                             mutation = WorkoutMutation(
                                 scheduledDate = scheduledDate,
-                                type = requireNotNull(type),
+                                type = if (routine) WorkoutType.EASY else requireNotNull(type),
                                 prescriptionKind =
-                                    if (isRest) {
+                                    if (routine) {
+                                        PrescriptionKind.OPEN
+                                    } else if (isRest) {
                                         PrescriptionKind.REST
                                     } else {
                                         prescriptionKind
                                     },
                                 targetDistanceMeters =
-                                    if (isRest || timed || open) 0
+                                    if (routine || isRest || timed || open) 0
                                     else (requireNotNull(loadNumber) * 1_000).toInt(),
-                                targetDurationSeconds = targetDurationSeconds,
+                                targetDurationSeconds = if (routine) null else targetDurationSeconds,
                                 intervalStructure =
                                     if (!isRest && timed) {
                                         resizeIntervalStructure(
@@ -721,10 +712,10 @@ internal fun WorkoutEditDialog(
                                     } else {
                                         null
                                     },
-                                intensity = if (isRest) "rest" else "easy",
+                                intensity = if (routine) "easy" else if (isRest) "rest" else "easy",
                                 purpose = purpose.trim(),
                                 userReason = reason.trim(),
-                                rebalance = rebalance && !isRest && !open,
+                                rebalance = !routine && rebalance && !isRest && !open,
                             ),
                         ),
                     )

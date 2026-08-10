@@ -153,9 +153,7 @@ internal fun FeedbackOutcomeCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (feedback.pain == true) {
-                Text("Pain was reported", color = MaterialTheme.colorScheme.error)
-            } else if (feedback.feltHard == true) {
+            if (feedback.feltHard == true) {
                 Text("This felt harder than expected", color = MaterialTheme.colorScheme.primary)
             }
             feedback.consequence?.let {
@@ -203,12 +201,6 @@ internal fun ConsequenceChoices(
         SettingRow("Plan difference", deviation.replace('_', ' ').replaceFirstChar { it.uppercase() })
     }
     SettingRow("Assessment", assessment.label)
-    if (consequence.kind == "pain_reported") {
-        Notice(
-            "A plan adjustment is not clearance to continue. Seek qualified guidance if pain is sharp, persists, worsens, or changes your gait.",
-            isError = true,
-        )
-    }
     when {
         applied != null -> {
             Text(

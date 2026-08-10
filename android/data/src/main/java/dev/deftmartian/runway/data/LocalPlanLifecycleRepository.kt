@@ -6,7 +6,6 @@ import dev.deftmartian.runway.domain.EstablishedTrainingIntake
 import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.GoalKind
 import dev.deftmartian.runway.domain.GoalPriority
-import dev.deftmartian.runway.domain.InjuryFlags
 import dev.deftmartian.runway.domain.PhaseBaseline
 import dev.deftmartian.runway.domain.PhaseTransition
 import dev.deftmartian.runway.domain.PhaseTransitions
@@ -211,7 +210,7 @@ class LocalPlanLifecycleRepository(
         if (goal.state != "active") {
             return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.INVALID_PLAN_STATE)
         }
-        if (plan.state != "active" || plan.phaseType !in setOf("foundation", "calibration")) {
+        if (plan.state != "active" || plan.phaseType != "calibration") {
             return@withTransaction LocalPlanLifecycleResult.Rejected(LocalPlanLifecycleError.BEGINNER_PHASE_REQUIRED)
         }
         val oldEnd = plan.endEpochDay
@@ -246,9 +245,6 @@ class LocalPlanLifecycleRepository(
             val newWorkout = copyContinuationWorkout(oldWorkout, lastWeek, newWeek, request)
             plans.saveWorkout(newWorkout)
             copyEffectiveStructure(plans, oldWorkout, newWorkout)
-        }
-        if (goal.kind == "foundation") {
-            plans.updateActiveGoalTargetDate(goal.goalId, newEnd, request.occurredAtEpochMillis)
         }
         insertLifecycleEvent(
             plans,
@@ -334,7 +330,7 @@ class LocalPlanLifecycleRepository(
         val plans = database.goalPlanDao()
         val plan = plans.plan(planId) ?: return null
         if (plan.state != "active" ||
-            plan.phaseType !in setOf("foundation", "calibration") ||
+            plan.phaseType != "calibration" ||
             plan.endEpochDay == null ||
             plan.endEpochDay > todayEpochDay
         ) return null
@@ -642,14 +638,10 @@ object LocalPlanLifecyclePreparation {
         require(acceptedLinkedActivities.map { it.activityId }.distinct().size == acceptedLinkedActivities.size)
         require(availabilityDays.isNotEmpty() && availabilityDays.distinct().size == availabilityDays.size)
         require(availabilityDays.all { it in 0..6 })
-        val phase = when (phaseType) {
-            "foundation" -> PlanPhase.FOUNDATION
-            "calibration" -> PlanPhase.CALIBRATION
-            else -> error("A distance plan has no beginner phase review.")
-        }
+        require(phaseType == "calibration") { "A distance plan has no baseline-learning review." }
+        val phase = PlanPhase.CALIBRATION
         val kind = when (goalKind) {
             "race" -> GoalKind.RACE
-            "foundation" -> GoalKind.FOUNDATION
             else -> error("Unknown goal kind.")
         }
         val baseline = PhaseTransitions.deriveBaseline(
@@ -693,7 +685,7 @@ object LocalPlanLifecyclePreparation {
     ): PreparedLocalRacePlan? {
         if (
             phasePlan.state != "active" ||
-            phasePlan.phaseType !in setOf("foundation", "calibration") ||
+            phasePlan.phaseType != "calibration" ||
             goal.kind != "race" ||
             review.goalKind != GoalKind.RACE ||
             !PhaseTransitions.canUseDistancePlannerBaseline(review.baseline)
@@ -711,15 +703,8 @@ object LocalPlanLifecyclePreparation {
                             GoalPriority.CONSISTENCY
                         } else {
                             GoalPriority.FINISH_HEALTHY
-                        },
+                    },
                     availability = availabilityDays,
-                    injuryFlags = InjuryFlags(
-                        recentInjury = profile.recentInjury,
-                        currentPain = profile.currentPain,
-                        recurringPain = profile.recurringPain,
-                        medicalRestriction = profile.medicalRestriction,
-                        notes = profile.privateNotes.orEmpty(),
-                    ),
                     raceDistance = distance,
                     targetDate = LocalDate.ofEpochDay(targetEpochDay).toString(),
                     currentWeeklyDistanceMeters = review.baseline.weeklyDistanceMeters,

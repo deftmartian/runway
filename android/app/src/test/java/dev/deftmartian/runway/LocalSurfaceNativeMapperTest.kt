@@ -5,7 +5,6 @@ import dev.deftmartian.runway.data.LocalAboutReadModel
 import dev.deftmartian.runway.data.LocalActivePlanReadModel
 import dev.deftmartian.runway.data.LocalCalendarReadModel
 import dev.deftmartian.runway.data.LocalCurrentSignalReadModel
-import dev.deftmartian.runway.data.LocalHealthNoticeReadModel
 import dev.deftmartian.runway.data.LocalHistoryWeekReadModel
 import dev.deftmartian.runway.data.LocalHistoryWorkoutReadModel
 import dev.deftmartian.runway.data.LocalHistoryAdjustmentReadModel
@@ -167,26 +166,18 @@ class LocalSurfaceNativeMapperTest {
             isComplete = true,
             currentSignal = LocalCurrentSignalReadModel(
                 risk = "unsafe",
-                reasons = listOf("Pain was reported on the latest accepted run."),
+                reasons = listOf("The latest accepted run was unusually hard."),
                 source = "activity",
-                healthNotice = LocalHealthNoticeReadModel(
-                    level = "paused",
-                    heading = "Pain is present now",
-                    message = "The schedule is not clearance to continue.",
-                ),
             ),
             todayEpochDay = 20_003,
         ).toNativeStats()
 
         val week = requireNotNull(native.history).weeklySummaries.single()
-        assertEquals(1, native.active?.summary?.painFlags)
-        assertEquals(1, week.painFlags)
         assertEquals(2, week.hardFlags)
         assertEquals(2, week.skippedRuns)
         assertEquals(350.0, week.averagePaceSecondsPerKm)
         assertEquals(151, week.averageHeartRate)
         assertEquals("unsafe", requireNotNull(native.history).currentSignal?.risk)
-        assertEquals("Pain is present now", native.history.currentSignal?.healthNotice?.heading)
     }
 
     @Test
@@ -255,13 +246,13 @@ class LocalSurfaceNativeMapperTest {
     }
 
     @Test
-    fun `history summary keeps overdue skipped and pain counts distinct`() {
+    fun `history summary keeps overdue and skipped counts distinct`() {
         val plan = LocalPlanHistoryReadModel(
             planId = "plan",
             goalId = "goal",
-            goalTitle = "Foundation",
+            goalTitle = "Retired plan",
             state = LocalPlanState.ACTIVE,
-            phase = LocalPlanPhase.FOUNDATION,
+            phase = LocalPlanPhase.OTHER,
             startEpochDay = 20_000,
             endEpochDay = 20_060,
             completedAtEpochMillis = null,
@@ -285,7 +276,6 @@ class LocalSurfaceNativeMapperTest {
         val summary = requireNotNull(native.activeItem?.summary)
         assertEquals(1, summary.missedRuns)
         assertEquals(2, summary.skippedRuns)
-        assertEquals(1, summary.painFlags)
     }
 
     @Test

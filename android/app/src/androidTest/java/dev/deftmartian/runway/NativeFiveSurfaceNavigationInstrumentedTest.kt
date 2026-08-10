@@ -64,7 +64,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onImportGpx = {}, onOpenHealthConnect = {}, onCreateBackup = {}, onRestoreBackup = {},
                     onExportData = {}, onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
                     onHeartRatePrivacyChanged = {},
-                    onHeartRateChanged = {}, onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onHeartRateChanged = {}, onEraseImportedActivityData = {},
                     onEraseAllData = {},
                     onAcknowledgeRetentionRepair = {},
                 )
@@ -154,7 +154,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onCreateBackup = {}, onRestoreBackup = {}, onExportData = {},
                     onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
                     onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
-                    onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseImportedActivityData = {},
                     onEraseAllData = {}, onAcknowledgeRetentionRepair = {},
                 )
             }
@@ -210,7 +210,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                                 initialValues = null,
                                 minimumTargetDate = null,
                                 minimumCalibrationTargetDate = null,
-                                minimumFoundationTargetDate = null,
                                 maximumTargetDate = null,
                                 currentGoal = null,
                             ),
@@ -226,7 +225,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onCreateBackup = {}, onRestoreBackup = { restoreRequested = true },
                     onExportData = {}, onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
                     onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
-                    onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseImportedActivityData = {},
                     onEraseAllData = {}, onAcknowledgeRetentionRepair = {},
                 )
             }
@@ -250,19 +249,12 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                 currentWeeklyDistanceKm = "25",
                 currentRunsPerWeek = "3",
                 longestRecentRunKm = "10",
-                calibrationDurationMinutes = null,
                 preferredLongRunDay = "6",
                 timeZone = "America/Halifax",
                 availability = listOf(1, 3, 6),
-                recentInjury = false,
-                currentPain = false,
-                recurringPain = false,
-                medicalRestriction = false,
-                injuryNotes = null,
             ),
             minimumTargetDate = null,
             minimumCalibrationTargetDate = null,
-            minimumFoundationTargetDate = null,
             maximumTargetDate = null,
             currentGoal = null,
         )
@@ -312,19 +304,12 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                 currentWeeklyDistanceKm = "24",
                 currentRunsPerWeek = "3",
                 longestRecentRunKm = "12",
-                calibrationDurationMinutes = null,
                 preferredLongRunDay = "6",
                 timeZone = "America/Halifax",
                 availability = listOf(1, 3, 6),
-                recentInjury = false,
-                currentPain = false,
-                recurringPain = false,
-                medicalRestriction = false,
-                injuryNotes = null,
             ),
             minimumTargetDate = null,
             minimumCalibrationTargetDate = null,
-            minimumFoundationTargetDate = null,
             maximumTargetDate = null,
             currentGoal = NativeGoalSummary(
                 id = "existing-goal",
@@ -355,7 +340,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onCreateBackup = {}, onRestoreBackup = {}, onExportData = {},
                     onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
                     onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
-                    onHealthContextChanged = {}, onEraseImportedActivityData = {},
+                    onEraseImportedActivityData = {},
                     onEraseAllData = {}, onAcknowledgeRetentionRepair = {},
                 )
             }
@@ -448,7 +433,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onRoutePrivacyChanged = {},
                     onHeartRatePrivacyChanged = {},
                     onHeartRateChanged = {},
-                    onHealthContextChanged = {},
                     onEraseImportedActivityData = {},
                     onEraseAllData = {},
                     onAcknowledgeRetentionRepair = {},
@@ -484,6 +468,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onOpenActivity = {},
                     onPlanDecision = {},
                     canAddWorkout = false,
+                    routine = false,
                     onAddWorkout = {},
                 )
             }
@@ -533,7 +518,6 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onRoutePrivacyChanged = {},
                     onHeartRatePrivacyChanged = {},
                     onHeartRateChanged = {},
-                    onHealthContextChanged = {},
                     onEraseImportedActivityData = {},
                     onEraseAllData = {},
                     onAcknowledgeRetentionRepair = { acknowledged = true },

@@ -216,13 +216,11 @@ class LocalWorkoutChangeRepository(
         planId: String,
         request: LocalWorkoutChangeRequest,
         today: LocalDate,
-        hasInjuryRisk: Boolean,
     ): PreparedLocalWorkoutChange = store.transaction {
         LocalWorkoutChangePreparer(policy).prepare(
             loadLedger(planId, policy.maximumWorkoutsPerPlan + 1, today.toEpochDay()),
             request,
             today,
-            hasInjuryRisk,
         )
     }
 
@@ -230,7 +228,6 @@ class LocalWorkoutChangeRepository(
         planId: String,
         command: ApplyLocalWorkoutChangeCommand,
         today: LocalDate,
-        hasInjuryRisk: Boolean,
     ): ApplyLocalWorkoutChangeResult = store.transaction {
         if (adjustmentExists(command.adjustmentId)) {
             return@transaction ApplyLocalWorkoutChangeResult.AlreadyApplied(command.adjustmentId)
@@ -239,7 +236,6 @@ class LocalWorkoutChangeRepository(
             loadLedger(planId, policy.maximumWorkoutsPerPlan + 1, today.toEpochDay()),
             command.request,
             today,
-            hasInjuryRisk,
         )
         require(prepared.previewToken == command.expectedPreviewToken) {
             "The workout change preview is stale; preview the current plan again."
@@ -342,7 +338,6 @@ class LocalWorkoutChangePreparer(
         ledger: WorkoutChangeLedgerSnapshot,
         request: LocalWorkoutChangeRequest,
         today: LocalDate,
-        hasInjuryRisk: Boolean,
     ): PreparedLocalWorkoutChange {
         require(ledger.plan.state == "active") { "Only the active plan can be changed." }
         require(ledger.workouts.size <= policy.maximumWorkoutsPerPlan) {
@@ -415,7 +410,6 @@ class LocalWorkoutChangePreparer(
             weeks = weeks.map { EditWeek(it.weekId, it.ordinal) },
             today = today,
             rebalance = request.rebalanceCompatibleWeek,
-            hasInjuryRisk = hasInjuryRisk,
             operation = operation,
         )
         preview.workoutChanges.forEach { change ->

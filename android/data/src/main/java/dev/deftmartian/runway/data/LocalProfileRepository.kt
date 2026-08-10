@@ -14,14 +14,6 @@ enum class HeartRateSettingsSource(val storageValue: String) {
     Custom("custom"),
 }
 
-data class LocalHealthContext(
-    val recentInjury: Boolean,
-    val currentPain: Boolean,
-    val recurringPain: Boolean,
-    val medicalRestriction: Boolean,
-    val privateNotes: String,
-)
-
 data class LocalHeartRateProfile(
     val sexForEstimate: SexForEstimate,
     val ageYears: Int?,
@@ -41,7 +33,6 @@ sealed interface LocalProfileUpdateResult {
 
 enum class LocalProfileIssue {
     INVALID_TIME_ZONE,
-    HEALTH_NOTES_TOO_LONG,
     AGE_OUT_OF_RANGE,
     MAX_HEART_RATE_OUT_OF_RANGE,
     HEART_RATE_ZONE_OUT_OF_RANGE,
@@ -52,8 +43,7 @@ enum class LocalProfileIssue {
 /**
  * Typed, plan-neutral profile mutations for the local single-runner ledger.
  *
- * Updating current pain or another health flag records context; it never silently regenerates or
- * replaces the active plan.
+ * Profile changes never silently regenerate or replace the active plan.
  */
 class LocalProfileRepository(
     private val database: RunwayLedgerDatabase,
@@ -65,23 +55,6 @@ class LocalProfileRepository(
             return LocalProfileUpdateResult.Invalid(LocalProfileIssue.INVALID_TIME_ZONE)
         }
         return update { it.copy(timeZone = normalized, updatedAtEpochMillis = nowEpochMillis()) }
-    }
-
-    suspend fun updateHealthContext(context: LocalHealthContext): LocalProfileUpdateResult {
-        val notes = context.privateNotes.trim()
-        if (notes.length > 240) {
-            return LocalProfileUpdateResult.Invalid(LocalProfileIssue.HEALTH_NOTES_TOO_LONG)
-        }
-        return update {
-            it.copy(
-                recentInjury = context.recentInjury,
-                currentPain = context.currentPain,
-                recurringPain = context.recurringPain,
-                medicalRestriction = context.medicalRestriction,
-                privateNotes = notes.takeIf(String::isNotEmpty),
-                updatedAtEpochMillis = nowEpochMillis(),
-            )
-        }
     }
 
     suspend fun updateHeartRateProfile(profile: LocalHeartRateProfile): LocalProfileUpdateResult {

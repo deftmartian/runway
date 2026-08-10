@@ -481,7 +481,7 @@ private fun LazyListScope.FirstRoutineStats(
         SettingCard("Your weekly routine is ready") {
             Text(
                 if (runsPerWeek != null && runsPerWeek > 0) {
-                    "$runsPerWeek ${if (runsPerWeek == 1) "run is" else "runs are"} scheduled each week. Routine runs start open; you can add a target to an individual run."
+                    "$runsPerWeek ${if (runsPerWeek == 1) "open run is" else "open runs are"} scheduled by default each week. Distance and duration stay unprescribed."
                 } else {
                     "Open Calendar to see the next open run."
                 },
@@ -505,11 +505,6 @@ private fun RoutineStatsAssessment(
     routineStartDate: String?,
     onOpenCalendar: () -> Unit,
 ) {
-    history?.currentSignal?.healthNotice?.let { notice ->
-        SettingCard(notice.heading.orEmpty().ifBlank { "Running limits" }) {
-            Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
     val week = routineCurrentWeek(history)
     if (routineWeekIsWaiting(week)) {
         SettingCard("Your routine is ready") {
@@ -535,7 +530,7 @@ private fun RoutineStatsAssessment(
     val recorded = week.completedRuns ?: 0
     SettingCard("This week") {
         runsPerWeek?.takeIf { it > 0 }?.let {
-            SettingRow("Routine goal", "$it ${if (it == 1) "run" else "runs"} each week")
+            SettingRow("Default goal", "$it ${if (it == 1) "run" else "runs"} each week")
         }
         SettingRow(
             "Runs recorded",
@@ -554,7 +549,7 @@ private fun RoutineStatsAssessment(
             SettingRow("Recorded time", formatDuration(it))
         }
         Text(
-            "Missing or extra runs do not move future routine days.",
+            "Add or remove an open run to change one week's goal. Moving one between weeks changes both affected weeks.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -638,11 +633,6 @@ private fun LazyListScope.FirstRunStats(
 private fun StatsAssessment(history: NativeTrainingHistory?) {
     val weeks = history?.weeklySummaries.orEmpty()
     val signal = history?.currentSignal
-    signal?.healthNotice?.let { notice ->
-        SettingCard(notice.heading.orEmpty().ifBlank { "Running limits" }) {
-            Text(notice.message.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
     if (weeks.isNotEmpty()) {
         val plannedRuns = weeks.sumOf { it.plannedRuns ?: 0 }
         val completedRuns = weeks.sumOf { it.completedRuns ?: 0 }

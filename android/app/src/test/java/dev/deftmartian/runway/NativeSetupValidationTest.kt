@@ -26,41 +26,24 @@ class NativeSetupValidationTest {
     }
 
     @Test
-    fun `pending health state bypasses established baseline fields`() {
-        assertNull(
-            startingPointValidation(
-                mode = "established", weeklyKm = "", runsPerWeek = "", longestKm = "",
-                calibrationMinutes = "20", healthBlocked = true,
-            ),
-        )
-        assertEquals(
-            "Enter a repeatable week from 3 to 250 km.",
-            startingPointValidation("established", "2", "3", "8", "20", false),
-        )
-    }
-
-    @Test
-    fun `starting point mirrors established and calibration bounds`() {
+    fun `starting point validates an entered week and leaves learning open`() {
         assertEquals(
             "Enter a whole number from 2 to 5 current runs.",
-            startingPointValidation("established", "12", "2.5", "8", "20", false),
+            startingPointValidation("established", "12", "2.5", "8"),
         )
         assertEquals(
             "Enter a positive longest run in that week up to 80 km.",
-            startingPointValidation("established", "12", "3", "0", "20", false),
+            startingPointValidation("established", "12", "3", "0"),
         )
         assertEquals(
             "Make the weekly distance fit the longest run and number of runs in that week.",
-            startingPointValidation("established", "5.5", "3", "5", "20", false),
+            startingPointValidation("established", "5.5", "3", "5"),
         )
         assertEquals(
             "Make the weekly distance fit the longest run and number of runs in that week.",
-            startingPointValidation("established", "15.1", "3", "5", "20", false),
+            startingPointValidation("established", "15.1", "3", "5"),
         )
-        assertEquals(
-            "Choose a whole timed check-in from 10 to 30 minutes.",
-            startingPointValidation("calibration", "", "", "", "10.5", false),
-        )
+        assertNull(startingPointValidation("learn", "", "", ""))
     }
 
     @Test
@@ -70,16 +53,12 @@ class NativeSetupValidationTest {
             goalValidation(true, "2026-08-31", "2026-09-01", "2027-07-27"),
         )
         assertEquals(
-            "Choose at least 3 available days.",
-            scheduleValidation("foundation_only", listOf(1, 3), "", "", "America/Halifax", false),
-        )
-        assertEquals(
             "Choose at least as many available days as current weekly runs.",
-            scheduleValidation("established", listOf(1, 3), "3", "1", "America/Halifax", false),
+            scheduleValidation("established", listOf(1, 3), "3", "1", "America/Halifax"),
         )
         assertEquals(
             "Choose an available long-run day.",
-            scheduleValidation("established", listOf(1, 3, 6), "3", "2", "America/Halifax", false),
+            scheduleValidation("established", listOf(1, 3, 6), "3", "2", "America/Halifax"),
         )
         assertEquals(
             "Choose another available day so the plan can leave the day after the long run free.",
@@ -89,28 +68,23 @@ class NativeSetupValidationTest {
                 "3",
                 "6",
                 "America/Halifax",
-                false,
                 "half",
             ),
         )
         assertNull(
-            scheduleValidation("routine", listOf(6), "", "", "America/Halifax", false),
+            scheduleValidation("routine", listOf(6), "", "", "America/Halifax"),
         )
         assertEquals(
             "Choose at least 1 available day.",
-            scheduleValidation("routine", emptyList(), "", "", "America/Halifax", false),
+            scheduleValidation("routine", emptyList(), "", "", "America/Halifax"),
         )
     }
 
     @Test
-    fun `pending health goals do not require concentrated schedule acceptance`() {
-        assertEquals(
-            false,
-            requiresConcentratedScheduleAcceptance("established", "2", "half", true),
-        )
+    fun `long distance goals require concentrated schedule acceptance`() {
         assertEquals(
             true,
-            requiresConcentratedScheduleAcceptance("established", "2", "marathon", false),
+            requiresConcentratedScheduleAcceptance("established", "2", "marathon"),
         )
     }
 
@@ -125,10 +99,6 @@ class NativeSetupValidationTest {
         assertEquals(
             "2026-10-08",
             setupTargetDateBounds("America/Halifax", "calibration", now)?.minimum,
-        )
-        assertEquals(
-            "2026-11-26",
-            setupTargetDateBounds("America/Halifax", "foundation_to_goal", now)?.minimum,
         )
         assertEquals(
             "2027-07-28",

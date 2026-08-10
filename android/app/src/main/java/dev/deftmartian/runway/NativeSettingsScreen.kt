@@ -42,7 +42,6 @@ internal data class NativeSettingsState(
     val routePrivacy: NativeRoutePrivacy = NativeRoutePrivacy.Discard,
     val heartRatePrivacy: NativeHeartRatePrivacy = NativeHeartRatePrivacy.Discard,
     val heartRate: NativeHeartRateProfile = NativeHeartRateProfile(),
-    val healthContext: NativeHealthContext = NativeHealthContext(),
     val training: NativeTrainingSettings = NativeTrainingSettings.None,
     val notifications: NativeNotificationSettings = NativeNotificationSettings(),
     val folderImport: NativeImportConnection = NativeImportConnection.NotConnected,
@@ -104,11 +103,11 @@ internal fun nativeTrainingSettingsRow(training: NativeTrainingSettings): Native
                 label = "Weekly routine",
                 summary = listOfNotNull(
                     training.runsPerWeek?.let {
-                        "$it ${if (it == 1) "run" else "runs"} each week"
+                        "Default $it ${if (it == 1) "run" else "runs"} each week"
                     },
                     "Since ${ledgerDate(training.startedOn)}",
                 ).joinToString(" · "),
-                action = "Change",
+                action = "Replace",
             )
         } else {
             NativeTrainingSettingsRow(
@@ -146,14 +145,6 @@ internal data class NativeHeartRateProfile(
 internal enum class NativeHeartRateSource { NotConfigured, Estimated, Custom }
 internal enum class NativeSexForEstimate { NotSpecified, Female, Male }
 
-internal data class NativeHealthContext(
-    val recentInjury: Boolean = false,
-    val currentPain: Boolean = false,
-    val recurringPain: Boolean = false,
-    val clinicianRestriction: Boolean = false,
-    val notes: String = "",
-)
-
 internal sealed interface NativeImportConnection {
     data object NotConnected : NativeImportConnection
     data object Connected : NativeImportConnection
@@ -171,7 +162,6 @@ internal data class NativeSettingsCallbacks(
     val onRoutePrivacyChanged: (NativeRoutePrivacy) -> Unit,
     val onHeartRatePrivacyChanged: (NativeHeartRatePrivacy) -> Unit,
     val onHeartRateChanged: (NativeHeartRateProfile) -> Unit,
-    val onHealthContextChanged: (NativeHealthContext) -> Unit,
     val onImportGpx: () -> Unit,
     val onOpenFolderImports: () -> Unit,
     val onOpenHealthConnect: () -> Unit,
@@ -193,7 +183,6 @@ internal fun SettingsScreen(
     var editingRoutePrivacy by rememberSaveable { mutableStateOf(false) }
     var editingHeartRatePrivacy by rememberSaveable { mutableStateOf(false) }
     var editingHeartRate by rememberSaveable { mutableStateOf(false) }
-    var editingHealthContext by rememberSaveable { mutableStateOf(false) }
     var editingRunReminder by rememberSaveable { mutableStateOf(false) }
     var confirmingBackup by rememberSaveable { mutableStateOf(false) }
     var confirmingRestore by rememberSaveable { mutableStateOf(false) }
@@ -239,14 +228,6 @@ internal fun SettingsScreen(
                 }
                 SettingsActionRow("Heart rate", heartRateSummary(state.heartRate), "Edit", !actionPending) {
                     editingHeartRate = true
-                }
-                SettingsActionRow(
-                    "Running limits",
-                    runningCheckInSummary(state.healthContext),
-                    if (hasRunningLimits(state.healthContext)) "Change" else "Add",
-                    !actionPending,
-                ) {
-                    editingHealthContext = true
                 }
             }
         }
@@ -423,12 +404,6 @@ internal fun SettingsScreen(
             editingHeartRate = false
         }
     }
-    if (editingHealthContext) {
-        HealthContextDialog(state.healthContext, actionPending, { editingHealthContext = false }) {
-            callbacks.onHealthContextChanged(it)
-            editingHealthContext = false
-        }
-    }
     if (editingRunReminder) {
         RunReminderSettingsDialog(
             settings = state.notifications,
@@ -477,7 +452,7 @@ internal fun SettingsScreen(
         DestructiveConfirmationDialog(
             title = "Reset runway?",
             message =
-                "This removes plans, activities, imported files, and private health context " +
+                "This removes plans, activities, imported files, and local settings " +
                     "from this phone. This cannot be undone.",
             confirmLabel = "Reset runway",
             actionPending = actionPending,
@@ -669,36 +644,6 @@ internal fun usesStackedSettingsActionRow(availableWidthDp: Float, fontScale: Fl
             fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif,
         )
     }
-}
-
-internal fun runningCheckInSummary(context: NativeHealthContext): String = when {
-    context.currentPain && context.clinicianRestriction ->
-        "Pain reported and clinician's limit · setup will not schedule runs"
-    context.currentPain -> "Pain reported now · setup will not schedule runs"
-    context.clinicianRestriction -> "Clinician's running limit · setup will not schedule runs"
-    context.recentInjury && context.recurringPain ->
-        "Recent injury and recurring pain · distance increases checked more cautiously"
-    context.recentInjury -> "Recent injury · distance increases checked more cautiously"
-    context.recurringPain -> "Recurring pain · distance increases checked more cautiously"
-    context.notes.isNotBlank() -> "Private reminder · no effect on the schedule"
-    else -> "No running limits saved"
-}
-
-internal fun hasRunningLimits(context: NativeHealthContext): Boolean =
-    context.recentInjury ||
-        context.currentPain ||
-        context.recurringPain ||
-        context.clinicianRestriction ||
-        context.notes.isNotBlank()
-
-internal fun runningCheckInEffect(context: NativeHealthContext): String? = when {
-    context.currentPain || context.clinicianRestriction ->
-        "New setup saves the goal but does not create a schedule. Existing workouts stay recorded."
-    context.recentInjury || context.recurringPain ->
-        "Distance plans and edits to runs with targets use more cautious increase checks. Foundation sessions and open routine runs stay unchanged."
-    context.notes.isNotBlank() ->
-        "The private reminder is for your reference only. It does not change workouts or scheduling."
-    else -> null
 }
 
 internal fun heartRateSummary(profile: NativeHeartRateProfile): String = when (profile.source) {

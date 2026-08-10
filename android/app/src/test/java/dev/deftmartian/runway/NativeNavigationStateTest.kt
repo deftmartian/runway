@@ -43,7 +43,6 @@ class NativeNavigationStateTest {
                 initialValues = null,
                 minimumTargetDate = null,
                 minimumCalibrationTargetDate = null,
-                minimumFoundationTargetDate = null,
                 maximumTargetDate = null,
                 currentGoal = null,
             ),
@@ -59,7 +58,6 @@ class NativeNavigationStateTest {
                 initialValues = null,
                 minimumTargetDate = null,
                 minimumCalibrationTargetDate = null,
-                minimumFoundationTargetDate = null,
                 maximumTargetDate = null,
                 currentGoal = NativeGoalSummary(
                     title = "10 km",
@@ -80,7 +78,6 @@ class NativeNavigationStateTest {
                 initialValues = null,
                 minimumTargetDate = null,
                 minimumCalibrationTargetDate = null,
-                minimumFoundationTargetDate = null,
                 maximumTargetDate = null,
                 currentGoal = NativeGoalSummary(
                     title = "10 km",
@@ -104,7 +101,6 @@ class NativeNavigationStateTest {
                 initialValues = null,
                 minimumTargetDate = null,
                 minimumCalibrationTargetDate = null,
-                minimumFoundationTargetDate = null,
                 maximumTargetDate = null,
                 currentGoal = NativeGoalSummary(
                     title = "5 km later",

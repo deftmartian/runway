@@ -56,7 +56,6 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
                     completedDistanceMeters = record.completedDistanceMeters?.toDouble(),
                     completedDurationSeconds = record.completedDurationSeconds?.toDouble(),
                     feltHard = record.feltHard,
-                    pain = record.pain,
                     consequence = workout?.consequence?.toNativeConsequence(),
                     canDelete =
                         record.sourceActivityId == null &&
@@ -85,7 +84,6 @@ internal fun LocalInboxReadModel.toNativeInbox(): NativeReviewPayload {
                 completedDistanceMeters = feedback.completedDistanceMeters?.toDouble(),
                 completedDurationSeconds = feedback.completedDurationSeconds?.toDouble(),
                 feltHard = feedback.feltHard,
-                pain = feedback.pain,
                 consequence = feedback.consequence.toNativeConsequence(),
                 canDelete = false,
                 completionState = feedback.completionState,
@@ -145,7 +143,6 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                 completedRuns = activeCompletedRuns,
                 missedRuns = activeWeeks.sumOf { it.missedRuns },
                 skippedRuns = activeWeeks.sumOf { it.skippedRuns },
-                painFlags = activeWeeks.sumOf { it.painFlags },
                 completedDistanceMeters = activeWeeks.sumOf { it.actual.distanceMeters ?: 0 }.toDouble(),
                 plannedRunsRecorded = activeWeeks.sumOf { it.plannedRunsRecorded },
                 extraRuns = activeWeeks.sumOf { it.extraRuns },
@@ -183,7 +180,6 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                     completedRuns = it.completedRuns,
                     missedRuns = it.missedRuns,
                     skippedRuns = it.skippedRuns,
-                    painFlags = it.painFlags,
                     hardFlags = it.hardFlags,
                     averagePaceSecondsPerKm = it.weightedPaceSecondsPerKilometre,
                     averageHeartRate = it.durationWeightedHeartRateBpm,
@@ -197,13 +193,6 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                     risk = it.risk,
                     reasons = it.reasons,
                     source = it.source,
-                    healthNotice = it.healthNotice?.let { notice ->
-                        NativeHealthNotice(
-                            level = notice.level,
-                            heading = notice.heading,
-                            message = notice.message,
-                        )
-                    },
                 )
             },
             hasAcceptedActivities = totalRuns > 0,
@@ -369,7 +358,6 @@ internal fun LocalPlanHistoryReadModel.toNativeHistoryDetail(
                                     completedDistanceMeters = it.distanceMeters?.toDouble(),
                                     completedDurationSeconds = it.durationSeconds?.toDouble(),
                                     feltHard = it.feltHard,
-                                    pain = it.pain,
                                     consequence = workout.consequence?.toNativeConsequence(),
                                 )
                             },
@@ -425,7 +413,6 @@ private fun LocalPlanHistoryReadModel.toNativeHistoryItem(timeZone: String) = Na
         completedRuns = completedRuns,
         missedRuns = missedRuns,
         skippedRuns = skippedRuns,
-        painFlags = painFlags,
         completedDistanceMeters = actual.distanceMeters?.toDouble(),
         plannedRunsRecorded = plannedRunsRecorded,
         extraRuns = extraRuns,
@@ -457,13 +444,6 @@ internal fun LocalSettingsReadModel.toNativeSettingsState() = NativeSettingsStat
         zone3FloorBpm = profile?.zone3FloorBpm,
         zone4FloorBpm = profile?.zone4FloorBpm,
         zone5FloorBpm = profile?.zone5FloorBpm,
-    ),
-    healthContext = NativeHealthContext(
-        recentInjury = profile?.recentInjury == true,
-        currentPain = profile?.currentPain == true,
-        recurringPain = profile?.recurringPain == true,
-        clinicianRestriction = profile?.medicalRestriction == true,
-        notes = profile?.privateNotes.orEmpty(),
     ),
     notifications = NativeNotificationSettings(
         runReminderEnabled = notificationPreferences.runReminderEnabled,
@@ -558,7 +538,6 @@ internal fun LocalActivityReadModel.toNativeActivity(
     maxHeartRate = evidence.maxHeartRateBpm,
     heartRateSummary = null,
     feltHard = feltHard,
-    pain = pain,
     extraPlanImpactConfirmed = extraPlanImpactConfirmed,
     consequence = consequence?.toNativeConsequence(),
     routeSummary = NativeRouteSummary(

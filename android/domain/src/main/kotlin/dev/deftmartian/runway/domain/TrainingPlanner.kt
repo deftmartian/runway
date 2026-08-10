@@ -39,18 +39,13 @@ object TrainingPlanner {
 
     fun generatePlan(intake: PlannerIntake, today: LocalDate = LocalDate.now()): GeneratedPlan = when (intake) {
         is EstablishedTrainingIntake -> generateEstablished(intake, today)
-        is FoundationIntake -> generateFoundation(intake, today)
         is CalibrationIntake -> generateCalibration(intake, today)
     }
-    fun hasInjuryRiskFlags(flags: InjuryFlags) =
-        flags.recentInjury || flags.currentPain || flags.recurringPain || flags.medicalRestriction
-
-    fun classifyRamp(requiredWeeklyIncreasePercent: Double, hasInjuryRisk: Boolean): RiskRating {
-        val offset = if (hasInjuryRisk) 2 else 0
+    fun classifyRamp(requiredWeeklyIncreasePercent: Double): RiskRating {
         return when {
-            requiredWeeklyIncreasePercent <= 8 - offset -> RiskRating.CONSERVATIVE
-            requiredWeeklyIncreasePercent <= 12 - offset -> RiskRating.MODERATE
-            requiredWeeklyIncreasePercent <= 18 - offset -> RiskRating.AGGRESSIVE
+            requiredWeeklyIncreasePercent <= 8 -> RiskRating.CONSERVATIVE
+            requiredWeeklyIncreasePercent <= 12 -> RiskRating.MODERATE
+            requiredWeeklyIncreasePercent <= 18 -> RiskRating.AGGRESSIVE
             else -> RiskRating.UNSAFE
         }
     }
@@ -65,12 +60,11 @@ object TrainingPlanner {
         assertSchedulable(intake)
         val taper = min(taperWeeks.getValue(intake.raceDistance), max(1, availableWeeks - 1))
         val buildWeeks = max(1, availableWeeks - taper)
-        val injuryRisk = hasInjuryRiskFlags(intake.injuryFlags)
         val peak = peakWeekly.getValue(intake.raceDistance)
         val longPeak = peakLong.getValue(intake.raceDistance)
         val initialLong = min(intake.longestRecentRunMeters, min(intake.currentWeeklyDistanceMeters, longPeak))
         val required = max(requiredBuildRamp(intake.currentWeeklyDistanceMeters, peak, buildWeeks), requiredBuildRamp(initialLong, longPeak, buildWeeks))
-        val initialRisk = if (availableWeeks < 8 && intake.currentWeeklyDistanceMeters < peak * .55) RiskRating.UNSAFE else classifyRamp(required, injuryRisk)
+        val initialRisk = if (availableWeeks < 8 && intake.currentWeeklyDistanceMeters < peak * .55) RiskRating.UNSAFE else classifyRamp(required)
         val warnings = warnings(intake, availableWeeks, required, initialRisk).toMutableList()
         val defaultRampPercent = priorityRampCap(intake) * 100
         val normalRamp = min(required, defaultRampPercent) / 100
@@ -114,7 +108,7 @@ object TrainingPlanner {
             } else {
                 0.0
             }
-            val risk = classifyRamp(max(percentIncrease(previousDistance, training), longRunRamp), injuryRisk)
+            val risk = classifyRamp(max(percentIncrease(previousDistance, training), longRunRamp))
             val totalDistance = scheduled.workouts.sumOf { it.targetDistanceMeters }
             val totalDuration = scheduled.workouts.sumOf { it.targetDurationSeconds ?: 0 }
             weeks += GeneratedWeek(
@@ -162,62 +156,13 @@ object TrainingPlanner {
             TrainingSourceRefs.MAYO_TAPER,
             raceRefs.getValue(intake.raceDistance),
             TrainingSourceRefs.RRCA,
-            TrainingSourceRefs.NIAMS,
         )
         return GeneratedDistancePlan(start, intake.targetDate, weeks, risk, summary, sources)
     }
 
-    fun generateFoundation(intake: FoundationIntake, today: LocalDate = LocalDate.now()): GeneratedFoundationPlan {
-        assertPhaseCanStart(intake.injuryFlags)
-        val start = intake.startDate ?: nextPlanWeekStart(today)
-        val days = pickPhaseDays(intake.availability, 3)
-        val weeks = foundationSessions.mapIndexed { index, sessions ->
-            val weekStart = DateUtils.addDays(start, (index * 7).toLong())
-            val workouts = phaseWeekWorkouts(weekStart, days) { session, date ->
-                val blocks = sessions[session].map { block ->
-                    block.copy(segments = block.segments.toList())
-                }
-                val total = 600 + blocksDuration(blocks)
-                GeneratedWorkout(
-                    date,
-                    WorkoutType.EASY,
-                    0,
-                    WorkoutPrescription.Timed(total, 300, 300, blocks),
-                    "easy",
-                    "Foundation run/walk ${session + 1}",
-                    "NHS Couch to 5K week ${index + 1}. Keep each running interval comfortable.",
-                    listOf(TrainingSourceRefs.NHS_COUCH_TO_5K, TrainingSourceRefs.MAYO_BEGINNER_RUN_WALK),
-                    total,
-                )
-            }
-            timedWeek(index + 1, weekStart, workouts)
-        }
-        val warnings = mutableListOf(
-            "Completion provides observed training data for confirmation; it does not create a race baseline automatically.",
-        ) + timedHealthWarnings(intake.injuryFlags)
-        val sources = listOf(
-            TrainingSourceRefs.NHS_COUCH_TO_5K,
-            TrainingSourceRefs.MAYO_BEGINNER_RUN_WALK,
-        )
-        return GeneratedFoundationPlan(
-            start,
-            DateUtils.addDays(start, 62),
-            weeks,
-            RiskRating.CONSERVATIVE,
-            intake.startMode,
-            FoundationSummary(warnings = warnings),
-            sources,
-        )
-    }
-
     fun generateCalibration(intake: CalibrationIntake, today: LocalDate = LocalDate.now()): GeneratedCalibrationPlan {
-        assertPhaseCanStart(intake.injuryFlags)
-        require(intake.calibrationDurationSeconds in 600..1800) {
-            "Calibration duration must be a whole number of seconds from 10 to 30 minutes."
-        }
         val start = intake.startDate ?: nextPlanWeekStart(today)
         val days = pickPhaseDays(intake.availability, 2)
-        val blocks = calibrationBlocks(intake.calibrationDurationSeconds - 240)
         val weeks = (0..1).map { index ->
             val weekStart = DateUtils.addDays(start, (index * 7).toLong())
             val workouts = phaseWeekWorkouts(weekStart, days) { session, date ->
@@ -225,26 +170,25 @@ object TrainingPlanner {
                     date,
                     WorkoutType.EASY,
                     0,
-                    WorkoutPrescription.Timed(intake.calibrationDurationSeconds, 120, 120, blocks),
+                    WorkoutPrescription.Open,
                     "easy",
-                    "Calibration run/walk ${session + 1}",
-                    "Repeat the same comfortable time. Distance is observed, not prescribed.",
-                    listOf(TrainingSourceRefs.MAYO_BEGINNER_RUN_WALK),
-                    intake.calibrationDurationSeconds,
+                    "Open baseline run ${session + 1}",
+                    "Run on the chosen day. No distance or duration is prescribed.",
+                    emptyList(),
                 )
             }
             timedWeek(index + 1, weekStart, workouts)
         }
         val warnings = mutableListOf(
-            "Distance remains observational until the runner confirms the completed activities as a baseline.",
-        ) + timedHealthWarnings(intake.injuryFlags)
+            "Distance and duration remain observations until the runner confirms the completed runs as a baseline.",
+        )
         return GeneratedCalibrationPlan(
             start,
             DateUtils.addDays(start, 13),
             weeks,
             RiskRating.CONSERVATIVE,
-            CalibrationSummary(sessionDurationSeconds = intake.calibrationDurationSeconds, warnings = warnings),
-            listOf(TrainingSourceRefs.MAYO_BEGINNER_RUN_WALK),
+            CalibrationSummary(warnings = warnings),
+            emptyList(),
         )
     }
 
@@ -471,31 +415,6 @@ object TrainingPlanner {
         return first.size - second.size
     }
 
-    private fun calibrationBlocks(active: Int): List<RunWalkBlock> {
-        val repeats = active / 150
-        val remainder = active - repeats * 150
-        return buildList {
-            if (repeats > 0) add(RunWalkBlock(repeats, listOf(run(60), walk(90))))
-            if (remainder > 0) {
-                val finalSegments = if (remainder <= 60) {
-                    listOf(run(remainder))
-                } else {
-                    listOf(run(60), walk(remainder - 60))
-                }
-                add(RunWalkBlock(1, finalSegments))
-            }
-        }
-    }
-
-    private fun blocksDuration(blocks: List<RunWalkBlock>) =
-        blocks.sumOf { block ->
-            block.repetitions * block.segments.sumOf { segment -> segment.durationSeconds }
-        }
-
-    private fun run(seconds: Int) = PrescriptionSegment(SegmentKind.RUN, seconds)
-
-    private fun walk(seconds: Int) = PrescriptionSegment(SegmentKind.WALK, seconds)
-
     private fun requiredBuildRamp(start: Int, goal: Int, buildWeeks: Int): Double {
         if (buildWeeks <= 1 || start >= goal) return 0.0
         val cutback = .85.pow((buildWeeks / 4).toDouble())
@@ -503,9 +422,7 @@ object TrainingPlanner {
     }
 
     private fun priorityRampCap(intake: EstablishedTrainingIntake): Double {
-        val baseCap = if (intake.priority == GoalPriority.FINISH_HEALTHY) .075 else .1
-        val injuryAdjustment = if (hasInjuryRiskFlags(intake.injuryFlags)) .02 else 0.0
-        return max(.04, baseCap - injuryAdjustment)
+        return if (intake.priority == GoalPriority.FINISH_HEALTHY) .075 else .1
     }
 
     private fun taperTarget(peak: Int, position: Int, length: Int): Int {
@@ -571,22 +488,6 @@ object TrainingPlanner {
         return if (current < today.toString()) DateUtils.addDays(current, 7) else today.toString()
     }
 
-    private fun assertPhaseCanStart(flags: InjuryFlags) {
-        require(!flags.currentPain) { "A workout phase cannot start while pain is present now." }
-        require(!flags.medicalRestriction) {
-            "A workout phase cannot start while a clinician has limited running."
-        }
-    }
-
-    private fun timedHealthWarnings(flags: InjuryFlags) =
-        if (!flags.recentInjury && !flags.recurringPain) {
-            emptyList()
-        } else {
-            listOf(
-                "Recent injury or recurring pain is noted with this plan. It does not change the timed prescription or assess whether running is appropriate.",
-            )
-        }
-
     private fun validateDays(days: List<Int>) {
         require(days.all { it in 0..6 } && days.distinct().size == days.size) {
             "Available run days must be unique weekdays from 0 through 6."
@@ -603,7 +504,6 @@ object TrainingPlanner {
         require(intake.longestRecentRunMeters > 0) {
             "The planner requires a positive recent long-run distance."
         }
-        assertPhaseCanStart(intake.injuryFlags)
     }
 
     private fun assertSchedulable(intake: EstablishedTrainingIntake) {
@@ -638,9 +538,6 @@ object TrainingPlanner {
         if (risk == RiskRating.AGGRESSIVE || risk == RiskRating.UNSAFE) {
             add("The required weekly increase is above runway's default. Move the target date later or choose a shorter distance.")
         }
-        if (hasInjuryRiskFlags(intake.injuryFlags)) {
-            add("Injury recovery or recurring pain is included in the ramp assessment. Get qualified guidance if pain persists, worsens, or changes how you move.")
-        }
         if (required > 10) {
             add("Weekly distance growth above 10% is outside runway's default, not a normal target.")
         }
@@ -648,48 +545,4 @@ object TrainingPlanner {
             add("Half-marathon plans are capped at four run days per week in this planner.")
         }
     }
-
-    private val foundationSessions: List<List<List<RunWalkBlock>>> = listOf(
-        List(3) {
-            listOf(
-                RunWalkBlock(7, listOf(run(60), walk(90))),
-                RunWalkBlock(1, listOf(run(60))),
-            )
-        },
-        List(3) {
-            listOf(
-                RunWalkBlock(5, listOf(run(90), walk(120))),
-                RunWalkBlock(1, listOf(run(90))),
-            )
-        },
-        List(3) {
-            listOf(
-                RunWalkBlock(
-                    1,
-                    listOf(run(90), walk(90), run(180), walk(180), run(90), walk(90), run(180)),
-                ),
-            )
-        },
-        List(3) {
-            listOf(
-                RunWalkBlock(
-                    1,
-                    listOf(run(180), walk(90), run(300), walk(150), run(180), walk(90), run(300)),
-                ),
-            )
-        },
-        listOf(
-            listOf(RunWalkBlock(1, listOf(run(300), walk(180), run(300), walk(180), run(300)))),
-            listOf(RunWalkBlock(1, listOf(run(480), walk(300), run(480)))),
-            listOf(RunWalkBlock(1, listOf(run(1200)))),
-        ),
-        listOf(
-            listOf(RunWalkBlock(1, listOf(run(300), walk(180), run(480), walk(180), run(300)))),
-            listOf(RunWalkBlock(1, listOf(run(600), walk(180), run(600)))),
-            listOf(RunWalkBlock(1, listOf(run(1500)))),
-        ),
-        List(3) { listOf(RunWalkBlock(1, listOf(run(1500)))) },
-        List(3) { listOf(RunWalkBlock(1, listOf(run(1680)))) },
-        List(3) { listOf(RunWalkBlock(1, listOf(run(1800)))) },
-    )
 }

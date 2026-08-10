@@ -49,13 +49,6 @@ class TrainingDecisionDomainTest {
         assertEquals(LoadDelta(LoadMetric.DURATION, -300), consequence.nextRunAdjustment)
     }
 
-    @Test fun `pain never offers repeat and recommends rest`() {
-        val result = Consequences.calculate(feedback(pain = true))
-        assertEquals(ConsequenceKind.PAIN_REPORTED, result.kind)
-        assertEquals(PlanDecision.NEXT_REST, result.recommendedDecision)
-        assertFalse(PlanDecision.REPEAT_PRESCRIPTION in result.options)
-    }
-
     @Test fun `timed feedback uses duration material threshold and native adjustment`() {
         val result = Consequences.calculate(feedback(targetDuration = 1_200, completedDuration = 1_501))
         assertEquals(Deviation.OVER, result.deviation)
@@ -187,21 +180,15 @@ class TrainingDecisionDomainTest {
             Risk.MODERATE,
             Consequences.recordRoutine(FeedbackStatus.SHORTENED, feltHard = true).risk,
         )
-        val pain = Consequences.recordRoutine(FeedbackStatus.DONE, pain = true)
-        assertEquals(ConsequenceKind.PAIN_REPORTED, pain.kind)
-        assertEquals(Risk.UNSAFE, pain.risk)
-        assertFalse(pain.planChangeAvailable)
-        assertEquals(setOf(PlanDecision.KEEP_PLAN), pain.options)
     }
 
     private fun feedback(
         status: FeedbackStatus = FeedbackStatus.DONE,
         targetDuration: Int? = null,
         completedDuration: Int? = null,
-        pain: Boolean = false,
         recentSkipped: Int = 0,
         recentShortened: Int = 0,
-    ) = FeedbackInput(3_000, targetDuration, 12_000, completedDistanceMeters = if (targetDuration == null && status != FeedbackStatus.SKIPPED) 3_000 else null, completedDurationSeconds = completedDuration, status = status, pain = pain, recentSkippedWorkouts = recentSkipped, recentShortenedWorkouts = recentShortened)
+    ) = FeedbackInput(3_000, targetDuration, 12_000, completedDistanceMeters = if (targetDuration == null && status != FeedbackStatus.SKIPPED) 3_000 else null, completedDurationSeconds = completedDuration, status = status, recentSkippedWorkouts = recentSkipped, recentShortenedWorkouts = recentShortened)
 
     private fun runProposal(week: String, date: LocalDate, distance: Int) = WorkoutProposal(week, date, WorkoutType.EASY, PrescriptionKind.DISTANCE, distance, purpose = "Easy run")
 

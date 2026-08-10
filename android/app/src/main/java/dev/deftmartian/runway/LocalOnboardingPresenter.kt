@@ -43,7 +43,6 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
     val today = now.atZone(zone).toLocalDate()
     val established = OnboardingValidation.targetDateBounds(today, StartMode.ESTABLISHED)
     val calibration = OnboardingValidation.targetDateBounds(today, StartMode.CALIBRATION)
-    val foundation = OnboardingValidation.targetDateBounds(today, StartMode.FOUNDATION_TO_GOAL)
     val initial = if (profile == null && currentGoal == null) {
         null
     } else {
@@ -55,23 +54,17 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
             currentWeeklyDistanceKm = profile?.baselineDistanceMeters.toKilometreInput(),
             currentRunsPerWeek = profile?.currentRunsPerWeek?.toString(),
             longestRecentRunKm = profile?.longestRecentRunMeters.toKilometreInput(),
-            calibrationDurationMinutes = profile?.calibrationDurationSeconds
-                ?.let { (it / 60).toString() },
             preferredLongRunDay = profile?.preferredLongRunDay?.toString(),
             timeZone = profile?.timeZone ?: zone.id,
             availability = profile?.availabilityDays.orEmpty(),
-            recentInjury = profile?.recentInjury,
-            currentPain = profile?.currentPain,
-            recurringPain = profile?.recurringPain,
-            medicalRestriction = profile?.medicalRestriction,
-            injuryNotes = profile?.privateNotes,
+            goalKind = activePlan?.goalKind ?: pendingGoal?.goalKind,
+            baselineMode = if (profile?.baselineDistanceMeters != null) "entered" else "learn",
         )
     }
     return NativeOnboardingPayload(
         initialValues = initial,
         minimumTargetDate = established.minimum,
         minimumCalibrationTargetDate = calibration.minimum,
-        minimumFoundationTargetDate = foundation.minimum,
         maximumTargetDate = established.maximum,
         currentGoal = currentGoal,
     )

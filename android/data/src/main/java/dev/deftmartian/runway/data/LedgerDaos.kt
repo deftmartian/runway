@@ -112,7 +112,7 @@ abstract class GoalPlanDao {
     @Upsert
     abstract suspend fun saveGoal(goal: GoalEntity)
 
-    /** A runner may have one active or health-blocked pending goal, never an implicit replacement. */
+    /** Include legacy pending goals when deciding whether setup needs replacement confirmation. */
     @Query("SELECT goalId FROM goals WHERE state IN ('active', 'pending') ORDER BY updatedAtEpochMillis DESC LIMIT :limit")
     abstract suspend fun currentGoalIds(limit: Int): List<String>
 

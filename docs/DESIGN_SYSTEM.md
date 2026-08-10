@@ -30,7 +30,7 @@ An established race-plan Review step must show the generated ramp evidence befor
 - Forms use clear labels, units, sensible defaults, inline validation, and a visible save/cancel boundary. Invalid fields explain what must change; a disabled action alone is not validation.
 - Destructive actions say what local data will be removed and require confirmation.
 - Consequence choices show their precise affected workouts and remain reversible when safe.
-- Open routine runs show no distance, duration, pace, or implied load target. Recording, skipping, moving, or adding one must state that future routine slots stay unchanged.
+- Open routine runs show no distance, duration, pace, or implied load target. Adding or removing one changes that week's run-count goal; moving one between weeks changes both affected weeks. State that other weeks stay unchanged.
 - Use progressive disclosure for technical import detail, retained route and heart-rate evidence, old plans, and raw metrics; do not hide the next decision.
 - Ask for Android notification permission only after the runner enables an alert. Describe reminders as best-effort, keep lock-screen text generic, and show when Android has blocked the relevant channel.
 - Support touch targets, keyboard navigation, screen readers, system font scaling, and both contrast modes.
@@ -44,7 +44,7 @@ Write calmly, directly, and without hurry. Be concise without becoming terse or 
 - Prefer everyday words. In product copy, use “history,” “planned run,” “result,” and “change” instead of internal terms such as “ledger,” “prescription,” “consequence,” “provenance,” or “surface.” Keep a technical term only when it is the clearest accurate name, and explain it on first use.
 - Put the condition first, then the effect or action: “If you discard routes, runway permanently removes saved route points.”
 - Give each message one primary job. State the important fact first and make the next action obvious.
-- Keep onboarding and empty states practical and welcoming. Make errors, pain guidance, privacy choices, and destructive confirmations more serious and explicit.
+- Keep onboarding and empty states practical and welcoming. Make errors, privacy choices, and destructive confirmations more serious and explicit.
 - Avoid slogans, fake warmth, motivational pressure, jokes in errors, exclamation marks, and claims that something is “smart,” “adaptive,” “optimized,” “easy,” or “simple.”
 
 Every sentence should earn its place by stating a condition, fact, action, effect, or next step. Prefer “This run was shorter than planned. Choose whether the next run changes.” to vague or performative language.
@@ -57,13 +57,13 @@ Examples:
 | “This addition stays in the adjustment ledger.” | “History keeps a record of this change, so you can undo it later.” |
 | “No routine week is available yet.” | “Your first routine week starts Monday. Open Calendar to see the runs.” |
 
-Review new copy in its actual screen. Read it aloud, check it at larger system text sizes, and ask whether someone unfamiliar with runway can explain what happens next. For important onboarding, health, privacy, or destructive messages, test comprehension rather than judging tone from source alone.
+Review new copy in its actual screen. Read it aloud, check it at larger system text sizes, and ask whether someone unfamiliar with runway can explain what happens next. For important onboarding, privacy, or destructive messages, test comprehension rather than judging tone from source alone.
 
 This guidance adapts [Material's communication principles](https://codelabs.developers.google.com/codelabs/material-communication-guidance), the [Google voice and tone guide](https://developers.google.com/style/tone), and the [NHS guidance for effective app messages](https://service-manual.nhs.uk/content/writing-nhs-messages).
 
-Pain and hard-effort labels describe a runner's report, not a diagnosis. Use conservative, clear language and distinguish an offered plan change from one already applied.
+An unusually-hard-effort label describes the runner's report, not a diagnosis. Use conservative, clear language and distinguish an offered plan change from one already applied.
 
-For routines, use factual count language: “2 of 3 runs recorded this week” and “One scheduled run was not recorded.” If a run happened on another day, include it in the weekly total and separately show scheduled-day versus other-day counts; never imply that an extra run completed a particular scheduled slot. Do not call an open slot short, behind, deficient, or a missed load target. A pain or hard-effort report remains visible context; it does not imply that runway changed the routine.
+For routines, use factual count language: “2 of 3 runs recorded this week” and “One scheduled run was not recorded.” If a run happened on another day, include it in the weekly total and separately show scheduled-day versus other-day counts; never imply that an extra run completed a particular scheduled slot. Do not call an open slot short, behind, deficient, or a missed load target. A hard-effort report remains visible context; it does not imply that runway changed the routine.
 
 ## Visual verification
 

@@ -89,7 +89,7 @@ object StandalonePlanRules {
     fun assessContinuation(input: ContinuationEligibilityInput): ContinuationEligibility {
         val reasons = linkedSetOf<ContinuationIneligibility>()
         if (!input.activePlan) reasons += ContinuationIneligibility.NO_ACTIVE_BEGINNER_PLAN
-        if (input.phase !in setOf(PlanPhase.FOUNDATION, PlanPhase.CALIBRATION)) {
+        if (input.phase != PlanPhase.CALIBRATION) {
             reasons += ContinuationIneligibility.NOT_A_BEGINNER_PHASE
         }
         if (input.targetDate.isAfter(input.today)) reasons += ContinuationIneligibility.PHASE_NOT_COMPLETE

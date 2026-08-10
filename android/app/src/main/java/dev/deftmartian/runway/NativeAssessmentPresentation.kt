@@ -57,10 +57,6 @@ internal fun nativeConsequenceAssessment(
         )
     } else
     when (kind) {
-        "pain_reported" -> NativeAssessmentPresentation(
-            "Pain reported",
-            "Pain was reported for this run. The schedule is not medical clearance to keep running.",
-        )
         "completed_as_planned" -> NativeAssessmentPresentation(
             "Recorded as planned",
             "The recorded amount is within the material threshold for this workout.",

@@ -40,8 +40,8 @@ class DomainBoundaryTest {
     @Test fun `onboarding bounds and validation use start-mode-specific dates`() {
         val today = LocalDate.parse("2026-01-01")
         assertEquals(TargetDateBounds("2026-02-26", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.ESTABLISHED))
-        assertEquals(TargetDateBounds("2026-04-30", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.FOUNDATION_TO_GOAL))
-        val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-03-11", listOf(2, 6), "America/Halifax", InjuryFlags(), calibrationDurationMinutes = 20)
+        assertEquals(TargetDateBounds("2026-03-12", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.CALIBRATION))
+        val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-03-11", listOf(2, 6), "America/Halifax")
         assertTrue(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection, today))
         assertFalse(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection.copy(targetDate = "2026-03-12"), today))
     }
@@ -61,7 +61,6 @@ class DomainBoundaryTest {
             targetDate = "2026-03-12",
             availability = listOf(1, 3, 6),
             timeZone = "America/Halifax",
-            injuryFlags = InjuryFlags(),
             currentWeeklyDistanceKm = 10.0,
             currentRunsPerWeek = 3,
             longestRecentRunKm = 5.0,
@@ -88,7 +87,6 @@ class DomainBoundaryTest {
             targetDate = null,
             availability = listOf(1),
             timeZone = "America/Halifax",
-            injuryFlags = InjuryFlags(),
         )
 
         assertTrue(OnboardingValidation.validate(routine, today).isEmpty())
@@ -104,10 +102,6 @@ class DomainBoundaryTest {
         assertEquals(
             setOf(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS),
             OnboardingValidation.validate(routine.copy(availability = listOf(7)), today),
-        )
-        assertEquals(
-            setOf(OnboardingIssue.HEALTH_BLOCKS_SCHEDULING),
-            OnboardingValidation.validate(routine.copy(injuryFlags = InjuryFlags(currentPain = true)), today),
         )
         assertEquals(
             setOf(OnboardingIssue.MISSING_START_MODE, OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS),

@@ -3,10 +3,10 @@ package dev.deftmartian.runway.data
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import dev.deftmartian.runway.domain.FoundationIntake
-import dev.deftmartian.runway.domain.GeneratedFoundationPlan
+import dev.deftmartian.runway.domain.CalibrationIntake
+import dev.deftmartian.runway.domain.GeneratedCalibrationPlan
 import dev.deftmartian.runway.domain.GoalKind
-import dev.deftmartian.runway.domain.InjuryFlags
+import dev.deftmartian.runway.domain.RaceDistance
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TrainingPlanner
 import kotlinx.coroutines.runBlocking
@@ -34,31 +34,11 @@ class LocalPlanSetupRepositoryInstrumentedTest {
 
     @Test
     fun setupWritesTheCompleteGeneratedGraphAndProfileAsOneLedgerBoundary() = runBlocking {
-        val generated = TrainingPlanner.generatePlan(
-            FoundationIntake(
-                startMode = StartMode.FOUNDATION_ONLY,
-                goalKind = GoalKind.FOUNDATION,
-                raceDistance = null,
-                availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
-                startDate = "2026-06-01",
-            ),
-        ) as GeneratedFoundationPlan
-        val graph = GeneratedPlanPersistenceMapper.map(
-            generated,
-            GeneratedPlanGoalMetadata(
-                goalId = "foundation-goal",
-                planId = "foundation-plan",
-                title = "Foundation",
-                goalKind = GoalKind.FOUNDATION,
-                startMode = StartMode.FOUNDATION_ONLY,
-                createdAtEpochMillis = 100,
-            ),
-        )
+        val graph = generatedGraph("learning-goal", "learning-plan")
 
         val result = LocalPlanSetupRepository(database).setUp(
             LocalPlanSetupRequest(
-                operationId = "foundation-operation",
+                operationId = "learning-operation",
                 operationFingerprint = "a".repeat(64),
                 profile = profile(),
                 availabilityDays = listOf(1, 3, 6),
@@ -68,7 +48,7 @@ class LocalPlanSetupRepositoryInstrumentedTest {
             ),
         )
 
-        assertEquals(LocalPlanSetupResult.Created("foundation-goal", "foundation-plan"), result)
+        assertEquals(LocalPlanSetupResult.Created("learning-goal", "learning-plan"), result)
         assertEquals(listOf(1, 3, 6), database.profileSettingsDao().availabilityDays(limit = 10).map { it.dayOfWeek })
         val sqlite = database.openHelper.writableDatabase
         assertEquals(1, count(sqlite, "goals"))
@@ -84,27 +64,7 @@ class LocalPlanSetupRepositoryInstrumentedTest {
 
     @Test
     fun replayingACommittedSetupReturnsTheSameResultWithoutDuplicatingRows() = runBlocking {
-        val generated = TrainingPlanner.generatePlan(
-            FoundationIntake(
-                startMode = StartMode.FOUNDATION_ONLY,
-                goalKind = GoalKind.FOUNDATION,
-                raceDistance = null,
-                availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
-                startDate = "2026-06-01",
-            ),
-        ) as GeneratedFoundationPlan
-        val graph = GeneratedPlanPersistenceMapper.map(
-            generated,
-            GeneratedPlanGoalMetadata(
-                goalId = "retry-goal",
-                planId = "retry-plan",
-                title = "Foundation",
-                goalKind = GoalKind.FOUNDATION,
-                startMode = StartMode.FOUNDATION_ONLY,
-                createdAtEpochMillis = 100,
-            ),
-        )
+        val graph = generatedGraph("retry-goal", "retry-plan")
         val request = LocalPlanSetupRequest(
             operationId = "retry-operation",
             operationFingerprint = "b".repeat(64),
@@ -133,27 +93,7 @@ class LocalPlanSetupRepositoryInstrumentedTest {
 
     @Test
     fun setupReceiptRejectsOperationReuseAndDoesNotTreatMatchingGoalIdsAsAReceipt() = runBlocking {
-        val generated = TrainingPlanner.generatePlan(
-            FoundationIntake(
-                startMode = StartMode.FOUNDATION_ONLY,
-                goalKind = GoalKind.FOUNDATION,
-                raceDistance = null,
-                availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
-                startDate = "2026-06-01",
-            ),
-        ) as GeneratedFoundationPlan
-        val graph = GeneratedPlanPersistenceMapper.map(
-            generated,
-            GeneratedPlanGoalMetadata(
-                goalId = "receipt-goal",
-                planId = "receipt-plan",
-                title = "Foundation",
-                goalKind = GoalKind.FOUNDATION,
-                startMode = StartMode.FOUNDATION_ONLY,
-                createdAtEpochMillis = 100,
-            ),
-        )
+        val graph = generatedGraph("receipt-goal", "receipt-plan")
         val request = LocalPlanSetupRequest(
             operationId = "receipt-operation",
             operationFingerprint = "e".repeat(64),
@@ -186,28 +126,8 @@ class LocalPlanSetupRepositoryInstrumentedTest {
     }
 
     @Test
-    fun replacingPendingGoalAfterPainClearsRequiresConfirmationAndArchivesRatherThanDeletes() = runBlocking {
-        val generated = TrainingPlanner.generatePlan(
-            FoundationIntake(
-                startMode = StartMode.FOUNDATION_ONLY,
-                goalKind = GoalKind.FOUNDATION,
-                raceDistance = null,
-                availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
-                startDate = "2026-06-01",
-            ),
-        ) as GeneratedFoundationPlan
-        val replacement = GeneratedPlanPersistenceMapper.map(
-            generated,
-            GeneratedPlanGoalMetadata(
-                goalId = "replacement-goal",
-                planId = "replacement-plan",
-                title = "Foundation",
-                goalKind = GoalKind.FOUNDATION,
-                startMode = StartMode.FOUNDATION_ONLY,
-                createdAtEpochMillis = 100,
-            ),
-        )
+    fun replacingPendingGoalRequiresConfirmationAndArchivesRatherThanDeletes() = runBlocking {
+        val replacement = generatedGraph("replacement-goal", "replacement-plan")
         val existing = GoalEntity(
             goalId = "existing-goal",
             title = "Existing",
@@ -215,9 +135,9 @@ class LocalPlanSetupRepositoryInstrumentedTest {
             state = "pending",
             createdAtEpochMillis = 1,
             updatedAtEpochMillis = 1,
-            kind = "foundation",
-            startMode = "foundation_only",
-            raceDistanceMeters = null,
+            kind = "race",
+            startMode = "calibration",
+            raceDistanceMeters = 5_000,
             priority = "consistency",
         )
         database.goalPlanDao().saveGoal(existing)
@@ -284,10 +204,10 @@ class LocalPlanSetupRepositoryInstrumentedTest {
     @Test
     fun ambiguousCurrentGoalsFailClosedWithoutChangingTheLedger() = runBlocking {
         database.goalPlanDao().saveGoal(
-            GoalEntity("pending-one", "One", null, "pending", 1, 1, "race", "foundation_to_goal", 5_000, "finish_healthy"),
+            GoalEntity("pending-one", "One", null, "pending", 1, 1, "race", "calibration", 5_000, "finish_healthy"),
         )
         database.goalPlanDao().saveGoal(
-            GoalEntity("pending-two", "Two", null, "pending", 2, 2, "race", "foundation_to_goal", 5_000, "finish_healthy"),
+            GoalEntity("pending-two", "Two", null, "pending", 2, 2, "race", "calibration", 5_000, "finish_healthy"),
         )
         val request = LocalPlanSetupRequest(
             operationId = "ambiguous-operation",
@@ -295,7 +215,7 @@ class LocalPlanSetupRepositoryInstrumentedTest {
             profile = profile(),
             availabilityDays = listOf(1, 3, 6),
             candidate = LocalPlanCandidate.Pending(
-                GoalEntity("new-pending", "Later", null, "pending", 100, 100, "race", "foundation_to_goal", 5_000, "finish_healthy"),
+                GoalEntity("new-pending", "Later", null, "pending", 100, 100, "race", "calibration", 5_000, "finish_healthy"),
             ),
             confirmReplaceCurrent = true,
             archiveAtEpochMillis = 100,
@@ -314,6 +234,30 @@ class LocalPlanSetupRepositoryInstrumentedTest {
             cursor.moveToFirst()
             cursor.getInt(0)
         }
+
+    private fun generatedGraph(goalId: String, planId: String): GeneratedPlanPersistenceGraph {
+        val generated = TrainingPlanner.generatePlan(
+            CalibrationIntake(
+                goalKind = GoalKind.RACE,
+                raceDistance = RaceDistance.FIVE_K,
+                availability = listOf(1, 3, 6),
+                startDate = "2026-06-01",
+            ),
+        ) as GeneratedCalibrationPlan
+        return GeneratedPlanPersistenceMapper.map(
+            generated,
+            GeneratedPlanGoalMetadata(
+                goalId = goalId,
+                planId = planId,
+                title = "5K baseline learning",
+                goalKind = GoalKind.RACE,
+                startMode = StartMode.CALIBRATION,
+                goalTargetDate = "2026-09-01",
+                targetDistanceMeters = 5_000,
+                createdAtEpochMillis = 100,
+            ),
+        )
+    }
 
     private fun profile() = ProfileSettingsEntity(
         timeZone = "America/Halifax",

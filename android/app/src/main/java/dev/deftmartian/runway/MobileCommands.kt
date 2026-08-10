@@ -17,15 +17,9 @@ internal data class CreatePlanCommand(
     val currentWeeklyDistanceKm: String,
     val currentRunsPerWeek: String,
     val longestRecentRunKm: String,
-    val calibrationDurationMinutes: String,
     val availability: List<Int>,
     val preferredLongRunDay: String,
     val timeZone: String,
-    val recentInjury: Boolean,
-    val currentPain: Boolean,
-    val recurringPain: Boolean,
-    val medicalRestriction: Boolean,
-    val injuryNotes: String,
     val confirmConcentratedSchedule: Boolean,
     val confirmedPlanKey: String?,
     val confirmReplace: Boolean,
@@ -33,6 +27,8 @@ internal data class CreatePlanCommand(
     val operationId: String,
     /** Stable audit time for the operation, including a retry after process recreation. */
     val occurredAtEpochMillis: Long,
+    /** Whether setup uses a runner-entered recent week or observes open runs first. */
+    val baselineMode: String = "learn",
 ) : MobileCommand {
     override val action = "create_plan"
 }
@@ -41,7 +37,6 @@ internal data class RecordFeedbackCommand(
     val workoutId: String,
     val status: FeedbackStatus,
     val feltHard: Boolean,
-    val pain: Boolean,
     val completedDistanceKm: Double? = null,
     val completedDurationMinutes: Double? = null,
 ) : MobileCommand {
@@ -57,7 +52,6 @@ internal data class RecordManualRunCommand(
     val distanceKm: Double?,
     val durationMinutes: Double?,
     val feltHard: Boolean,
-    val pain: Boolean,
 ) : MobileCommand {
     override val action = "record_manual_run"
 }
@@ -66,7 +60,6 @@ internal data class LinkActivityCommand(
     val activityId: String,
     val workoutId: String,
     val feltHard: Boolean? = null,
-    val pain: Boolean? = null,
 ) : MobileCommand {
     override val action = "link_activity"
 }
@@ -78,7 +71,6 @@ internal data class UnlinkActivityCommand(val activityId: String) : MobileComman
 internal data class ConfirmActivityExtraCommand(
     val activityId: String,
     val feltHard: Boolean? = null,
-    val pain: Boolean? = null,
 ) : MobileCommand {
     override val action = "confirm_activity_extra"
 }
@@ -90,7 +82,6 @@ internal data class ReturnExtraActivityToReviewCommand(val activityId: String) :
 internal data class UpdateActivityFeedbackCommand(
     val activityId: String,
     val feltHard: Boolean,
-    val pain: Boolean,
 ) : MobileCommand {
     override val action = "update_activity_feedback"
 }

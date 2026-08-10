@@ -123,7 +123,6 @@ class MainActivity : ComponentActivity() {
                     onRoutePrivacyChanged = runwayViewModel::updateRoutePrivacy,
                     onHeartRatePrivacyChanged = runwayViewModel::updateHeartRatePrivacy,
                     onHeartRateChanged = runwayViewModel::updateHeartRate,
-                    onHealthContextChanged = runwayViewModel::updateHealthContext,
                     onEraseImportedActivityData = runwayViewModel::eraseImportedActivityData,
                     onEraseAllData = runwayViewModel::eraseAllData,
                     onAcknowledgeRetentionRepair =

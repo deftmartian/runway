@@ -118,18 +118,6 @@ class NativeCalendarDecisionTest {
     }
 
     @Test
-    fun `accepted activity pain does not keep a resolved day in review`() {
-        val presentation = calendarDayPresentation(
-            workouts = emptyList(),
-            activities = listOf(activity("accepted", "2026-07-29").copy(pain = true)),
-            feedbackByWorkout = emptyMap(),
-        )
-
-        assertEquals(CalendarCellEmphasis.Actual, presentation.emphasis)
-        assertEquals("recorded", presentation.stateDescription)
-    }
-
-    @Test
     fun `calendar feedback states remain distinct`() {
         val workout = workout("workout", "2026-07-29", "easy")
         fun presentation(state: String) = calendarDayPresentation(
@@ -232,7 +220,6 @@ class NativeCalendarDecisionTest {
         maxHeartRate = null,
         heartRateSummary = null,
         feltHard = false,
-        pain = false,
         extraPlanImpactConfirmed = true,
         consequence = null,
         routeSummary = null,
@@ -250,7 +237,6 @@ class NativeCalendarDecisionTest {
         completedDistanceMeters = completedDistanceMeters,
         completedDurationSeconds = null,
         feltHard = false,
-        pain = false,
         consequence = null,
         canDelete = true,
         completionState = completionState,

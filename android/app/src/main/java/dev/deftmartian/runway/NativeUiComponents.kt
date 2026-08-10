@@ -229,13 +229,11 @@ internal fun ActivityCard(
         ?.let(::friendlyDate)
         ?: "Activity"
     val state = when {
-        activity.pain == true -> "Pain reported"
         activity.feltHard == true -> "Felt harder than expected"
         activity.reviewState == "review" -> "Needs review"
         else -> "Accepted"
     }
     val emphasis = when {
-        activity.pain == true -> LedgerEmphasis.Danger
         activity.feltHard == true || activity.reviewState == "review" -> LedgerEmphasis.Review
         else -> LedgerEmphasis.Actual
     }

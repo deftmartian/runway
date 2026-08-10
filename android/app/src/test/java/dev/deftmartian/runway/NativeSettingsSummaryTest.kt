@@ -38,8 +38,8 @@ class NativeSettingsSummaryTest {
         )
 
         assertEquals("Weekly routine", routine.label)
-        assertTrue(routine.summary.contains("3 runs each week"))
-        assertEquals("Change", routine.action)
+        assertTrue(routine.summary.contains("Default 3 runs each week"))
+        assertEquals("Replace", routine.action)
         assertEquals("Training plan", active.label)
         assertTrue(active.summary.contains("Autumn 10K"))
         assertEquals("Goal setup", pending.label)
@@ -74,51 +74,6 @@ class NativeSettingsSummaryTest {
                 ),
             ),
         )
-    }
-
-    @Test
-    fun `running limits summary states the saved consequence`() {
-        assertEquals(
-            "Pain reported now · setup will not schedule runs",
-            runningCheckInSummary(
-                NativeHealthContext(
-                    recentInjury = false,
-                    currentPain = true,
-                    recurringPain = false,
-                    clinicianRestriction = false,
-                    notes = "private detail",
-                ),
-            ),
-        )
-        assertEquals(
-            "Recent injury · distance increases checked more cautiously",
-            runningCheckInSummary(NativeHealthContext(recentInjury = true)),
-        )
-        assertEquals(
-            "Private reminder · no effect on the schedule",
-            runningCheckInSummary(NativeHealthContext(notes = "remember")),
-        )
-        assertEquals("No running limits saved", runningCheckInSummary(NativeHealthContext()))
-        assertFalse(hasRunningLimits(NativeHealthContext()))
-        assertTrue(hasRunningLimits(NativeHealthContext(recurringPain = true)))
-        assertTrue(hasRunningLimits(NativeHealthContext(notes = "remember")))
-    }
-
-    @Test
-    fun `running limit effects distinguish scheduling ramp checks and private notes`() {
-        assertEquals(
-            "New setup saves the goal but does not create a schedule. Existing workouts stay recorded.",
-            runningCheckInEffect(NativeHealthContext(currentPain = true)),
-        )
-        assertEquals(
-            "Distance plans and edits to runs with targets use more cautious increase checks. Foundation sessions and open routine runs stay unchanged.",
-            runningCheckInEffect(NativeHealthContext(recurringPain = true)),
-        )
-        assertEquals(
-            "The private reminder is for your reference only. It does not change workouts or scheduling.",
-            runningCheckInEffect(NativeHealthContext(notes = "remember")),
-        )
-        assertEquals(null, runningCheckInEffect(NativeHealthContext()))
     }
 
     @Test

@@ -28,7 +28,7 @@ data class LocalSurfaceReadLimits(
 }
 
 enum class LocalPlanState { ACTIVE, COMPLETED, ARCHIVED, OTHER }
-enum class LocalPlanPhase { FOUNDATION, CALIBRATION, DISTANCE, ROUTINE, OTHER }
+enum class LocalPlanPhase { CALIBRATION, DISTANCE, ROUTINE, OTHER }
 enum class LocalPlanProvenance { ACTIVE, COMPLETED, ARCHIVED, OTHER, UNLINKED }
 
 data class LocalLoadReadModel(
@@ -305,17 +305,10 @@ data class LocalWeekStatsReadModel(
     val extraRuns: Int = 0,
 )
 
-data class LocalHealthNoticeReadModel(
-    val level: String,
-    val heading: String,
-    val message: String,
-)
-
 data class LocalCurrentSignalReadModel(
     val risk: String,
     val reasons: List<String>,
     val source: String,
-    val healthNotice: LocalHealthNoticeReadModel?,
 )
 
 data class LocalRecordedTotalsReadModel(
@@ -472,11 +465,6 @@ data class LocalProfileReadModel(
     val routeDataMode: String,
     val heartRateDataMode: String,
     val availabilityDays: List<Int>,
-    val recentInjury: Boolean,
-    val currentPain: Boolean,
-    val recurringPain: Boolean,
-    val medicalRestriction: Boolean,
-    val privateNotes: String?,
     val heartRateSettingsSource: String,
     val sexForEstimates: String,
     val ageYears: Int?,
@@ -489,7 +477,6 @@ data class LocalProfileReadModel(
     val baselineDurationSeconds: Int?,
     val currentRunsPerWeek: Int?,
     val longestRecentRunMeters: Int?,
-    val calibrationDurationSeconds: Int?,
     val preferredLongRunDay: Int?,
 )
 
@@ -1461,11 +1448,6 @@ object LocalSurfaceMappers {
                 routeDataMode = it.routeDataMode,
                 heartRateDataMode = it.heartRateDataMode,
                 availabilityDays = slice.availabilityDays.map(ProfileAvailabilityDayEntity::dayOfWeek).sorted(),
-                recentInjury = it.recentInjury,
-                currentPain = it.currentPain,
-                recurringPain = it.recurringPain,
-                medicalRestriction = it.medicalRestriction,
-                privateNotes = it.privateNotes,
                 heartRateSettingsSource = it.heartRateSettingsSource,
                 sexForEstimates = it.sexForEstimates,
                 ageYears = it.ageYears,
@@ -1478,7 +1460,6 @@ object LocalSurfaceMappers {
                 baselineDurationSeconds = it.baselineDurationSeconds,
                 currentRunsPerWeek = it.currentRunsPerWeek,
                 longestRecentRunMeters = it.longestRecentRunMeters,
-                calibrationDurationSeconds = it.calibrationDurationSeconds,
                 preferredLongRunDay = it.preferredLongRunDay,
             )
         }
@@ -1755,7 +1736,6 @@ object LocalSurfaceMappers {
                     classification = stored.classification,
                     deviation = stored.deviation,
                     feltHard = feedback.feltHard,
-                    pain = feedback.pain,
                     recommendedDecision = stored.recommendedDecision,
                 ),
             )
@@ -1786,7 +1766,6 @@ object LocalSurfaceMappers {
                     classification = stored.classification,
                     deviation = stored.deviation,
                     feltHard = row.feedback?.feltHard == true,
-                    pain = row.feedback?.pain == true,
                     recommendedDecision = stored.recommendedDecision,
                 ),
             )
@@ -1818,7 +1797,6 @@ object LocalSurfaceMappers {
             risk = selected?.risk ?: planRisk,
             reasons = selected?.reasons.orEmpty().ifEmpty { if (selected == null) planReasons else emptyList() },
             source = selected?.source ?: "plan",
-            healthNotice = healthNotice(profile),
         )
     }
 
@@ -1851,34 +1829,13 @@ object LocalSurfaceMappers {
         }
         .toList()
 
-    private fun healthNotice(profile: ProfileSettingsEntity?): LocalHealthNoticeReadModel? = when {
-        profile?.medicalRestriction == true -> LocalHealthNoticeReadModel(
-            level = "paused",
-            heading = "Clinician limit saved",
-            message = "New setup will not create a schedule while this remains selected. Existing workouts stay recorded; runway does not treat them as clearance to continue.",
-        )
-        profile?.currentPain == true -> LocalHealthNoticeReadModel(
-            level = "paused",
-            heading = "Pain affects running now",
-            message = "New setup will not create a schedule while this remains selected. Existing workouts stay recorded; seek qualified guidance if pain persists, worsens, or changes how you move.",
-        )
-        profile?.recentInjury == true || profile?.recurringPain == true -> LocalHealthNoticeReadModel(
-            level = "caution",
-            heading = "More cautious ramp checks",
-            message = "A recent injury or recurring pain is saved. Distance prescriptions and targeted-run edits are flagged sooner; foundation sessions and open routine runs stay unchanged.",
-        )
-        else -> null
-    }
-
     private fun signalReasons(
         classification: String?,
         deviation: String?,
         feltHard: Boolean,
-        pain: Boolean,
         recommendedDecision: String?,
     ): List<String> = buildList {
         when {
-            pain -> add("Pain was reported on the latest accepted run.")
             feltHard -> add("The latest accepted run was marked hard.")
             deviation == "short" -> add("The latest accepted run was shorter than its planned amount.")
             deviation in setOf("over", "long") -> add("The latest accepted run exceeded its planned amount.")
@@ -1950,7 +1907,6 @@ object LocalSurfaceMappers {
     }
 
     private fun planPhase(value: String) = when (value) {
-        "foundation" -> LocalPlanPhase.FOUNDATION
         "calibration" -> LocalPlanPhase.CALIBRATION
         "distance" -> LocalPlanPhase.DISTANCE
         "routine" -> LocalPlanPhase.ROUTINE

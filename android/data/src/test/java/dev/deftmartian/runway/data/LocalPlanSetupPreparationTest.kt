@@ -3,7 +3,6 @@ package dev.deftmartian.runway.data
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
 import dev.deftmartian.runway.domain.GoalKind
 import dev.deftmartian.runway.domain.GoalPriority
-import dev.deftmartian.runway.domain.InjuryFlags
 import dev.deftmartian.runway.domain.RaceDistance
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TrainingPlanner
@@ -58,7 +57,6 @@ class LocalPlanSetupPreparationTest {
             EstablishedTrainingIntake(
                 priority = GoalPriority.FINISH_HEALTHY,
                 availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
                 raceDistance = RaceDistance.FIVE_K,
                 targetDate = "2026-08-30",
                 currentWeeklyDistanceMeters = 8_000,

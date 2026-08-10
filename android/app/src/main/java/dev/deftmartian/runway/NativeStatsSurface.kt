@@ -184,7 +184,7 @@ private fun NativeRoutineFrequencyLedger(
     SettingCard("Runs each week") {
         Text(
             runsPerWeek?.takeIf { it > 0 }?.let {
-                "Your routine is $it ${if (it == 1) "run" else "runs"} each week. Distance and time remain optional observations."
+                "Your default is $it ${if (it == 1) "run" else "runs"} each week. The open-run count shown for each week is that week's goal. Distance and time remain optional observations."
             } ?: "Scheduled runs are shown by week. Distance and time remain optional observations.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -472,7 +472,7 @@ private fun NativeTraceLegend(
 private fun NativeAcceptedContext(summaries: List<NativeWeekSummary>) {
     val contextualWeeks = summaries.filter {
         it.averagePaceSecondsPerKm != null || it.averageHeartRate != null ||
-            (it.hardFlags ?: 0) > 0 || (it.painFlags ?: 0) > 0
+            (it.hardFlags ?: 0) > 0
     }
     if (contextualWeeks.isEmpty()) return
     SettingCard("Accepted-record context") {
@@ -486,7 +486,6 @@ private fun NativeAcceptedContext(summaries: List<NativeWeekSummary>) {
             week.averagePaceSecondsPerKm?.let { SettingRow("$label · average pace", formatPace(it)) }
             week.averageHeartRate?.let { SettingRow("$label · average heart rate", "$it bpm") }
             if ((week.hardFlags ?: 0) > 0) SettingRow("$label · felt harder than expected", week.hardFlags.toString())
-            if ((week.painFlags ?: 0) > 0) SettingRow("$label · reported pain", week.painFlags.toString())
         }
     }
 }

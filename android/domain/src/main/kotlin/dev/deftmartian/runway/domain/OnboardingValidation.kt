@@ -14,11 +14,9 @@ enum class OnboardingIssue {
     TARGET_DATE_OUT_OF_BOUNDS,
     INSUFFICIENT_AVAILABLE_DAYS,
     INVALID_ESTABLISHED_BASELINE,
-    INVALID_CALIBRATION_DURATION,
     INVALID_LONG_RUN_DAY,
     INSUFFICIENT_RECOVERY_SPACING,
     CONCENTRATED_SCHEDULE_NOT_CONFIRMED,
-    HEALTH_BLOCKS_SCHEDULING,
 }
 
 data class OnboardingSelection(
@@ -28,12 +26,10 @@ data class OnboardingSelection(
     val targetDate: String?,
     val availability: List<Int>,
     val timeZone: String,
-    val injuryFlags: InjuryFlags,
     val currentWeeklyDistanceKm: Double? = null,
     val currentRunsPerWeek: Int? = null,
     val longestRecentRunKm: Double? = null,
     val preferredLongRunDay: Int? = null,
-    val calibrationDurationMinutes: Int? = null,
     val confirmConcentratedSchedule: Boolean = false,
 )
 
@@ -70,8 +66,6 @@ object OnboardingValidation {
         val weeks = when (mode) {
             StartMode.ESTABLISHED -> 8
             StartMode.CALIBRATION -> 10
-            StartMode.FOUNDATION_TO_GOAL -> 17
-            StartMode.FOUNDATION_ONLY -> 0
             StartMode.ROUTINE -> 0
         }
         require(weeks > 0) { "Only race plans have a target-date bound." }
@@ -85,9 +79,6 @@ object OnboardingValidation {
         val mode = selection.startMode
         if (!DateUtils.isValidTimeZone(selection.timeZone)) add(OnboardingIssue.INVALID_TIME_ZONE)
         if (hasInvalidAvailability(selection)) add(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS)
-        if (selection.injuryFlags.currentPain || selection.injuryFlags.medicalRestriction) {
-            add(OnboardingIssue.HEALTH_BLOCKS_SCHEDULING)
-        }
         if (selection.goalKind in setOf(GoalKind.RACE, GoalKind.ROUTINE) && mode == null) {
             add(OnboardingIssue.MISSING_START_MODE)
         }
@@ -98,18 +89,14 @@ object OnboardingValidation {
         }
 
         val requiredDays = when (mode) {
-            StartMode.FOUNDATION_TO_GOAL, StartMode.FOUNDATION_ONLY -> 3
             StartMode.ROUTINE -> 1
             else -> 2
         }
         if (selection.availability.distinct().size < requiredDays) {
             add(OnboardingIssue.INSUFFICIENT_AVAILABLE_DAYS)
         }
-        if (mode == StartMode.ESTABLISHED && canScheduleWithHealthFlags(selection)) {
+        if (mode == StartMode.ESTABLISHED) {
             validateEstablishedBaseline(selection, this)
-        }
-        if (mode == StartMode.CALIBRATION && selection.calibrationDurationMinutes !in 10..30) {
-            add(OnboardingIssue.INVALID_CALIBRATION_DURATION)
         }
     }
 
@@ -118,10 +105,8 @@ object OnboardingValidation {
             selection.availability.any { it !in 0..6 }
 
     private fun hasInvalidGoalMode(goalKind: GoalKind, mode: StartMode?): Boolean =
-        mode == StartMode.FOUNDATION_ONLY && goalKind != GoalKind.FOUNDATION ||
-            mode == StartMode.ROUTINE && goalKind != GoalKind.ROUTINE ||
-            mode != null && mode !in setOf(StartMode.FOUNDATION_ONLY, StartMode.ROUTINE) &&
-                goalKind != GoalKind.RACE
+        mode == StartMode.ROUTINE && goalKind != GoalKind.ROUTINE ||
+            mode != null && mode != StartMode.ROUTINE && goalKind != GoalKind.RACE
 
     private fun validateRaceGoal(
         selection: OnboardingSelection,
@@ -133,7 +118,7 @@ object OnboardingValidation {
         val targetDate = selection.targetDate
         if (targetDate == null) {
             issues += OnboardingIssue.MISSING_TARGET_DATE
-        } else if (mode != null && mode != StartMode.FOUNDATION_ONLY) {
+        } else if (mode != null) {
             val bounds = targetDateBounds(today, mode)
             if (!isTargetDateWithinBounds(targetDate, bounds)) {
                 issues += OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS
@@ -149,9 +134,6 @@ object OnboardingValidation {
         } catch (_: IllegalArgumentException) {
             false
         }
-
-    private fun canScheduleWithHealthFlags(selection: OnboardingSelection): Boolean =
-        !selection.injuryFlags.currentPain && !selection.injuryFlags.medicalRestriction
 
     private fun validateEstablishedBaseline(
         selection: OnboardingSelection,

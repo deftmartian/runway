@@ -26,7 +26,6 @@ class NativeAssessmentPresentationTest {
 
     @Test
     fun `recorded outcomes use the consequence rather than raw load arithmetic`() {
-        assertEquals("Pain reported", nativeConsequenceAssessment("pain_reported", "unsafe").label)
         assertEquals(
             "Recorded as planned",
             nativeConsequenceAssessment("completed_as_planned", "conservative").label,

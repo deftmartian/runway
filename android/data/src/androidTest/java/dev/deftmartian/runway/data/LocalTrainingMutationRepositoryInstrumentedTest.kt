@@ -101,7 +101,6 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
                 distanceMeters = 5_000,
                 durationSeconds = 1_800,
                 feltHard = true,
-                pain = true,
             ),
         )
         check(recorded is LocalTrainingMutationResult.ManualRunRecorded)
@@ -113,7 +112,7 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
         assertEquals("planned", database.goalPlanDao().workout("manual-review")?.currentStatus)
         assertNull(database.activityLedgerDao().activityConsequence(candidate.activityId))
         assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
-        assertEquals(true, database.activityLedgerDao().activityFeedback(candidate.activityId)?.pain)
+        assertEquals(false, database.activityLedgerDao().activityFeedback(candidate.activityId)?.pain)
 
         val accepted = LocalActivityReviewRepository(database, nowEpochMillis = { now })
             .confirmAsExtra(candidate.activityId)
@@ -123,7 +122,7 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
         assertEquals(now, extra.acceptedAtEpochMillis)
         assertTrue(extra.extraPlanImpactConfirmed)
         assertNotNullConsequence(candidate.activityId)
-        assertTrue(requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
         assertEquals("planned", database.goalPlanDao().workout("manual-review")?.currentStatus)
     }
 
@@ -137,7 +136,6 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
                 workoutId = "routine",
                 status = dev.deftmartian.runway.domain.FeedbackStatus.DONE,
                 feltHard = true,
-                pain = true,
             ),
         )
 
@@ -147,7 +145,7 @@ class LocalTrainingMutationRepositoryInstrumentedTest {
         val feedback = requireNotNull(database.activityLedgerDao().workoutFeedback("routine"))
         assertNull(feedback.completedDistanceMeters)
         assertNull(feedback.completedDurationSeconds)
-        assertTrue(requireNotNull(database.profileSettingsDao().get()).currentPain)
+        assertFalse(requireNotNull(database.profileSettingsDao().get()).currentPain)
         assertFalse(requireNotNull(database.activityLedgerDao().workoutFeedbackConsequence(feedback.feedbackId)).planChangeAvailable)
     }
 

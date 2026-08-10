@@ -25,11 +25,12 @@ data class ProfileSettingsEntity(
     val zone3FloorBpm: Int?,
     val zone4FloorBpm: Int?,
     val zone5FloorBpm: Int?,
-    val recentInjury: Boolean,
-    val currentPain: Boolean,
-    val recurringPain: Boolean,
-    val medicalRestriction: Boolean,
-    val privateNotes: String?,
+    /** Retired schema columns. New code writes neutral values; planning and presentation ignore them. */
+    val recentInjury: Boolean = false,
+    val currentPain: Boolean = false,
+    val recurringPain: Boolean = false,
+    val medicalRestriction: Boolean = false,
+    val privateNotes: String? = null,
     val updatedAtEpochMillis: Long,
     val baselineDistanceMeters: Int? = null,
     val baselineDurationSeconds: Int? = null,
@@ -410,7 +411,8 @@ data class ActivityFeedbackEntity(
     @PrimaryKey val feedbackId: String,
     val activityId: String,
     val feltHard: Boolean,
-    val pain: Boolean,
+    /** Retired schema column. New feedback always writes false and presentation ignores this value. */
+    val pain: Boolean = false,
     val notes: String?,
     val recordedAtEpochMillis: Long,
 )
@@ -442,7 +444,8 @@ data class WorkoutFeedbackEntity(
     val workoutId: String,
     val completionState: String,
     val feltHard: Boolean,
-    val pain: Boolean,
+    /** Retired schema column. New feedback always writes false and presentation ignores this value. */
+    val pain: Boolean = false,
     val notes: String?,
     val recordedAtEpochMillis: Long,
     val completedDistanceMeters: Int? = null,

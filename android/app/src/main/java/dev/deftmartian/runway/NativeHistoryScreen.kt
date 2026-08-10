@@ -48,8 +48,7 @@ internal fun nativeHistoryLifecycleState(
         isRoutine = isRoutine,
         targetReached = targetReached && !isRoutine,
         canCompletePlan =
-            !isRoutine && targetReached &&
-                (phaseReview == null || phaseReview.goalKind == "foundation"),
+            !isRoutine && targetReached && phaseReview == null,
         canConfirmBaseline =
             !isRoutine && activePlan?.status == "active" &&
                 phaseReview?.racePlan != null &&
@@ -57,7 +56,7 @@ internal fun nativeHistoryLifecycleState(
         canContinuePhase =
             !isRoutine && activePlan?.status == "active" &&
                 phaseReview?.options.orEmpty().any {
-                    it == "another_foundation_week" || it == "continue_calibration"
+                    it == "continue_calibration"
                 },
         canChooseGoal =
             !isRoutine && activePlan?.status == "active" &&
@@ -336,7 +335,6 @@ private fun CurrentPlanRecord(
             completedDistance = summary?.completedDistanceMeters?.let(::formatDistance).orDash(),
             missedRuns = summary?.missedRuns ?: 0,
             skippedRuns = summary?.skippedRuns ?: 0,
-            painFlags = summary?.painFlags ?: 0,
             isRoutine = isRoutine,
         )
         Button(
@@ -416,7 +414,6 @@ private fun CurrentPlanMetrics(
     completedDistance: String,
     missedRuns: Int,
     skippedRuns: Int,
-    painFlags: Int,
     isRoutine: Boolean,
 ) {
     val metrics = buildList {
@@ -458,13 +455,6 @@ private fun CurrentPlanMetrics(
                 "Skipped",
                 skippedRuns.toString(),
                 if (!isRoutine && skippedRuns > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
-            ),
-        )
-        add(
-            Triple(
-                "Pain reports",
-                painFlags.toString(),
-                if (painFlags > 0) LedgerEmphasis.Review else LedgerEmphasis.Neutral,
             ),
         )
     }
@@ -574,16 +564,11 @@ private fun PlanHistoryRecord(item: NativePlanHistoryItem, onOpenPlan: (String) 
                 add(if (isRoutine) "$it not recorded" else "$it missed")
             }
             summary?.skippedRuns?.takeIf { it > 0 }?.let { add("$it skipped") }
-            summary?.painFlags?.takeIf { it > 0 }?.let { add("$it pain reports") }
         }
         if (exceptions.isNotEmpty()) {
             Text(
                 exceptions.joinToString(" · "),
-                color = if ((summary?.painFlags ?: 0) > 0) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
             )
         }

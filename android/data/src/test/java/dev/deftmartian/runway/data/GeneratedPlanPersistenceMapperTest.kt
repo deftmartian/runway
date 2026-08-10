@@ -2,12 +2,9 @@ package dev.deftmartian.runway.data
 
 import dev.deftmartian.runway.domain.CalibrationIntake
 import dev.deftmartian.runway.domain.EstablishedTrainingIntake
-import dev.deftmartian.runway.domain.FoundationIntake
 import dev.deftmartian.runway.domain.GeneratedCalibrationPlan
-import dev.deftmartian.runway.domain.GeneratedFoundationPlan
 import dev.deftmartian.runway.domain.GoalKind
 import dev.deftmartian.runway.domain.GoalPriority
-import dev.deftmartian.runway.domain.InjuryFlags
 import dev.deftmartian.runway.domain.RaceDistance
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TrainingPlanner
@@ -26,7 +23,6 @@ class GeneratedPlanPersistenceMapperTest {
             EstablishedTrainingIntake(
                 priority = GoalPriority.FINISH_HEALTHY,
                 availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
                 raceDistance = RaceDistance.FIVE_K,
                 targetDate = "2026-08-30",
                 currentWeeklyDistanceMeters = 8_000,
@@ -67,56 +63,12 @@ class GeneratedPlanPersistenceMapperTest {
         assertTrue(graph.segments.isEmpty())
     }
 
-    @Test fun `foundation timed plan preserves every run walk block and source for both prescription versions`() {
-        val generated = TrainingPlanner.generatePlan(
-            FoundationIntake(
-                startMode = StartMode.FOUNDATION_ONLY,
-                goalKind = GoalKind.FOUNDATION,
-                raceDistance = null,
-                availability = listOf(1, 3, 6),
-                injuryFlags = InjuryFlags(),
-                startDate = "2026-06-01",
-            ),
-        ) as GeneratedFoundationPlan
-        val graph = GeneratedPlanPersistenceMapper.map(
-            generated,
-            GeneratedPlanGoalMetadata(
-                goalId = "goal-foundation",
-                planId = "plan-foundation",
-                title = "Foundation",
-                goalKind = GoalKind.FOUNDATION,
-                startMode = StartMode.FOUNDATION_ONLY,
-                createdAtEpochMillis = 10,
-            ),
-        )
-        val timedWorkouts = graph.workouts.filter { it.generatedPrescriptionKind == "timed" }
-        val expectedBlocks = generated.weeks.flatMap { it.workouts }
-            .sumOf { workout -> (workout.prescription as? dev.deftmartian.runway.domain.WorkoutPrescription.Timed)?.blocks?.size ?: 0 }
-        val expectedSegments = generated.weeks.flatMap { it.workouts }
-            .sumOf { workout ->
-                (workout.prescription as? dev.deftmartian.runway.domain.WorkoutPrescription.Timed)
-                    ?.blocks?.sumOf { it.segments.size } ?: 0
-            }
-
-        assertEquals("foundation", graph.plan.phaseType)
-        assertNull(graph.goal.targetDateEpochDay)
-        assertEquals(9, graph.weeks.size)
-        assertEquals(expectedBlocks * 2, graph.blocks.size)
-        assertEquals(expectedSegments * 2, graph.segments.size)
-        assertTrue(timedWorkouts.all { it.generatedDurationSeconds != null && it.generatedWarmupSeconds == 300 && it.currentWarmupSeconds == 300 })
-        assertTrue(graph.segments.all { it.segmentType in setOf("run", "walk") })
-        assertTrue(graph.workoutSourceReferences.any { it.sourceLocator == "nhs-couch-to-5k" })
-        assertTrue(graph.workoutSourceReferences.groupBy { it.workoutId to it.ordinal }.values.all { refs -> refs.map { it.prescriptionVersion }.toSet() == setOf("generated", "current") })
-    }
-
-    @Test fun `calibration timed plan preserves duration blocks and a distinct stable graph identity`() {
+    @Test fun `calibration plan preserves open runs and a distinct stable graph identity`() {
         val generated = TrainingPlanner.generatePlan(
             CalibrationIntake(
                 goalKind = GoalKind.RACE,
                 raceDistance = RaceDistance.TEN_K,
                 availability = listOf(1, 4),
-                injuryFlags = InjuryFlags(),
-                calibrationDurationSeconds = 1_200,
                 startDate = "2026-06-01",
             ),
         ) as GeneratedCalibrationPlan
@@ -134,15 +86,15 @@ class GeneratedPlanPersistenceMapperTest {
 
         assertEquals("calibration", graph.plan.phaseType)
         assertEquals(2, graph.weeks.size)
-        assertTrue(graph.workouts.filter { it.generatedPrescriptionKind == "timed" }.all {
-            it.generatedDurationSeconds == 1_200 &&
-                it.currentDurationSeconds == 1_200 &&
-                it.generatedWarmupSeconds == 120 &&
-                it.generatedCooldownSeconds == 120
+        assertTrue(graph.workouts.filter { it.generatedWorkoutType == "easy" }.all {
+            it.generatedPrescriptionKind == "open" &&
+                it.generatedDurationSeconds == null &&
+                it.currentDurationSeconds == null &&
+                it.generatedDistanceMeters == null &&
+                it.currentDistanceMeters == null
         })
-        assertTrue(graph.blocks.any { it.prescriptionVersion == "generated" })
-        assertTrue(graph.blocks.any { it.prescriptionVersion == "current" })
-        assertEquals(graph.blocks.size, graph.segments.map { it.blockId }.distinct().size)
+        assertTrue(graph.blocks.isEmpty())
+        assertTrue(graph.segments.isEmpty())
         assertFalse(graph.workouts.any { it.generatedWorkoutType == WorkoutType.RACE.name.lowercase() })
         assertNotEquals(
             GeneratedPlanPersistenceMapper.map(generated, metadata.copy(planId = "another-plan")).workouts.first().workoutId,

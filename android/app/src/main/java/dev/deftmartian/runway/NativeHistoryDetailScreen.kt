@@ -207,15 +207,12 @@ private fun HistoryExtraActivityRecord(activity: NativeActivity) {
     LedgerSurface {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${ledgerDate(activity.activityDate)} · Extra run", fontWeight = FontWeight.SemiBold)
-            LedgerState(
-                if (activity.pain == true) "Pain reported" else "Accepted",
-                if (activity.pain == true) LedgerEmphasis.Danger else LedgerEmphasis.Actual,
-            )
+            LedgerState("Accepted", LedgerEmphasis.Actual)
         }
         MeasurementReadout(
             "Actual",
             weekMeasurement(activity.distanceMeters, activity.durationSeconds),
-            if (activity.pain == true) LedgerEmphasis.Danger else LedgerEmphasis.Actual,
+            LedgerEmphasis.Actual,
         )
         if (activity.feltHard == true) {
             Text("Felt harder than expected", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -234,7 +231,6 @@ private fun HistoryWorkoutRecord(
     val state = workoutStateLabel(workout, cutoffDate, planClosed, routine)
     val displayPrescription = workout.current
     val emphasis = when {
-        result?.pain == true -> LedgerEmphasis.Danger
         result?.feltHard == true -> LedgerEmphasis.Review
         !routine && state in setOf("Short", "Missed", "Skipped") -> LedgerEmphasis.Review
         result != null -> LedgerEmphasis.Actual
@@ -283,8 +279,9 @@ private fun HistoryWorkoutRecord(
                 weekMeasurement(it.completedDistanceMeters, it.completedDurationSeconds),
                 emphasis,
             )
-            val flags = listOfNotNull(if (it.feltHard == true) "Felt harder than expected" else null, if (it.pain == true) "Pain reported" else null)
-            if (flags.isNotEmpty()) Text(flags.joinToString(" · "), color = if (it.pain == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            if (it.feltHard == true) {
+                Text("Felt harder than expected", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             it.consequence?.let { consequence ->
                 Text(
                     listOfNotNull(consequence.deviation, consequence.appliedDecision ?: consequence.recommendedDecision)

@@ -30,7 +30,6 @@ class LocalOnboardingPresenterTest {
         assertNull(payload.currentGoal)
         assertEquals("2026-09-24", payload.minimumTargetDate)
         assertEquals("2026-10-08", payload.minimumCalibrationTargetDate)
-        assertEquals("2026-11-26", payload.minimumFoundationTargetDate)
         assertEquals("2027-07-28", payload.maximumTargetDate)
     }
 
@@ -43,11 +42,6 @@ class LocalOnboardingPresenterTest {
                 routeDataMode = "private",
                 heartRateDataMode = "discard",
                 availabilityDays = listOf(1, 3, 6),
-                recentInjury = true,
-                currentPain = false,
-                recurringPain = false,
-                medicalRestriction = false,
-                privateNotes = "private",
                 heartRateSettingsSource = "none",
                 sexForEstimates = "not_specified",
                 ageYears = null,
@@ -60,7 +54,6 @@ class LocalOnboardingPresenterTest {
                 baselineDurationSeconds = 4_200,
                 currentRunsPerWeek = 3,
                 longestRecentRunMeters = 6_000,
-                calibrationDurationSeconds = 1_200,
                 preferredLongRunDay = 6,
             ),
             activePlan = LocalActivePlanReadModel(
@@ -91,39 +84,15 @@ class LocalOnboardingPresenterTest {
     }
 
     @Test
-    fun `pending health-blocked goal remains visible and prepopulates explicit replacement`() {
-        val payload = LocalSettingsReadModel(
-            profile = profile(currentPain = false),
-            activePlan = null,
-            pendingGoal = LocalPendingGoalReadModel(
-                goalId = "pending-goal",
-                title = "5K later",
-                goalKind = "race",
-                startMode = "foundation_to_goal",
-                raceDistanceMeters = 5_000,
-                targetEpochDay = LocalDate.parse("2026-11-01").toEpochDay(),
-                priority = "finish_healthy",
-            ),
-            about = LocalAboutReadModel(versionName = null, buildRevision = null),
-        ).toNativeOnboardingPayload(Instant.parse("2026-07-30T12:00:00Z"))
-
-        assertEquals("pending", payload.currentGoal?.state)
-        assertEquals("pending-goal", payload.currentGoal?.id)
-        assertEquals("foundation_to_goal", payload.initialValues?.startMode)
-        assertEquals("5k", payload.initialValues?.raceDistance)
-        assertEquals("2026-11-01", payload.initialValues?.targetDate)
-    }
-
-    @Test
     fun `released race distance values remain visible and editable`() {
         val payload = LocalSettingsReadModel(
-            profile = profile(currentPain = false),
+            profile = profile(),
             activePlan = null,
             pendingGoal = LocalPendingGoalReadModel(
                 goalId = "pending-goal",
                 title = "Marathon later",
                 goalKind = "race",
-                startMode = "foundation_to_goal",
+                startMode = "calibration",
                 raceDistanceMeters = 42_195,
                 targetEpochDay = LocalDate.parse("2026-11-01").toEpochDay(),
                 priority = "finish_healthy",
@@ -135,16 +104,11 @@ class LocalOnboardingPresenterTest {
         assertEquals("marathon", payload.initialValues?.raceDistance)
     }
 
-    private fun profile(currentPain: Boolean) = LocalProfileReadModel(
+    private fun profile() = LocalProfileReadModel(
         timeZone = "America/Halifax",
         routeDataMode = "discard",
         heartRateDataMode = "discard",
         availabilityDays = listOf(1, 3, 6),
-        recentInjury = false,
-        currentPain = currentPain,
-        recurringPain = false,
-        medicalRestriction = false,
-        privateNotes = null,
         heartRateSettingsSource = "none",
         sexForEstimates = "not_specified",
         ageYears = null,
@@ -157,7 +121,6 @@ class LocalOnboardingPresenterTest {
         baselineDurationSeconds = null,
         currentRunsPerWeek = null,
         longestRecentRunMeters = null,
-        calibrationDurationSeconds = null,
         preferredLongRunDay = null,
     )
 }

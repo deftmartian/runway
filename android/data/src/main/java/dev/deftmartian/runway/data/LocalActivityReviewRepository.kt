@@ -36,7 +36,6 @@ class LocalActivityReviewRepository(
         activityId: String,
         workoutId: String,
         feltHard: Boolean? = null,
-        pain: Boolean? = null,
     ): LocalActivityReviewResult =
         database.withTransaction {
             val activityDao = database.activityLedgerDao()
@@ -89,7 +88,6 @@ class LocalActivityReviewRepository(
                 feedbackId = "activity-feedback-${activity.activityId}",
                 activityId = activity.activityId,
                 feltHard = feltHard ?: existingFeedback?.feltHard ?: false,
-                pain = pain ?: existingFeedback?.pain ?: false,
                 notes = existingFeedback?.notes,
                 recordedAtEpochMillis = now,
             )
@@ -114,7 +112,6 @@ class LocalActivityReviewRepository(
     suspend fun confirmAsExtra(
         activityId: String,
         feltHard: Boolean? = null,
-        pain: Boolean? = null,
     ): LocalActivityReviewResult =
         database.withTransaction {
             val dao = database.activityLedgerDao()
@@ -133,7 +130,6 @@ class LocalActivityReviewRepository(
                 feedbackId = "activity-feedback-${activity.activityId}",
                 activityId = activity.activityId,
                 feltHard = feltHard ?: existingFeedback?.feltHard ?: false,
-                pain = pain ?: existingFeedback?.pain ?: false,
                 notes = existingFeedback?.notes,
                 recordedAtEpochMillis = now,
             )
@@ -193,7 +189,6 @@ class LocalActivityReviewRepository(
     suspend fun updateFeedback(
         activityId: String,
         feltHard: Boolean,
-        pain: Boolean,
         notes: String = "",
     ): LocalActivityReviewResult = database.withTransaction {
         val normalizedNotes = notes.trim()
@@ -217,14 +212,10 @@ class LocalActivityReviewRepository(
             feedbackId = "activity-feedback-${activity.activityId}",
             activityId = activity.activityId,
             feltHard = feltHard,
-            pain = pain,
             notes = normalizedNotes.takeIf(String::isNotEmpty),
             recordedAtEpochMillis = now,
         )
         dao.saveFeedback(feedback)
-        // Review is a factual-data boundary: its health feedback remains attached to the record
-        // until the runner explicitly accepts a plan role for that activity.
-        if (accepted && pain) markCurrentPainIfRecent(activity, now)
         // Preserve an already applied consequence as immutable decision history. Recalculating it
         // would clear its claim and make a second future-plan mutation possible from one activity.
         if (alreadyApplied) {
@@ -337,7 +328,6 @@ class LocalActivityReviewRepository(
             Consequences.recordRoutine(
                 FeedbackStatus.DONE,
                 feltHard = feedback?.feltHard == true,
-                pain = feedback?.pain == true,
             )
         } else {
             Consequences.calculate(
@@ -349,7 +339,6 @@ class LocalActivityReviewRepository(
                     completedDurationSeconds = activity.durationSeconds,
                     status = FeedbackStatus.DONE,
                     feltHard = feedback?.feltHard == true,
-                    pain = feedback?.pain == true,
                     recentSkippedWorkouts = recent.count { it.completionState == "skipped" },
                     recentShortenedWorkouts = recent.count { it.completionState == "shortened" },
                 ),
@@ -385,7 +374,6 @@ class LocalActivityReviewRepository(
             )
         }
         planDao.saveWorkout(workout.copy(currentStatus = completionState, updatedAtEpochMillis = now))
-        if (feedback?.pain == true) markCurrentPainIfRecent(activity, now)
         return consequence
     }
 
@@ -417,7 +405,6 @@ class LocalActivityReviewRepository(
             Consequences.recordRoutine(
                 FeedbackStatus.DONE,
                 feltHard = feedback?.feltHard == true,
-                pain = feedback?.pain == true,
             )
         } else {
             calculateExtraActivityConsequence(
@@ -425,7 +412,6 @@ class LocalActivityReviewRepository(
                     distanceMeters = activity.distanceMeters ?: 0,
                     durationSeconds = activity.durationSeconds,
                     feltHard = feedback?.feltHard == true,
-                    pain = feedback?.pain == true,
                 ),
                 ExtraActivityTargets(
                     nextRunTargetDistanceMeters = next?.currentDistanceMeters ?: 0,
@@ -449,25 +435,7 @@ class LocalActivityReviewRepository(
                 ActivityConsequenceOptionEntity(activity.activityId, decision.toStorageValue()),
             )
         }
-        if (feedback?.pain == true) markCurrentPainIfRecent(activity, nowEpochMillis())
         return consequence
-    }
-
-    private suspend fun markCurrentPainIfRecent(activity: ActivityEntity, now: Long) {
-        val profile = database.profileSettingsDao().get() ?: return
-        val zone = profile.timeZone.asZone() ?: return
-        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        if (!isHistoricalExtraActivity(activity.localDate(zone), today)) {
-            markCurrentPain(now)
-        }
-    }
-
-    private suspend fun markCurrentPain(now: Long) {
-        val profileDao = database.profileSettingsDao()
-        val profile = profileDao.get() ?: return
-        if (!profile.currentPain) {
-            profileDao.save(profile.copy(currentPain = true, updatedAtEpochMillis = now))
-        }
     }
 
     private fun rejected(issue: LocalActivityReviewIssue) =

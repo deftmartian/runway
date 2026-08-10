@@ -126,7 +126,7 @@ class LocalTrainingMutationRepository(
             val weekWorkouts = planDao.workoutsForWeek(workout.weekId, limit = MAX_WEEK_WORKOUTS)
             val routine = plan.phaseType == ROUTINE_PHASE
             val consequence = if (routine) {
-                Consequences.recordRoutine(command.status, command.feltHard, command.pain)
+                Consequences.recordRoutine(command.status, command.feltHard)
             } else {
                 Consequences.calculate(
                     FeedbackInput(
@@ -137,7 +137,6 @@ class LocalTrainingMutationRepository(
                         completedDurationSeconds = command.completedDurationSeconds,
                         status = command.status,
                         feltHard = command.feltHard,
-                        pain = command.pain,
                         choice = command.skipChoice,
                         recentSkippedWorkouts = recent.count { it.completionState == SKIPPED_STATE },
                         recentShortenedWorkouts = recent.count { it.completionState == SHORTENED_STATE },
@@ -160,7 +159,6 @@ class LocalTrainingMutationRepository(
                     workoutId = workout.workoutId,
                     completionState = completionState,
                     feltHard = command.feltHard,
-                    pain = command.pain,
                     notes = command.notes.trim().takeIf(String::isNotEmpty),
                     recordedAtEpochMillis = now,
                     completedDistanceMeters = command.completedDistanceMeters,
@@ -168,9 +166,6 @@ class LocalTrainingMutationRepository(
                 ),
             )
             persistWorkoutConsequence(activityDao, feedbackId, consequence, weekWorkouts)
-            if (command.pain && workout.currentScheduledEpochDay >= today.minusDays(7).toEpochDay()) {
-                markCurrentPain(now)
-            }
             LocalTrainingMutationResult.WorkoutFeedbackRecorded(feedbackId, consequence)
         }
 
@@ -219,7 +214,6 @@ class LocalTrainingMutationRepository(
                     feedbackId = "activity-feedback-$activityId",
                     activityId = activityId,
                     feltHard = command.feltHard,
-                    pain = command.pain,
                     notes = command.notes.trim().takeIf(String::isNotEmpty),
                     recordedAtEpochMillis = now,
                 ),
@@ -254,12 +248,6 @@ class LocalTrainingMutationRepository(
         return Instant.ofEpochMilli(nowEpochMillis()).atZone(zone).toLocalDate()
     }
 
-    private suspend fun markCurrentPain(now: Long) {
-        val dao = database.profileSettingsDao()
-        val profile = dao.get() ?: return
-        if (!profile.currentPain) dao.save(profile.copy(currentPain = true, updatedAtEpochMillis = now))
-    }
-
     private fun rejected(issue: LocalTrainingMutationIssue) = LocalTrainingMutationResult.Rejected(issue)
 
     private companion object {
@@ -285,7 +273,6 @@ data class LocalWorkoutFeedbackCommand(
     val completedDistanceMeters: Int? = null,
     val completedDurationSeconds: Int? = null,
     val feltHard: Boolean = false,
-    val pain: Boolean = false,
     val notes: String = "",
     val skipChoice: PlanDecision? = null,
 )
@@ -295,7 +282,6 @@ data class LocalManualRunCommand(
     val distanceMeters: Int? = null,
     val durationSeconds: Int? = null,
     val feltHard: Boolean = false,
-    val pain: Boolean = false,
     val notes: String = "",
 )
 

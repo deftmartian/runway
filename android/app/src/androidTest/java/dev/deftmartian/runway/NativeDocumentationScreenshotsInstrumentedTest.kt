@@ -153,7 +153,6 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                             onRoutePrivacyChanged = {},
                             onHeartRatePrivacyChanged = {},
                             onHeartRateChanged = {},
-                            onHealthContextChanged = {},
                             onEraseImportedActivityData = {},
                             onEraseAllData = {},
                             onAcknowledgeRetentionRepair = {},
@@ -227,7 +226,6 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                         maxHeartRate = null,
                         heartRateSummary = null,
                         feltHard = false,
-                        pain = false,
                         extraPlanImpactConfirmed = false,
                         consequence = null,
                         routeSummary = null,
@@ -248,7 +246,6 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                         maxHeartRate = null,
                         heartRateSummary = null,
                         feltHard = false,
-                        pain = false,
                         extraPlanImpactConfirmed = true,
                         consequence = NativeConsequence(
                             kind = "extra_activity",
@@ -292,7 +289,13 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                 state = "active",
                 risk = "conservative",
             ),
-            summary = NativePlanSummary(3, 2, 1, 0, 0, 9_200.0),
+            summary = NativePlanSummary(
+                plannedRuns = 3,
+                completedRuns = 2,
+                missedRuns = 1,
+                skippedRuns = 0,
+                completedDistanceMeters = 9_200.0,
+            ),
         )
         val prior = NativePlanHistoryItem(
             plan = NativePlan(
@@ -302,18 +305,24 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                 targetDate = "2026-05-10",
                 weeks = 10,
                 risk = "conservative",
-                summaryKind = "foundation",
+                summaryKind = "distance",
                 completedAt = "2026-05-10",
                 archivedAt = null,
                 lifecycleReason = "goal_complete",
             ),
             goal = NativeGoalSummary(
-                title = "5K foundation",
+                title = "Spring 5K",
                 targetDate = "2026-05-10",
                 state = "completed",
                 risk = "conservative",
             ),
-            summary = NativePlanSummary(24, 23, 1, 0, 0, 68_400.0),
+            summary = NativePlanSummary(
+                plannedRuns = 24,
+                completedRuns = 23,
+                missedRuns = 1,
+                skippedRuns = 0,
+                completedDistanceMeters = 68_400.0,
+            ),
         )
         return RunwayUiState.Ready(
             surface = NativeSurface.History(
@@ -350,7 +359,13 @@ class NativeDocumentationScreenshotsInstrumentedTest {
         val active = NativePlanHistoryItem(
             plan = plan,
             goal = NativeGoalSummary(title = "10K", targetDate = "2026-10-18", state = "active", risk = "conservative"),
-            summary = NativePlanSummary(3, 2, 0, 0, 0, 9_200.0),
+            summary = NativePlanSummary(
+                plannedRuns = 3,
+                completedRuns = 2,
+                missedRuns = 0,
+                skippedRuns = 0,
+                completedDistanceMeters = 9_200.0,
+            ),
         )
         val weeklySummary = NativeWeekSummary(
             weekNumber = 2,
@@ -362,7 +377,6 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             completedRuns = 2,
             missedRuns = 0,
             skippedRuns = 0,
-            painFlags = 0,
             hardFlags = 0,
             averagePaceSecondsPerKm = 404.0,
             averageHeartRate = null,
@@ -378,7 +392,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                     history = NativeTrainingHistory(
                         weeklySummaries = listOf(weeklySummary),
                         todayIso = "2026-08-12",
-                        currentSignal = NativeCurrentSignal("conservative", listOf("Recorded work remains below the current plan."), "plan", null),
+                        currentSignal = NativeCurrentSignal("conservative", listOf("Recorded work remains below the current plan."), "plan"),
                         hasAcceptedActivities = true,
                         recordedSummary = null,
                         heartRateSample = null,

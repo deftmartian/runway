@@ -8,7 +8,6 @@ internal data class NativeOnboardingPayload(
     val initialValues: NativePlanInitialValues?,
     val minimumTargetDate: String?,
     val minimumCalibrationTargetDate: String?,
-    val minimumFoundationTargetDate: String?,
     val maximumTargetDate: String?,
     val currentGoal: NativeGoalSummary?,
 )
@@ -123,7 +122,7 @@ internal data class NativeHistoryPrescription(
 )
 internal data class NativeHistoryResult(
     val source: String?, val completedDistanceMeters: Double?, val completedDurationSeconds: Double?,
-    val feltHard: Boolean?, val pain: Boolean?, val consequence: NativeConsequence?,
+    val feltHard: Boolean?, val consequence: NativeConsequence?,
 )
 
 internal data class NativePlanInitialValues(
@@ -134,15 +133,11 @@ internal data class NativePlanInitialValues(
     val currentWeeklyDistanceKm: String?,
     val currentRunsPerWeek: String?,
     val longestRecentRunKm: String?,
-    val calibrationDurationMinutes: String?,
     val preferredLongRunDay: String?,
     val timeZone: String?,
     val availability: List<Int>,
-    val recentInjury: Boolean?,
-    val currentPain: Boolean?,
-    val recurringPain: Boolean?,
-    val medicalRestriction: Boolean?,
-    val injuryNotes: String?,
+    val goalKind: String? = null,
+    val baselineMode: String? = null,
 )
 
 internal data class NativeGoalSummary(
@@ -201,7 +196,6 @@ internal data class NativeWorkoutFeedback(
     val completedDistanceMeters: Double?,
     val completedDurationSeconds: Double?,
     val feltHard: Boolean?,
-    val pain: Boolean?,
     val consequence: NativeConsequence?,
     val canDelete: Boolean?,
     val completionState: String? = null,
@@ -223,7 +217,6 @@ internal data class NativeActivity(
     val maxHeartRate: Int?,
     val heartRateSummary: NativeHeartRateSummary?,
     val feltHard: Boolean?,
-    val pain: Boolean?,
     val extraPlanImpactConfirmed: Boolean?,
     val consequence: NativeConsequence?,
     val routeSummary: NativeRouteSummary?,
@@ -343,9 +336,8 @@ internal data class NativeTrainingHistory(
     val recentFeedbackCount: Int? = null,
 )
 internal data class NativeCurrentSignal(
-    val risk: String?, val reasons: List<String>, val source: String?, val healthNotice: NativeHealthNotice?,
+    val risk: String?, val reasons: List<String>, val source: String?,
 )
-internal data class NativeHealthNotice(val level: String?, val heading: String?, val message: String?)
 internal data class NativeRecordedHistorySummary(
     val totalRuns: Int?,
     val totalDistanceMeters: Double?,
@@ -383,7 +375,6 @@ internal data class NativeWeekSummary(
     val completedRuns: Int?,
     val missedRuns: Int?,
     val skippedRuns: Int?,
-    val painFlags: Int?,
     val hardFlags: Int?,
     val averagePaceSecondsPerKm: Double?,
     val averageHeartRate: Int?,
@@ -420,7 +411,6 @@ internal data class NativePlanSummary(
     val completedRuns: Int?,
     val missedRuns: Int?,
     val skippedRuns: Int?,
-    val painFlags: Int?,
     val completedDistanceMeters: Double?,
     val plannedRunsRecorded: Int? = null,
     val extraRuns: Int? = null,

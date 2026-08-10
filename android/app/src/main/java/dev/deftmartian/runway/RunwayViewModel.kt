@@ -36,7 +36,6 @@ import dev.deftmartian.runway.data.RetentionRepairNotice
 import dev.deftmartian.runway.data.SexForEstimate
 import dev.deftmartian.runway.data.HeartRateSettingsSource
 import dev.deftmartian.runway.data.LocalHeartRateProfile
-import dev.deftmartian.runway.data.LocalHealthContext
 import dev.deftmartian.runway.data.LocalInboxPagingCursor
 import dev.deftmartian.runway.domain.PlanDecision
 import dev.deftmartian.runway.data.healthconnect.LocalHealthConnectPendingResolutionResult
@@ -408,7 +407,6 @@ internal class RunwayViewModel(
                             nowEpochMillis = now,
                         ),
                         localToday(),
-                        hasInjuryRisk(),
                     )
                 }
             }
@@ -589,9 +587,6 @@ internal class RunwayViewModel(
                 ),
             )
         }
-    }
-    fun updateHealthContext(value: NativeHealthContext) = mutateSetting {
-        services.profile.updateHealthContext(LocalHealthContext(value.recentInjury, value.currentPain, value.recurringPain, value.clinicianRestriction, value.notes))
     }
     fun eraseAllData() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
@@ -960,7 +955,6 @@ internal class RunwayViewModel(
                 completedDurationSeconds =
                     command.completedDurationMinutes?.let { (it * 60).toInt() },
                 feltHard = command.feltHard,
-                pain = command.pain,
                 skipChoice = null,
             ),
         ).message()
@@ -970,23 +964,20 @@ internal class RunwayViewModel(
                 distanceMeters = command.distanceKm?.let { (it * 1000).toInt() },
                 durationSeconds = command.durationMinutes?.let { (it * 60).toInt() },
                 feltHard = command.feltHard,
-                pain = command.pain,
             ),
         ).message()
         is LinkActivityCommand -> services.activityReview.link(
             activityId = command.activityId,
             workoutId = command.workoutId,
             feltHard = command.feltHard,
-            pain = command.pain,
         ).message()
         is ConfirmActivityExtraCommand -> services.activityReview.confirmAsExtra(
             activityId = command.activityId,
             feltHard = command.feltHard,
-            pain = command.pain,
         ).message()
         is ReturnExtraActivityToReviewCommand ->
             services.activityReview.returnExtraToReview(command.activityId).message()
-        is UpdateActivityFeedbackCommand -> services.activityReview.updateFeedback(command.activityId, command.feltHard, command.pain).message()
+        is UpdateActivityFeedbackCommand -> services.activityReview.updateFeedback(command.activityId, command.feltHard).message()
         is UnlinkActivityCommand -> services.activityReview.unlink(command.activityId).message()
         is DeleteActivityCommand -> services.activityReview.delete(command.activityId).message()
         is DeleteFeedbackCommand -> deleteWorkoutFeedback(command)
@@ -1232,7 +1223,7 @@ internal class RunwayViewModel(
 
     private suspend fun previewWorkoutChange(command: MobileCommand) {
         val (planId, request, actionId) = workoutChangeRequest(command)
-        val prepared = services.workoutChanges.preview(planId, request, localToday(), hasInjuryRisk())
+        val prepared = services.workoutChanges.preview(planId, request, localToday())
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         mutableState.value = ready.copy(
             actionPending = false,
@@ -1384,10 +1375,6 @@ internal class RunwayViewModel(
             ?: throw IllegalStateException("A valid local training time zone is required.")
         return java.time.Instant.now().atZone(zone).toLocalDate()
     }
-
-    private suspend fun hasInjuryRisk(): Boolean = services.trainingContext.profile()?.let {
-        it.currentPain || it.recentInjury || it.recurringPain || it.medicalRestriction
-    } ?: false
 
     private fun stableId(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }

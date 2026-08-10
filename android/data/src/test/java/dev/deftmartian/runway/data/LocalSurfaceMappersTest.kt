@@ -470,7 +470,6 @@ class LocalSurfaceMappersTest {
         assertEquals(375.0, week.weightedPaceSecondsPerKilometre!!, 0.001)
         assertEquals("unsafe", mapped.currentSignal?.risk)
         assertEquals("activity", mapped.currentSignal?.source)
-        assertEquals("Pain affects running now", mapped.currentSignal?.healthNotice?.heading)
     }
 
     @Test
@@ -662,7 +661,7 @@ class LocalSurfaceMappersTest {
         )
         val phase = LocalPhaseReviewReadModel(
             planId = "plan",
-            phase = LocalPlanPhase.FOUNDATION,
+            phase = LocalPlanPhase.OTHER,
             goalKind = "race",
             phaseEndEpochDay = day,
             ready = true,

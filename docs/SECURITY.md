@@ -2,7 +2,7 @@
 
 ## Data sensitivity
 
-Training history, schedule patterns, route coordinates, heart-rate samples, pace, feedback, pain/load notes, GPX files, backups, and exports are private. Treat them as sensitive in code, logs, screenshots, issues, and release evidence.
+Training history, schedule patterns, route coordinates, heart-rate samples, pace, feedback, GPX files, backups, and exports are private. Treat them as sensitive in code, logs, screenshots, issues, and release evidence.
 
 ## Local trust boundary
 

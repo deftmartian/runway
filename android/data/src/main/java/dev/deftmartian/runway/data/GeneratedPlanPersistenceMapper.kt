@@ -75,9 +75,9 @@ object GeneratedPlanPersistenceMapper {
             summaryRequiredWeeklyIncreasePercent = (plan as? dev.deftmartian.runway.domain.GeneratedDistancePlan)?.summary?.requiredWeeklyIncreasePercent,
             summaryDefaultWeeklyIncreasePercent = (plan as? dev.deftmartian.runway.domain.GeneratedDistancePlan)?.summary?.defaultWeeklyIncreasePercent,
             summaryLongRunPeakMeters = (plan as? dev.deftmartian.runway.domain.GeneratedDistancePlan)?.summary?.longRunPeakMeters,
-            summaryProgramWeeks = when (plan) { is dev.deftmartian.runway.domain.GeneratedFoundationPlan -> plan.summary.programWeeks; is dev.deftmartian.runway.domain.GeneratedCalibrationPlan -> plan.summary.programWeeks; else -> null },
-            summarySessionsPerWeek = when (plan) { is dev.deftmartian.runway.domain.GeneratedFoundationPlan -> plan.summary.sessionsPerWeek; is dev.deftmartian.runway.domain.GeneratedCalibrationPlan -> plan.summary.sessionsPerWeek; else -> null },
-            summaryContinuousRunTargetSeconds = (plan as? dev.deftmartian.runway.domain.GeneratedFoundationPlan)?.summary?.continuousRunTargetSeconds,
+            summaryProgramWeeks = (plan as? dev.deftmartian.runway.domain.GeneratedCalibrationPlan)?.summary?.programWeeks,
+            summarySessionsPerWeek = (plan as? dev.deftmartian.runway.domain.GeneratedCalibrationPlan)?.summary?.sessionsPerWeek,
+            summaryContinuousRunTargetSeconds = null,
             summarySessionDurationSeconds = (plan as? dev.deftmartian.runway.domain.GeneratedCalibrationPlan)?.summary?.sessionDurationSeconds,
         )
         val weeks = plan.weeks.map { week ->
@@ -244,7 +244,6 @@ object GeneratedPlanPersistenceMapper {
     }
     private fun GeneratedPlan.summaryWarnings(): List<String> = when (this) {
         is dev.deftmartian.runway.domain.GeneratedDistancePlan -> summary.warnings
-        is dev.deftmartian.runway.domain.GeneratedFoundationPlan -> summary.warnings
         is dev.deftmartian.runway.domain.GeneratedCalibrationPlan -> summary.warnings
     }
 }

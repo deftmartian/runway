@@ -66,8 +66,8 @@ class StandalonePlanRulesTest {
         )
     }
 
-    @Test fun `only a completed active beginner phase with a final week can continue and never beyond 52 weeks`() {
-        val ready = StandalonePlanRules.assessContinuation(ContinuationEligibilityInput(true, PlanPhase.FOUNDATION, today, today, 51, true))
+    @Test fun `only a completed active learning phase with a final week can continue and never beyond 52 weeks`() {
+        val ready = StandalonePlanRules.assessContinuation(ContinuationEligibilityInput(true, PlanPhase.CALIBRATION, today, today, 51, true))
         assertTrue(ready.allowed)
         val atLimit = StandalonePlanRules.assessContinuation(ContinuationEligibilityInput(true, PlanPhase.CALIBRATION, today, today, 52, true))
         assertTrue(ContinuationIneligibility.PLAN_WEEK_LIMIT in atLimit.reasons)

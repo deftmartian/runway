@@ -51,7 +51,6 @@ class ActivityReviewFlowInstrumentedTest {
         )
 
         compose.onNodeWithText("This run felt harder than expected").performClick()
-        compose.onNodeWithText("Pain during or after this run").performClick()
         compose.onNodeWithText("Count as an extra run").performScrollTo().performClick()
 
         compose.runOnIdle {
@@ -59,7 +58,6 @@ class ActivityReviewFlowInstrumentedTest {
                 ConfirmActivityExtraCommand(
                     activityId = "review-activity",
                     feltHard = true,
-                    pain = true,
                 ),
                 emitted,
             )
@@ -80,7 +78,6 @@ class ActivityReviewFlowInstrumentedTest {
         maxHeartRate = null,
         heartRateSummary = null,
         feltHard = false,
-        pain = false,
         extraPlanImpactConfirmed = false,
         consequence = null,
         routeSummary = null,

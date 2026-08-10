@@ -59,7 +59,6 @@ internal fun ActivityDetailSheet(
     onAction: (MobileCommand) -> Unit,
 ) {
     var feltHard by rememberSaveable(activity.id, activity.feltHard) { mutableStateOf(activity.feltHard == true) }
-    var pain by rememberSaveable(activity.id, activity.pain) { mutableStateOf(activity.pain == true) }
     var confirmDelete by rememberSaveable(activity.id) { mutableStateOf(false) }
     val linkCandidates = activityLinkCandidates(activity, candidates)
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -82,7 +81,6 @@ internal fun ActivityDetailSheet(
             if (activity.reviewState == "review") {
                 Text("How did this run feel?", fontWeight = FontWeight.SemiBold)
                 CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
-                CheckRow("Pain during or after this run", pain) { pain = it }
                 Text("Where does this run belong?", fontWeight = FontWeight.SemiBold)
                 Text(
                     "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
@@ -99,7 +97,6 @@ internal fun ActivityDetailSheet(
                                         activityId = activity.id.orEmpty(),
                                         workoutId = workout.id.orEmpty(),
                                         feltHard = feltHard,
-                                        pain = pain,
                                     ),
                                 )
                             },
@@ -116,7 +113,6 @@ internal fun ActivityDetailSheet(
                             ConfirmActivityExtraCommand(
                                 activityId = activity.id.orEmpty(),
                                 feltHard = feltHard,
-                                pain = pain,
                             ),
                         )
                     },
@@ -156,10 +152,9 @@ internal fun ActivityDetailSheet(
                     )
                 }
                 CheckRow("This run felt harder than expected", feltHard) { feltHard = it }
-                CheckRow("Pain during or after this run", pain) { pain = it }
                 OutlinedButton(
                     onClick = {
-                        onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard, pain))
+                        onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard))
                     },
                     enabled = !actionPending && activity.id != null,
                     modifier = Modifier.fillMaxWidth(),

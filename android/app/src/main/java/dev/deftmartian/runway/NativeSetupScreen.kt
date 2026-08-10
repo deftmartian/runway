@@ -66,8 +66,26 @@ internal fun SetupScreen(
 ) {
     val initial = payload?.initialValues
     var step by rememberSaveable { mutableIntStateOf(goalStep) }
+    var goalKind by rememberSaveable(initial?.goalKind) {
+        mutableStateOf(
+            initial?.goalKind.orEmpty().ifBlank {
+                if (initial?.startMode == "routine") "routine" else "race"
+            },
+        )
+    }
     var startMode by rememberSaveable(initial?.startMode) {
-        mutableStateOf(initial?.startMode.orEmpty().ifBlank { "foundation_only" })
+        mutableStateOf(
+            initial?.startMode
+                ?.takeIf { it == "established" || it == "calibration" }
+                ?: if (initial?.currentWeeklyDistanceKm.isNullOrBlank()) "calibration" else "established",
+        )
+    }
+    var routineBaselineMode by rememberSaveable(initial?.baselineMode) {
+        mutableStateOf(
+            initial?.baselineMode.orEmpty().ifBlank {
+                if (initial?.currentWeeklyDistanceKm.isNullOrBlank()) "learn" else "entered"
+            },
+        )
     }
     var raceDistance by rememberSaveable { mutableStateOf(initial?.raceDistance.orEmpty().ifBlank { "5k" }) }
     var targetDate by rememberSaveable { mutableStateOf(initial?.targetDate.orEmpty()) }
@@ -75,17 +93,11 @@ internal fun SetupScreen(
     var weeklyKm by rememberSaveable { mutableStateOf(initial?.currentWeeklyDistanceKm.orEmpty()) }
     var runsPerWeek by rememberSaveable { mutableStateOf(initial?.currentRunsPerWeek.orEmpty()) }
     var longestKm by rememberSaveable { mutableStateOf(initial?.longestRecentRunKm.orEmpty()) }
-    var calibrationMinutes by rememberSaveable { mutableStateOf(initial?.calibrationDurationMinutes.orEmpty().ifBlank { "20" }) }
     var preferredDay by rememberSaveable { mutableStateOf(initial?.preferredLongRunDay.orEmpty().ifBlank { "6" }) }
     var timeZone by rememberSaveable { mutableStateOf(initial?.timeZone.orEmpty().ifBlank { ZoneId.systemDefault().id }) }
     var availability by rememberSaveable {
         mutableStateOf(initial?.availability.orEmpty().distinct().ifEmpty { listOf(1, 3, 6) })
     }
-    var recentInjury by rememberSaveable { mutableStateOf(initial?.recentInjury ?: false) }
-    var currentPain by rememberSaveable { mutableStateOf(initial?.currentPain ?: false) }
-    var recurringPain by rememberSaveable { mutableStateOf(initial?.recurringPain ?: false) }
-    var medicalRestriction by rememberSaveable { mutableStateOf(initial?.medicalRestriction ?: false) }
-    var injuryNotes by rememberSaveable { mutableStateOf(initial?.injuryNotes.orEmpty()) }
     var confirmReplace by rememberSaveable { mutableStateOf(false) }
     var confirmConcentrated by rememberSaveable { mutableStateOf(false) }
     var confirmedHighIncreaseKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -93,15 +105,6 @@ internal fun SetupScreen(
     var confirmingRestore by rememberSaveable { mutableStateOf(false) }
     var choosingTargetDate by rememberSaveable { mutableStateOf(false) }
     var choosingTimeZone by rememberSaveable { mutableStateOf(false) }
-    var healthContextExpanded by rememberSaveable {
-        mutableStateOf(
-            recentInjury ||
-                currentPain ||
-                recurringPain ||
-                medicalRestriction ||
-                injuryNotes.isNotBlank(),
-        )
-    }
     val setupOperationScope = payload?.currentGoal?.id.orEmpty()
     val setupOperationId = rememberSaveable(setupOperationScope) { UUID.randomUUID().toString() }
     var setupOccurredAtEpochMillis by rememberSaveable(setupOperationScope) {
@@ -109,79 +112,61 @@ internal fun SetupScreen(
     }
     val setupInstant = Instant.ofEpochMilli(setupOccurredAtEpochMillis)
     val listState = rememberLazyListState()
-    val runningCheckIn = NativeHealthContext(
-        recentInjury = recentInjury,
-        currentPain = currentPain,
-        recurringPain = recurringPain,
-        clinicianRestriction = medicalRestriction,
-        notes = injuryNotes,
-    )
-    val newPlanPaused = currentPain || medicalRestriction
-
     LaunchedEffect(step) {
         listState.scrollToItem(0)
     }
 
-    val isRoutineGoal = startMode == "routine"
-    val isFoundationGoal = startMode == "foundation_only"
-    val isRaceGoal = !isRoutineGoal && !isFoundationGoal
-    val liveTargetBounds = setupTargetDateBounds(timeZone, startMode, setupInstant)
-    val minimumTargetDate = liveTargetBounds?.minimum ?: when (startMode) {
-        "foundation_to_goal" -> payload?.minimumFoundationTargetDate
+    val isRoutineGoal = goalKind == "routine"
+    val isRaceGoal = !isRoutineGoal
+    val effectiveStartMode = if (isRoutineGoal) "routine" else startMode
+    val usesEnteredBaseline = if (isRoutineGoal) routineBaselineMode == "entered" else startMode == "established"
+    val liveTargetBounds = setupTargetDateBounds(timeZone, effectiveStartMode, setupInstant)
+    val minimumTargetDate = liveTargetBounds?.minimum ?: when (effectiveStartMode) {
         "calibration" -> payload?.minimumCalibrationTargetDate
         else -> payload?.minimumTargetDate
     }
     val maximumTargetDate = liveTargetBounds?.maximum ?: payload?.maximumTargetDate
     val goalIssue = goalValidation(isRaceGoal, targetDate, minimumTargetDate, maximumTargetDate)
     val startingPointIssue = startingPointValidation(
-        startMode, weeklyKm, runsPerWeek, longestKm, calibrationMinutes,
-        healthBlocked = newPlanPaused,
+        if (usesEnteredBaseline) "established" else "learn",
+        weeklyKm,
+        runsPerWeek,
+        longestKm,
     )
     val scheduleIssue = scheduleValidation(
-        mode = startMode,
+        mode = effectiveStartMode,
         availability = availability,
         runsPerWeek = runsPerWeek,
         preferredDay = preferredDay,
         timeZone = timeZone,
-        healthBlocked = newPlanPaused,
         raceDistance = raceDistance,
     )
     val concentratedSchedule = requiresConcentratedScheduleAcceptance(
-        startMode = startMode,
+        startMode = effectiveStartMode,
         runsPerWeek = runsPerWeek,
         raceDistance = raceDistance,
-        healthBlocked = newPlanPaused,
     )
     val candidateCommand = CreatePlanCommand(
-        goalKind = when {
-            isRoutineGoal -> "routine"
-            isRaceGoal -> "race"
-            else -> "foundation"
-        },
-        startMode = startMode,
+        goalKind = if (isRoutineGoal) "routine" else "race",
+        startMode = effectiveStartMode,
         raceDistance = if (isRaceGoal) raceDistance else "",
         targetDate = if (isRaceGoal) targetDate else "",
         priority = priority,
         currentWeeklyDistanceKm = weeklyKm,
         currentRunsPerWeek = runsPerWeek,
         longestRecentRunKm = longestKm,
-        calibrationDurationMinutes = calibrationMinutes,
         availability = availability.sorted(),
         preferredLongRunDay = preferredDay,
         timeZone = timeZone,
-        recentInjury = recentInjury,
-        currentPain = currentPain,
-        recurringPain = recurringPain,
-        medicalRestriction = medicalRestriction,
-        injuryNotes = injuryNotes,
         confirmConcentratedSchedule = confirmConcentrated,
         confirmedPlanKey = null,
         confirmReplace = confirmReplace,
         operationId = setupOperationId,
         occurredAtEpochMillis = setupOccurredAtEpochMillis,
+        baselineMode = if (usesEnteredBaseline) "entered" else "learn",
     )
     val planPreview = remember(candidateCommand, setupOccurredAtEpochMillis) {
-        if (startMode != "established" || !isRaceGoal || newPlanPaused) {
+        if (startMode != "established" || !isRaceGoal) {
             null
         } else {
             (StandaloneOnboardingAdapter.preview(
@@ -235,7 +220,7 @@ internal fun SetupScreen(
                 loading = actionPending,
                 state = listState,
             ) {
-        item { SetupProgress(step, isRoutineGoal) }
+        item { SetupProgress(step) }
         if (dateChangedDuringSetup) {
             item {
                 Notice("The date changed while Setup was open. Review the updated dates before creating the plan.")
@@ -255,11 +240,8 @@ internal fun SetupScreen(
             goalStep -> {
                 item {
                     SetupSection("Goal", "Choose what this setup should create.") {
-                        ChoiceRow("Build a foundation", isFoundationGoal) { startMode = "foundation_only" }
-                        ChoiceRow("Run on chosen days each week", isRoutineGoal) { startMode = "routine" }
-                        ChoiceRow("Prepare for a race", isRaceGoal) {
-                            if (!isRaceGoal) startMode = "foundation_to_goal"
-                        }
+                        ChoiceRow("Train for a distance", isRaceGoal) { goalKind = "race" }
+                        ChoiceRow("Run consistently each week", isRoutineGoal) { goalKind = "routine" }
                     }
                 }
                 if (isRaceGoal) {
@@ -303,72 +285,37 @@ internal fun SetupScreen(
                 }
             }
             startingPointStep -> {
-                if (isRaceGoal) {
-                    item {
-                        SetupSection("Starting point", "Use the week you could repeat now. This changes the recommendation; it does not limit your later choices.") {
-                            ChoiceRow("Foundation before the race", startMode == "foundation_to_goal") { startMode = "foundation_to_goal" }
-                            ChoiceRow("Use a repeatable current week", startMode == "established") { startMode = "established" }
-                            ChoiceRow("Two-week timed check-in", startMode == "calibration") { startMode = "calibration" }
+                item {
+                    SetupSection("Starting point", "Choose how runway should understand your current running.") {
+                        if (isRoutineGoal) {
+                            ChoiceRow("Enter a recent repeatable week", routineBaselineMode == "entered") {
+                                routineBaselineMode = "entered"
+                            }
+                            ChoiceRow("Learn from the runs I record", routineBaselineMode == "learn") {
+                                routineBaselineMode = "learn"
+                            }
+                        } else {
+                            ChoiceRow("Enter a recent repeatable week", startMode == "established") {
+                                startMode = "established"
+                            }
+                            ChoiceRow("Learn from two weeks of open runs", startMode == "calibration") {
+                                startMode = "calibration"
+                            }
                         }
                     }
                 }
-                if (startMode == "established" || startMode == "calibration") {
+                if (usesEnteredBaseline) {
                     item {
-                        SetupSection("Current running", "Use the work you could repeat now.") {
-                            if (startMode == "established") {
-                                NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
-                                NumberField("Current runs per week", runsPerWeek) { runsPerWeek = it }
-                                NumberField("Longest run in that week (km)", longestKm) { longestKm = it }
-                            }
-                            if (startMode == "calibration") {
-                                NumberField("Timed run duration (10–30 min)", calibrationMinutes) { calibrationMinutes = it }
-                            }
+                        SetupSection("Current running", "Use one recent week you could repeat now.") {
+                            NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
+                            NumberField("Current runs per week", runsPerWeek) { runsPerWeek = it }
+                            NumberField("Longest run in that week (km)", longestKm) { longestKm = it }
                             startingPointIssue?.let { ValidationText(it) }
                         }
                     }
-                }
-                item {
-                    SetupSection(
-                        "Running limits (optional)",
-                        if (isRoutineGoal) {
-                            "Use this if pain now or a clinician's limit should save the routine without scheduling runs."
-                        } else {
-                            "Use this if an injury, recurring pain, or a clinician's limit should pause scheduling or make distance checks more cautious."
-                        },
-                    ) {
-                        if (!healthContextExpanded) {
-                            SettingRow(
-                                "Effect",
-                                runningCheckInSummary(runningCheckIn),
-                            )
-                            OutlinedButton(
-                                onClick = { healthContextExpanded = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.small,
-                            ) {
-                                Text("Review running limits")
-                            }
-                        } else {
-                            CheckRow("A recent injury still affects training", recentInjury) { recentInjury = it }
-                            CheckRow("Pain affects walking or running now", currentPain) { currentPain = it }
-                            CheckRow("Pain tends to return while running", recurringPain) { recurringPain = it }
-                            CheckRow("A clinician has limited current running", medicalRestriction) { medicalRestriction = it }
-                            runningCheckInEffect(runningCheckIn)?.let { Notice(it) }
-                            OutlinedTextField(
-                                value = injuryNotes,
-                                onValueChange = { injuryNotes = it.take(240) },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Private reminder (optional)") },
-                                supportingText = { Text("For your reference only. The app does not interpret this note.") },
-                                minLines = 2,
-                            )
-                            TextButton(
-                                onClick = { healthContextExpanded = false },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("Done")
-                            }
-                        }
+                } else {
+                    item {
+                        Notice("Runway will schedule open run days only. It will not prescribe a distance or duration while learning.")
                     }
                 }
             }
@@ -387,7 +334,7 @@ internal fun SetupScreen(
                                 availability = if (checked) (availability + index).distinct() else availability - index
                             }
                         }
-                        if (startMode == "established") {
+                        if (isRaceGoal && startMode == "established") {
                             Text("Preferred long-run day", style = MaterialTheme.typography.labelLarge)
                             availability.sorted().forEach { day ->
                                 ChoiceRow(dayLabels[day], preferredDay == day.toString()) { preferredDay = day.toString() }
@@ -417,30 +364,25 @@ internal fun SetupScreen(
                             when {
                                 isRoutineGoal -> "${availability.size} open ${if (availability.size == 1) "run" else "runs"} each week"
                                 isRaceGoal -> raceDistanceLabel(raceDistance)
-                                else -> "30 minutes of continuous easy running"
+                                else -> raceDistanceLabel(raceDistance)
                             },
                         )
                         if (isRaceGoal) SettingRow("Target date", targetDate.ifBlank { "Not set" })
-                        if (!isRoutineGoal) SettingRow("Starting point", startModeLabel(startMode))
                         SettingRow(
                             if (isRoutineGoal) "Planned run days" else "Available days",
                             availability.sorted().joinToString { dayLabels[it].take(3) }.ifBlank { "None" },
                         )
                         SettingRow("Time zone", timeZone.ifBlank { "Not set" })
-                        if (hasRunningLimits(runningCheckIn)) {
-                            SettingRow("Running limits", runningCheckInSummary(runningCheckIn))
-                        }
-                        if (newPlanPaused) {
-                            Notice("Goal stays pending — no active workouts will be created now.")
-                        } else {
-                            Notice(
-                                if (isRoutineGoal) {
-                                    "An ongoing weekly routine will be created. Runs you do not record, skip, or add on other days will not change future weeks."
-                                } else {
-                                    "An active ${if (startMode == "calibration") "two-week calibration" else "training"} phase will be created now. You can edit future workouts after setup."
-                                },
-                            )
-                        }
+                        SettingRow("Starting point", if (usesEnteredBaseline) "Entered recent week" else "Learn from recorded runs")
+                        Notice(
+                            if (isRoutineGoal) {
+                                "This starts with ${availability.size} open ${if (availability.size == 1) "run" else "runs"} each week. Add or remove a future run to change that week's goal."
+                            } else if (startMode == "calibration") {
+                                "Two weeks of open run days will be created. Distance and duration remain unprescribed until you confirm an observed baseline."
+                            } else {
+                                "An active distance plan will be created now. You can edit future workouts after setup."
+                            },
+                        )
                     }
                 }
                 planPreview?.let { preview ->
@@ -547,7 +489,6 @@ internal fun SetupScreen(
                             "Creating plan…"
                         } else if (step == reviewStep) {
                             when {
-                                newPlanPaused -> "Save goal"
                                 isRoutineGoal -> "Start routine"
                                 else -> "Create plan"
                             }
@@ -597,8 +538,8 @@ internal fun currentGoalStateLabel(state: String?): String =
     if (state == "pending") "pending goal" else "current goal"
 
 @Composable
-private fun SetupProgress(currentStep: Int, routine: Boolean) {
-    val labels = listOf("Goal", if (routine) "Running limits" else "Starting point", "Schedule", "Review")
+private fun SetupProgress(currentStep: Int) {
+    val labels = listOf("Goal", "Starting point", "Weekly schedule", "Review")
     val stepNumber = currentStep + 1
     Column(
         modifier = Modifier
@@ -706,7 +647,6 @@ internal fun setupTargetDateBounds(
     val mode = when (startMode) {
         "established" -> StartMode.ESTABLISHED
         "calibration" -> StartMode.CALIBRATION
-        "foundation_to_goal" -> StartMode.FOUNDATION_TO_GOAL
         else -> return null
     }
     val zone = runCatching { ZoneId.of(timeZone) }.getOrNull() ?: return null
@@ -733,10 +673,7 @@ internal fun startingPointValidation(
     weeklyKm: String,
     runsPerWeek: String,
     longestKm: String,
-    calibrationMinutes: String,
-    healthBlocked: Boolean,
 ): String? = when {
-    mode == "established" && healthBlocked -> null
     mode == "established" -> {
         val weekly = weeklyKm.toDoubleOrNull()
         val runs = runsPerWeek.toIntOrNull()
@@ -753,8 +690,6 @@ internal fun startingPointValidation(
             else -> null
         }
     }
-    mode == "calibration" && calibrationMinutes.toIntOrNull()?.takeIf { it in 10..30 } == null ->
-        "Choose a whole timed check-in from 10 to 30 minutes."
     else -> null
 }
 
@@ -794,24 +729,22 @@ internal fun scheduleValidation(
     runsPerWeek: String,
     preferredDay: String,
     timeZone: String,
-    healthBlocked: Boolean,
     raceDistance: String = "5k",
 ): String? {
     val requiredDays = when (mode) {
         "routine" -> 1
-        "foundation_to_goal", "foundation_only" -> 3
         else -> 2
     }
     return when {
         availability.distinct().size < requiredDays ->
             "Choose at least $requiredDays available ${if (requiredDays == 1) "day" else "days"}."
         runCatching { ZoneId.of(timeZone) }.isFailure -> "Enter a valid IANA time zone such as America/Halifax."
-        mode == "established" && !healthBlocked &&
+        mode == "established" &&
             preferredDay.toIntOrNull() !in availability -> "Choose an available long-run day."
-        mode == "established" && !healthBlocked &&
+        mode == "established" &&
             runsPerWeek.toIntOrNull()?.let { availability.size < it } == true ->
             "Choose at least as many available days as current weekly runs."
-        mode == "established" && !healthBlocked &&
+        mode == "established" &&
             runsPerWeek.toIntOrNull()?.let { runs ->
                 preferredDay.toIntOrNull()?.let { longDay ->
                     !canLeaveRecoveryDayAfterLongRun(
@@ -836,9 +769,7 @@ internal fun requiresConcentratedScheduleAcceptance(
     startMode: String,
     runsPerWeek: String,
     raceDistance: String,
-    healthBlocked: Boolean,
-): Boolean = !healthBlocked &&
-    startMode == "established" &&
+): Boolean = startMode == "established" &&
     runsPerWeek == "2" &&
     raceDistance in setOf("half", "marathon")
 
@@ -852,9 +783,7 @@ private fun raceDistanceLabel(value: String) = when (value) {
 
 private fun startModeLabel(value: String) = when (value) {
     "routine" -> "Weekly running routine"
-    "foundation_only" -> "Nine-week run/walk foundation"
-    "foundation_to_goal" -> "Foundation before the race"
     "established" -> "Repeatable current week"
-    "calibration" -> "Two-week timed check-in"
+    "calibration" -> "Two weeks of open runs"
     else -> value
 }

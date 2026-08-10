@@ -39,30 +39,23 @@ class LocalPlanLifecyclePreparationTest {
     }
 
     @Test
-    fun `foundation goal review never offers race confirmation`() {
-        val review = LocalPlanLifecyclePreparation.prepareReview(
-            phaseType = "foundation",
-            goalKind = "foundation",
-            acceptedLinkedActivities = listOf(
-                activity("a", 3_000, 1_500),
-                activity("b", 3_000, 1_500),
-            ),
-            observedWeekCount = 1,
-            availabilityDays = listOf(1, 3, 6),
-        )
-
-        assertEquals(
-            listOf(PhaseTransitionOption.ANOTHER_FOUNDATION_WEEK),
-            review.transition.options,
-        )
-        assertFalse(review.transition.options.contains(PhaseTransitionOption.CONFIRM_RACE_BASELINE))
+    fun `retired foundation phase cannot prepare a review`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            LocalPlanLifecyclePreparation.prepareReview(
+                phaseType = "foundation",
+                goalKind = "foundation",
+                acceptedLinkedActivities = listOf(activity("a", 3_000, 1_500)),
+                observedWeekCount = 1,
+                availabilityDays = listOf(1, 3, 6),
+            )
+        }
     }
 
     @Test
     fun `preparation rejects ambiguous observations and invalid availability`() {
         assertThrows(IllegalArgumentException::class.java) {
             LocalPlanLifecyclePreparation.prepareReview(
-                "foundation",
+                "calibration",
                 "race",
                 listOf(activity("duplicate", 3_000, 1_500), activity("duplicate", 3_000, 1_500)),
                 1,
@@ -71,7 +64,7 @@ class LocalPlanLifecyclePreparationTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             LocalPlanLifecyclePreparation.prepareReview(
-                "foundation",
+                "calibration",
                 "race",
                 listOf(activity("a", 3_000, 1_500)),
                 1,

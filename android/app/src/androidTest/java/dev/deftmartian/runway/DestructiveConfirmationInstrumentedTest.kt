@@ -33,7 +33,6 @@ class DestructiveConfirmationInstrumentedTest {
                         completedDistanceMeters = 5_000.0,
                         completedDurationSeconds = 1_800.0,
                         feltHard = true,
-                        pain = false,
                         consequence = null,
                         canDelete = true,
                     ),

@@ -6,7 +6,6 @@ enum class TrainingAssessment {
     HIGH_INCREASE,
     UNSUPPORTED,
     NEEDS_REVIEW,
-    PAIN_REVIEW,
 }
 
 enum class TrainingAssessmentAttention { NONE, REVIEW, HIGH, BLOCKED }
