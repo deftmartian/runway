@@ -1,0 +1,6 @@
+Running goal setup update.
+
+- Choose distance training or a weekly consistency goal.
+- Enter a repeatable baseline or learn from open run days.
+- Change individual weekly goals and reduce or postpone the next planned run.
+- Removes the foundation path, pain attachment, and running-limit settings.
