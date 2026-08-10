@@ -234,10 +234,23 @@ screenshot_directory="$RUNNER_TEMP/runway-native-screenshots"
 mkdir -p "$screenshot_directory"
 for screenshot in calendar-dark calendar-large-text calendar-expanded-light inbox-light history-light stats-light settings-dark settings-about-dark; do
   output="$screenshot_directory/$screenshot.png"
-  run_bounded 30 adb -s "$serial" exec-out run-as dev.deftmartian.runway.debug \
-    cat "files/documentation-screenshots/$screenshot.png" >"$output"
-  test -s "$output" || {
-    echo "::error title=Native screenshot missing::$output was not captured by instrumentation."
+  screenshot_status=1
+  for attempt in 1 2; do
+    set +e
+    run_bounded 30 adb -s "$serial" exec-out run-as dev.deftmartian.runway.debug \
+      cat "files/documentation-screenshots/$screenshot.png" >"$output"
+    screenshot_status="$?"
+    set -e
+    if [ "$screenshot_status" -eq 0 ] && [ -s "$output" ]; then
+      break
+    fi
+    if [ "$attempt" -eq 1 ]; then
+      echo "::warning title=Native screenshot read retry::$screenshot will retry once after an empty or failed ADB read."
+      sleep 2
+    fi
+  done
+  if [ "$screenshot_status" -ne 0 ] || [ ! -s "$output" ]; then
+    echo "::error title=Native screenshot missing::$screenshot was not captured after two reads; final ADB status was $screenshot_status."
     exit 1
-  }
+  fi
 done
