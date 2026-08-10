@@ -1,6 +1,7 @@
 package dev.deftmartian.runway
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -170,10 +171,11 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             SCREENSHOT_DIRECTORY,
         ).apply { mkdirs() }
         val output = File(directory, "$name.png")
+        val bitmap = captureScreenshotBitmap(name)
         FileOutputStream(output).use { stream ->
             assertTrue(
                 "Could not write $output",
-                compose.onNodeWithTag(SCREENSHOT_ROOT_TAG).captureToImage().asAndroidBitmap().compress(
+                bitmap.compress(
                     Bitmap.CompressFormat.PNG,
                     100,
                     stream,
@@ -181,6 +183,29 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             )
         }
         assertTrue("Screenshot is empty: $output", output.length() > 0)
+    }
+
+    private fun captureScreenshotBitmap(name: String): Bitmap {
+        var lastPixelCopyFailure: AssertionError? = null
+        repeat(3) { attempt ->
+            compose.waitForIdle()
+            try {
+                return compose.onNodeWithTag(SCREENSHOT_ROOT_TAG)
+                    .captureToImage()
+                    .asAndroidBitmap()
+            } catch (failure: AssertionError) {
+                if (failure.message?.contains("PixelCopy") != true) {
+                    throw failure
+                }
+                lastPixelCopyFailure = failure
+                if (attempt < 2) {
+                    SystemClock.sleep(500L)
+                }
+            }
+        }
+        throw AssertionError("PixelCopy failed three times while capturing $name").apply {
+            initCause(lastPixelCopyFailure)
+        }
     }
 
     private fun calendarState() = RunwayUiState.Ready(
