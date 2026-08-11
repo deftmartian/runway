@@ -267,6 +267,7 @@ class RoomLocalSurfaceLedgerReaderInstrumentedTest {
             priority = "consistency",
             startEpochDay = start.toEpochDay(),
             selectedDays = listOf(1, 3, 6),
+            weeklyTargetDistanceMeters = 15_000,
             createdAtEpochMillis = 1,
         )
         database.goalPlanDao().saveGoal(graph.goal)

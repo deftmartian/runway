@@ -127,6 +127,7 @@ internal fun CalendarScreen(
     var showSelectedDay by rememberSaveable(month) { mutableStateOf(false) }
     var showManualRun by rememberSaveable { mutableStateOf(false) }
     var submittedDialogAction by remember { mutableStateOf<String?>(null) }
+    var routineGoalWeekId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(listState) {
         var previous = CalendarScrollPosition(
             listState.firstVisibleItemIndex,
@@ -153,6 +154,7 @@ internal fun CalendarScreen(
             "preview_workout_edit", "preview_workout_removal" -> editWorkout = null
             "preview_workout_add" -> addWorkoutDate = null
             "record_manual_run" -> showManualRun = false
+            "update_routine_week_goal" -> routineGoalWeekId = null
             "preview_plan_decision", "apply_plan_decision" -> pendingDecision = null
             else -> if (selectedActivity != null) selectedActivity = null
         }
@@ -364,6 +366,10 @@ internal fun CalendarScreen(
         )
     }
     selectedDay?.takeIf { showSelectedDay }?.let { date ->
+        val routineWeekGoal = routineWeekGoalForDate(
+            calendar?.routineWeekGoals.orEmpty(),
+            date,
+        )
         CalendarDayDetailSheet(
             date = date,
             today = today,
@@ -386,10 +392,40 @@ internal fun CalendarScreen(
             onPlanDecision = { pendingDecision = it },
             canAddWorkout = payload?.hasActivePlan == true,
             routine = routine,
+            routineWeekGoal = routineWeekGoal,
+            onChangeRoutineWeekGoal = {
+                showSelectedDay = false
+                routineGoalWeekId = it.weekId
+            },
             onAddWorkout = {
                 showSelectedDay = false
                 addWorkoutDate = date
             },
         )
     }
+    routineGoalWeekId?.let { weekId ->
+        calendar?.routineWeekGoals?.firstOrNull { it.weekId == weekId }?.let { goal ->
+            RoutineWeekGoalDialog(
+                goal = goal,
+                actionPending = actionPending,
+                errorMessage = actionNotice?.takeIf { it.isError }?.message,
+                onDismiss = { routineGoalWeekId = null },
+                onSubmit = {
+                    submittedDialogAction = it.action
+                    onAction(it)
+                },
+            )
+        }
+    }
+}
+
+internal fun routineWeekGoalForDate(
+    goals: List<NativeRoutineWeekGoal>,
+    date: String,
+): NativeRoutineWeekGoal? = goals.firstOrNull { goal ->
+    runCatching {
+        val selected = LocalDate.parse(date)
+        val start = LocalDate.parse(goal.startDate)
+        selected in start..start.plusDays(6)
+    }.getOrDefault(false)
 }

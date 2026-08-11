@@ -48,6 +48,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.Locale
 import java.util.UUID
 
 private const val goalStep = 0
@@ -86,6 +87,15 @@ internal fun SetupScreen(
                 if (initial?.currentWeeklyDistanceKm.isNullOrBlank()) "learn" else "entered"
             },
         )
+    }
+    var routineGoalKm by rememberSaveable(initial?.routineWeeklyGoalKm) {
+        mutableStateOf(initial?.routineWeeklyGoalKm.orEmpty())
+    }
+    var routineGoalMinutes by rememberSaveable(initial?.routineWeeklyGoalMinutes) {
+        mutableStateOf(initial?.routineWeeklyGoalMinutes.orEmpty())
+    }
+    var routineGoalMetric by rememberSaveable(initial?.routineGoalMetric) {
+        mutableStateOf(initial?.routineGoalMetric?.takeIf { it in setOf("distance", "time") } ?: "distance")
     }
     var raceDistance by rememberSaveable { mutableStateOf(initial?.raceDistance.orEmpty().ifBlank { "5k" }) }
     var targetDate by rememberSaveable { mutableStateOf(initial?.targetDate.orEmpty()) }
@@ -126,7 +136,16 @@ internal fun SetupScreen(
         else -> payload?.minimumTargetDate
     }
     val maximumTargetDate = liveTargetBounds?.maximum ?: payload?.maximumTargetDate
-    val goalIssue = goalValidation(isRaceGoal, targetDate, minimumTargetDate, maximumTargetDate)
+    val goalIssue = if (isRoutineGoal) {
+        routineWeeklyGoalValidation(
+            routineGoalMetric,
+            routineGoalKm,
+            routineGoalMinutes,
+            availability.size.coerceAtLeast(1),
+        )
+    } else {
+        goalValidation(isRaceGoal, targetDate, minimumTargetDate, maximumTargetDate)
+    }
     val startingPointIssue = startingPointValidation(
         if (usesEnteredBaseline) "established" else "learn",
         weeklyKm,
@@ -140,7 +159,7 @@ internal fun SetupScreen(
         preferredDay = preferredDay,
         timeZone = timeZone,
         raceDistance = raceDistance,
-    )
+    ) ?: goalIssue.takeIf { isRoutineGoal }
     val concentratedSchedule = requiresConcentratedScheduleAcceptance(
         startMode = effectiveStartMode,
         runsPerWeek = runsPerWeek,
@@ -164,6 +183,9 @@ internal fun SetupScreen(
         operationId = setupOperationId,
         occurredAtEpochMillis = setupOccurredAtEpochMillis,
         baselineMode = if (usesEnteredBaseline) "entered" else "learn",
+        routineGoalMetric = routineGoalMetric,
+        routineWeeklyGoalKm = if (isRoutineGoal) routineGoalKm else "",
+        routineWeeklyGoalMinutes = if (isRoutineGoal) routineGoalMinutes else "",
     )
     val planPreview = remember(candidateCommand, setupOccurredAtEpochMillis) {
         if (startMode != "established" || !isRaceGoal) {
@@ -272,6 +294,31 @@ internal fun SetupScreen(
                         }
                     }
                 }
+                if (isRoutineGoal) {
+                    item {
+                        SetupSection(
+                            "Weekly running goal",
+                            "Choose a distance or time target. Runway divides it across the run days you select.",
+                        ) {
+                            ChoiceRow("Distance", routineGoalMetric == "distance") {
+                                routineGoalMetric = "distance"
+                            }
+                            ChoiceRow("Time", routineGoalMetric == "time") {
+                                routineGoalMetric = "time"
+                            }
+                            if (routineGoalMetric == "distance") {
+                                NumberField("Weekly distance goal (km)", routineGoalKm) {
+                                    routineGoalKm = it
+                                }
+                            } else {
+                                NumberField("Weekly running time (minutes)", routineGoalMinutes) {
+                                    routineGoalMinutes = it
+                                }
+                            }
+                            goalIssue?.let { ValidationText(it) }
+                        }
+                    }
+                }
                 if (payload?.currentGoal == null) {
                     item {
                         TextButton(
@@ -315,7 +362,7 @@ internal fun SetupScreen(
                     }
                 } else {
                     item {
-                        Notice("Runway will schedule open run days only. It will not prescribe a distance or duration while learning.")
+                        Notice("Runway will learn your recent baseline from recorded runs. Each scheduled run still receives a share of your weekly ${routineGoalMetricLabel(routineGoalMetric)} goal.")
                     }
                 }
             }
@@ -324,7 +371,7 @@ internal fun SetupScreen(
                     SetupSection(
                         "Schedule",
                         if (isRoutineGoal) {
-                            "Choose the days you intend to run most weeks. Each run stays open: no distance, duration, or pace is prescribed."
+                            "Choose the days you intend to run most weeks. Runway divides the weekly ${routineGoalMetricLabel(routineGoalMetric)} goal across those days."
                         } else {
                             "Pick the days that are genuinely available. You can move future workouts later."
                         },
@@ -362,7 +409,11 @@ internal fun SetupScreen(
                         SettingRow(
                             "Goal",
                             when {
-                                isRoutineGoal -> "${availability.size} open ${if (availability.size == 1) "run" else "runs"} each week"
+                                isRoutineGoal -> routineGoalMeasurement(
+                                    routineGoalMetric,
+                                    routineGoalKm,
+                                    routineGoalMinutes,
+                                )
                                 isRaceGoal -> raceDistanceLabel(raceDistance)
                                 else -> raceDistanceLabel(raceDistance)
                             },
@@ -376,7 +427,7 @@ internal fun SetupScreen(
                         SettingRow("Starting point", if (usesEnteredBaseline) "Entered recent week" else "Learn from recorded runs")
                         Notice(
                             if (isRoutineGoal) {
-                                "This starts with ${availability.size} open ${if (availability.size == 1) "run" else "runs"} each week. Add or remove a future run to change that week's goal."
+                                "This starts with ${availability.size} prescribed ${if (availability.size == 1) "run" else "runs"} each week. Together they total ${routineGoalMeasurement(routineGoalMetric, routineGoalKm, routineGoalMinutes)}. You can change a future week separately."
                             } else if (startMode == "calibration") {
                                 "Two weeks of open run days will be created. Distance and duration remain unprescribed until you confirm an observed baseline."
                             } else {
@@ -667,6 +718,56 @@ internal fun goalValidation(
         "Choose a date from $minimumTargetDate to $maximumTargetDate."
     else -> null
 }
+
+internal fun routineWeeklyGoalValidation(
+    metric: String,
+    goalKm: String,
+    goalMinutes: String,
+    scheduledRuns: Int = 1,
+): String? = when (metric) {
+    "distance" -> boundedRoutineGoalValidation(
+        goalKm,
+        1.0..minOf(250.0, 100.0 * scheduledRuns),
+        "Enter a weekly distance goal to continue.",
+        "Enter a weekly distance goal from 1 to ${routineDistanceMaximum(scheduledRuns)} km.",
+    )
+    "time" -> boundedRoutineGoalValidation(
+        goalMinutes,
+        (10.0 * scheduledRuns)..(360.0 * scheduledRuns),
+        "Enter a weekly running time to continue.",
+        "Enter a weekly running time from ${routineWholeNumber(10 * scheduledRuns)} to ${routineWholeNumber(360 * scheduledRuns)} minutes.",
+    )
+    else -> "Choose distance or time for the weekly goal."
+}
+
+private fun routineDistanceMaximum(scheduledRuns: Int) = minOf(250, 100 * scheduledRuns)
+
+private fun routineWholeNumber(value: Int) = String.format(Locale.US, "%,d", value)
+
+private fun boundedRoutineGoalValidation(
+    raw: String,
+    range: ClosedFloatingPointRange<Double>,
+    requiredMessage: String,
+    rangeMessage: String,
+): String? {
+    val value = raw.toDoubleOrNull()
+    return when {
+        value == null || !value.isFinite() -> requiredMessage
+        value !in range -> rangeMessage
+        else -> null
+    }
+}
+
+private fun routineGoalMetricLabel(metric: String) = if (metric == "time") "time" else "distance"
+
+private fun routineGoalMeasurement(metric: String, distanceKm: String, durationMinutes: String): String =
+    if (metric == "time") {
+        durationMinutes.toDoubleOrNull()?.let { formatPlannedDurationEstimate(it * 60) }
+            ?: "Weekly time not set"
+    } else {
+        distanceKm.toDoubleOrNull()?.let { formatDistance(it * 1_000) }
+            ?: "Weekly distance not set"
+    }
 
 internal fun startingPointValidation(
     mode: String,

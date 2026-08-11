@@ -29,8 +29,22 @@ internal data class CreatePlanCommand(
     val occurredAtEpochMillis: Long,
     /** Whether setup uses a runner-entered recent week or observes open runs first. */
     val baselineMode: String = "learn",
+    /** Aggregate routine target; each selected run receives a share in the chosen unit. */
+    val routineGoalMetric: String = "distance",
+    val routineWeeklyGoalKm: String = "",
+    val routineWeeklyGoalMinutes: String = "",
 ) : MobileCommand {
     override val action = "create_plan"
+}
+
+internal data class UpdateRoutineWeekGoalCommand(
+    val weekId: String,
+    val targetMetric: String,
+    val targetValue: String,
+    val operationId: String,
+    val occurredAtEpochMillis: Long,
+) : MobileCommand {
+    override val action = "update_routine_week_goal"
 }
 
 internal data class RecordFeedbackCommand(

@@ -20,6 +20,8 @@ import dev.deftmartian.runway.data.LocalPlanSetupResult
 import dev.deftmartian.runway.data.LocalProfileUpdateResult
 import dev.deftmartian.runway.data.LocalRaceBaselineConfirmationRequest
 import dev.deftmartian.runway.data.LocalRestoreResult
+import dev.deftmartian.runway.data.LocalRoutineWeekGoalRequest
+import dev.deftmartian.runway.data.LocalRoutineWeekGoalResult
 import dev.deftmartian.runway.data.LocalTrainingMutationResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackCommand
@@ -981,6 +983,7 @@ internal class RunwayViewModel(
         is UnlinkActivityCommand -> services.activityReview.unlink(command.activityId).message()
         is DeleteActivityCommand -> services.activityReview.delete(command.activityId).message()
         is DeleteFeedbackCommand -> deleteWorkoutFeedback(command)
+        is UpdateRoutineWeekGoalCommand -> updateRoutineWeekGoal(command)
         is ResolveHealthConnectRecordCommand -> resolveHealthConnectRecord(command)
         is ResolveHealthConnectDuplicateCommand -> resolveHealthConnectDuplicate(command)
         is PreviewPlanDecisionCommand -> previewPlanDecision(command)
@@ -994,6 +997,55 @@ internal class RunwayViewModel(
         CompletePlanCommand -> endActivePlan(completed = true)
         ArchivePlanCommand -> endActivePlan(completed = false)
     }
+
+    private suspend fun updateRoutineWeekGoal(
+        command: UpdateRoutineWeekGoalCommand,
+    ): String {
+        val target = routineWeekTarget(command)
+        val active = services.trainingContext.activePlan()
+            ?.takeIf { it.phaseType == "routine" }
+            ?: throw IllegalStateException("There is no active weekly routine.")
+        val result = services.routines.updateWeekGoal(
+            LocalRoutineWeekGoalRequest(
+                planId = active.planId,
+                weekId = command.weekId,
+                targetDistanceMeters = target.first,
+                targetDurationSeconds = target.second,
+                todayEpochDay = localToday().toEpochDay(),
+                operationId = command.operationId,
+                occurredAtEpochMillis = command.occurredAtEpochMillis,
+            ),
+        )
+        return when (result) {
+            is LocalRoutineWeekGoalResult.Updated ->
+                "That week's goal is now ${routineTargetLabel(result.target.distanceMeters, result.target.durationSeconds)}."
+            LocalRoutineWeekGoalResult.Unchanged,
+            LocalRoutineWeekGoalResult.AlreadyApplied,
+            -> "That week's goal is unchanged."
+            LocalRoutineWeekGoalResult.Rejected ->
+                throw IllegalStateException("That routine week is no longer available to change.")
+        }
+    }
+
+    private fun routineWeekTarget(command: UpdateRoutineWeekGoalCommand): Pair<Int?, Int?> {
+        val value = command.targetValue.trim().toDoubleOrNull()
+            ?.takeIf(Double::isFinite)
+        return when {
+            command.targetMetric == "distance" && value != null && value in 1.0..250.0 ->
+                kotlin.math.floor(value * 1_000 + 0.5).toInt() to null
+            command.targetMetric == "time" && value != null && value in 10.0..4_200.0 ->
+                null to kotlin.math.floor(value * 60 + 0.5).toInt()
+            command.targetMetric == "time" ->
+                throw IllegalArgumentException("Enter a weekly running time from 10 to 4,200 minutes.")
+            else ->
+                throw IllegalArgumentException("Enter a weekly distance goal from 1 to 250 km.")
+        }
+    }
+
+    private fun routineTargetLabel(distanceMeters: Int?, durationSeconds: Int?): String =
+        distanceMeters?.let { formatDistance(it.toDouble()) }
+            ?: durationSeconds?.let { formatPlannedDurationEstimate(it.toDouble()) }
+            ?: "not set"
 
     private suspend fun previewWorkoutChangeMessage(command: MobileCommand): String {
         previewWorkoutChange(command)
@@ -1526,6 +1578,8 @@ internal class RunwayViewModel(
     private fun actionFailureMessage(command: MobileCommand): String = when (command) {
         is CreatePlanCommand ->
             "The plan could not be created. Check the setup details and try again."
+        is UpdateRoutineWeekGoalCommand ->
+            "That weekly goal could not be saved. Review the current routine and try again."
         is PreviewWorkoutEditCommand,
         is PreviewWorkoutAddCommand,
         is PreviewWorkoutRemovalCommand,

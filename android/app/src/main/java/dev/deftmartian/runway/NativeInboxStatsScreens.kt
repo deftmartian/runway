@@ -434,6 +434,8 @@ internal fun StatsScreen(
             !hasRecordedHistory -> if (isRoutine) {
                 FirstRoutineStats(
                     runsPerWeek = payload.active.plan.sessionsPerWeek,
+                    weeklyTargetDistanceMeters = weeks.firstOrNull()?.targetDistanceMeters,
+                    weeklyTargetDurationSeconds = weeks.firstOrNull()?.targetDurationSeconds,
                     onOpenCalendar = { onDestinationSelected(NativeDestination.Calendar) },
                 )
             } else {
@@ -475,15 +477,17 @@ internal fun StatsScreen(
 
 private fun LazyListScope.FirstRoutineStats(
     runsPerWeek: Int?,
+    weeklyTargetDistanceMeters: Double?,
+    weeklyTargetDurationSeconds: Double?,
     onOpenCalendar: () -> Unit,
 ) {
     item {
         SettingCard("Your weekly routine is ready") {
             Text(
                 if (runsPerWeek != null && runsPerWeek > 0) {
-                    "$runsPerWeek ${if (runsPerWeek == 1) "open run is" else "open runs are"} scheduled by default each week. Distance and duration stay unprescribed."
+                    "$runsPerWeek ${if (runsPerWeek == 1) "run is" else "runs are"} prescribed each week. Together they total ${routineGoalLabel(weeklyTargetDistanceMeters, weeklyTargetDurationSeconds)}."
                 } else {
-                    "Open Calendar to see the next open run."
+                    "Open Calendar to see the next prescribed run."
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -545,7 +549,7 @@ private fun RoutineCurrentWeekAssessment(week: NativeWeekSummary, runsPerWeek: I
         RoutineRunCountRows(runsPerWeek, planned, recorded, plannedRecorded, extras, week)
         RoutineRecordedLoadRows(week)
         Text(
-            "Add or remove an open run to change one week's goal. Moving one between weeks changes both affected weeks.",
+            "Change a future week's distance or time goal from any day in that week in Calendar.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -565,7 +569,7 @@ private fun RoutineRunCountRows(
     week: NativeWeekSummary,
 ) {
     runsPerWeek?.takeIf { it > 0 }?.let {
-        SettingRow("Default goal", "$it ${if (it == 1) "run" else "runs"} each week")
+        SettingRow("Planned days", "$it ${if (it == 1) "run" else "runs"} each week")
     }
     SettingRow("Runs recorded", if (planned > 0) "$recorded of $planned this week" else recorded.toString())
     if (extras > 0) {
@@ -578,6 +582,12 @@ private fun RoutineRunCountRows(
 
 @Composable
 private fun RoutineRecordedLoadRows(week: NativeWeekSummary) {
+    week.targetDistanceMeters?.takeIf { it > 0 }?.let {
+        SettingRow("Weekly distance goal", formatDistance(it))
+    }
+    week.targetDurationSeconds?.takeIf { it > 0 }?.let {
+        SettingRow("Weekly time goal", formatPlannedDurationEstimate(it))
+    }
     week.completedDistanceMeters?.takeIf { it > 0 }?.let {
         SettingRow("Recorded distance", formatDistance(it))
     }
@@ -598,11 +608,16 @@ internal fun routineWaitingMessage(startDate: String?, todayIso: String?): Strin
     val start = startDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
     val today = todayIso?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
     return if (start != null && today != null && start > today) {
-        "Your first routine week starts ${friendlyDate(start.toString())}. Calendar shows the open runs."
+        "Your first routine week starts ${friendlyDate(start.toString())}. Calendar shows the prescribed runs."
     } else {
-        "Calendar shows the next open run in your routine."
+        "Calendar shows the next prescribed run in your routine."
     }
 }
+
+private fun routineGoalLabel(distanceMeters: Double?, durationSeconds: Double?): String =
+    distanceMeters?.let(::formatDistance)
+        ?: durationSeconds?.let(::formatPlannedDurationEstimate)
+        ?: "a goal that is not set"
 
 internal fun routineCurrentWeek(history: NativeTrainingHistory?): NativeWeekSummary? {
     val today = history?.todayIso?.takeIf(String::isNotBlank) ?: return null

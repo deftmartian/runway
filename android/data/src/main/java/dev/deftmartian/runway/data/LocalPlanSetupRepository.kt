@@ -274,9 +274,11 @@ object LocalPlanSetupPreparation {
             graph.workouts.any { !validId(it.workoutId) || it.planId != graph.plan.planId } ||
             graph.workouts.any { workout -> graph.weeks.none { it.weekId == workout.weekId } } ||
             graph.workouts.any {
-                it.generatedPrescriptionKind != "open" || it.currentPrescriptionKind != "open" ||
-                    it.generatedDistanceMeters != null || it.currentDistanceMeters != null ||
-                    it.generatedDurationSeconds != null || it.currentDurationSeconds != null
+                it.generatedPrescriptionKind !in setOf("distance", "timed") ||
+                    it.currentPrescriptionKind != it.generatedPrescriptionKind ||
+                    it.generatedDistanceMeters != it.currentDistanceMeters ||
+                    it.generatedDurationSeconds != it.currentDurationSeconds ||
+                    (it.currentDistanceMeters == null) == (it.currentDurationSeconds == null)
             }
         ) return Invalid(LocalPlanSetupError.INVALID_ROUTINE_GRAPH)
         val weeks = graph.weeks.sortedBy(PlanWeekEntity::ordinal)
@@ -291,6 +293,8 @@ object LocalPlanSetupPreparation {
                 priority = graph.goal.priority,
                 startEpochDay = graph.plan.startEpochDay,
                 selectedDays = graph.days.map(RoutineScheduleDayEntity::dayOfWeek),
+                weeklyTargetDistanceMeters = graph.plan.summaryBaselineMeters,
+                weeklyTargetDurationSeconds = graph.plan.summarySessionDurationSeconds,
                 createdAtEpochMillis = graph.goal.createdAtEpochMillis,
             )
         }.getOrNull()

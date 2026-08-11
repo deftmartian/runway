@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
@@ -295,6 +296,124 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     @Test
+    fun consistencySetupRequiresAWeeklyDistanceGoalBeforeContinuing() {
+        compose.setContent {
+            RunwayTheme {
+                SetupScreen(
+                    payload = NativeOnboardingPayload(
+                        initialValues = null,
+                        minimumTargetDate = null,
+                        minimumCalibrationTargetDate = null,
+                        maximumTargetDate = null,
+                        currentGoal = null,
+                    ),
+                    actionPending = false,
+                    onAction = {},
+                    onRestoreBackup = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Run consistently each week").performClick()
+        compose.onNodeWithText("Weekly distance goal (km)").assertIsDisplayed()
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+        compose.onNodeWithText("Time").performClick()
+        compose.onNodeWithText("Weekly running time (minutes)").performTextReplacement("120")
+        compose.onNodeWithText("Continue").assertIsEnabled().performClick()
+        compose.onNodeWithText("Learn from the runs I record").assertIsDisplayed()
+        compose.onNodeWithText(
+            "Runway will learn your recent baseline from recorded runs. Each scheduled run still receives a share of your weekly time goal.",
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun routineCalendarCanSwitchASelectedFutureWeekFromDistanceToTime() {
+        var submitted: UpdateRoutineWeekGoalCommand? = null
+        compose.setContent {
+            RunwayTheme {
+                RunwayNativeApp(
+                    state = RunwayUiState.Ready(
+                        surface = NativeSurface.Calendar(
+                            NativeCalendarPayload(
+                                onboardingRequired = false,
+                                hasActivePlan = true,
+                                activePlanPhase = "routine",
+                                calendar = NativeCalendar(
+                                    month = "2026-08",
+                                    today = "2026-08-12",
+                                    previousMonth = "2026-07",
+                                    nextMonth = "2026-09",
+                                    workouts = listOf(
+                                        NativeWorkout(
+                                            id = "routine-workout-2",
+                                            weekId = "routine-week-2",
+                                            weekNumber = 2,
+                                            scheduledDate = "2026-08-19",
+                                            type = "easy",
+                                            status = "planned",
+                                            targetDistanceMeters = 5_000.0,
+                                            targetDurationSeconds = null,
+                                            prescriptionKind = "distance",
+                                            intervalStructure = null,
+                                            intensity = "easy",
+                                            purpose = "Routine run",
+                                            reason = "Scheduled from this week's distance goal.",
+                                            isRemoved = false,
+                                            isEdited = false,
+                                            adjustment = null,
+                                            planPhase = "routine",
+                                        ),
+                                    ),
+                                    activities = emptyList(),
+                                    feedback = emptyList(),
+                                    routineWeekGoals = listOf(
+                                        NativeRoutineWeekGoal(
+                                            weekId = "routine-week-2",
+                                            startDate = "2026-08-17",
+                                            targetDistanceMeters = 15_000.0,
+                                            scheduledRuns = 3,
+                                        ),
+                                    ),
+                                ),
+                                activityCandidates = emptyList(),
+                            ),
+                        ),
+                        loading = false,
+                    ),
+                    onDestinationSelected = {}, onCalendarMonthSelected = {},
+                    onLoadMoreHistory = {}, onLoadMoreInbox = {}, onLoadActivityTrace = {},
+                    onOpenHistoryDetail = {}, onRetryOpen = {},
+                    onAction = { command -> submitted = command as? UpdateRoutineWeekGoalCommand },
+                    onApplyWorkoutPreview = {}, onDismissWorkoutPreview = {},
+                    onApplyPlanDecisionPreview = {}, onDismissPlanDecisionPreview = {},
+                    onOpenFolder = {}, onImportGpx = {}, onOpenHealthConnect = {},
+                    onCreateBackup = {}, onRestoreBackup = {}, onExportData = {},
+                    onTimeZoneChanged = {}, onRoutePrivacyChanged = {},
+                    onHeartRatePrivacyChanged = {}, onHeartRateChanged = {},
+                    onEraseImportedActivityData = {}, onEraseAllData = {},
+                    onAcknowledgeRetentionRepair = {},
+                )
+            }
+        }
+
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasTestTag("calendar-ledger-day-2026-08-19"))
+        compose.onNodeWithTag("calendar-ledger-day-2026-08-19").performClick()
+        compose.onNodeWithText("Weekly running goal · 15 km").assertIsDisplayed()
+        compose.onNodeWithText("5 km").assertIsDisplayed()
+        compose.onNodeWithText("Change this week's goal").performClick()
+        compose.onNodeWithText("Change weekly running goal").assertIsDisplayed()
+        compose.onNodeWithText("Time").performClick()
+        compose.onNodeWithText("Weekly running time (minutes)").performTextReplacement("120")
+        compose.onNodeWithText("Save goal").performClick()
+        compose.runOnIdle {
+            assertTrue(submitted?.weekId == "routine-week-2")
+            assertTrue(submitted?.targetMetric == "time")
+            assertTrue(submitted?.targetValue == "120")
+        }
+    }
+
+    @Test
     fun loadingAnExistingGoalIntoSetupUsesItsSavedValuesInsteadOfFreshDefaults() {
         val targetDate = "2026-10-01"
         val existingPayload = NativeOnboardingPayload(
@@ -473,6 +592,8 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     onPlanDecision = {},
                     canAddWorkout = false,
                     routine = false,
+                    routineWeekGoal = null,
+                    onChangeRoutineWeekGoal = {},
                     onAddWorkout = {},
                 )
             }

@@ -66,11 +66,11 @@ class NativeStatsLayoutTest {
     @Test
     fun `routine waiting message names a future start without pretending stats are missing`() {
         assertEquals(
-            "Your first routine week starts Monday, August 3. Calendar shows the open runs.",
+            "Your first routine week starts Monday, August 3. Calendar shows the prescribed runs.",
             routineWaitingMessage("2026-08-03", "2026-08-01"),
         )
         assertEquals(
-            "Calendar shows the next open run in your routine.",
+            "Calendar shows the next prescribed run in your routine.",
             routineWaitingMessage("2026-07-27", "2026-08-01"),
         )
     }

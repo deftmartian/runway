@@ -138,6 +138,9 @@ internal data class NativePlanInitialValues(
     val availability: List<Int>,
     val goalKind: String? = null,
     val baselineMode: String? = null,
+    val routineGoalMetric: String? = null,
+    val routineWeeklyGoalKm: String? = null,
+    val routineWeeklyGoalMinutes: String? = null,
 )
 
 internal data class NativeGoalSummary(
@@ -158,6 +161,15 @@ internal data class NativeCalendar(
     val workouts: List<NativeWorkout>,
     val activities: List<NativeActivity>,
     val feedback: List<NativeWorkoutFeedback>,
+    val routineWeekGoals: List<NativeRoutineWeekGoal> = emptyList(),
+)
+
+internal data class NativeRoutineWeekGoal(
+    val weekId: String,
+    val startDate: String,
+    val targetDistanceMeters: Double?,
+    val targetDurationSeconds: Double? = null,
+    val scheduledRuns: Int = 1,
 )
 
 internal data class NativeWorkout(
@@ -371,6 +383,7 @@ internal data class NativeWeekSummary(
     val targetDistanceMeters: Double?,
     val completedDistanceMeters: Double?,
     val completedDurationSeconds: Double?,
+    val targetDurationSeconds: Double? = null,
     val plannedRuns: Int?,
     val completedRuns: Int?,
     val missedRuns: Int?,

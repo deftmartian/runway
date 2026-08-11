@@ -8,6 +8,16 @@ import org.junit.Test
 class NativeUiModelHelpersTest {
 
     @Test
+    fun `routine week goal lookup uses the week and editing is future only`() {
+        val goal = NativeRoutineWeekGoal("week", "2026-08-03", 15_000.0)
+
+        assertEquals(goal, routineWeekGoalForDate(listOf(goal), "2026-08-09"))
+        assertEquals(null, routineWeekGoalForDate(listOf(goal), "2026-08-10"))
+        assertTrue(routineGoalCanChange(goal, "2026-08-02"))
+        assertFalse(routineGoalCanChange(goal, "2026-08-03"))
+    }
+
+    @Test
     fun `planned timed headlines use durable five minute estimates`() {
         assertEquals("About 30 min", formatPlannedDurationEstimate(1_710.0))
         assertEquals("About 30 min", formatPlannedDurationEstimate(1_740.0))

@@ -33,7 +33,7 @@ import java.security.MessageDigest
 internal enum class OnboardingField {
     GOAL_KIND, START_MODE, RACE_DISTANCE, TARGET_DATE, PRIORITY,
     AVAILABILITY, TIME_ZONE, WEEKLY_DISTANCE, RUNS_PER_WEEK, LONGEST_RUN,
-    LONG_RUN_DAY, CONCENTRATED_SCHEDULE,
+    LONG_RUN_DAY, CONCENTRATED_SCHEDULE, ROUTINE_WEEKLY_GOAL_METRIC, ROUTINE_WEEKLY_GOAL,
     PLAN_ASSESSMENT,
 }
 
@@ -64,6 +64,8 @@ internal sealed interface StandaloneOnboardingOutcome {
         val metadata: StandaloneGoalMetadata,
         val startDate: String,
         val selectedDays: List<Int>,
+        val weeklyTargetDistanceMeters: Int?,
+        val weeklyTargetDurationSeconds: Int?,
     ) : StandaloneOnboardingOutcome
     data class Planned(
         val metadata: StandaloneGoalMetadata,
@@ -147,6 +149,33 @@ internal object StandaloneOnboardingAdapter {
         val established = goalKind == GoalKind.RACE && startMode == StartMode.ESTABLISHED
         val routineBaseline = goalKind == GoalKind.ROUTINE && command.baselineMode == "entered"
         val needsEstablishedBaseline = established || routineBaseline
+        val routineGoalMetric = if (goalKind == GoalKind.ROUTINE) {
+            enumValue(
+                OnboardingField.ROUTINE_WEEKLY_GOAL_METRIC,
+                command.routineGoalMetric,
+                mapOf("distance" to "distance", "time" to "time"),
+            )
+        } else {
+            null
+        }
+        val routineGoalKm = if (routineGoalMetric == "distance") {
+            strictDecimal(
+                command.routineWeeklyGoalKm,
+                OnboardingField.ROUTINE_WEEKLY_GOAL,
+                ::error,
+            )
+        } else {
+            null
+        }
+        val routineGoalMinutes = if (routineGoalMetric == "time") {
+            strictDecimal(
+                command.routineWeeklyGoalMinutes,
+                OnboardingField.ROUTINE_WEEKLY_GOAL,
+                ::error,
+            )
+        } else {
+            null
+        }
         val weeklyKm = if (needsEstablishedBaseline) strictDecimal(command.currentWeeklyDistanceKm, OnboardingField.WEEKLY_DISTANCE, ::error) else null
         val runs = if (needsEstablishedBaseline) strictWhole(command.currentRunsPerWeek, OnboardingField.RUNS_PER_WEEK, ::error) else null
         val longestKm = if (needsEstablishedBaseline) strictDecimal(command.longestRecentRunKm, OnboardingField.LONGEST_RUN, ::error) else null
@@ -174,6 +203,9 @@ internal object StandaloneOnboardingAdapter {
                 error = ::error,
             )
         }
+        if (goalKind == GoalKind.ROUTINE) {
+            validateRoutineWeeklyGoal(command, routineGoalMetric, routineGoalKm, routineGoalMinutes, ::error)
+        }
         if (goalKind == GoalKind.RACE && raceDistance == null) error(OnboardingField.RACE_DISTANCE, OnboardingFieldError.REQUIRED)
         if (goalKind == GoalKind.RACE && targetDate == null) error(OnboardingField.TARGET_DATE, OnboardingFieldError.REQUIRED)
         if (errors.isNotEmpty()) return StandaloneOnboardingOutcome.Invalid(errors.mapValues { it.value.toSet() }, bounds)
@@ -181,8 +213,10 @@ internal object StandaloneOnboardingAdapter {
         if (startMode == StartMode.ROUTINE) {
             return StandaloneOnboardingOutcome.Routine(
                 metadata = metadata,
-                startDate = today.toString(),
+                startDate = nextPlanStartDate(today),
                 selectedDays = command.availability.sorted(),
+                weeklyTargetDistanceMeters = routineGoalKm?.let(::kilometersToMeters),
+                weeklyTargetDurationSeconds = routineGoalMinutes?.let(::minutesToSeconds),
             )
         }
         val startDate = nextPlanStartDate(today)
@@ -253,6 +287,7 @@ internal object StandaloneOnboardingAdapter {
         }
     }
     private fun kilometersToMeters(value: Double): Int = kotlin.math.floor(value * 1000 + .5).toInt()
+    private fun minutesToSeconds(value: Double): Int = kotlin.math.floor(value * 60 + .5).toInt()
     private fun validateEstablishedBaseline(
         command: CreatePlanCommand,
         weeklyKm: Double?,
@@ -286,6 +321,39 @@ internal object StandaloneOnboardingAdapter {
         value == null && raw.isBlank() -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.REQUIRED)
         value != null && value !in 3.0..250.0 -> error(OnboardingField.WEEKLY_DISTANCE, OnboardingFieldError.OUT_OF_RANGE)
         else -> Unit
+    }
+
+    private fun validateRoutineWeeklyGoal(
+        command: CreatePlanCommand,
+        metric: String?,
+        distanceKm: Double?,
+        durationMinutes: Double?,
+        error: (OnboardingField, OnboardingFieldError) -> Unit,
+    ) {
+        val runCount = command.availability.distinct().size
+        when {
+            metric == "distance" && distanceKm == null && command.routineWeeklyGoalKm.isBlank() ->
+                error(OnboardingField.ROUTINE_WEEKLY_GOAL, OnboardingFieldError.REQUIRED)
+            metric == "time" && durationMinutes == null && command.routineWeeklyGoalMinutes.isBlank() ->
+                error(OnboardingField.ROUTINE_WEEKLY_GOAL, OnboardingFieldError.REQUIRED)
+            metric == null ->
+                error(OnboardingField.ROUTINE_WEEKLY_GOAL, OnboardingFieldError.REQUIRED)
+            !routineGoalFitsRunCount(metric, distanceKm, durationMinutes, runCount) ->
+                error(OnboardingField.ROUTINE_WEEKLY_GOAL, OnboardingFieldError.OUT_OF_RANGE)
+        }
+    }
+
+    private fun routineGoalFitsRunCount(
+        metric: String?,
+        distanceKm: Double?,
+        durationMinutes: Double?,
+        runCount: Int,
+    ): Boolean = when (metric) {
+        "distance" -> distanceKm != null &&
+            distanceKm in 1.0..minOf(250.0, 100.0 * runCount)
+        "time" -> durationMinutes != null &&
+            durationMinutes in (10.0 * runCount)..(360.0 * runCount)
+        else -> false
     }
 
     private fun validateRunsPerWeek(
@@ -414,6 +482,8 @@ internal object StandaloneOnboardingPersistenceMapper {
                     priority = metadata.priority.storageValue(),
                     startEpochDay = LocalDate.parse(outcome.startDate).toEpochDay(),
                     selectedDays = outcome.selectedDays,
+                    weeklyTargetDistanceMeters = outcome.weeklyTargetDistanceMeters,
+                    weeklyTargetDurationSeconds = outcome.weeklyTargetDurationSeconds,
                     createdAtEpochMillis = occurredAtEpochMillis,
                 ),
             )
@@ -486,7 +556,7 @@ internal object StandaloneOnboardingPersistenceMapper {
      */
     private fun setupFingerprint(command: CreatePlanCommand): String {
         val fields = listOf(
-            "runway-plan-setup-v2",
+            "runway-plan-setup-v4",
             command.goalKind.normalizedToken(),
             command.startMode.normalizedToken(),
             command.baselineMode.normalizedToken(),
@@ -494,6 +564,9 @@ internal object StandaloneOnboardingPersistenceMapper {
             command.targetDate.trim(),
             command.priority.normalizedToken(),
             command.currentWeeklyDistanceKm.normalizedDecimal(),
+            command.routineGoalMetric.normalizedToken(),
+            command.routineWeeklyGoalKm.normalizedDecimal(),
+            command.routineWeeklyGoalMinutes.normalizedDecimal(),
             command.currentRunsPerWeek.normalizedWhole(),
             command.longestRecentRunKm.normalizedDecimal(),
             command.availability.distinct().sorted().joinToString(","),

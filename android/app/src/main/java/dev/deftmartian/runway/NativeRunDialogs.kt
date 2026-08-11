@@ -1,6 +1,7 @@
 package dev.deftmartian.runway
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
@@ -53,7 +54,7 @@ internal fun positiveRunMeasurementError(value: String, unit: String): String? {
 
 internal fun feedbackPlanChangeMessage(planPhase: String?): String =
     if (planPhase == "routine") {
-        "An unusually hard effort is saved with this result. Use Calendar to change the open-run goal for an affected week."
+        "An unusually hard effort is saved with this result. Use Calendar to reduce or postpone the next prescribed run, or change a future week's goal."
     } else {
         "An unusually hard effort can offer a smaller next run. You can also move the next run later in Calendar. Nothing changes until you choose it."
     }
@@ -261,7 +262,7 @@ private fun FeedbackMeasurementFields(
 }
 
 private fun feedbackMeasurementExplanation(open: Boolean, routine: Boolean) = when {
-    open && routine -> "Record either measurement if it is useful. This routine tracks that you ran; it does not compare the amount with a target."
+    open && routine -> "This is a legacy open routine run. Record either measurement if it is useful."
     open -> "Record either measurement if it is useful. This run has no target to compare."
     else -> "Enter what happened. Runway will compare it with the planned amount and show whether it was near, under, or over plan."
 }
@@ -402,29 +403,21 @@ internal fun WorkoutAddDialog(
     var scheduledDate by rememberSaveable { mutableStateOf(defaultDate) }
     var type by rememberSaveable { mutableStateOf(WorkoutType.EASY) }
     var distance by rememberSaveable { mutableStateOf("") }
+    var duration by rememberSaveable { mutableStateOf("") }
+    var routineTargetMetric by rememberSaveable { mutableStateOf("distance") }
     var purpose by rememberSaveable(routine) {
-        mutableStateOf(if (routine) "Open run" else "Easy aerobic run")
+        mutableStateOf(if (routine) "Routine run" else "Easy aerobic run")
     }
     var reason by rememberSaveable { mutableStateOf("") }
     var rebalance by rememberSaveable { mutableStateOf(false) }
-    val distanceNumber = distance.toDoubleOrNull()
-    val dateError = isoDateInputError(scheduledDate)
-    val distanceError = if (routine) {
-        null
-    } else {
-        boundedRunMeasurementError(
-            value = distance,
-            required = true,
-            minimum = 0.1,
-            maximum = 100.0,
-            unit = "km",
-        )
-    }
-    val purposeError = workoutPurposeInputError(purpose)
-    val valid =
-        dateError == null &&
-            distanceError == null &&
-            purposeError == null
+    val validation = workoutAddValidation(
+        scheduledDate,
+        routine,
+        routineTargetMetric,
+        distance,
+        duration,
+        purpose,
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add a future run") },
@@ -435,11 +428,7 @@ internal fun WorkoutAddDialog(
                 }
                 item {
                     Text(
-                        if (routine) {
-                            "This adds one open run to this week's goal. It does not change any other week."
-                        } else {
-                            "Runway will show the weekly-load effect before adding it."
-                        },
+                        workoutAddExplanation(routine),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -448,29 +437,25 @@ internal fun WorkoutAddDialog(
                         value = scheduledDate,
                         onValueChange = { scheduledDate = it.take(10) },
                         label = { Text("Date (YYYY-MM-DD)") },
-                        isError = dateError != null,
-                        supportingText = dateError?.let { message -> { Text(message) } },
+                        isError = validation.dateError != null,
+                        supportingText = validation.dateError?.let { message -> { Text(message) } },
                         singleLine = true,
                     )
                 }
-                if (!routine) {
-                    item {
-                        listOf(
-                            WorkoutType.EASY to "Easy",
-                            WorkoutType.LONG to "Long",
-                            WorkoutType.RECOVERY to "Recovery",
-                        )
-                            .forEach { (value, label) ->
-                                ChoiceRow(label, type == value) { type = value }
-                            }
-                    }
-                    item {
-                        NumberField(
-                            "Distance (km)",
-                            distance,
-                            errorMessage = distanceError,
-                        ) { distance = it }
-                    }
+                item {
+                    WorkoutAddPrescriptionFields(
+                        routine = routine,
+                        type = type,
+                        onTypeChanged = { type = it },
+                        routineTargetMetric = routineTargetMetric,
+                        onRoutineTargetMetricChanged = { routineTargetMetric = it },
+                        distance = distance,
+                        onDistanceChanged = { distance = it },
+                        duration = duration,
+                        onDurationChanged = { duration = it },
+                        distanceError = validation.distanceError,
+                        durationError = validation.durationError,
+                    )
                 }
                 item {
                     OutlinedTextField(
@@ -478,8 +463,8 @@ internal fun WorkoutAddDialog(
                         onValueChange = { purpose = it.take(120) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Purpose") },
-                        isError = purposeError != null,
-                        supportingText = purposeError?.let { message -> { Text(message) } },
+                        isError = validation.purposeError != null,
+                        supportingText = validation.purposeError?.let { message -> { Text(message) } },
                     )
                 }
                 item {
@@ -490,10 +475,8 @@ internal fun WorkoutAddDialog(
                         label = { Text("Why you’re adding it (optional)") },
                     )
                 }
-                if (!routine) {
-                    item {
-                        CheckRow("Rebalance the rest of this week", rebalance) { rebalance = it }
-                    }
+                item {
+                    WorkoutAddRebalanceField(routine, rebalance) { rebalance = it }
                 }
             }
         },
@@ -506,7 +489,9 @@ internal fun WorkoutAddDialog(
                                 scheduledDate = scheduledDate,
                                 routine = routine,
                                 type = type,
-                                distanceKm = distanceNumber,
+                                distanceKm = validation.distanceNumber,
+                                durationMinutes = validation.durationNumber,
+                                routineTargetMetric = routineTargetMetric,
                                 purpose = purpose,
                                 reason = reason,
                                 rebalance = rebalance,
@@ -514,36 +499,203 @@ internal fun WorkoutAddDialog(
                         ),
                     )
                 },
-                enabled = !actionPending && valid,
+                enabled = !actionPending && validation.valid,
             ) {
-                Text(if (routine) "Review weekly goal" else "Review addition")
+                Text(workoutAddButtonLabel(routine))
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
+private data class WorkoutAddValidation(
+    val distanceNumber: Double?,
+    val durationNumber: Double?,
+    val dateError: String?,
+    val distanceError: String?,
+    val durationError: String?,
+    val purposeError: String?,
+) {
+    val valid = listOf(dateError, distanceError, durationError, purposeError).all { it == null }
+}
+
+private fun workoutAddValidation(
+    scheduledDate: String,
+    routine: Boolean,
+    routineTargetMetric: String,
+    distance: String,
+    duration: String,
+    purpose: String,
+) = WorkoutAddValidation(
+    distanceNumber = distance.toDoubleOrNull(),
+    durationNumber = duration.toDoubleOrNull(),
+    dateError = isoDateInputError(scheduledDate),
+    distanceError = workoutAddDistanceError(routine, routineTargetMetric, distance),
+    durationError = workoutAddDurationError(routine, routineTargetMetric, duration),
+    purposeError = workoutPurposeInputError(purpose),
+)
+
+private fun workoutAddDistanceError(routine: Boolean, metric: String, value: String): String? =
+    if (!routine || metric == "distance") {
+        boundedRunMeasurementError(value, true, 0.1, 100.0, "km")
+    } else null
+
+private fun workoutAddDurationError(routine: Boolean, metric: String, value: String): String? =
+    if (routine && metric == "time") {
+        boundedRunMeasurementError(value, true, 10.0, 360.0, "minutes")
+    } else null
+
+@Composable
+private fun WorkoutAddPrescriptionFields(
+    routine: Boolean,
+    type: WorkoutType,
+    onTypeChanged: (WorkoutType) -> Unit,
+    routineTargetMetric: String,
+    onRoutineTargetMetricChanged: (String) -> Unit,
+    distance: String,
+    onDistanceChanged: (String) -> Unit,
+    duration: String,
+    onDurationChanged: (String) -> Unit,
+    distanceError: String?,
+    durationError: String?,
+) {
+    if (routine) {
+        RoutineWorkoutAddFields(
+            routineTargetMetric,
+            onRoutineTargetMetricChanged,
+            distance,
+            onDistanceChanged,
+            duration,
+            onDurationChanged,
+            distanceError,
+            durationError,
+        )
+    } else {
+        DistancePlanWorkoutAddFields(type, onTypeChanged, distance, onDistanceChanged, distanceError)
+    }
+}
+
+@Composable
+private fun RoutineWorkoutAddFields(
+    metric: String,
+    onMetricChanged: (String) -> Unit,
+    distance: String,
+    onDistanceChanged: (String) -> Unit,
+    duration: String,
+    onDurationChanged: (String) -> Unit,
+    distanceError: String?,
+    durationError: String?,
+) {
+    val timed = metric == "time"
+    Column {
+        ChoiceRow("Distance", !timed) { onMetricChanged("distance") }
+        ChoiceRow("Time", timed) { onMetricChanged("time") }
+        NumberField(
+            if (timed) "Duration (minutes)" else "Distance (km)",
+            if (timed) duration else distance,
+            if (timed) durationError else distanceError,
+        ) { value -> if (timed) onDurationChanged(value) else onDistanceChanged(value) }
+    }
+}
+
+@Composable
+private fun DistancePlanWorkoutAddFields(
+    type: WorkoutType,
+    onTypeChanged: (WorkoutType) -> Unit,
+    distance: String,
+    onDistanceChanged: (String) -> Unit,
+    distanceError: String?,
+) {
+    Column {
+        listOf(
+            WorkoutType.EASY to "Easy",
+            WorkoutType.LONG to "Long",
+            WorkoutType.RECOVERY to "Recovery",
+        ).forEach { (value, label) ->
+            ChoiceRow(label, type == value) { onTypeChanged(value) }
+        }
+        NumberField(
+            "Distance (km)",
+            distance,
+            errorMessage = distanceError,
+            onValueChange = onDistanceChanged,
+        )
+    }
+}
+
+@Composable
+private fun WorkoutAddRebalanceField(
+    routine: Boolean,
+    rebalance: Boolean,
+    onRebalanceChanged: (Boolean) -> Unit,
+) {
+    if (!routine) {
+        CheckRow("Rebalance the rest of this week", rebalance, onRebalanceChanged)
+    }
+}
+
+private fun workoutAddExplanation(routine: Boolean) = if (routine) {
+    "This adds one prescribed run. The week's goal is unchanged, so its planned total may differ from that goal."
+} else {
+    "Runway will show the weekly-load effect before adding it."
+}
+
+private fun workoutAddButtonLabel(routine: Boolean) =
+    if (routine) "Review schedule change" else "Review addition"
+
 internal fun workoutAddMutation(
     scheduledDate: String,
     routine: Boolean,
     type: WorkoutType,
     distanceKm: Double?,
+    durationMinutes: Double? = null,
+    routineTargetMetric: String = "distance",
     purpose: String,
     reason: String,
     rebalance: Boolean,
 ): WorkoutMutation {
-    require(routine || distanceKm != null)
+    val prescription = workoutAddPrescription(
+        routine,
+        routineTargetMetric,
+        distanceKm,
+        durationMinutes,
+    )
     return WorkoutMutation(
         scheduledDate = scheduledDate,
         type = if (routine) WorkoutType.EASY else type,
-        prescriptionKind = if (routine) PrescriptionKind.OPEN else PrescriptionKind.DISTANCE,
-        targetDistanceMeters = if (routine) 0 else (requireNotNull(distanceKm) * 1_000).toInt(),
-        targetDurationSeconds = null,
+        prescriptionKind = prescription.kind,
+        targetDistanceMeters = prescription.distanceMeters,
+        targetDurationSeconds = prescription.durationSeconds,
         intervalStructure = null,
         intensity = "easy",
         purpose = purpose.trim(),
         userReason = reason.trim(),
         rebalance = !routine && rebalance,
+    )
+}
+
+private data class WorkoutAddPrescription(
+    val kind: PrescriptionKind,
+    val distanceMeters: Int,
+    val durationSeconds: Int?,
+)
+
+private fun workoutAddPrescription(
+    routine: Boolean,
+    metric: String,
+    distanceKm: Double?,
+    durationMinutes: Double?,
+): WorkoutAddPrescription = if (routine && metric == "time") {
+    WorkoutAddPrescription(
+        PrescriptionKind.TIMED,
+        distanceMeters = 0,
+        durationSeconds = (requireNotNull(durationMinutes) * 60).toInt(),
+    )
+} else {
+    WorkoutAddPrescription(
+        PrescriptionKind.DISTANCE,
+        distanceMeters = (requireNotNull(distanceKm) * 1_000).toInt(),
+        durationSeconds = null,
     )
 }
 
@@ -563,7 +715,9 @@ internal fun WorkoutEditDialog(
     var type by rememberSaveable { mutableStateOf(currentWorkoutType) }
     var prescriptionKind by rememberSaveable {
         mutableStateOf(
-            currentPrescriptionKind?.takeUnless { it == PrescriptionKind.REST }
+            currentPrescriptionKind?.takeUnless {
+                it == PrescriptionKind.REST || (routine && it == PrescriptionKind.OPEN)
+            }
                 ?: PrescriptionKind.DISTANCE,
         )
     }
@@ -696,29 +850,30 @@ private fun WorkoutEditDialogContent(
         if (!routine) item {
             WorkoutTypeChoices(type, open, onTypeChange, onPrescriptionKindChange)
         }
-        if (!isRest && !routine) item {
+        if (!isRest) item {
             WorkoutTargetFields(
                 open, timed, prescriptionKind, onTypeChange, onPrescriptionKindChange,
                 load, loadError, onLoadChange, onRebalanceChange,
+                allowOpen = !routine,
             )
         }
-        if (!routine) item { WorkoutPurposeField(purpose, onPurposeChange, purposeError) }
+        item { WorkoutPurposeField(purpose, onPurposeChange, purposeError) }
         item { WorkoutReasonField(reason, onReasonChange) }
         item {
-            if (!isRest && !open) {
+            if (!routine && !isRest && !open) {
                 CheckRow("Rebalance the rest of this week", rebalance, onRebalanceChange)
             }
         }
         item {
             TextButton(onClick = onRemove, enabled = !actionPending) {
-                Text(if (routine) "Remove from this week's goal" else "Remove this workout")
+                Text(if (routine) "Remove from this week's schedule" else "Remove this workout")
             }
         }
     }
 }
 
 private fun workoutEditExplanation(routine: Boolean, open: Boolean) = when {
-    routine -> "Move this open run to another day, or remove it from this week's goal. Distance and duration stay unprescribed."
+    routine -> "Reduce this run, switch it between distance and time, move it later, or remove it. The week's goal is unchanged."
     open -> "This run has no prescribed amount. You can move it or change its purpose."
     else -> "Runway will show the weekly-load effect before applying this change."
 }
@@ -769,12 +924,15 @@ private fun WorkoutTargetFields(
     loadError: String?,
     onLoadChange: (String) -> Unit,
     onRebalanceChange: (Boolean) -> Unit,
+    allowOpen: Boolean = true,
 ) {
     Text("Target", style = MaterialTheme.typography.labelLarge)
-    ChoiceRow("Open run", open) {
-        onTypeChange(WorkoutType.EASY)
-        onPrescriptionKindChange(PrescriptionKind.OPEN)
-        onRebalanceChange(false)
+    if (allowOpen) {
+        ChoiceRow("Open run", open) {
+            onTypeChange(WorkoutType.EASY)
+            onPrescriptionKindChange(PrescriptionKind.OPEN)
+            onRebalanceChange(false)
+        }
     }
     ChoiceRow("Distance", prescriptionKind == PrescriptionKind.DISTANCE) {
         onPrescriptionKindChange(PrescriptionKind.DISTANCE)
@@ -841,7 +999,7 @@ private fun workoutEditPrescription(
     isRest: Boolean,
     selected: PrescriptionKind,
 ) = when {
-    routine -> PrescriptionKind.OPEN
+    routine -> selected
     isRest -> PrescriptionKind.REST
     else -> selected
 }
@@ -852,14 +1010,14 @@ private fun workoutEditDistanceMeters(
     timed: Boolean,
     open: Boolean,
     loadNumber: Double?,
-) = if (routine || isRest || timed || open) 0 else (requireNotNull(loadNumber) * 1_000).toInt()
+) = if (isRest || timed || open) 0 else (requireNotNull(loadNumber) * 1_000).toInt()
 
 private fun workoutEditDurationSeconds(
     routine: Boolean,
     isRest: Boolean,
     timed: Boolean,
     loadNumber: Double?,
-) = if (!routine && !isRest && timed) (requireNotNull(loadNumber) * 60).toInt() else null
+) = if (!isRest && timed) (requireNotNull(loadNumber) * 60).toInt() else null
 
 private fun workoutEditIntervals(
     workout: NativeWorkout,

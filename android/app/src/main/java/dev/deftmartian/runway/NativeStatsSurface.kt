@@ -136,7 +136,7 @@ internal fun NativeStatsTraces(
     NativeAcceptedContext(weeklySummaries)
 }
 
-/** Routine charts contain observations only; there is no generated or current load target. */
+/** A routine tracks the selected weekly metric and the prescriptions distributed across its days. */
 @Composable
 internal fun NativeRoutineStatsTraces(
     weeklySummaries: List<NativeWeekSummary>,
@@ -147,8 +147,8 @@ internal fun NativeRoutineStatsTraces(
     val distance = weeklySummaries.map { summary ->
         NativeWeeklyTrace(
             label = "Week ${summary.weekNumber ?: 0}",
-            recommendation = null,
-            current = null,
+            recommendation = summary.targetDistanceMeters,
+            current = summary.targetDistanceMeters,
             acceptedActual = summary.completedDistanceMeters,
             summary = summary,
         )
@@ -156,17 +156,22 @@ internal fun NativeRoutineStatsTraces(
     val duration = weeklySummaries.map { summary ->
         NativeWeeklyTrace(
             label = "Week ${summary.weekNumber ?: 0}",
-            recommendation = null,
-            current = null,
+            recommendation = summary.targetDurationSeconds,
+            current = summary.targetDurationSeconds,
             acceptedActual = summary.completedDurationSeconds,
             summary = summary,
         )
     }
     if (distance.hasPositiveMeasurement()) {
-        NativeWeeklyTraceChart("Recorded weekly distance", distance, ::formatDistance, actualOnly = true)
+        NativeWeeklyTraceChart("Weekly distance", distance, ::formatDistance)
     }
     if (duration.hasPositiveMeasurement()) {
-        NativeWeeklyTraceChart("Recorded weekly time", duration, ::formatDuration, actualOnly = true)
+        NativeWeeklyTraceChart(
+            "Weekly running time",
+            duration,
+            ::formatDuration,
+            plannedFormat = ::formatPlannedDurationEstimate,
+        )
     }
     NativeAcceptedContext(weeklySummaries)
 }
@@ -184,8 +189,8 @@ private fun NativeRoutineFrequencyLedger(
     SettingCard("Runs each week") {
         Text(
             runsPerWeek?.takeIf { it > 0 }?.let {
-                "Your default is $it ${if (it == 1) "run" else "runs"} each week. The open-run count shown for each week is that week's goal. Distance and time remain optional observations."
-            } ?: "Scheduled runs are shown by week. Distance and time remain optional observations.",
+                "$it prescribed ${if (it == 1) "run is" else "runs are"} scheduled each week. Each week's distance or time goal is shown separately."
+            } ?: "Prescribed runs and the weekly goal are shown for each week.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         visible.forEach { summary ->

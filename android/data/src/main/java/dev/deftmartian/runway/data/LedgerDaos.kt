@@ -143,6 +143,20 @@ abstract class GoalPlanDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertWeek(week: PlanWeekEntity)
 
+    @Query("SELECT * FROM plan_weeks WHERE weekId = :weekId")
+    abstract suspend fun week(weekId: String): PlanWeekEntity?
+
+    @Query("UPDATE plan_weeks SET generatedLoadMeters = :targetDistanceMeters, generatedLoadDurationSeconds = :targetDurationSeconds WHERE planId = :planId AND weekId = :weekId")
+    abstract suspend fun updateRoutineWeekTarget(
+        planId: String,
+        weekId: String,
+        targetDistanceMeters: Int?,
+        targetDurationSeconds: Int?,
+    ): Int
+
+    @Query("UPDATE plans SET updatedAtEpochMillis = :updatedAtEpochMillis WHERE planId = :planId AND state = 'active' AND phaseType = 'routine'")
+    abstract suspend fun touchActiveRoutine(planId: String, updatedAtEpochMillis: Long): Int
+
     @Query("UPDATE plans SET state = 'archived', completedAtEpochMillis = :at, archivedAtEpochMillis = :at, updatedAtEpochMillis = :at WHERE planId = :planId AND state = 'active'")
     abstract suspend fun completePlanIfActive(planId: String, at: Long): Int
 
@@ -1341,6 +1355,7 @@ interface AdjustmentDao {
                adjustment.createdAtEpochMillis AS createdAtEpochMillis,
                decision.decisionId AS decisionId,
                decision.decisionType AS decisionType,
+               decision.effectiveFromEpochDay AS effectiveFromEpochDay,
                reversal.reason AS reversalReason,
                reversal.reversedAtEpochMillis AS reversedAtEpochMillis,
                effect.effectId AS effectId,
@@ -1351,7 +1366,11 @@ interface AdjustmentDao {
                effect.newDistanceMeters AS newDistanceMeters,
                effect.newDurationSeconds AS newDurationSeconds,
                effect.newTombstonedAtEpochMillis AS newTombstonedAtEpochMillis,
-               effect.newReason AS newReason
+               effect.newReason AS newReason,
+               effect_group.sourceWeekLoadMeters AS sourceWeekLoadMeters,
+               effect_group.destinationWeekLoadMeters AS destinationWeekLoadMeters,
+               effect_group.sourceWeekLoadDurationSeconds AS sourceWeekLoadDurationSeconds,
+               effect_group.destinationWeekLoadDurationSeconds AS destinationWeekLoadDurationSeconds
         FROM plan_adjustments AS adjustment
         LEFT JOIN plan_decisions AS decision
             ON decision.adjustmentId = adjustment.adjustmentId
@@ -1483,6 +1502,7 @@ data class HistoryAdjustmentRow(
     val createdAtEpochMillis: Long,
     val decisionId: String?,
     val decisionType: String?,
+    val effectiveFromEpochDay: Long? = null,
     val reversalReason: String?,
     val reversedAtEpochMillis: Long?,
     val effectId: String?,
@@ -1494,6 +1514,10 @@ data class HistoryAdjustmentRow(
     val newDurationSeconds: Int?,
     val newTombstonedAtEpochMillis: Long?,
     val newReason: String?,
+    val sourceWeekLoadMeters: Int? = null,
+    val destinationWeekLoadMeters: Int? = null,
+    val sourceWeekLoadDurationSeconds: Int? = null,
+    val destinationWeekLoadDurationSeconds: Int? = null,
 )
 
 @Dao

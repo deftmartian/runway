@@ -91,7 +91,7 @@ class StandaloneOnboardingAdapterTest {
         )
     }
 
-    @Test fun `weekly routine needs only selected days and starts today`() {
+    @Test fun `weekly routine starts a full week with a distance goal`() {
         val result = StandaloneOnboardingAdapter.adapt(
             command(
                 goalKind = "routine",
@@ -110,8 +110,10 @@ class StandaloneOnboardingAdapterTest {
         assertEquals(null, result.metadata.targetBounds)
         assertEquals(null, result.metadata.targetDate)
         assertEquals(null, result.metadata.raceDistance)
-        assertEquals("2026-01-01", result.startDate)
+        assertEquals("2026-01-05", result.startDate)
         assertEquals(listOf(1, 3, 6), result.selectedDays)
+        assertEquals(15_000, result.weeklyTargetDistanceMeters)
+        assertNull(result.weeklyTargetDurationSeconds)
     }
 
     @Test fun `calibration command creates open baseline runs`() {
@@ -226,7 +228,7 @@ class StandaloneOnboardingAdapterTest {
         }
     }
 
-    @Test fun `persistence boundary creates a target free weekly routine deterministically`() {
+    @Test fun `persistence boundary divides the weekly distance across selected runs`() {
         val operation = command(
             goalKind = "routine",
             startMode = "routine",
@@ -245,14 +247,75 @@ class StandaloneOnboardingAdapterTest {
         assertNull(graph.goal.targetDateEpochDay)
         assertNull(graph.plan.endEpochDay)
         assertEquals(3, graph.days.size)
+        assertEquals(15_000, graph.plan.summaryBaselineMeters)
+        assertTrue(graph.weeks.all { it.generatedLoadMeters == 15_000 })
         assertTrue(graph.workouts.all {
-            it.currentPrescriptionKind == "open" &&
-                it.currentDistanceMeters == null &&
+            it.currentPrescriptionKind == "distance" &&
+                it.currentDistanceMeters == 5_000 &&
                 it.currentDurationSeconds == null
         })
         assertNull(first.profile.baselineDistanceMeters)
         assertFalse(first.profile.baselineConfirmed)
         assertEquals(first, second)
+    }
+
+    @Test fun `weekly routine accepts time and prescribes timed runs`() {
+        val operation = command(
+            goalKind = "routine",
+            startMode = "routine",
+            raceDistance = "",
+            targetDate = "",
+            availability = listOf(1, 3, 6),
+        ).copy(
+            routineGoalMetric = "time",
+            routineWeeklyGoalKm = "",
+            routineWeeklyGoalMinutes = "120",
+        )
+
+        val outcome = StandaloneOnboardingAdapter.adapt(operation, utcNow)
+            as StandaloneOnboardingOutcome.Routine
+        val graph = (
+            StandaloneOnboardingPersistenceMapper.map(operation, outcome).candidate
+                as LocalPlanCandidate.Routine
+            ).graph
+
+        assertNull(outcome.weeklyTargetDistanceMeters)
+        assertEquals(7_200, outcome.weeklyTargetDurationSeconds)
+        assertTrue(graph.weeks.all { it.generatedLoadDurationSeconds == 7_200 })
+        assertTrue(graph.workouts.all {
+            it.currentPrescriptionKind == "timed" &&
+                it.currentDistanceMeters == null &&
+                it.currentDurationSeconds == 2_400
+        })
+    }
+
+    @Test fun `weekly routine requires a bounded distance goal`() {
+        val missing = StandaloneOnboardingAdapter.adapt(
+            command(
+                goalKind = "routine",
+                startMode = "routine",
+                raceDistance = "",
+                targetDate = "",
+            ).copy(routineWeeklyGoalKm = ""),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.REQUIRED in
+                missing.fieldErrors.getValue(OnboardingField.ROUTINE_WEEKLY_GOAL),
+        )
+        val tooLarge = StandaloneOnboardingAdapter.adapt(
+            command(
+                goalKind = "routine",
+                startMode = "routine",
+                raceDistance = "",
+                targetDate = "",
+            ).copy(routineWeeklyGoalKm = "251"),
+            utcNow,
+        ) as StandaloneOnboardingOutcome.Invalid
+        assertTrue(
+            OnboardingFieldError.OUT_OF_RANGE in
+                tooLarge.fieldErrors.getValue(OnboardingField.ROUTINE_WEEKLY_GOAL),
+        )
     }
 
     @Test fun `weekly routine accepts a runner entered repeatable baseline as context`() {
@@ -274,7 +337,7 @@ class StandaloneOnboardingAdapterTest {
         assertEquals(3, request.profile.currentRunsPerWeek)
         assertEquals(8_000, request.profile.longestRecentRunMeters)
         assertTrue(request.profile.baselineConfirmed)
-        assertTrue(graph.workouts.all { it.currentPrescriptionKind == "open" })
+        assertTrue(graph.workouts.all { it.currentPrescriptionKind == "distance" })
     }
 
     @Test fun `removed foundation inputs are rejected`() {
@@ -362,6 +425,7 @@ class StandaloneOnboardingAdapterTest {
         longestRecentRunKm: String = "8",
         timeZone: String = "UTC",
         confirmedPlanKey: String? = null,
+        routineWeeklyGoalKm: String = "15",
     ) = CreatePlanCommand(
         goalKind = goalKind,
         startMode = startMode,
@@ -379,5 +443,6 @@ class StandaloneOnboardingAdapterTest {
         confirmReplace = false,
         operationId = "test-setup-operation",
         occurredAtEpochMillis = 1234,
+        routineWeeklyGoalKm = routineWeeklyGoalKm,
     )
 }

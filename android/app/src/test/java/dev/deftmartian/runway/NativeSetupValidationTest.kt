@@ -81,6 +81,28 @@ class NativeSetupValidationTest {
     }
 
     @Test
+    fun `routine weekly goal validates distance and time`() {
+        assertEquals(
+            "Enter a weekly distance goal to continue.",
+            routineWeeklyGoalValidation("distance", "", ""),
+        )
+        assertEquals(
+            "Enter a weekly distance goal from 1 to 100 km.",
+            routineWeeklyGoalValidation("distance", "0", ""),
+        )
+        assertNull(routineWeeklyGoalValidation("distance", "12.5", "", scheduledRuns = 3))
+        assertEquals(
+            "Enter a weekly running time from 30 to 1,080 minutes.",
+            routineWeeklyGoalValidation("time", "", "5", scheduledRuns = 3),
+        )
+        assertNull(routineWeeklyGoalValidation("time", "", "120", scheduledRuns = 3))
+        assertEquals(
+            "Enter a weekly running time from 30 to 1,080 minutes.",
+            routineWeeklyGoalValidation("time", "", "20", scheduledRuns = 3),
+        )
+    }
+
+    @Test
     fun `long distance goals require concentrated schedule acceptance`() {
         assertEquals(
             true,

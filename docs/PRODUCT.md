@@ -17,11 +17,11 @@ Setup has two goal paths:
 | Goal | Starting point |
 | --- | --- |
 | Train for a distance | Choose 5K, 10K, half marathon, or marathon. Enter one repeatable recent week, or let runway observe two weeks of open runs before confirming a baseline. |
-| Run consistently each week | Choose the number and days of weekly runs. Enter a repeatable recent week as context, or start with open runs and let recorded work provide context. The weekly goal is a run count, not a distance or duration. |
+| Run consistently each week | Choose a weekly distance or running-time goal and the days you intend to run. Runway divides that goal across the selected days as concrete distance or duration prescriptions. Enter a repeatable recent week as context, or let recorded work provide that context. |
 
 The evidence behind these conservative rules, and the limits of what each source supports, are recorded in [Training sources](TRAINING_SOURCES.md).
 
-Defaults are recommendations, not constraints. The runner can change available days, timing, distance, duration, and individual future workouts within explicit guardrails. A weekly routine is a runner-chosen schedule, not a recommendation: its open runs have no prescribed amount. The number of open runs in a week is that week's goal. Adding or removing one changes that week; moving one between weeks changes both affected weeks. Other weeks stay unchanged.
+Defaults are recommendations, not constraints. The runner can change available days, timing, distance, duration, and individual future workouts within explicit guardrails. A weekly routine is runner-chosen, not a generated training recommendation. Its distance or time goal is divided across the scheduled runs. Changing a future week's goal recalculates only that week's prescriptions. Reducing, adding, removing, or moving one run is an explicit deviation and does not silently change the weekly goal.
 
 Before an established race plan is created, Setup shows its first week, peak week, longest planned run, required ramp, default ramp, assessment, and warnings. A plan outside the usual recommendation remains available only after the runner confirms that exact workout schedule. A plan outside the generation limit is not created; Setup directs the runner to move the race, choose a shorter goal, or change the starting point. If the local training date changes while Setup is open, the candidate is regenerated before it can be created.
 
@@ -35,7 +35,7 @@ Finishing or archiving a plan leaves the training profile and recorded history i
 - **Current** is generated work plus deliberate future edits and applied decisions.
 - **Actual** is accepted completed work; review-only candidates do not count.
 
-For a weekly routine, **current** is the runner's chosen schedule and individual week changes; **actual** is recorded, skipped, and extra runs. A passed open slot is factual, not a debt: it remains not recorded unless the runner marks it skipped or moves it. A run on another day counts toward that week's frequency without changing a future slot. Routine counts show the weekly recorded total and, when they differ, separate scheduled-day and other-day runs; distance, duration, and heart rate remain optional observations rather than targets. Stats and routine detail show at most the most recent 52 weeks and label that scope; older rows remain in the local ledger and backup.
+For a weekly routine, **current** is the runner's chosen weekly distance or time goal and the prescriptions assigned to its scheduled days; **actual** is recorded distance or duration, skipped runs, and extra runs. A passed scheduled run is factual, not a debt: it remains not recorded unless the runner marks it skipped or moves it. A run on another day counts toward that week's matching metric and frequency without completing a particular scheduled run. Routine views compare the selected weekly metric with recorded work and separately show scheduled-day and other-day run counts. Heart rate remains an optional observation. Stats and routine detail show at most the most recent 52 weeks and label that scope; older rows remain in the local ledger and backup.
 
 This distinction must remain visible in Calendar, Inbox, Stats, and History. Rest remains an intentional state in the plan record, but Calendar does not render recovery-only dates as entries because they add no run action.
 
@@ -43,7 +43,7 @@ This distinction must remain visible in Calendar, Inbox, Stats, and History. Res
 
 1. **Calendar** — the month schedule, completed runs, day detail, edits, feedback, and a floating action for recording a run.
 2. **Inbox** — activity review, links, extra work, corrections, and unresolved plan decisions.
-3. **Stats** — generated/current/actual traces for prescriptions, or weekly scheduled/recorded/skipped counts for a routine, with plain-language context.
+3. **Stats** — generated/current/actual traces for prescriptions, or weekly distance-or-time goal/actual traces plus scheduled/recorded/skipped counts for a routine, with plain-language context.
 4. **History** — plan or routine lifecycle, archived records, and auditable decisions.
 5. **Settings** — training setup, optional notifications, imports, saved-data tools, and local build information.
 

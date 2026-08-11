@@ -59,6 +59,12 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
             availability = profile?.availabilityDays.orEmpty(),
             goalKind = activePlan?.goalKind ?: pendingGoal?.goalKind,
             baselineMode = if (profile?.baselineDistanceMeters != null) "entered" else "learn",
+            routineGoalMetric = when {
+                activePlan?.routineWeeklyTargetDurationSeconds != null -> "time"
+                else -> "distance"
+            },
+            routineWeeklyGoalKm = activePlan?.routineWeeklyTargetMeters.toKilometreInput(),
+            routineWeeklyGoalMinutes = activePlan?.routineWeeklyTargetDurationSeconds.toMinuteInput(),
         )
     }
     return NativeOnboardingPayload(
@@ -68,6 +74,14 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
         maximumTargetDate = established.maximum,
         currentGoal = currentGoal,
     )
+}
+
+private fun Int?.toMinuteInput(): String? = this?.let { seconds ->
+    if (seconds % 60 == 0) {
+        (seconds / 60).toString()
+    } else {
+        (seconds / 60.0).toString().trimEnd('0').trimEnd('.')
+    }
 }
 
 private fun Int?.toKilometreInput(): String? = this?.let { meters ->

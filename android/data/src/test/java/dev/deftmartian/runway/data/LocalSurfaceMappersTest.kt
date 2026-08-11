@@ -92,6 +92,64 @@ class LocalSurfaceMappersTest {
     }
 
     @Test
+    fun `routine weekly target and prescribed run agree on every surface`() {
+        val weekStart = LocalDate.parse("2026-08-03").toEpochDay()
+        val prescribedRun = workout(
+            id = "routine-prescribed",
+            day = weekStart + 2,
+            generatedDistance = 5_000,
+            currentDistance = 5_000,
+        )
+        val base = planSlice(workouts = listOf(prescribedRun))
+        val routine = base.copy(
+            goal = base.goal?.copy(kind = "routine", startMode = "routine", targetDateEpochDay = null),
+            plan = base.plan.copy(
+                phaseType = "routine",
+                endEpochDay = null,
+                summaryBaselineMeters = 15_000,
+            ),
+            weeks = listOf(base.weeks.single().copy(startEpochDay = weekStart, generatedLoadMeters = 15_000)),
+        )
+
+        val calendar = LocalSurfaceMappers.calendar(
+            LocalCalendarLedgerSlice(
+                fromEpochDay = weekStart,
+                throughEpochDay = weekStart + 6,
+                timeZone = "UTC",
+                pendingDecisionCount = 0,
+                plans = listOf(routine),
+                activities = emptyList(),
+                profileExists = true,
+            ),
+        )
+        val stats = LocalSurfaceMappers.stats(
+            LocalStatsLedgerSlice(
+                plans = listOf(routine),
+                activities = emptyList(),
+                profileExists = true,
+                todayEpochDay = weekStart,
+            ),
+        ).weeks.single()
+        val history = LocalSurfaceMappers.history(
+            LocalHistoryLedgerSlice(
+                plans = listOf(routine),
+                activities = emptyList(),
+                hasMorePlans = false,
+                hasMoreActivities = false,
+                timeZone = "UTC",
+                todayEpochDay = weekStart,
+            ),
+        ).plans.single().weeks.single()
+
+        assertEquals(15_000, calendar.routineWeekGoals.single().targetDistanceMeters)
+        assertEquals(1, calendar.routineWeekGoals.single().scheduledRuns)
+        assertEquals(5_000, calendar.days.single().workouts.single().current.load.distanceMeters)
+        assertEquals(15_000, stats.current.distanceMeters)
+        assertEquals(15_000, history.current.distanceMeters)
+        assertEquals(5_000, history.workouts.single().current.load.distanceMeters)
+    }
+
+    @Test
     fun `calendar keeps generated and current timed structures distinct`() {
         val day = LocalDate.parse("2026-08-01").toEpochDay()
         val timed = workout("timed", day).copy(

@@ -176,6 +176,13 @@ private fun HistoryWeekRecord(
             if (flags.isNotEmpty()) LedgerState(flags.joinToString(" · "), LedgerEmphasis.Neutral)
         }
         if (routine) {
+            if (week.targetDistanceMeters != null || week.targetDurationSeconds != null) {
+                MeasurementReadout(
+                    "Weekly goal",
+                    plannedWeekMeasurement(week.targetDistanceMeters, week.targetDurationSeconds),
+                    LedgerEmphasis.Planned,
+                )
+            }
             SettingRow(
                 "Scheduled",
                 "$scheduledRuns ${if (scheduledRuns == 1) "run" else "runs"}",
@@ -345,6 +352,7 @@ private fun goalLabel(distance: String?): String = when (distance) {
     else -> distance
 }
 private fun changeLabel(trigger: String?): String = when (trigger) {
+    "routine_week_goal" -> "Weekly goal changed"
     "edit", "manual_edit" -> "Workout edited"
     "add", "manual_add" -> "Workout added"
     "remove", "manual_remove" -> "Workout removed"

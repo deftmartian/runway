@@ -222,6 +222,15 @@ data class LocalCalendarReadModel(
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val nextWorkout: LocalWorkoutReadModel? = null,
     val activePlanPhase: LocalPlanPhase? = null,
+    val routineWeekGoals: List<LocalRoutineWeekGoalReadModel> = emptyList(),
+)
+
+data class LocalRoutineWeekGoalReadModel(
+    val weekId: String,
+    val startEpochDay: Long,
+    val targetDistanceMeters: Int?,
+    val targetDurationSeconds: Int?,
+    val scheduledRuns: Int,
 )
 
 data class LocalInboxReadModel(
@@ -496,6 +505,8 @@ data class LocalActivePlanReadModel(
     val riskAssessment: String?,
     val latestLifecycleEvent: LocalLifecycleReadModel?,
     val sessionsPerWeek: Int? = null,
+    val routineWeeklyTargetMeters: Int? = null,
+    val routineWeeklyTargetDurationSeconds: Int? = null,
 )
 
 /** A health-blocked goal remains a visible local decision even before it has a plan graph. */
@@ -789,6 +800,7 @@ object LocalSurfaceMappers {
                 planPhase = plan?.plan?.phaseType?.let(::planPhase) ?: LocalPlanPhase.OTHER,
             )
         }
+        val routineWeekGoals = routineWeekGoals(activePlans, slice)
         return LocalCalendarReadModel(
             fromEpochDay = slice.fromEpochDay,
             throughEpochDay = slice.throughEpochDay,
@@ -804,8 +816,38 @@ object LocalSurfaceMappers {
             phaseReview = slice.phaseReview,
             nextWorkout = nextWorkout,
             activePlanPhase = activePlans.singleOrNull()?.plan?.phaseType?.let(::planPhase),
+            routineWeekGoals = routineWeekGoals,
         )
     }
+
+    private fun routineWeekGoals(
+        activePlans: List<LocalPlanLedgerSlice>,
+        slice: LocalCalendarLedgerSlice,
+    ) = activePlans
+        .filter { it.plan.phaseType == "routine" }
+        .flatMap { plan ->
+            plan.weeks
+                .filter { week ->
+                    week.startEpochDay <= slice.throughEpochDay &&
+                        week.startEpochDay + 6 >= slice.fromEpochDay
+                }
+                .map { week -> routineWeekGoal(plan, week) }
+        }
+
+    private fun routineWeekGoal(
+        plan: LocalPlanLedgerSlice,
+        week: PlanWeekEntity,
+    ) = LocalRoutineWeekGoalReadModel(
+        weekId = week.weekId,
+        startEpochDay = week.startEpochDay,
+        targetDistanceMeters = week.generatedLoadMeters,
+        targetDurationSeconds = week.generatedLoadDurationSeconds,
+        scheduledRuns = plan.workouts.count { workout ->
+            workout.weekId == week.weekId &&
+                workout.currentWorkoutType != "rest" &&
+                workout.tombstonedAtEpochMillis == null
+        },
+    )
 
     fun inbox(slice: LocalInboxLedgerSlice): LocalInboxReadModel = LocalInboxReadModel(
         reviewCount = slice.reviewCount,
@@ -931,8 +973,8 @@ object LocalSurfaceMappers {
                     phase = planPhase(plan.plan.phaseType),
                     weekOrdinal = week.ordinal,
                     startEpochDay = week.startEpochDay,
-                    generated = loads(workouts.map { it.generatedDistanceMeters to it.generatedDurationSeconds }),
-                    current = loads(workouts.map { it.currentDistanceMeters to it.currentDurationSeconds }),
+                    generated = storedWeekLoad(plan.plan, week, workouts, generated = true),
+                    current = storedWeekLoad(plan.plan, week, workouts, generated = false),
                     actual = weekActualLoad(exactActual, actualLoads),
                     plannedRuns = workouts.count { it.currentWorkoutType != "rest" },
                     completedRuns = plannedRunsRecorded + extraRuns,
@@ -1277,10 +1319,11 @@ object LocalSurfaceMappers {
                         week.generatedLoadMeters,
                         week.generatedLoadDurationSeconds,
                     ),
-                    current = loads(
-                        currentWeekWorkouts.map {
-                            it.currentDistanceMeters to it.currentDurationSeconds
-                        },
+                    current = storedWeekLoad(
+                        plan.plan,
+                        week,
+                        currentWeekWorkouts,
+                        generated = false,
                     ),
                     actual = exactActual?.let {
                         LocalLoadReadModel(
@@ -1417,25 +1460,32 @@ object LocalSurfaceMappers {
         .distinctBy(LocalHistoryAdjustmentReadModel::id)
         .sortedBy(LocalHistoryAdjustmentReadModel::createdAtEpochMillis)
 
-    private fun historyAdjustment(row: HistoryAdjustmentRow) =
-        LocalHistoryAdjustmentReadModel(
-            id = row.effectId ?: row.adjustmentId,
+    private fun historyAdjustment(row: HistoryAdjustmentRow): LocalHistoryAdjustmentReadModel {
+        val routineGoal = row.adjustmentType == "routine_week_goal"
+        return LocalHistoryAdjustmentReadModel(
+            id = if (routineGoal) row.adjustmentId else row.effectId ?: row.adjustmentId,
             triggerType = row.adjustmentType,
             createdAtEpochMillis = row.createdAtEpochMillis,
             reversedAtEpochMillis = row.reversedAtEpochMillis,
             reversalReason = row.reversalReason,
-            reason = row.newReason ?: historyAdjustmentReason(row.triggerKind),
-            scheduledEpochDay = row.newScheduledEpochDay,
-            workoutType = row.newWorkoutType,
-            prescriptionKind = row.newPrescriptionKind,
-            distanceMeters = row.newDistanceMeters,
-            durationSeconds = row.newDurationSeconds,
-            removed = row.effectId?.let {
+            reason = row.newReason ?: historyAdjustmentReason(row),
+            scheduledEpochDay = if (routineGoal) row.effectiveFromEpochDay else row.newScheduledEpochDay,
+            workoutType = row.newWorkoutType.takeUnless { routineGoal },
+            prescriptionKind = row.newPrescriptionKind.takeUnless { routineGoal },
+            distanceMeters = if (routineGoal) row.destinationWeekLoadMeters else row.newDistanceMeters,
+            durationSeconds = if (routineGoal) row.destinationWeekLoadDurationSeconds else row.newDurationSeconds,
+            removed = row.effectId?.takeUnless { routineGoal }?.let {
                 row.newTombstonedAtEpochMillis != null || row.newStatus == WORKOUT_STATE_TOMBSTONED
             },
         )
+    }
 
-    private fun historyAdjustmentReason(triggerKind: String?) = when (triggerKind) {
+    private fun historyAdjustmentReason(row: HistoryAdjustmentRow) = when {
+        row.adjustmentType == "routine_week_goal" -> "Weekly running goal changed."
+        else -> historyTriggerReason(row.triggerKind)
+    }
+
+    private fun historyTriggerReason(triggerKind: String?) = when (triggerKind) {
         LocalDecisionSourceKind.WorkoutFeedback.name -> "Recorded after workout feedback."
         LocalDecisionSourceKind.Activity.name -> "Recorded after an accepted activity."
         else -> null
@@ -1532,6 +1582,10 @@ object LocalSurfaceMappers {
                 riskAssessment = it.plan.riskAssessment,
                 latestLifecycleEvent = it.lifecycle.maxByOrNull(PlanLifecycleEventEntity::occurredAtEpochMillis)?.let(::lifecycle),
                 sessionsPerWeek = it.plan.summarySessionsPerWeek,
+                routineWeeklyTargetMeters = it.plan.summaryBaselineMeters
+                    .takeIf { _ -> it.plan.phaseType == "routine" },
+                routineWeeklyTargetDurationSeconds = it.plan.summarySessionDurationSeconds
+                    .takeIf { _ -> it.plan.phaseType == "routine" },
             )
         }
         val pendingGoal = slice.pendingGoal?.let {
@@ -1958,6 +2012,19 @@ object LocalSurfaceMappers {
     private fun isStoredNumericRampWarning(value: String): Boolean =
         value.startsWith("The required weekly increase is above") ||
             value.startsWith("Weekly distance growth above 10%")
+
+    private fun storedWeekLoad(
+        plan: PlanEntity,
+        week: PlanWeekEntity,
+        workouts: List<WorkoutEntity>,
+        generated: Boolean,
+    ): LocalLoadReadModel = if (plan.phaseType == "routine") {
+        LocalLoadReadModel(week.generatedLoadMeters, week.generatedLoadDurationSeconds)
+    } else if (generated) {
+        loads(workouts.map { it.generatedDistanceMeters to it.generatedDurationSeconds })
+    } else {
+        loads(workouts.map { it.currentDistanceMeters to it.currentDurationSeconds })
+    }
 
     private fun loads(values: List<Pair<Int?, Int?>>): LocalLoadReadModel {
         val distances = values.mapNotNull { it.first }

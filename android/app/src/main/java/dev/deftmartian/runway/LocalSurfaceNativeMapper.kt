@@ -66,6 +66,15 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
                     completionState = record.completionState,
                 )
             },
+            routineWeekGoals = routineWeekGoals.map {
+                NativeRoutineWeekGoal(
+                    weekId = it.weekId,
+                    startDate = LocalDate.ofEpochDay(it.startEpochDay).toString(),
+                    targetDistanceMeters = it.targetDistanceMeters?.toDouble(),
+                    targetDurationSeconds = it.targetDurationSeconds?.toDouble(),
+                    scheduledRuns = it.scheduledRuns,
+                )
+            },
         ),
         activityCandidates = emptyList(),
         activePlanPhase = activePlanPhase?.name?.lowercase(),
@@ -174,6 +183,7 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
                     weekNumber = it.weekOrdinal,
                     startDate = LocalDate.ofEpochDay(it.startEpochDay).toString(),
                     targetDistanceMeters = it.current.distanceMeters?.toDouble(),
+                    targetDurationSeconds = it.current.durationSeconds?.toDouble(),
                     completedDistanceMeters = it.actual.distanceMeters?.toDouble(),
                     completedDurationSeconds = it.actual.durationSeconds?.toDouble(),
                     plannedRuns = it.plannedRuns,

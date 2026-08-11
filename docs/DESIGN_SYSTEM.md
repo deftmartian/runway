@@ -30,7 +30,7 @@ An established race-plan Review step must show the generated ramp evidence befor
 - Forms use clear labels, units, sensible defaults, inline validation, and a visible save/cancel boundary. Invalid fields explain what must change; a disabled action alone is not validation.
 - Destructive actions say what local data will be removed and require confirmation.
 - Consequence choices show their precise affected workouts and remain reversible when safe.
-- Open routine runs show no distance, duration, pace, or implied load target. Adding or removing one changes that week's run-count goal; moving one between weeks changes both affected weeks. State that other weeks stay unchanged.
+- Routine setup offers a weekly distance or running-time goal and assigns each selected day a concrete share in that unit. Show both the weekly goal and each run prescription. A future-week goal change recalculates only that week's runs. An individual reduction, addition, removal, or move leaves the weekly goal unchanged and must remain visible as a deviation.
 - Use progressive disclosure for technical import detail, retained route and heart-rate evidence, old plans, and raw metrics; do not hide the next decision.
 - Ask for Android notification permission only after the runner enables an alert. Describe reminders as best-effort, keep lock-screen text generic, and show when Android has blocked the relevant channel.
 - Support touch targets, keyboard navigation, screen readers, system font scaling, and both contrast modes.
@@ -55,7 +55,7 @@ Examples:
 | --- | --- |
 | “A private Android running decision ledger.” | “Make a running plan, track what actually happens, and decide what comes next.” |
 | “This addition stays in the adjustment ledger.” | “History keeps a record of this change, so you can undo it later.” |
-| “No routine week is available yet.” | “Your first routine week starts Monday. Open Calendar to see the runs.” |
+| “No routine week is available yet.” | “Your first routine week starts Monday. Open Calendar to see the prescribed runs.” |
 
 Review new copy in its actual screen. Read it aloud, check it at larger system text sizes, and ask whether someone unfamiliar with runway can explain what happens next. For important onboarding, privacy, or destructive messages, test comprehension rather than judging tone from source alone.
 
@@ -63,7 +63,7 @@ This guidance adapts [Material's communication principles](https://codelabs.deve
 
 An unusually-hard-effort label describes the runner's report, not a diagnosis. Use conservative, clear language and distinguish an offered plan change from one already applied.
 
-For routines, use factual count language: “2 of 3 runs recorded this week” and “One scheduled run was not recorded.” If a run happened on another day, include it in the weekly total and separately show scheduled-day versus other-day counts; never imply that an extra run completed a particular scheduled slot. Do not call an open slot short, behind, deficient, or a missed load target. A hard-effort report remains visible context; it does not imply that runway changed the routine.
+For routines, use factual language: “8 of 12 km recorded this week,” “70 of 120 minutes recorded,” “2 of 3 scheduled runs recorded,” and “One scheduled run was not recorded.” If a run happened on another day, include its matching measurement and count in the weekly totals and separately show scheduled-day versus other-day counts; never imply that an extra run completed a particular scheduled slot. A hard-effort report remains visible context; it does not imply that runway changed the routine.
 
 ## Visual verification
 

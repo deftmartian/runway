@@ -53,7 +53,7 @@ class NativeRunValidationTest {
     @Test
     fun `future plan guidance follows the routine phase rather than its editable prescription`() {
         assertEquals(
-            "An unusually hard effort is saved with this result. Use Calendar to change the open-run goal for an affected week.",
+            "An unusually hard effort is saved with this result. Use Calendar to reduce or postpone the next prescribed run, or change a future week's goal.",
             feedbackPlanChangeMessage("routine"),
         )
         assertEquals(
@@ -63,7 +63,7 @@ class NativeRunValidationTest {
     }
 
     @Test
-    fun `added routine run remains open and cannot rebalance the recurring schedule`() {
+    fun `added routine run is prescribed and cannot rebalance the recurring schedule`() {
         val mutation = workoutAddMutation(
             scheduledDate = "2026-08-08",
             routine = true,
@@ -75,12 +75,31 @@ class NativeRunValidationTest {
         )
 
         assertEquals(WorkoutType.EASY, mutation.type)
-        assertEquals(PrescriptionKind.OPEN, mutation.prescriptionKind)
-        assertEquals(0, mutation.targetDistanceMeters)
+        assertEquals(PrescriptionKind.DISTANCE, mutation.prescriptionKind)
+        assertEquals(8_000, mutation.targetDistanceMeters)
         assertEquals(null, mutation.targetDurationSeconds)
         assertEquals("Run with a friend", mutation.purpose)
         assertEquals("Saturday works", mutation.userReason)
         assertFalse(mutation.rebalance)
+    }
+
+    @Test
+    fun `added routine run can use time`() {
+        val mutation = workoutAddMutation(
+            scheduledDate = "2026-08-08",
+            routine = true,
+            type = WorkoutType.EASY,
+            distanceKm = null,
+            durationMinutes = 45.0,
+            routineTargetMetric = "time",
+            purpose = "Routine run",
+            reason = "",
+            rebalance = false,
+        )
+
+        assertEquals(PrescriptionKind.TIMED, mutation.prescriptionKind)
+        assertEquals(0, mutation.targetDistanceMeters)
+        assertEquals(2_700, mutation.targetDurationSeconds)
     }
 
     @Test
