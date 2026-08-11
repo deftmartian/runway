@@ -118,6 +118,12 @@ data class PlanEntity(
     val summarySessionsPerWeek: Int? = null,
     val summaryContinuousRunTargetSeconds: Int? = null,
     val summarySessionDurationSeconds: Int? = null,
+    /** Runner-selected endpoint for an ongoing routine; null for race and calibration plans. */
+    val routineTargetDistanceMeters: Int? = null,
+    val routineTargetDurationSeconds: Int? = null,
+    /** Positive per-week step toward the routine endpoint. Direction comes from start versus goal. */
+    val routineWeeklyChangeDistanceMeters: Int? = null,
+    val routineWeeklyChangeDurationSeconds: Int? = null,
 )
 
 /**

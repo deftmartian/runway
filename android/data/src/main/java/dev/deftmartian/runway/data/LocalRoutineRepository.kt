@@ -18,6 +18,7 @@ class LocalRoutineRepository(
         require(request.planId.isNotBlank() && request.weekId.isNotBlank())
         require(request.operationId.isNotBlank() && request.occurredAtEpochMillis >= 0)
         val target = RoutineWeeklyTarget(request.targetDistanceMeters, request.targetDurationSeconds)
+        require(target.usesReadableUnits())
         val adjustmentId = "routine-week-goal-${request.operationId}"
         val adjustments = database.adjustmentDao()
         if (adjustments.adjustmentExists(adjustmentId)) {
@@ -38,7 +39,11 @@ class LocalRoutineRepository(
             return@withTransaction LocalRoutineWeekGoalResult.Unchanged
         }
         val workouts = plans.workoutsForWeek(week.weekId, limit = 20)
-            .filter { it.currentWorkoutType != "rest" }
+            .filter {
+                it.currentWorkoutType != "rest" &&
+                    it.currentStatus == "planned" &&
+                    it.tombstonedAtEpochMillis == null
+            }
         if (!target.supportsRunCount(workouts.size)) {
             return@withTransaction LocalRoutineWeekGoalResult.Rejected
         }
@@ -68,6 +73,80 @@ class LocalRoutineRepository(
             adjustmentId,
         )
         LocalRoutineWeekGoalResult.Updated(previous, target)
+    }
+
+    suspend fun updateWeekDistribution(
+        request: LocalRoutineWeekDistributionRequest,
+    ): LocalRoutineWeekDistributionResult = database.withTransaction {
+        require(request.planId.isNotBlank() && request.weekId.isNotBlank())
+        require(request.operationId.isNotBlank() && request.occurredAtEpochMillis >= 0)
+        val adjustmentId = "routine-week-distribution-${request.operationId}"
+        val adjustments = database.adjustmentDao()
+        if (adjustments.adjustmentExists(adjustmentId)) {
+            return@withTransaction LocalRoutineWeekDistributionResult.AlreadyApplied
+        }
+        val plans = database.goalPlanDao()
+        val plan = plans.plan(request.planId)
+            ?.takeIf(::isActiveRoutine)
+            ?: return@withTransaction LocalRoutineWeekDistributionResult.Rejected
+        val week = plans.week(request.weekId)
+            ?.takeIf { it.planId == plan.planId && it.startEpochDay > request.todayEpochDay }
+            ?: return@withTransaction LocalRoutineWeekDistributionResult.Rejected
+        val target = RoutineWeeklyTarget.optional(
+            week.generatedLoadMeters,
+            week.generatedLoadDurationSeconds,
+        ) ?: return@withTransaction LocalRoutineWeekDistributionResult.Rejected
+        val workouts = plans.workoutsForWeek(week.weekId, limit = 20)
+            .filter {
+                it.currentWorkoutType != "rest" &&
+                    it.currentStatus == "planned" &&
+                    it.tombstonedAtEpochMillis == null
+            }
+            .sortedWith(compareBy(WorkoutEntity::currentScheduledEpochDay, WorkoutEntity::position))
+        val allocations = request.allocations.associateBy(LocalRoutineRunAllocation::workoutId)
+        if (
+            allocations.size != request.allocations.size ||
+            allocations.keys != workouts.mapTo(linkedSetOf(), WorkoutEntity::workoutId)
+        ) return@withTransaction LocalRoutineWeekDistributionResult.Rejected
+        val replacements = workouts.map { workout ->
+            val allocation = requireNotNull(allocations[workout.workoutId])
+            if (!allocation.matches(target)) {
+                return@withTransaction LocalRoutineWeekDistributionResult.Rejected
+            }
+            if (
+                workout.currentDistanceMeters == allocation.targetDistanceMeters &&
+                workout.currentDurationSeconds == allocation.targetDurationSeconds
+            ) {
+                workout
+            } else {
+                workout.copy(
+                    currentDistanceMeters = allocation.targetDistanceMeters,
+                    currentDurationSeconds = allocation.targetDurationSeconds,
+                    currentPrescriptionKind = if (target.distanceMeters != null) "distance" else "timed",
+                    currentReason = "Adjusted within this week's running goal.",
+                    updatedAtEpochMillis = request.occurredAtEpochMillis,
+                )
+            }
+        }
+        if (!distributionMatchesTarget(replacements, target)) {
+            return@withTransaction LocalRoutineWeekDistributionResult.Rejected
+        }
+        val workoutChanges = workouts.zip(replacements).filter { (before, after) -> before != after }
+        if (workoutChanges.isEmpty()) {
+            return@withTransaction LocalRoutineWeekDistributionResult.Unchanged
+        }
+        workoutChanges.forEach { (_, after) -> plans.saveWorkout(after) }
+        check(plans.touchActiveRoutine(plan.planId, request.occurredAtEpochMillis) == 1)
+        persistWeekDistributionChange(
+            adjustments = adjustments,
+            plan = plan,
+            week = week,
+            target = target,
+            workoutChanges = workoutChanges,
+            request = request,
+            adjustmentId = adjustmentId,
+        )
+        LocalRoutineWeekDistributionResult.Updated
     }
 
     suspend fun ensureHorizon(
@@ -169,6 +248,62 @@ class LocalRoutineRepository(
         )
     }
 
+    private suspend fun persistWeekDistributionChange(
+        adjustments: AdjustmentDao,
+        plan: PlanEntity,
+        week: PlanWeekEntity,
+        target: RoutineWeeklyTarget,
+        workoutChanges: List<Pair<WorkoutEntity, WorkoutEntity>>,
+        request: LocalRoutineWeekDistributionRequest,
+        adjustmentId: String,
+    ) {
+        val groupId = "$adjustmentId:effect"
+        adjustments.insertAdjustment(
+            PlanAdjustmentEntity(
+                adjustmentId = adjustmentId,
+                planId = plan.planId,
+                workoutId = null,
+                sourceActivityId = null,
+                adjustmentType = "routine_week_distribution",
+                state = "applied",
+                measuredLoadSharePercent = null,
+                projectedRampPercent = null,
+                affectedWorkoutCount = workoutChanges.size,
+                createdAtEpochMillis = request.occurredAtEpochMillis,
+                triggerKind = "manual_routine_week_distribution",
+                triggerId = week.weekId,
+                triggerVersion = request.operationId,
+            ),
+        )
+        adjustments.saveEffectGroup(
+            AdjustmentEffectGroupEntity(
+                groupId = groupId,
+                adjustmentId = adjustmentId,
+                ordinal = 0,
+                effectType = "routine_week_distribution",
+                sourceWeekLoadMeters = target.distanceMeters,
+                destinationWeekLoadMeters = target.distanceMeters,
+                sourceWeekLoadDurationSeconds = target.durationSeconds,
+                destinationWeekLoadDurationSeconds = target.durationSeconds,
+            ),
+        )
+        workoutChanges.forEachIndexed { ordinal, (before, after) ->
+            adjustments.saveWorkoutEffect(routineWorkoutEffect(groupId, ordinal, before, after))
+        }
+        adjustments.saveDecision(
+            PlanDecisionEntity(
+                decisionId = "$adjustmentId:decision",
+                adjustmentId = adjustmentId,
+                decisionType = "balance_routine_week",
+                affectedWorkoutCount = workoutChanges.size,
+                effectiveFromEpochDay = week.startEpochDay,
+                decidedAtEpochMillis = request.occurredAtEpochMillis,
+                affectedDistanceMeters = target.distanceMeters,
+                affectedDurationSeconds = target.durationSeconds,
+            ),
+        )
+    }
+
     private suspend fun extendHorizon(
         plans: GoalPlanDao,
         plan: PlanEntity,
@@ -197,6 +332,26 @@ class LocalRoutineRepository(
         }
         return addedWeeks
     }
+}
+
+private fun LocalRoutineRunAllocation.matches(target: RoutineWeeklyTarget): Boolean = when {
+    target.distanceMeters != null ->
+        targetDistanceMeters != null && targetDurationSeconds == null &&
+            targetDistanceMeters in 500..100_000 && targetDistanceMeters % 500 == 0
+    else ->
+        targetDurationSeconds != null && targetDistanceMeters == null &&
+            targetDurationSeconds in 600..21_600 && targetDurationSeconds % 300 == 0
+}
+
+private fun distributionMatchesTarget(
+    workouts: List<WorkoutEntity>,
+    target: RoutineWeeklyTarget,
+): Boolean = if (target.distanceMeters != null) {
+    workouts.all { it.currentDistanceMeters != null && it.currentDurationSeconds == null } &&
+        workouts.sumOf { it.currentDistanceMeters ?: 0 } == target.distanceMeters
+} else {
+    workouts.all { it.currentDurationSeconds != null && it.currentDistanceMeters == null } &&
+        workouts.sumOf { it.currentDurationSeconds ?: 0 } == target.durationSeconds
 }
 
 private fun routineWorkoutEffect(
@@ -261,4 +416,26 @@ sealed interface LocalRoutineWeekGoalResult {
     data object Unchanged : LocalRoutineWeekGoalResult
     data object AlreadyApplied : LocalRoutineWeekGoalResult
     data object Rejected : LocalRoutineWeekGoalResult
+}
+
+data class LocalRoutineRunAllocation(
+    val workoutId: String,
+    val targetDistanceMeters: Int?,
+    val targetDurationSeconds: Int?,
+)
+
+data class LocalRoutineWeekDistributionRequest(
+    val planId: String,
+    val weekId: String,
+    val allocations: List<LocalRoutineRunAllocation>,
+    val todayEpochDay: Long,
+    val operationId: String,
+    val occurredAtEpochMillis: Long,
+)
+
+sealed interface LocalRoutineWeekDistributionResult {
+    data object Updated : LocalRoutineWeekDistributionResult
+    data object Unchanged : LocalRoutineWeekDistributionResult
+    data object AlreadyApplied : LocalRoutineWeekDistributionResult
+    data object Rejected : LocalRoutineWeekDistributionResult
 }

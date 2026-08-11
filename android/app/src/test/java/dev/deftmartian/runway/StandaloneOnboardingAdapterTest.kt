@@ -7,7 +7,6 @@ import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.data.LocalPlanCandidate
 import java.time.Instant
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -99,8 +98,8 @@ class StandaloneOnboardingAdapterTest {
                 raceDistance = "stale-race-value",
                 targetDate = "not-a-date",
                 availability = listOf(1, 3, 6),
-                currentWeeklyDistanceKm = "not-a-number",
-                currentRunsPerWeek = "none",
+                currentWeeklyDistanceKm = "12",
+                currentRunsPerWeek = "3",
                 longestRecentRunKm = "none",
             ),
             utcNow,
@@ -113,6 +112,8 @@ class StandaloneOnboardingAdapterTest {
         assertEquals("2026-01-05", result.startDate)
         assertEquals(listOf(1, 3, 6), result.selectedDays)
         assertEquals(15_000, result.weeklyTargetDistanceMeters)
+        assertEquals(12_000, result.startingWeeklyDistanceMeters)
+        assertEquals(1_000, result.weeklyChangeDistanceMeters)
         assertNull(result.weeklyTargetDurationSeconds)
     }
 
@@ -247,15 +248,18 @@ class StandaloneOnboardingAdapterTest {
         assertNull(graph.goal.targetDateEpochDay)
         assertNull(graph.plan.endEpochDay)
         assertEquals(3, graph.days.size)
-        assertEquals(15_000, graph.plan.summaryBaselineMeters)
-        assertTrue(graph.weeks.all { it.generatedLoadMeters == 15_000 })
+        assertEquals(12_000, graph.plan.summaryBaselineMeters)
+        assertEquals(
+            listOf(12_000, 13_000, 14_000, 15_000),
+            graph.weeks.take(4).map { it.generatedLoadMeters },
+        )
         assertTrue(graph.workouts.all {
             it.currentPrescriptionKind == "distance" &&
-                it.currentDistanceMeters == 5_000 &&
+                it.currentDistanceMeters?.rem(500) == 0 &&
                 it.currentDurationSeconds == null
         })
-        assertNull(first.profile.baselineDistanceMeters)
-        assertFalse(first.profile.baselineConfirmed)
+        assertEquals(12_000, first.profile.baselineDistanceMeters)
+        assertTrue(first.profile.baselineConfirmed)
         assertEquals(first, second)
     }
 
@@ -270,6 +274,7 @@ class StandaloneOnboardingAdapterTest {
             routineGoalMetric = "time",
             routineWeeklyGoalKm = "",
             routineWeeklyGoalMinutes = "120",
+            currentWeeklyMinutes = "120",
         )
 
         val outcome = StandaloneOnboardingAdapter.adapt(operation, utcNow)
@@ -318,7 +323,7 @@ class StandaloneOnboardingAdapterTest {
         )
     }
 
-    @Test fun `weekly routine accepts a runner entered repeatable baseline as context`() {
+    @Test fun `weekly routine turns an entered baseline into a visible ramp`() {
         val operation = command(
             goalKind = "routine",
             startMode = "routine",
@@ -326,7 +331,6 @@ class StandaloneOnboardingAdapterTest {
             targetDate = "",
             availability = listOf(1, 3, 6),
         ).copy(
-            baselineMode = "entered",
             operationId = "routine-with-baseline",
         )
         val outcome = StandaloneOnboardingAdapter.adapt(operation, utcNow)
@@ -335,9 +339,51 @@ class StandaloneOnboardingAdapterTest {
 
         assertEquals(12_000, request.profile.baselineDistanceMeters)
         assertEquals(3, request.profile.currentRunsPerWeek)
-        assertEquals(8_000, request.profile.longestRecentRunMeters)
+        assertNull(request.profile.longestRecentRunMeters)
         assertTrue(request.profile.baselineConfirmed)
         assertTrue(graph.workouts.all { it.currentPrescriptionKind == "distance" })
+        assertEquals(15_000, graph.plan.routineTargetDistanceMeters)
+        assertEquals(1_000, graph.plan.routineWeeklyChangeDistanceMeters)
+        assertEquals(
+            listOf(12_000, 13_000, 14_000, 15_000, 15_000),
+            graph.weeks.take(5).map { it.generatedLoadMeters },
+        )
+        graph.weeks.forEach { week ->
+            assertEquals(
+                week.generatedLoadMeters,
+                graph.workouts.filter { it.weekId == week.weekId }.sumOf { it.currentDistanceMeters ?: 0 },
+            )
+        }
+    }
+
+    @Test fun `weekly time routine ramps from current capability to the final goal`() {
+        val operation = command(
+            goalKind = "routine",
+            startMode = "routine",
+            raceDistance = "",
+            targetDate = "",
+            availability = listOf(1, 3, 6),
+        ).copy(
+            baselineMode = "entered",
+            routineGoalMetric = "time",
+            routineWeeklyGoalKm = "",
+            routineWeeklyGoalMinutes = "120",
+            currentWeeklyMinutes = "90",
+            routineWeeklyChangeMinutes = "15",
+        )
+
+        val outcome = StandaloneOnboardingAdapter.adapt(operation, utcNow)
+        val request = StandaloneOnboardingPersistenceMapper.map(operation, outcome)
+        val graph = (request.candidate as LocalPlanCandidate.Routine).graph
+
+        assertNull(request.profile.baselineDistanceMeters)
+        assertEquals(5_400, request.profile.baselineDurationSeconds)
+        assertEquals(7_200, graph.plan.routineTargetDurationSeconds)
+        assertEquals(900, graph.plan.routineWeeklyChangeDurationSeconds)
+        assertEquals(
+            listOf(5_400, 6_300, 7_200, 7_200),
+            graph.weeks.take(4).map { it.generatedLoadDurationSeconds },
+        )
     }
 
     @Test fun `removed foundation inputs are rejected`() {
@@ -389,7 +435,7 @@ class StandaloneOnboardingAdapterTest {
             occurredAtEpochMillis = command.occurredAtEpochMillis + 1_000,
         )
         val equivalentNumber = command.copy(currentWeeklyDistanceKm = "12.0")
-        val edited = command.copy(currentWeeklyDistanceKm = "13")
+        val edited = command.copy(currentWeeklyDistanceKm = "12.5")
 
         assertEquals(
             initial.operationFingerprint,
@@ -426,6 +472,7 @@ class StandaloneOnboardingAdapterTest {
         timeZone: String = "UTC",
         confirmedPlanKey: String? = null,
         routineWeeklyGoalKm: String = "15",
+        routineWeeklyChangeKm: String = "1",
     ) = CreatePlanCommand(
         goalKind = goalKind,
         startMode = startMode,
@@ -444,5 +491,6 @@ class StandaloneOnboardingAdapterTest {
         operationId = "test-setup-operation",
         occurredAtEpochMillis = 1234,
         routineWeeklyGoalKm = routineWeeklyGoalKm,
+        routineWeeklyChangeKm = routineWeeklyChangeKm,
     )
 }

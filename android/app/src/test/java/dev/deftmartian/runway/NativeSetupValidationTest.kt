@@ -87,10 +87,14 @@ class NativeSetupValidationTest {
             routineWeeklyGoalValidation("distance", "", ""),
         )
         assertEquals(
-            "Enter a weekly distance goal from 1 to 100 km.",
+            "Enter a weekly distance goal from 0.5 to 100 km.",
             routineWeeklyGoalValidation("distance", "0", ""),
         )
         assertNull(routineWeeklyGoalValidation("distance", "12.5", "", scheduledRuns = 3))
+        assertEquals(
+            "Use 0.5 km steps for the weekly goal.",
+            routineWeeklyGoalValidation("distance", "12.3", "", scheduledRuns = 3),
+        )
         assertEquals(
             "Enter a weekly running time from 30 to 1,080 minutes.",
             routineWeeklyGoalValidation("time", "", "5", scheduledRuns = 3),
@@ -99,6 +103,32 @@ class NativeSetupValidationTest {
         assertEquals(
             "Enter a weekly running time from 30 to 1,080 minutes.",
             routineWeeklyGoalValidation("time", "", "20", scheduledRuns = 3),
+        )
+    }
+
+    @Test
+    fun `routine starting point validates the chosen ramp unit`() {
+        assertEquals(
+            "Use a positive 0.5 km step for the weekly change.",
+            routineStartingPointValidation(
+                "entered", "distance", "12", "", "3", 3, "15", "", "0.3", "",
+            ),
+        )
+        assertNull(
+            routineStartingPointValidation(
+                "entered", "distance", "12.2", "", "3", 3, "15", "", "0.5", "",
+            ),
+        )
+        assertEquals(
+            "Use a positive 5-minute step for the weekly change.",
+            routineStartingPointValidation(
+                "entered", "time", "", "90", "3", 3, "", "120", "", "12",
+            ),
+        )
+        assertNull(
+            routineStartingPointValidation(
+                "learn", "distance", "", "", "", 3, "15", "", "", "",
+            ),
         )
     }
 

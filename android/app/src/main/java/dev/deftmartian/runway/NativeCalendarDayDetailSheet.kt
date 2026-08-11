@@ -3,7 +3,9 @@ package dev.deftmartian.runway
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.verticalScroll
@@ -21,7 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ internal fun CalendarDayDetailSheet(
     routine: Boolean,
     routineWeekGoal: NativeRoutineWeekGoal?,
     onChangeRoutineWeekGoal: (NativeRoutineWeekGoal) -> Unit,
+    onBalanceRoutineWeek: (NativeRoutineWeekGoal) -> Unit,
     onAddWorkout: () -> Unit,
 ) {
     val activityPlacement = placeCalendarActivities(workouts, activities)
@@ -91,6 +96,16 @@ internal fun CalendarDayDetailSheet(
                         shape = MaterialTheme.shapes.small,
                     ) {
                         Text("Change this week's goal")
+                    }
+                    if (goal.runs.size > 1) {
+                        OutlinedButton(
+                            onClick = { onBalanceRoutineWeek(goal) },
+                            enabled = !actionPending,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text("Balance this week's runs")
+                        }
                     }
                 }
             }
@@ -256,6 +271,201 @@ internal fun RoutineWeekGoalDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+@Composable
+internal fun RoutineWeekBalanceDialog(
+    goal: NativeRoutineWeekGoal,
+    actionPending: Boolean,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (UpdateRoutineWeekDistributionCommand) -> Unit,
+) {
+    val distance = goal.targetDistanceMeters != null
+    val unitAmount = if (distance) 500 else 300
+    val minimumUnits = if (distance) 1 else 2
+    val maximumUnits = if (distance) 200 else 72
+    val evenUnits = routineEvenAllocationUnits(goal)
+    val currentUnits = routineCurrentAllocationUnits(goal)
+    var allocationUnits by rememberSaveable(goal.weekId, currentUnits, evenUnits) {
+        mutableStateOf(currentUnits.ifEmpty { evenUnits })
+    }
+    val operationId = rememberSaveable(goal.weekId) { UUID.randomUUID().toString() }
+    val occurredAtEpochMillis = rememberSaveable(goal.weekId) {
+        mutableLongStateOf(System.currentTimeMillis())
+    }.longValue
+    val changed = allocationUnits != currentUnits &&
+        allocationUnits != emptyList<Int>()
+    val unitLabel = if (distance) "0.5 km" else "5 min"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("routine-week-balance-dialog"),
+        title = { Text("Balance weekly runs") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "Move $unitLabel at a time between scheduled days. The weekly goal stays ${routineGoalLabel(goal)}.",
+                )
+                goal.runs.forEachIndexed { index, run ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                friendlyDate(run.scheduledDate),
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(routineAllocationLabel(allocationUnits[index], distance))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    allocationUnits = transferRoutineAllocationUnit(
+                                        allocationUnits,
+                                        index,
+                                        increase = false,
+                                        minimumUnits = minimumUnits,
+                                        maximumUnits = maximumUnits,
+                                    )
+                                },
+                                enabled = !actionPending && allocationUnits[index] > minimumUnits,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics {
+                                        contentDescription = "Move $unitLabel away from ${friendlyDate(run.scheduledDate)}"
+                                    },
+                                shape = MaterialTheme.shapes.small,
+                            ) { Text("− $unitLabel") }
+                            OutlinedButton(
+                                onClick = {
+                                    allocationUnits = transferRoutineAllocationUnit(
+                                        allocationUnits,
+                                        index,
+                                        increase = true,
+                                        minimumUnits = minimumUnits,
+                                        maximumUnits = maximumUnits,
+                                    )
+                                },
+                                enabled = !actionPending &&
+                                    allocationUnits[index] < maximumUnits &&
+                                    allocationUnits.indices.any {
+                                        it != index && allocationUnits[it] > minimumUnits
+                                    },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics {
+                                        contentDescription = "Move $unitLabel to ${friendlyDate(run.scheduledDate)}"
+                                    },
+                                shape = MaterialTheme.shapes.small,
+                            ) { Text("+ $unitLabel") }
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = { allocationUnits = evenUnits },
+                    enabled = !actionPending && allocationUnits != evenUnits,
+                ) { Text("Use even split") }
+                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !actionPending && changed,
+                onClick = {
+                    onSubmit(
+                        UpdateRoutineWeekDistributionCommand(
+                            weekId = goal.weekId,
+                            allocations = goal.runs.mapIndexed { index, run ->
+                                RoutineRunAllocation(
+                                    workoutId = run.workoutId,
+                                    targetDistanceMeters = if (distance) allocationUnits[index] * unitAmount else null,
+                                    targetDurationSeconds = if (distance) null else allocationUnits[index] * unitAmount,
+                                )
+                            },
+                            operationId = operationId,
+                            occurredAtEpochMillis = occurredAtEpochMillis,
+                        ),
+                    )
+                },
+            ) { Text(if (actionPending) "Saving…" else "Save balance") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+internal fun routineCurrentAllocationUnits(goal: NativeRoutineWeekGoal): List<Int> {
+    val distance = goal.targetDistanceMeters != null
+    val unitAmount = if (distance) 500 else 300
+    val values = goal.runs.map { run ->
+        if (distance) run.targetDistanceMeters else run.targetDurationSeconds
+    }
+    val target = if (distance) {
+        requireNotNull(goal.targetDistanceMeters).toInt()
+    } else {
+        goal.targetDurationSeconds?.toInt()
+    }
+    val minimumUnits = if (distance) 1 else 2
+    return values.filterNotNull()
+        .takeIf { amounts ->
+            amounts.size == goal.runs.size &&
+                amounts.all { it % unitAmount == 0 && it / unitAmount >= minimumUnits } &&
+                amounts.sum() == target
+        }
+        ?.map { it / unitAmount }
+        .orEmpty()
+}
+
+internal fun routineEvenAllocationUnits(goal: NativeRoutineWeekGoal): List<Int> {
+    val distance = goal.targetDistanceMeters != null
+    val unitAmount = if (distance) 500 else 300
+    val target = requireNotNull(
+        if (distance) requireNotNull(goal.targetDistanceMeters).toInt() else goal.targetDurationSeconds?.toInt(),
+    )
+    val totalUnits = target / unitAmount
+    return List(goal.runs.size) { index ->
+        totalUnits / goal.runs.size + if (index < totalUnits % goal.runs.size) 1 else 0
+    }
+}
+
+internal fun transferRoutineAllocationUnit(
+    amounts: List<Int>,
+    index: Int,
+    increase: Boolean,
+    minimumUnits: Int,
+    maximumUnits: Int,
+): List<Int> {
+    if (index !in amounts.indices) return amounts
+    val otherIndices = amounts.indices.filter { it != index }
+    val counterpart = if (increase) {
+        if (amounts[index] >= maximumUnits) {
+            null
+        } else {
+            otherIndices.filter { amounts[it] > minimumUnits }.maxByOrNull(amounts::get)
+        }
+    } else {
+        if (amounts[index] <= minimumUnits) {
+            null
+        } else {
+            otherIndices.filter { amounts[it] < maximumUnits }.minByOrNull(amounts::get)
+        }
+    } ?: return amounts
+    return amounts.mapIndexed { amountIndex, value ->
+        when (amountIndex) {
+            index -> value + if (increase) 1 else -1
+            counterpart -> value + if (increase) -1 else 1
+            else -> value
+        }
+    }
+}
+
+private fun routineAllocationLabel(units: Int, distance: Boolean): String =
+    if (distance) formatDistance(units * 500.0) else formatPlannedDurationEstimate(units * 300.0)
 
 private fun routineGoalKilometreInput(meters: Double?): String = meters?.let {
     if (it % 1_000.0 == 0.0) {

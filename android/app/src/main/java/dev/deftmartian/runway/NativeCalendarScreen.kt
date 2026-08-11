@@ -128,6 +128,7 @@ internal fun CalendarScreen(
     var showManualRun by rememberSaveable { mutableStateOf(false) }
     var submittedDialogAction by remember { mutableStateOf<String?>(null) }
     var routineGoalWeekId by rememberSaveable { mutableStateOf<String?>(null) }
+    var routineBalanceWeekId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(listState) {
         var previous = CalendarScrollPosition(
             listState.firstVisibleItemIndex,
@@ -155,6 +156,7 @@ internal fun CalendarScreen(
             "preview_workout_add" -> addWorkoutDate = null
             "record_manual_run" -> showManualRun = false
             "update_routine_week_goal" -> routineGoalWeekId = null
+            "update_routine_week_distribution" -> routineBalanceWeekId = null
             "preview_plan_decision", "apply_plan_decision" -> pendingDecision = null
             else -> if (selectedActivity != null) selectedActivity = null
         }
@@ -397,6 +399,10 @@ internal fun CalendarScreen(
                 showSelectedDay = false
                 routineGoalWeekId = it.weekId
             },
+            onBalanceRoutineWeek = {
+                showSelectedDay = false
+                routineBalanceWeekId = it.weekId
+            },
             onAddWorkout = {
                 showSelectedDay = false
                 addWorkoutDate = date
@@ -410,6 +416,20 @@ internal fun CalendarScreen(
                 actionPending = actionPending,
                 errorMessage = actionNotice?.takeIf { it.isError }?.message,
                 onDismiss = { routineGoalWeekId = null },
+                onSubmit = {
+                    submittedDialogAction = it.action
+                    onAction(it)
+                },
+            )
+        }
+    }
+    routineBalanceWeekId?.let { weekId ->
+        calendar?.routineWeekGoals?.firstOrNull { it.weekId == weekId }?.let { goal ->
+            RoutineWeekBalanceDialog(
+                goal = goal,
+                actionPending = actionPending,
+                errorMessage = actionNotice?.takeIf { it.isError }?.message,
+                onDismiss = { routineBalanceWeekId = null },
                 onSubmit = {
                     submittedDialogAction = it.action
                     onAction(it)

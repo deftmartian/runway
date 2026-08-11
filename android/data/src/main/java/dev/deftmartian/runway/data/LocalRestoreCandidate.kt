@@ -5,38 +5,13 @@ import java.io.File
 import java.io.FileInputStream
 
 /**
- * Validates and, when necessary, upgrades a user-selected Runway backup before installation.
+ * Validates a user-selected runway backup before installation.
  *
- * Only exact released Room identities are accepted. The same immutable migrations used when Room
- * opens an installed ledger upgrade a released backup; a second preparation is intentionally a
- * no-op.
+ * This hard-cutover build accepts only the current schema identity. Older databases are not
+ * rewritten in place or presented as compatible backups.
  */
 internal object LocalRestoreCandidate {
-    private val releasedIdentityHashes = mapOf(
-        1 to RunwayLedgerMigrations.V1_IDENTITY_HASH,
-        2 to RunwayLedgerMigrations.V2_IDENTITY_HASH,
-        3 to RunwayLedgerMigrations.V3_IDENTITY_HASH,
-        4 to RunwayLedgerMigrations.V4_IDENTITY_HASH,
-        5 to RunwayLedgerMigrations.V5_IDENTITY_HASH,
-    )
-
-    fun prepare(candidate: File): String? {
-        headerError(candidate)?.let { return it }
-        return when (val inspection = inspect(candidate)) {
-            is Inspection.Invalid -> inspection.reason
-            is Inspection.Valid -> prepareValidCandidate(candidate, inspection)
-        }
-    }
-
-    private fun prepareValidCandidate(candidate: File, inspection: Inspection.Valid): String? {
-        if (inspection.version == RunwayLedgerDatabase.SCHEMA_VERSION &&
-            inspection.identityHash == RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH
-        ) return null
-        val releasedHash = releasedIdentityHashes[inspection.version]
-        if (releasedHash != inspection.identityHash) return unsupportedLineageMessage(inspection)
-        return migrationError(candidate, fromVersion = inspection.version)
-            ?: currentSchemaError(candidate)
-    }
+    fun prepare(candidate: File): String? = currentSchemaError(candidate)
 
     fun currentSchemaError(candidate: File): String? {
         headerError(candidate)?.let { return it }
@@ -51,48 +26,6 @@ internal object LocalRestoreCandidate {
             }
         }
     }
-
-    private fun migrateToCurrent(candidate: File, fromVersion: Int) {
-        SQLiteDatabase.openDatabase(
-            candidate.path,
-            null,
-            SQLiteDatabase.OPEN_READWRITE,
-        ).use { platformDatabase ->
-            platformDatabase.beginTransaction()
-            try {
-                if (fromVersion == 1) {
-                    platformDatabase.execSQL(RunwayLedgerMigrations.V1_TO_V2_SQL)
-                }
-                if (fromVersion <= 2) {
-                    RunwayLedgerMigrations.applyV2ToV3(platformDatabase::execSQL)
-                }
-                if (fromVersion <= 3) {
-                    LegacyTimedConsequenceLedgerRepair.apply(platformDatabase)
-                }
-                if (fromVersion <= 4) {
-                    RunwayLedgerMigrations.applyV4ToV5(platformDatabase::execSQL)
-                }
-                if (fromVersion <= 5) {
-                    RunwayLedgerMigrations.applyV5ToV6(platformDatabase::execSQL)
-                }
-                platformDatabase.execSQL(
-                    "UPDATE room_master_table SET identity_hash = ? WHERE id = 42",
-                    arrayOf(RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH),
-                )
-                platformDatabase.version = RunwayLedgerDatabase.SCHEMA_VERSION
-                platformDatabase.setTransactionSuccessful()
-            } finally {
-                platformDatabase.endTransaction()
-            }
-        }
-    }
-
-    private fun migrationError(candidate: File, fromVersion: Int): String? =
-        runCatching {
-            migrateToCurrent(candidate, fromVersion)
-        }.exceptionOrNull()?.let {
-            "This backup could not be upgraded safely. The original file was not installed."
-        }
 
     private fun inspect(candidate: File): Inspection =
         try {
@@ -140,15 +73,6 @@ internal object LocalRestoreCandidate {
             "The selected backup could not be read."
         }
     }
-
-    private fun unsupportedLineageMessage(inspection: Inspection.Valid): String =
-        if (inspection.version != RunwayLedgerDatabase.SCHEMA_VERSION) {
-            "This backup uses unsupported database version ${inspection.version}. " +
-                "This app accepts released Runway versions 1 through " +
-                "${RunwayLedgerDatabase.SCHEMA_VERSION}."
-        } else {
-            "This backup belongs to a different Runway database schema."
-        }
 
     private fun SQLiteDatabase.stringQuery(sql: String): String? =
         rawQuery(sql, emptyArray()).use { cursor ->

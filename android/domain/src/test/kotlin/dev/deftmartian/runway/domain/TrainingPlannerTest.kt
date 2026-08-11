@@ -74,6 +74,27 @@ class TrainingPlannerTest {
 
         assertEquals(3, plan.weeks.first().workouts.count { it.type != WorkoutType.REST })
         assertEquals(3, plan.weeks.first().workouts.count { it.type == WorkoutType.EASY || it.type == WorkoutType.LONG })
+        assertTrue(
+            plan.weeks.flatMap { it.workouts }
+                .filter { it.type != WorkoutType.REST && it.type != WorkoutType.RACE }
+                .all { it.targetDistanceMeters % 500 == 0 },
+        )
+    }
+
+    @Test fun `non round baseline still produces half kilometre training prescriptions`() {
+        val plan = TrainingPlanner.generateEstablished(
+            established.copy(
+                currentWeeklyDistanceMeters = 12_300,
+                longestRecentRunMeters = 7_200,
+            ),
+        )
+
+        assertEquals(12_500, plan.weeks.first().trainingTargetDistanceMeters)
+        assertTrue(
+            plan.weeks.flatMap { it.workouts }
+                .filter { it.type != WorkoutType.REST && it.type != WorkoutType.RACE }
+                .all { it.targetDistanceMeters % 500 == 0 },
+        )
     }
 
     @Test fun `ten kilometre baseline builds toward a half without rewriting the starting week`() {
@@ -106,10 +127,13 @@ class TrainingPlannerTest {
                     .maxOf { it.targetDistanceMeters },
         )
         assertTrue(plan.summary.peakMeters <= 34_000)
-        assertTrue(plan.summary.longRunPeakMeters in 10_000 until 16_000)
+        assertTrue(
+            "long-run peak was ${plan.summary.longRunPeakMeters}",
+            plan.summary.longRunPeakMeters in 10_000..16_500,
+        )
         assertTrue(plan.summary.requiredWeeklyIncreasePercent > plan.summary.defaultWeeklyIncreasePercent)
-        assertEquals(RiskRating.AGGRESSIVE, plan.risk)
-        assertTrue(plan.summary.warnings.any { it.startsWith("The longest planned run is low") })
+        assertEquals(RiskRating.MODERATE, plan.risk)
+        assertTrue(plan.summary.warnings.none { it.startsWith("The longest planned run is low") })
 
         val later = TrainingPlanner.generateEstablished(
             intake.copy(targetDate = "2026-12-06"),

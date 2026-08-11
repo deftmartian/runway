@@ -293,8 +293,12 @@ object LocalPlanSetupPreparation {
                 priority = graph.goal.priority,
                 startEpochDay = graph.plan.startEpochDay,
                 selectedDays = graph.days.map(RoutineScheduleDayEntity::dayOfWeek),
-                weeklyTargetDistanceMeters = graph.plan.summaryBaselineMeters,
-                weeklyTargetDurationSeconds = graph.plan.summarySessionDurationSeconds,
+                weeklyTargetDurationSeconds = graph.plan.routineTargetDurationSeconds,
+                startingWeeklyDistanceMeters = graph.plan.summaryBaselineMeters,
+                startingWeeklyDurationSeconds = graph.plan.summarySessionDurationSeconds,
+                weeklyChangeDistanceMeters = graph.plan.routineWeeklyChangeDistanceMeters,
+                weeklyChangeDurationSeconds = graph.plan.routineWeeklyChangeDurationSeconds,
+                weeklyTargetDistanceMeters = graph.plan.routineTargetDistanceMeters,
                 createdAtEpochMillis = graph.goal.createdAtEpochMillis,
             )
         }.getOrNull()

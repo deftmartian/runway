@@ -142,4 +142,77 @@ class LocalRoutineRepositoryInstrumentedTest {
         )
         assertEquals(7_200, database.goalPlanDao().week(targetWeek.weekId)?.generatedLoadDurationSeconds)
     }
+
+    @Test
+    fun balancingAFutureRoutineWeekMovesHalfKilometresWithoutChangingItsGoal() = runBlocking {
+        val graph = RoutinePlanPersistenceMapper.map(
+            goalId = "routine-balance-goal",
+            planId = "routine-balance-plan",
+            title = "Weekly running routine",
+            priority = "consistency",
+            startEpochDay = LocalDate.parse("2026-08-03").toEpochDay(),
+            selectedDays = listOf(1, 3, 6),
+            weeklyTargetDistanceMeters = 15_000,
+            createdAtEpochMillis = 10,
+        )
+        database.goalPlanDao().saveGoal(graph.goal)
+        database.goalPlanDao().createRoutineGraph(graph)
+        val targetWeek = graph.weeks[1]
+        val workouts = database.goalPlanDao().workoutsForWeek(targetWeek.weekId, limit = 10)
+            .filter { it.currentWorkoutType != "rest" }
+            .sortedBy { it.currentScheduledEpochDay }
+        val request = LocalRoutineWeekDistributionRequest(
+            planId = graph.plan.planId,
+            weekId = targetWeek.weekId,
+            allocations = workouts.mapIndexed { index, workout ->
+                LocalRoutineRunAllocation(
+                    workoutId = workout.workoutId,
+                    targetDistanceMeters = listOf(6_000, 5_000, 4_000)[index],
+                    targetDurationSeconds = null,
+                )
+            },
+            todayEpochDay = graph.plan.startEpochDay,
+            operationId = "balance-week-two",
+            occurredAtEpochMillis = 20,
+        )
+        val repository = LocalRoutineRepository(database)
+
+        assertEquals(LocalRoutineWeekDistributionResult.Updated, repository.updateWeekDistribution(request))
+        val balanced = database.goalPlanDao().workoutsForWeek(targetWeek.weekId, limit = 10)
+            .filter { it.currentWorkoutType != "rest" }
+            .sortedBy { it.currentScheduledEpochDay }
+        assertEquals(listOf(6_000, 5_000, 4_000), balanced.map { it.currentDistanceMeters })
+        assertEquals(15_000, balanced.sumOf { it.currentDistanceMeters ?: 0 })
+        assertEquals(15_000, database.goalPlanDao().week(targetWeek.weekId)?.generatedLoadMeters)
+        val adjustmentId = "routine-week-distribution-balance-week-two"
+        assertEquals(
+            "routine_week_distribution",
+            database.adjustmentDao().adjustment(adjustmentId)?.adjustmentType,
+        )
+        assertEquals(2, database.adjustmentDao().workoutEffects("$adjustmentId:effect", 10).size)
+        assertEquals(
+            LocalRoutineWeekDistributionResult.AlreadyApplied,
+            repository.updateWeekDistribution(request),
+        )
+        assertEquals(
+            LocalRoutineWeekDistributionResult.Rejected,
+            repository.updateWeekDistribution(
+                request.copy(
+                    allocations = request.allocations.mapIndexed { index, allocation ->
+                        allocation.copy(
+                            targetDistanceMeters = if (index == 0) 6_500 else allocation.targetDistanceMeters,
+                        )
+                    },
+                    operationId = "wrong-total",
+                ),
+            ),
+        )
+        assertEquals(
+            listOf(6_000, 5_000, 4_000),
+            database.goalPlanDao().workoutsForWeek(targetWeek.weekId, limit = 10)
+                .filter { it.currentWorkoutType != "rest" }
+                .sortedBy { it.currentScheduledEpochDay }
+                .map { it.currentDistanceMeters },
+        )
+    }
 }

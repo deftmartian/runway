@@ -20,7 +20,7 @@ Room persists the profile, plans, generated/current workouts, actual activity le
 
 Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
 
-Released Room schemas require explicit migration and upgrade tests. Restore accepts every exact released schema identity, upgrades versions 1 through 5 through the same immutable migrations used for installed databases, and is tested for a second no-op preparation. Schema 6 adds device-local notification choices and a minimal delivery outbox without copying filenames, route data, heart-rate data, or private notes. New unreleased schema work may be corrected before release; never invent a timestamp-based migration lineage.
+The current Room schema is a deliberate hard cutover: opening an older installed schema recreates the local ledger, and restore accepts only the exact current identity. No compatibility migration or old-schema asset is carried in this line. If a future release promises preservation, add an explicit versioned migration and upgrade/restore evidence before release; never infer schema state or invent timestamp-based lineage.
 
 ## Imports
 

@@ -16,3 +16,8 @@ internal fun roundTrainingValueToInt(value: Double): Int =
 
 internal fun roundTrainingValueToOneDecimal(value: Double): Double =
     roundTrainingValue(value * 10) / 10
+
+internal fun roundTrainingValueToIncrement(value: Double, increment: Int): Int {
+    require(increment > 0) { "A positive increment is required." }
+    return roundTrainingValue(value / increment).toInt() * increment
+}

@@ -56,6 +56,56 @@ class RoutinePlanPersistenceMapperTest {
     }
 
     @Test
+    fun `routine starts at current capability and reaches the visible final goal`() {
+        val graph = RoutinePlanPersistenceMapper.map(
+            goalId = "ramp-goal",
+            planId = "ramp-plan",
+            title = "Progressing weekly routine",
+            priority = "consistency",
+            startEpochDay = LocalDate.parse("2026-08-03").toEpochDay(),
+            selectedDays = listOf(1, 3, 6),
+            startingWeeklyDistanceMeters = 10_000,
+            weeklyTargetDistanceMeters = 13_000,
+            weeklyChangeDistanceMeters = 1_000,
+            createdAtEpochMillis = 10,
+        )
+
+        assertEquals(10_000, graph.plan.summaryBaselineMeters)
+        assertEquals(13_000, graph.plan.routineTargetDistanceMeters)
+        assertEquals(1_000, graph.plan.routineWeeklyChangeDistanceMeters)
+        assertEquals(
+            listOf(10_000, 11_000, 12_000, 13_000, 13_000, 13_000, 13_000, 13_000),
+            graph.weeks.map(PlanWeekEntity::generatedLoadMeters),
+        )
+        assertTrue(
+            graph.workouts.all { workout ->
+                workout.generatedDistanceMeters?.rem(500) == 0
+            },
+        )
+        assertTrue(
+            graph.workouts.groupBy(WorkoutEntity::weekId).all { (weekId, workouts) ->
+                workouts.sumOf { it.generatedDistanceMeters ?: 0 } ==
+                    graph.weeks.single { it.weekId == weekId }.generatedLoadMeters
+            },
+        )
+    }
+
+    @Test
+    fun `routine can ramp down without changing the runner selected endpoint`() {
+        val ramp = RoutineRamp(
+            start = RoutineWeeklyTarget(15_000, null),
+            goal = RoutineWeeklyTarget(12_000, null),
+            weeklyChangeDistanceMeters = 500,
+            weeklyChangeDurationSeconds = null,
+        )
+
+        assertEquals(
+            listOf(15_000, 14_500, 14_000, 13_500, 13_000, 12_500, 12_000, 12_000),
+            (1..8).map { ramp.targetForWeek(it).distanceMeters },
+        )
+    }
+
+    @Test
     fun `setup preparation rejects a routine graph whose current prescription differs`() {
         val graph = graph()
         val invalid = graph.copy(workouts = graph.workouts.mapIndexed { index, workout ->

@@ -247,9 +247,9 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             initialValues = NativePlanInitialValues(
                 startMode = "established",
                 raceDistance = "half",
-                targetDate = "2026-11-22",
+                targetDate = "2026-10-25",
                 priority = "finish_healthy",
-                currentWeeklyDistanceKm = "25",
+                currentWeeklyDistanceKm = "20",
                 currentRunsPerWeek = "3",
                 longestRecentRunKm = "10",
                 preferredLongRunDay = "6",
@@ -275,7 +275,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         repeat(3) { compose.onNodeWithText("Continue").performClick() }
 
-        listOf("Training outline", "25 km", "Needs confirmation").forEach { text ->
+        listOf("Training outline", "20 km", "Needs confirmation").forEach { text ->
             compose.onNode(hasScrollAction()).performScrollToNode(hasText(text))
             compose.onNodeWithText(text).assertIsDisplayed()
         }
@@ -296,7 +296,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     @Test
-    fun consistencySetupRequiresAWeeklyDistanceGoalBeforeContinuing() {
+    fun consistencySetupShowsTheRampFromCurrentWeekToFinalGoal() {
         compose.setContent {
             RunwayTheme {
                 SetupScreen(
@@ -317,13 +317,33 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
         compose.onNodeWithText("Run consistently each week").performClick()
         compose.onNodeWithText("Weekly distance goal (km)").assertIsDisplayed()
         compose.onNodeWithText("Continue").assertIsNotEnabled()
-        compose.onNodeWithText("Time").performClick()
-        compose.onNodeWithText("Weekly running time (minutes)").performTextReplacement("120")
+        compose.onNodeWithText("Weekly distance goal (km)").performTextReplacement("15")
         compose.onNodeWithText("Continue").assertIsEnabled().performClick()
-        compose.onNodeWithText("Learn from the runs I record").assertIsDisplayed()
         compose.onNodeWithText(
-            "Runway will learn your recent baseline from recorded runs. Each scheduled run still receives a share of your weekly time goal.",
+            "Enter a recent repeatable week so the routine starts from what you can do now.",
         ).assertIsDisplayed()
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+        compose.onNodeWithText("Repeatable weekly distance (km)").performTextReplacement("12")
+        compose.onNodeWithText("Current runs per week").performTextReplacement("3")
+        compose.onNodeWithText("Change each week (km)").performTextReplacement("1")
+        compose.onNodeWithText("Continue").assertIsEnabled().performClick()
+        compose.onNodeWithText("Continue").performClick()
+
+        listOf(
+            "Weekly progression",
+            "First week",
+            "Increase by 1 km",
+            "Final goal",
+            "Week 2",
+            "13 km",
+        ).forEach { text ->
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText(text))
+            compose.onNodeWithText(text).assertIsDisplayed()
+        }
+        compose.onAllNodesWithText("12 km").assertCountEquals(2)
+        compose.onAllNodesWithText("15 km").assertCountEquals(3)
+        compose.onAllNodesWithText("Week 4").assertCountEquals(2)
+        compose.onNodeWithText("Start routine").assertIsEnabled()
     }
 
     @Test
@@ -372,6 +392,26 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                                             startDate = "2026-08-17",
                                             targetDistanceMeters = 15_000.0,
                                             scheduledRuns = 3,
+                                            runs = listOf(
+                                                NativeRoutineRunTarget(
+                                                    "routine-workout-1",
+                                                    "2026-08-17",
+                                                    5_000,
+                                                    null,
+                                                ),
+                                                NativeRoutineRunTarget(
+                                                    "routine-workout-2",
+                                                    "2026-08-19",
+                                                    5_000,
+                                                    null,
+                                                ),
+                                                NativeRoutineRunTarget(
+                                                    "routine-workout-3",
+                                                    "2026-08-22",
+                                                    5_000,
+                                                    null,
+                                                ),
+                                            ),
                                         ),
                                     ),
                                 ),
@@ -403,6 +443,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                 hasContentDescription("Routine run · 5 km", substring = true),
         ).assertIsDisplayed().performClick()
         compose.onNodeWithText("Weekly running goal · 15 km").assertIsDisplayed()
+        compose.onNodeWithText("Balance this week's runs").assertIsDisplayed()
         compose.onNodeWithText("Change this week's goal").assertIsDisplayed().performClick()
         compose.onNodeWithText("Change weekly running goal").assertIsDisplayed()
         compose.onNodeWithText("Time").performClick()
@@ -412,6 +453,48 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             assertTrue(submitted?.weekId == "routine-week-2")
             assertTrue(submitted?.targetMetric == "time")
             assertTrue(submitted?.targetValue == "120")
+        }
+    }
+
+    @Test
+    fun routineWeekBalanceMovesHalfAKilometreBetweenDays() {
+        var submitted: UpdateRoutineWeekDistributionCommand? = null
+        val goal = NativeRoutineWeekGoal(
+            weekId = "routine-week",
+            startDate = "2026-08-17",
+            targetDistanceMeters = 15_000.0,
+            scheduledRuns = 3,
+            runs = listOf(
+                NativeRoutineRunTarget("monday", "2026-08-17", 5_000, null),
+                NativeRoutineRunTarget("wednesday", "2026-08-19", 5_000, null),
+                NativeRoutineRunTarget("saturday", "2026-08-22", 5_000, null),
+            ),
+        )
+        compose.setContent {
+            RunwayTheme {
+                RoutineWeekBalanceDialog(
+                    goal = goal,
+                    actionPending = false,
+                    errorMessage = null,
+                    onDismiss = {},
+                    onSubmit = { submitted = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Save balance").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Move 0.5 km to Monday, August 17").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Move 0.5 km away from Monday, August 17").assertIsDisplayed()
+        compose.onAllNodesWithText("+ 0.5 km")[0].performClick()
+        compose.onNodeWithText("5.5 km").assertIsDisplayed()
+        compose.onNodeWithText("4.5 km").assertIsDisplayed()
+        compose.onNodeWithText("Save balance").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertTrue(
+                submitted?.allocations?.map { it.targetDistanceMeters } ==
+                    listOf(5_500, 4_500, 5_000),
+            )
+            assertTrue(submitted?.allocations?.sumOf { it.targetDistanceMeters ?: 0 } == 15_000)
         }
     }
 
@@ -596,6 +679,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
                     routine = false,
                     routineWeekGoal = null,
                     onChangeRoutineWeekGoal = {},
+                    onBalanceRoutineWeek = {},
                     onAddWorkout = {},
                 )
             }

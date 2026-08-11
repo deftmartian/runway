@@ -22,6 +22,8 @@ class NativeSettingsSummaryTest {
                 startedOn = "2026-07-01",
                 targetDate = null,
                 runsPerWeek = 3,
+                routineGoalDistanceMeters = 15_000,
+                routineWeeklyChangeDistanceMeters = 1_000,
             ),
         )
         val active = nativeTrainingSettingsRow(
@@ -38,8 +40,10 @@ class NativeSettingsSummaryTest {
         )
 
         assertEquals("Weekly routine", routine.label)
+        assertTrue(routine.summary.contains("Goal 15 km"))
+        assertTrue(routine.summary.contains("1 km each week"))
         assertTrue(routine.summary.contains("Default 3 runs each week"))
-        assertEquals("Replace", routine.action)
+        assertEquals("Adjust", routine.action)
         assertEquals("Training plan", active.label)
         assertTrue(active.summary.contains("Autumn 10K"))
         assertEquals("Goal setup", pending.label)

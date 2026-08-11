@@ -3,9 +3,11 @@ package dev.deftmartian.runway.data
 import androidx.room.withTransaction
 import dev.deftmartian.runway.domain.ACTIVITY_WORKOUT_MATCH_WINDOW_DAYS
 import dev.deftmartian.runway.domain.StandalonePlanRules
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 
 internal const val MAX_INBOX_PLAN_WORKOUTS =
     StandalonePlanRules.MAX_PLAN_WEEKS * StandalonePlanRules.MAX_VISIBLE_WORKOUTS_PER_WEEK
@@ -50,7 +52,16 @@ class RoomLocalSurfaceLedgerReader(
             undoTodayEpochDay = todayEpochDay,
             routineWindows = activePlans
                 .filter { it.phaseType == ROUTINE_PHASE }
-                .associate { it.planId to EpochDayWindow(fromEpochDay, throughEpochDay) },
+                .associate {
+                    it.planId to EpochDayWindow(
+                        LocalDate.ofEpochDay(fromEpochDay)
+                            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                            .toEpochDay(),
+                        LocalDate.ofEpochDay(throughEpochDay)
+                            .with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
+                            .toEpochDay(),
+                    )
+                },
         )
         val nextWorkout = activePlans.singleOrNull()?.let { plan ->
             // Today has its own decision row. "Next" must not repeat the same workout.

@@ -274,7 +274,12 @@ object Consequences {
         val matching = consequence.nextRunAdjustment?.takeIf { it.metric == metric }?.value?.let(::abs) ?: 0
         val total = matching.takeIf { it > 0 } ?: defaultReduction(metric, previous)
         val reduction = if (decision == PlanDecision.REBALANCE_WEEK) ceil(total.toDouble() / max(1, shareCount)).toInt() else total
-        val next = max(minimumTarget(metric), previous - reduction)
+        val rawNext = max(minimumTarget(metric), previous - reduction)
+        val next = if (metric == LoadMetric.DISTANCE) {
+            roundTrainingValueToIncrement(rawNext.toDouble(), 500)
+        } else {
+            rawNext
+        }
         return DecisionEffect(metric, previous, next - previous, next)
     }
 
@@ -667,7 +672,8 @@ object WorkoutEdits {
     private fun validDistanceProposal(proposal: WorkoutProposal): Boolean =
         proposal.type !in setOf(WorkoutType.REST, WorkoutType.RACE) &&
             proposal.intensity == "easy" &&
-            proposal.targetDistanceMeters in 100..100_000 &&
+            proposal.targetDistanceMeters in 500..100_000 &&
+            proposal.targetDistanceMeters % 500 == 0 &&
             proposal.targetDurationSeconds == null &&
             proposal.intervalStructure == null
 
@@ -708,22 +714,42 @@ object WorkoutEdits {
             isRebalanceCandidate(state, selected, proposed, today)
         }
         if (delta == 0 || candidates.isEmpty()) return emptyMap()
+        if (proposed.prescriptionKind != PrescriptionKind.TIMED) {
+            return rebalanceDistanceCandidates(candidates, delta)
+        }
         val share = roundTrainingValueToInt(delta.toDouble() / candidates.size)
         return candidates.associate {
-            it.id to if (proposed.prescriptionKind == PrescriptionKind.TIMED) {
+            it.id to run {
                 val duration = max(600, (it.current.targetDurationSeconds ?: 600) - share)
                 it.current.copy(
                     targetDurationSeconds = duration,
                     intervalStructure = resizeTimedIntervalStructure(it.current.intervalStructure, duration),
                     reason = "Rebalanced after an explicit workout edit.",
                 )
-            } else {
-                it.current.copy(
-                    targetDistanceMeters = max(500, it.current.targetDistanceMeters - share),
-                    reason = "Rebalanced after an explicit workout edit.",
-                )
             }
         }
+    }
+
+    private fun rebalanceDistanceCandidates(
+        candidates: List<EffectiveWorkoutState>,
+        deltaMeters: Int,
+    ): Map<String, WorkoutProposal> {
+        val totalUnits = kotlin.math.abs(deltaMeters / 500)
+        val baseUnits = totalUnits / candidates.size
+        val remainderUnits = totalUnits % candidates.size
+        val direction = deltaMeters.compareTo(0)
+        val rebalanced = linkedMapOf<String, WorkoutProposal>()
+        for (index in candidates.indices) {
+            val candidate = candidates[index]
+            val shareUnits = direction * (baseUnits + if (index < remainderUnits) 1 else 0)
+            if (shareUnits == 0) continue
+            rebalanced[candidate.id] = candidate.current.copy(
+                targetDistanceMeters = (candidate.current.targetDistanceMeters - shareUnits * 500)
+                    .coerceIn(500, 100_000),
+                reason = "Rebalanced after an explicit workout edit.",
+            )
+        }
+        return rebalanced
     }
 
     private fun isRebalanceCandidate(

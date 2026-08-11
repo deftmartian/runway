@@ -33,6 +33,11 @@ internal data class CreatePlanCommand(
     val routineGoalMetric: String = "distance",
     val routineWeeklyGoalKm: String = "",
     val routineWeeklyGoalMinutes: String = "",
+    /** Routine-only starting capability when the selected metric is time. */
+    val currentWeeklyMinutes: String = "",
+    /** Runner-selected per-week step toward the routine goal. */
+    val routineWeeklyChangeKm: String = "",
+    val routineWeeklyChangeMinutes: String = "",
 ) : MobileCommand {
     override val action = "create_plan"
 }
@@ -45,6 +50,21 @@ internal data class UpdateRoutineWeekGoalCommand(
     val occurredAtEpochMillis: Long,
 ) : MobileCommand {
     override val action = "update_routine_week_goal"
+}
+
+internal data class RoutineRunAllocation(
+    val workoutId: String,
+    val targetDistanceMeters: Int?,
+    val targetDurationSeconds: Int?,
+)
+
+internal data class UpdateRoutineWeekDistributionCommand(
+    val weekId: String,
+    val allocations: List<RoutineRunAllocation>,
+    val operationId: String,
+    val occurredAtEpochMillis: Long,
+) : MobileCommand {
+    override val action = "update_routine_week_distribution"
 }
 
 internal data class RecordFeedbackCommand(

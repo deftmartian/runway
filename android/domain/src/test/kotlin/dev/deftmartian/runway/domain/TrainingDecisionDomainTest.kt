@@ -145,6 +145,12 @@ class TrainingDecisionDomainTest {
         assertEquals(3_000, preview.weekLoads.getValue("week").second.distanceMeters)
         assertEquals(0, preview.weekLoads.getValue("week").second.durationSeconds)
         assertInvalid(open.copy(targetDistanceMeters = 1))
+        assertInvalid(
+            open.copy(
+                prescriptionKind = PrescriptionKind.DISTANCE,
+                targetDistanceMeters = 4_200,
+            ),
+        )
         assertInvalid(open.copy(targetDurationSeconds = 600))
         assertInvalid(open.copy(type = WorkoutType.LONG))
 
@@ -240,5 +246,29 @@ class TrainingDecisionDomainTest {
             throw AssertionError("Expected timed proposal without intervals to fail")
         } catch (_: IllegalArgumentException) {
         }
+    }
+
+    @Test fun `distance rebalance preserves half kilometre units without overshooting the edit`() {
+        val day = LocalDate.parse("2026-07-20")
+        val selected = EffectiveWorkoutState("one", generated = runProposal("week", day, 3_000))
+        val peerA = EffectiveWorkoutState("two", generated = runProposal("week", day.plusDays(2), 3_000))
+        val peerB = EffectiveWorkoutState("three", generated = runProposal("week", day.plusDays(4), 3_000))
+        val proposed = selected.current.copy(targetDistanceMeters = 3_500)
+
+        val preview = WorkoutEdits.preview(
+            selected,
+            selected.generated,
+            proposed,
+            listOf(selected, peerA, peerB),
+            listOf(EditWeek("week", 1)),
+            day,
+            rebalance = true,
+        )
+        val changed = preview.workoutChanges.associate { it.workoutId to it.after.targetDistanceMeters }
+
+        assertEquals(3_500, changed["one"])
+        assertEquals(2_500, changed["two"])
+        assertFalse(changed.containsKey("three"))
+        assertEquals(9_000, preview.weekLoads.getValue("week").second.distanceMeters)
     }
 }

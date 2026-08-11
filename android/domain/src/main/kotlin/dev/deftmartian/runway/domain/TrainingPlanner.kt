@@ -10,6 +10,7 @@ import kotlin.math.pow
 object TrainingPlanner {
     private const val maxPlanWeeks = 52
     private const val minimumRunMeters = 500
+    private const val plannedDistanceIncrementMeters = 500
     private val peakWeekly = mapOf(
         RaceDistance.FIVE_K to 14000,
         RaceDistance.TEN_K to 22000,
@@ -221,22 +222,22 @@ object TrainingPlanner {
         frame: EstablishedWeekFrame,
     ): EstablishedWeekTargets {
         val rampedDistance = if (frame.number == 1) {
-            intake.currentWeeklyDistanceMeters
+            plannedDistance(intake.currentWeeklyDistanceMeters.toDouble())
         } else {
-            roundTrainingValueToInt(state.previousDistance * (1 + context.normalRamp))
+            plannedDistance(state.previousDistance * (1 + context.normalRamp))
         }
         val buildDistance = min(context.peakDistance, rampedDistance)
         val distance = when {
             frame.taper -> taperTarget(state.peakDistance, frame.taperPosition, context.taperWeeks)
-            frame.down -> roundTrainingValueToInt(buildDistance * .85)
+            frame.down -> plannedDistance(buildDistance * .85)
             else -> buildDistance
         }
         val rampedLongRun = if (frame.number == 1) {
-            context.initialLongRun
+            plannedDistance(context.initialLongRun.toDouble())
         } else {
-            roundTrainingValueToInt(state.previousLongRun * (1 + context.normalRamp))
+            plannedDistance(state.previousLongRun * (1 + context.normalRamp))
         }
-        val adjustedLongRun = if (frame.down) roundTrainingValueToInt(rampedLongRun * .85) else rampedLongRun
+        val adjustedLongRun = if (frame.down) plannedDistance(rampedLongRun * .85) else rampedLongRun
         val longRun = if (frame.taper) {
             taperTarget(state.peakLongRun, frame.taperPosition, context.taperWeeks)
         } else {
@@ -386,7 +387,7 @@ object TrainingPlanner {
         val allocation = if (raceDate != null) {
             // The event replaces one normal run. Scale the training-only taper budget to the
             // remaining slots so two short easy runs do not absorb a three-run week's volume.
-            val raceWeekTrainingBudget = roundTrainingValueToInt(
+            val raceWeekTrainingBudget = plannedDistance(
                 total.toDouble() * training.size / plannedRuns(intake),
             )
             allocateEvenly(raceWeekTrainingBudget, training.size)
@@ -468,10 +469,17 @@ object TrainingPlanner {
         val longIndex = weekdays.indexOf(longDay)
         if (longIndex < 0) return allocateEvenly(total, weekdays.size)
 
-        val minimum = ceil(total / weekdays.size.toDouble()).toInt()
-        val maximum = max(minimum, total - minimumRunMeters * max(0, weekdays.size - 1))
-        val long = min(maximum, max(minimum, desired))
-        val easy = allocateEvenly(total - long, weekdays.size - 1).first
+        val roundedTotal = plannedDistance(total.toDouble())
+        val minimum = plannedDistance(
+            ceil(roundedTotal / weekdays.size.toDouble() / plannedDistanceIncrementMeters) *
+                plannedDistanceIncrementMeters,
+        )
+        val maximum = max(
+            minimum,
+            roundedTotal - minimumRunMeters * max(0, weekdays.size - 1),
+        )
+        val long = min(maximum, max(minimum, plannedDistance(desired.toDouble())))
+        val easy = allocateEvenly(roundedTotal - long, weekdays.size - 1).first
         var easyIndex = 0
         val distances = weekdays.indices.map { index ->
             if (index == longIndex) long else easy[easyIndex++]
@@ -481,9 +489,12 @@ object TrainingPlanner {
 
     private fun allocateEvenly(total: Int, count: Int): Pair<List<Int>, Int> {
         if (count <= 0) return emptyList<Int>() to 0
-        val base = floor(total / count.toDouble()).toInt()
-        var remaining = total - base * count
-        val allocations = List(count) { base + if (remaining-- > 0) 1 else 0 }
+        val totalUnits = plannedDistance(total.toDouble()) / plannedDistanceIncrementMeters
+        val baseUnits = floor(totalUnits / count.toDouble()).toInt()
+        var remainingUnits = totalUnits - baseUnits * count
+        val allocations = List(count) {
+            (baseUnits + if (remainingUnits-- > 0) 1 else 0) * plannedDistanceIncrementMeters
+        }
         return allocations to 0
     }
 
@@ -597,8 +608,11 @@ object TrainingPlanner {
             position == 2 -> .45
             else -> .4
         }
-        return roundTrainingValueToInt(peak * fraction)
+        return plannedDistance(peak * fraction)
     }
+
+    private fun plannedDistance(value: Double) =
+        roundTrainingValueToIncrement(value, plannedDistanceIncrementMeters)
 
     private fun percentIncrease(previous: Int, current: Int) = when {
         previous > 0 -> (current - previous).toDouble() / previous * 100

@@ -49,7 +49,7 @@ import androidx.room.RoomDatabase
         NotificationPreferencesEntity::class,
         NotificationDeliveryEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class RunwayLedgerDatabase : RoomDatabase() {
@@ -65,20 +65,14 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "runway-ledger.db"
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
         /** Room's schema identity for [SCHEMA_VERSION], also recorded in the exported schema JSON. */
-        const val SCHEMA_IDENTITY_HASH = "0aa6f2dc38b8ed3915692bb90d7315c8"
+        const val SCHEMA_IDENTITY_HASH = "c3cc35c4d3eb9343c527ae41e8976927"
 
         fun create(context: Context): RunwayLedgerDatabase = Room.databaseBuilder(
             context.applicationContext,
             RunwayLedgerDatabase::class.java,
             DATABASE_NAME,
-        ).addMigrations(
-            RunwayLedgerMigrations.V1_TO_V2,
-            RunwayLedgerMigrations.V2_TO_V3,
-            RunwayLedgerMigrations.V3_TO_V4,
-            RunwayLedgerMigrations.V4_TO_V5,
-            RunwayLedgerMigrations.V5_TO_V6,
-        ).build()
+        ).fallbackToDestructiveMigration(dropAllTables = true).build()
     }
 }

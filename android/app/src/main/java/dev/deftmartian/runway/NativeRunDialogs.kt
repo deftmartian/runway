@@ -52,6 +52,14 @@ internal fun positiveRunMeasurementError(value: String, unit: String): String? {
     return if (number != null && number > 0.0) null else "Enter a value greater than 0 $unit."
 }
 
+internal fun plannedDistanceInputError(value: String, required: Boolean = true): String? =
+    boundedRunMeasurementError(value, required, 0.5, 100.0, "km")
+        ?: "Use 0.5 km steps for planned distance."
+            .takeUnless { value.toDoubleOrNull()?.let(::isHalfKilometreStep) == true }
+
+private fun isHalfKilometreStep(value: Double): Boolean =
+    kotlin.math.abs(value * 2 - kotlin.math.round(value * 2)) < 0.000_001
+
 internal fun feedbackPlanChangeMessage(planPhase: String?): String =
     if (planPhase == "routine") {
         "An unusually hard effort is saved with this result. Use Calendar to reduce or postpone the next prescribed run, or change a future week's goal."
@@ -537,7 +545,7 @@ private fun workoutAddValidation(
 
 private fun workoutAddDistanceError(routine: Boolean, metric: String, value: String): String? =
     if (!routine || metric == "distance") {
-        boundedRunMeasurementError(value, true, 0.1, 100.0, "km")
+        plannedDistanceInputError(value)
     } else null
 
 private fun workoutAddDurationError(routine: Boolean, metric: String, value: String): String? =
@@ -806,13 +814,11 @@ private fun workoutEditStoredFormatIssue(
 
 private fun workoutEditLoadError(isRest: Boolean, open: Boolean, timed: Boolean, load: String): String? {
     if (isRest || open) return null
-    return boundedRunMeasurementError(
-        load,
-        required = true,
-        minimum = if (timed) 10.0 else 0.1,
-        maximum = if (timed) 360.0 else 100.0,
-        unit = if (timed) "minutes" else "km",
-    )
+    return if (timed) {
+        boundedRunMeasurementError(load, true, 10.0, 360.0, "minutes")
+    } else {
+        plannedDistanceInputError(load)
+    }
 }
 
 @Composable

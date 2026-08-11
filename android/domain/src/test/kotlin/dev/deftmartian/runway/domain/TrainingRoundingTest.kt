@@ -19,4 +19,10 @@ class TrainingRoundingTest {
             roundTrainingValue(Double.POSITIVE_INFINITY)
         }
     }
+
+    @Test
+    fun `training values round to runner readable increments`() {
+        assertEquals(3_500, roundTrainingValueToIncrement(3_250.0, 500))
+        assertEquals(3_000, roundTrainingValueToIncrement(3_249.0, 500))
+    }
 }

@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 3,
-    "identityHash": "e07bbca67f5da673e81167f32b14d51a",
+    "version": 7,
+    "identityHash": "c3cc35c4d3eb9343c527ae41e8976927",
     "entities": [
       {
         "tableName": "profile_settings",
@@ -307,7 +307,7 @@
       },
       {
         "tableName": "plans",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`planId` TEXT NOT NULL, `goalId` TEXT NOT NULL, `phaseType` TEXT NOT NULL, `state` TEXT NOT NULL, `startEpochDay` INTEGER NOT NULL, `endEpochDay` INTEGER, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `riskAssessment` TEXT, `completedAtEpochMillis` INTEGER, `archivedAtEpochMillis` INTEGER, `summaryBaselineMeters` INTEGER, `summaryPeakMeters` INTEGER, `summaryRequiredWeeklyIncreasePercent` REAL, `summaryDefaultWeeklyIncreasePercent` REAL, `summaryLongRunPeakMeters` INTEGER, `summaryProgramWeeks` INTEGER, `summarySessionsPerWeek` INTEGER, `summaryContinuousRunTargetSeconds` INTEGER, `summarySessionDurationSeconds` INTEGER, PRIMARY KEY(`planId`), FOREIGN KEY(`goalId`) REFERENCES `goals`(`goalId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`planId` TEXT NOT NULL, `goalId` TEXT NOT NULL, `phaseType` TEXT NOT NULL, `state` TEXT NOT NULL, `startEpochDay` INTEGER NOT NULL, `endEpochDay` INTEGER, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `riskAssessment` TEXT, `completedAtEpochMillis` INTEGER, `archivedAtEpochMillis` INTEGER, `summaryBaselineMeters` INTEGER, `summaryPeakMeters` INTEGER, `summaryRequiredWeeklyIncreasePercent` REAL, `summaryDefaultWeeklyIncreasePercent` REAL, `summaryLongRunPeakMeters` INTEGER, `summaryProgramWeeks` INTEGER, `summarySessionsPerWeek` INTEGER, `summaryContinuousRunTargetSeconds` INTEGER, `summarySessionDurationSeconds` INTEGER, `routineTargetDistanceMeters` INTEGER, `routineTargetDurationSeconds` INTEGER, `routineWeeklyChangeDistanceMeters` INTEGER, `routineWeeklyChangeDurationSeconds` INTEGER, PRIMARY KEY(`planId`), FOREIGN KEY(`goalId`) REFERENCES `goals`(`goalId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "planId",
@@ -415,6 +415,26 @@
             "fieldPath": "summarySessionDurationSeconds",
             "columnName": "summarySessionDurationSeconds",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "routineTargetDistanceMeters",
+            "columnName": "routineTargetDistanceMeters",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "routineTargetDurationSeconds",
+            "columnName": "routineTargetDurationSeconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "routineWeeklyChangeDistanceMeters",
+            "columnName": "routineWeeklyChangeDistanceMeters",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "routineWeeklyChangeDurationSeconds",
+            "columnName": "routineWeeklyChangeDurationSeconds",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -462,6 +482,55 @@
             ],
             "referencedColumns": [
               "goalId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "routine_schedule_days",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`planId` TEXT NOT NULL, `dayOfWeek` INTEGER NOT NULL, PRIMARY KEY(`planId`, `dayOfWeek`), FOREIGN KEY(`planId`) REFERENCES `plans`(`planId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "planId",
+            "columnName": "planId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dayOfWeek",
+            "columnName": "dayOfWeek",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "planId",
+            "dayOfWeek"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_routine_schedule_days_planId",
+            "unique": false,
+            "columnNames": [
+              "planId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_routine_schedule_days_planId` ON `${TABLE_NAME}` (`planId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "plans",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "planId"
+            ],
+            "referencedColumns": [
+              "planId"
             ]
           }
         ]
@@ -3663,11 +3732,127 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "notification_preferences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`singletonId` INTEGER NOT NULL, `runReminderEnabled` INTEGER NOT NULL, `runReminderMinuteOfDay` INTEGER NOT NULL, `folderImportAlertsEnabled` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`singletonId`))",
+        "fields": [
+          {
+            "fieldPath": "singletonId",
+            "columnName": "singletonId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runReminderEnabled",
+            "columnName": "runReminderEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runReminderMinuteOfDay",
+            "columnName": "runReminderMinuteOfDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "folderImportAlertsEnabled",
+            "columnName": "folderImportAlertsEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "singletonId"
+          ]
+        }
+      },
+      {
+        "tableName": "notification_deliveries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`deliveryId` TEXT NOT NULL, `kind` TEXT NOT NULL, `subjectId` TEXT NOT NULL, `localEpochDay` INTEGER, `state` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `deliveredAtEpochMillis` INTEGER, PRIMARY KEY(`deliveryId`))",
+        "fields": [
+          {
+            "fieldPath": "deliveryId",
+            "columnName": "deliveryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localEpochDay",
+            "columnName": "localEpochDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deliveredAtEpochMillis",
+            "columnName": "deliveredAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "deliveryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notification_deliveries_kind_state",
+            "unique": false,
+            "columnNames": [
+              "kind",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notification_deliveries_kind_state` ON `${TABLE_NAME}` (`kind`, `state`)"
+          },
+          {
+            "name": "index_notification_deliveries_kind_subjectId",
+            "unique": true,
+            "columnNames": [
+              "kind",
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_notification_deliveries_kind_subjectId` ON `${TABLE_NAME}` (`kind`, `subjectId`)"
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e07bbca67f5da673e81167f32b14d51a')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c3cc35c4d3eb9343c527ae41e8976927')"
     ]
   }
 }

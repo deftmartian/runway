@@ -81,13 +81,6 @@ internal fun SetupScreen(
                 ?: if (initial?.currentWeeklyDistanceKm.isNullOrBlank()) "calibration" else "established",
         )
     }
-    var routineBaselineMode by rememberSaveable(initial?.baselineMode) {
-        mutableStateOf(
-            initial?.baselineMode.orEmpty().ifBlank {
-                if (initial?.currentWeeklyDistanceKm.isNullOrBlank()) "learn" else "entered"
-            },
-        )
-    }
     var routineGoalKm by rememberSaveable(initial?.routineWeeklyGoalKm) {
         mutableStateOf(initial?.routineWeeklyGoalKm.orEmpty())
     }
@@ -101,8 +94,15 @@ internal fun SetupScreen(
     var targetDate by rememberSaveable { mutableStateOf(initial?.targetDate.orEmpty()) }
     var priority by rememberSaveable { mutableStateOf(initial?.priority.orEmpty().ifBlank { "finish_healthy" }) }
     var weeklyKm by rememberSaveable { mutableStateOf(initial?.currentWeeklyDistanceKm.orEmpty()) }
+    var weeklyMinutes by rememberSaveable { mutableStateOf(initial?.currentWeeklyMinutes.orEmpty()) }
     var runsPerWeek by rememberSaveable { mutableStateOf(initial?.currentRunsPerWeek.orEmpty()) }
     var longestKm by rememberSaveable { mutableStateOf(initial?.longestRecentRunKm.orEmpty()) }
+    var routineChangeKm by rememberSaveable {
+        mutableStateOf(initial?.routineWeeklyChangeKm.orEmpty().ifBlank { "1" })
+    }
+    var routineChangeMinutes by rememberSaveable {
+        mutableStateOf(initial?.routineWeeklyChangeMinutes.orEmpty().ifBlank { "15" })
+    }
     var preferredDay by rememberSaveable { mutableStateOf(initial?.preferredLongRunDay.orEmpty().ifBlank { "6" }) }
     var timeZone by rememberSaveable { mutableStateOf(initial?.timeZone.orEmpty().ifBlank { ZoneId.systemDefault().id }) }
     var availability by rememberSaveable {
@@ -129,7 +129,7 @@ internal fun SetupScreen(
     val isRoutineGoal = goalKind == "routine"
     val isRaceGoal = !isRoutineGoal
     val effectiveStartMode = if (isRoutineGoal) "routine" else startMode
-    val usesEnteredBaseline = if (isRoutineGoal) routineBaselineMode == "entered" else startMode == "established"
+    val usesEnteredBaseline = isRoutineGoal || startMode == "established"
     val liveTargetBounds = setupTargetDateBounds(timeZone, effectiveStartMode, setupInstant)
     val minimumTargetDate = liveTargetBounds?.minimum ?: when (effectiveStartMode) {
         "calibration" -> payload?.minimumCalibrationTargetDate
@@ -146,12 +146,27 @@ internal fun SetupScreen(
     } else {
         goalValidation(isRaceGoal, targetDate, minimumTargetDate, maximumTargetDate)
     }
-    val startingPointIssue = startingPointValidation(
-        if (usesEnteredBaseline) "established" else "learn",
-        weeklyKm,
-        runsPerWeek,
-        longestKm,
-    )
+    val startingPointIssue = if (isRoutineGoal) {
+        routineStartingPointValidation(
+            mode = "entered",
+            metric = routineGoalMetric,
+            weeklyKm = weeklyKm,
+            weeklyMinutes = weeklyMinutes,
+            runsPerWeek = runsPerWeek,
+            scheduledRuns = availability.size.coerceAtLeast(1),
+            goalKm = routineGoalKm,
+            goalMinutes = routineGoalMinutes,
+            changeKm = routineChangeKm,
+            changeMinutes = routineChangeMinutes,
+        )
+    } else {
+        startingPointValidation(
+            if (usesEnteredBaseline) "established" else "learn",
+            weeklyKm,
+            runsPerWeek,
+            longestKm,
+        )
+    }
     val scheduleIssue = scheduleValidation(
         mode = effectiveStartMode,
         availability = availability,
@@ -160,6 +175,7 @@ internal fun SetupScreen(
         timeZone = timeZone,
         raceDistance = raceDistance,
     ) ?: goalIssue.takeIf { isRoutineGoal }
+        ?: startingPointIssue.takeIf { isRoutineGoal }
     val concentratedSchedule = requiresConcentratedScheduleAcceptance(
         startMode = effectiveStartMode,
         runsPerWeek = runsPerWeek,
@@ -186,6 +202,9 @@ internal fun SetupScreen(
         routineGoalMetric = routineGoalMetric,
         routineWeeklyGoalKm = if (isRoutineGoal) routineGoalKm else "",
         routineWeeklyGoalMinutes = if (isRoutineGoal) routineGoalMinutes else "",
+        currentWeeklyMinutes = if (isRoutineGoal) weeklyMinutes else "",
+        routineWeeklyChangeKm = if (isRoutineGoal) routineChangeKm else "",
+        routineWeeklyChangeMinutes = if (isRoutineGoal) routineChangeMinutes else "",
     )
     val planPreview = remember(candidateCommand, setupOccurredAtEpochMillis) {
         if (startMode != "established" || !isRaceGoal) {
@@ -197,15 +216,27 @@ internal fun SetupScreen(
             ) as? StandaloneOnboardingOutcome.Planned)?.plan as? GeneratedDistancePlan
         }
     }
+    val routinePreview = remember(candidateCommand, setupOccurredAtEpochMillis) {
+        if (!isRoutineGoal) {
+            null
+        } else {
+            StandaloneOnboardingAdapter.preview(candidateCommand, setupInstant)
+                as? StandaloneOnboardingOutcome.Routine
+        }
+    }
     val highIncreaseKey = planPreview?.let(::generatedPlanConfirmationKey)
     val highIncreaseConfirmed =
         highIncreaseKey != null && confirmedHighIncreaseKey == highIncreaseKey
     val currentGoalLabel = currentGoalStateLabel(payload?.currentGoal?.state)
+    val adjustingRoutine = initial?.goalKind == "routine" && isRoutineGoal
     val assessmentIssue = planAssessmentIssue(planPreview?.risk, highIncreaseConfirmed)
     val reviewIssue = when {
         assessmentIssue != null -> assessmentIssue
-        payload?.currentGoal != null && !confirmReplace ->
+        payload?.currentGoal != null && !confirmReplace -> if (adjustingRoutine) {
+            "Confirm that the current routine will move to History before the adjustment is applied."
+        } else {
             "Confirm that the $currentGoalLabel will be archived."
+        }
         concentratedSchedule && !confirmConcentrated -> "Confirm the two-day schedule before creating this plan."
         else -> null
     }
@@ -251,7 +282,9 @@ internal fun SetupScreen(
         payload?.currentGoal?.let {
             item {
                 val title = it.title.orEmpty().ifBlank { currentGoalLabel }
-                Notice(if (it.state == "pending") {
+                Notice(if (adjustingRoutine) {
+                    "Adjusting $title keeps the current routine in History and creates the revised progression after confirmation."
+                } else if (it.state == "pending") {
                     "$title is saved as a pending goal. Replacing it keeps its record and archives it after confirmation."
                 } else {
                     "Replacing $title keeps its history and archives the current plan after confirmation."
@@ -297,8 +330,8 @@ internal fun SetupScreen(
                 if (isRoutineGoal) {
                     item {
                         SetupSection(
-                            "Weekly running goal",
-                            "Choose a distance or time target. Runway divides it across the run days you select.",
+                            "Final weekly goal",
+                            "Choose the weekly distance or time you want the routine to reach.",
                         ) {
                             ChoiceRow("Distance", routineGoalMetric == "distance") {
                                 routineGoalMetric = "distance"
@@ -335,12 +368,10 @@ internal fun SetupScreen(
                 item {
                     SetupSection("Starting point", "Choose how runway should understand your current running.") {
                         if (isRoutineGoal) {
-                            ChoiceRow("Enter a recent repeatable week", routineBaselineMode == "entered") {
-                                routineBaselineMode = "entered"
-                            }
-                            ChoiceRow("Learn from the runs I record", routineBaselineMode == "learn") {
-                                routineBaselineMode = "learn"
-                            }
+                            Text(
+                                "Enter a recent repeatable week so the routine starts from what you can do now.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         } else {
                             ChoiceRow("Enter a recent repeatable week", startMode == "established") {
                                 startMode = "established"
@@ -354,15 +385,46 @@ internal fun SetupScreen(
                 if (usesEnteredBaseline) {
                     item {
                         SetupSection("Current running", "Use one recent week you could repeat now.") {
-                            NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
+                            if (isRoutineGoal && routineGoalMetric == "time") {
+                                NumberField("Repeatable weekly running time (minutes)", weeklyMinutes) {
+                                    weeklyMinutes = it
+                                }
+                            } else {
+                                NumberField("Repeatable weekly distance (km)", weeklyKm) { weeklyKm = it }
+                            }
                             NumberField("Current runs per week", runsPerWeek) { runsPerWeek = it }
-                            NumberField("Longest run in that week (km)", longestKm) { longestKm = it }
+                            if (isRaceGoal) {
+                                NumberField("Longest run in that week (km)", longestKm) { longestKm = it }
+                            } else {
+                                NumberField(
+                                    if (routineGoalMetric == "time") {
+                                        "Change each week (minutes)"
+                                    } else {
+                                        "Change each week (km)"
+                                    },
+                                    if (routineGoalMetric == "time") routineChangeMinutes else routineChangeKm,
+                                ) {
+                                    if (routineGoalMetric == "time") routineChangeMinutes = it else routineChangeKm = it
+                                }
+                                Text(
+                                    "The weekly plan moves by this amount until it reaches your final goal.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (routineGoalMetric == "distance") {
+                                    Text(
+                                        "Planned runs use 0.5 km steps. Your reported starting week is rounded only for the plan.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                             startingPointIssue?.let { ValidationText(it) }
                         }
                     }
-                } else {
+                } else if (!isRoutineGoal) {
                     item {
-                        Notice("Runway will learn your recent baseline from recorded runs. Each scheduled run still receives a share of your weekly ${routineGoalMetricLabel(routineGoalMetric)} goal.")
+                        Notice("Without a starting amount, the first week uses your final weekly goal. Enter a recent repeatable week if you want a week-by-week ramp.")
                     }
                 }
             }
@@ -427,13 +489,42 @@ internal fun SetupScreen(
                         SettingRow("Starting point", if (usesEnteredBaseline) "Entered recent week" else "Learn from recorded runs")
                         Notice(
                             if (isRoutineGoal) {
-                                "This starts with ${availability.size} prescribed ${if (availability.size == 1) "run" else "runs"} each week. Together they total ${routineGoalMeasurement(routineGoalMetric, routineGoalKm, routineGoalMinutes)}. You can change a future week separately."
+                                if (routineGoalMetric == "time") {
+                                    "Each week shows its total and each planned run. You can change a future week's total or move 5 minutes between its run days."
+                                } else {
+                                    "Each week shows its total and each planned run. You can change a future week's total or move 0.5 km between its run days."
+                                }
                             } else if (startMode == "calibration") {
                                 "Two weeks of open run days will be created. Distance and duration remain unprescribed until you confirm an observed baseline."
                             } else {
                                 "An active distance plan will be created now. You can edit future workouts after setup."
                             },
                         )
+                    }
+                }
+                routinePreview?.let { preview ->
+                    item {
+                        SetupSection(
+                            "Weekly progression",
+                            "The first week starts from your repeatable amount and moves toward the final goal.",
+                        ) {
+                            val outline = routineRampOutline(preview)
+                            SettingRow("First week", outline.firstWeek)
+                            SettingRow("Weekly change", outline.weeklyChange)
+                            SettingRow("Final goal", outline.finalGoal)
+                            SettingRow("Goal reached", outline.goalWeek)
+                            outline.visibleWeeks.forEach { week ->
+                                SettingRow("Week ${week.number}", week.measurement)
+                            }
+                            outline.finalWeekAfterGap?.let { week ->
+                                Text(
+                                    "…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                SettingRow("Week ${week.number}", week.measurement)
+                            }
+                        }
                     }
                 }
                 planPreview?.let { preview ->
@@ -489,7 +580,11 @@ internal fun SetupScreen(
                 if (payload?.currentGoal != null) {
                     item {
                         CheckRow(
-                            "Archive the $currentGoalLabel and replace it",
+                            if (adjustingRoutine) {
+                                "Keep the current routine in History and apply these adjustments"
+                            } else {
+                                "Archive the $currentGoalLabel and replace it"
+                            },
                             confirmReplace,
                         ) { confirmReplace = it }
                     }
@@ -725,22 +820,32 @@ internal fun routineWeeklyGoalValidation(
     goalMinutes: String,
     scheduledRuns: Int = 1,
 ): String? = when (metric) {
-    "distance" -> boundedRoutineGoalValidation(
-        goalKm,
-        1.0..minOf(250.0, 100.0 * scheduledRuns),
-        "Enter a weekly distance goal to continue.",
-        "Enter a weekly distance goal from 1 to ${routineDistanceMaximum(scheduledRuns)} km.",
-    )
-    "time" -> boundedRoutineGoalValidation(
-        goalMinutes,
-        (10.0 * scheduledRuns)..(360.0 * scheduledRuns),
-        "Enter a weekly running time to continue.",
-        "Enter a weekly running time from ${routineWholeNumber(10 * scheduledRuns)} to ${routineWholeNumber(360 * scheduledRuns)} minutes.",
-    )
+    "distance" -> {
+        val range = (0.5 * scheduledRuns)..minOf(250.0, 100.0 * scheduledRuns)
+        boundedRoutineGoalValidation(
+            goalKm,
+            range,
+            "Enter a weekly distance goal to continue.",
+            "Enter a weekly distance goal from ${formatRoutineNumber(range.start)} to ${routineDistanceMaximum(scheduledRuns)} km.",
+        ) ?: "Use 0.5 km steps for the weekly goal."
+            .takeUnless { goalKm.toDoubleOrNull()?.isHalfStep() == true }
+    }
+    "time" -> {
+        boundedRoutineGoalValidation(
+            goalMinutes,
+            (10.0 * scheduledRuns)..(360.0 * scheduledRuns),
+            "Enter a weekly running time to continue.",
+            "Enter a weekly running time from ${routineWholeNumber(10 * scheduledRuns)} to ${routineWholeNumber(360 * scheduledRuns)} minutes.",
+        ) ?: "Use 5-minute steps for the weekly goal."
+            .takeUnless { goalMinutes.toDoubleOrNull()?.isFiveMinuteStep() == true }
+    }
     else -> "Choose distance or time for the weekly goal."
 }
 
 private fun routineDistanceMaximum(scheduledRuns: Int) = minOf(250, 100 * scheduledRuns)
+
+private fun formatRoutineNumber(value: Double) =
+    if (value % 1.0 == 0.0) value.toInt().toString() else String.format(Locale.US, "%.1f", value)
 
 private fun routineWholeNumber(value: Int) = String.format(Locale.US, "%,d", value)
 
@@ -756,6 +861,142 @@ private fun boundedRoutineGoalValidation(
         value !in range -> rangeMessage
         else -> null
     }
+}
+
+internal fun routineStartingPointValidation(
+    mode: String,
+    metric: String,
+    weeklyKm: String,
+    weeklyMinutes: String,
+    runsPerWeek: String,
+    scheduledRuns: Int,
+    goalKm: String,
+    goalMinutes: String,
+    changeKm: String,
+    changeMinutes: String,
+): String? {
+    if (mode != "entered") return null
+    val runs = runsPerWeek.toIntOrNull()
+    if (runs == null || runs !in 1..7) return "Enter a whole number from 1 to 7 current runs."
+    return if (metric == "time") {
+        routineTimeStartingPointIssue(
+            weeklyMinutes,
+            goalMinutes,
+            changeMinutes,
+            scheduledRuns,
+        )
+    } else {
+        routineDistanceStartingPointIssue(weeklyKm, goalKm, changeKm, scheduledRuns)
+    }
+}
+
+private fun routineTimeStartingPointIssue(
+    weeklyMinutes: String,
+    goalMinutes: String,
+    changeMinutes: String,
+    scheduledRuns: Int,
+): String? {
+    val baseline = weeklyMinutes.toDoubleOrNull()
+    val minimum = 10.0 * scheduledRuns
+    if (baseline == null || !baseline.isFinite() || baseline !in minimum..4_200.0) {
+        return "Enter repeatable weekly running time from ${formatRoutineNumber(minimum)} to 4,200 minutes."
+    }
+    val changing = readableMinutes(baseline) != readableMinutes(goalMinutes.toDoubleOrNull())
+    val validStep = changeMinutes.toDoubleOrNull()?.let { it > 0 && it.isFiveMinuteStep() } == true
+    return "Use a positive 5-minute step for the weekly change."
+        .takeIf { changing && !validStep }
+}
+
+private fun routineDistanceStartingPointIssue(
+    weeklyKm: String,
+    goalKm: String,
+    changeKm: String,
+    scheduledRuns: Int,
+): String? {
+    val baseline = weeklyKm.toDoubleOrNull()
+    val minimum = 0.5 * scheduledRuns
+    if (baseline == null || !baseline.isFinite() || baseline !in minimum..250.0) {
+        return "Enter a repeatable week from ${formatRoutineNumber(minimum)} to 250 km."
+    }
+    val changing = readableKilometres(baseline) != readableKilometres(goalKm.toDoubleOrNull())
+    val validStep = changeKm.toDoubleOrNull()?.let { it > 0 && it.isHalfStep() } == true
+    return "Use a positive 0.5 km step for the weekly change."
+        .takeIf { changing && !validStep }
+}
+
+private fun Double.isHalfStep() =
+    isFinite() && kotlin.math.abs(this * 2 - kotlin.math.round(this * 2)) < 0.000_001
+
+private fun Double.isFiveMinuteStep() =
+    isFinite() && kotlin.math.abs(this / 5 - kotlin.math.round(this / 5)) < 0.000_001
+
+private fun readableKilometres(value: Double?): Int? = value?.takeIf(Double::isFinite)?.let {
+    kotlin.math.floor(it * 2 + .5).toInt()
+}
+
+private fun readableMinutes(value: Double?): Int? = value?.takeIf(Double::isFinite)?.let {
+    kotlin.math.floor(it / 5 + .5).toInt()
+}
+
+internal data class RoutineRampWeekOutline(val number: Int, val measurement: String)
+
+internal data class RoutineRampOutline(
+    val firstWeek: String,
+    val weeklyChange: String,
+    val finalGoal: String,
+    val goalWeek: String,
+    val visibleWeeks: List<RoutineRampWeekOutline>,
+    val finalWeekAfterGap: RoutineRampWeekOutline?,
+)
+
+internal fun routineRampOutline(preview: StandaloneOnboardingOutcome.Routine): RoutineRampOutline {
+    val distance = preview.weeklyTargetDistanceMeters != null
+    val start = if (distance) {
+        requireNotNull(preview.startingWeeklyDistanceMeters)
+    } else {
+        requireNotNull(preview.startingWeeklyDurationSeconds)
+    }
+    val goal = if (distance) {
+        requireNotNull(preview.weeklyTargetDistanceMeters)
+    } else {
+        requireNotNull(preview.weeklyTargetDurationSeconds)
+    }
+    val change = if (distance) {
+        requireNotNull(preview.weeklyChangeDistanceMeters)
+    } else {
+        requireNotNull(preview.weeklyChangeDurationSeconds)
+    }
+    val direction = goal.compareTo(start)
+    val goalWeekNumber = if (direction == 0) 1 else
+        kotlin.math.ceil(kotlin.math.abs(goal - start).toDouble() / change).toInt() + 1
+    fun measurement(amount: Int) = if (distance) {
+        formatDistance(amount.toDouble())
+    } else {
+        formatPlannedDurationEstimate(amount.toDouble())
+    }
+    fun amountForWeek(number: Int): Int {
+        if (direction == 0) return goal
+        val moved = minOf(kotlin.math.abs(goal - start), change * (number - 1))
+        return start + direction * moved
+    }
+    val visible = (1..minOf(6, goalWeekNumber)).map { number ->
+        RoutineRampWeekOutline(number, measurement(amountForWeek(number)))
+    }
+    val changeLabel = when (direction) {
+        1 -> "Increase by ${measurement(change)}"
+        -1 -> "Decrease by ${measurement(change)}"
+        else -> "No change"
+    }
+    return RoutineRampOutline(
+        firstWeek = measurement(start),
+        weeklyChange = changeLabel,
+        finalGoal = measurement(goal),
+        goalWeek = "Week $goalWeekNumber",
+        visibleWeeks = visible,
+        finalWeekAfterGap = goalWeekNumber.takeIf { it > visible.size }?.let { number ->
+            RoutineRampWeekOutline(number, measurement(goal))
+        },
+    )
 }
 
 private fun routineGoalMetricLabel(metric: String) = if (metric == "time") "time" else "distance"

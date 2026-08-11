@@ -52,19 +52,24 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
             targetDate = (activePlan?.goalTargetEpochDay ?: pendingGoal?.targetEpochDay)?.let(LocalDate::ofEpochDay)?.toString(),
             priority = activePlan?.goalPriority ?: pendingGoal?.priority,
             currentWeeklyDistanceKm = profile?.baselineDistanceMeters.toKilometreInput(),
+            currentWeeklyMinutes = profile?.baselineDurationSeconds.toMinuteInput(),
             currentRunsPerWeek = profile?.currentRunsPerWeek?.toString(),
             longestRecentRunKm = profile?.longestRecentRunMeters.toKilometreInput(),
             preferredLongRunDay = profile?.preferredLongRunDay?.toString(),
             timeZone = profile?.timeZone ?: zone.id,
             availability = profile?.availabilityDays.orEmpty(),
             goalKind = activePlan?.goalKind ?: pendingGoal?.goalKind,
-            baselineMode = if (profile?.baselineDistanceMeters != null) "entered" else "learn",
+            baselineMode = if (
+                profile?.baselineDistanceMeters != null || profile?.baselineDurationSeconds != null
+            ) "entered" else "learn",
             routineGoalMetric = when {
                 activePlan?.routineWeeklyTargetDurationSeconds != null -> "time"
                 else -> "distance"
             },
             routineWeeklyGoalKm = activePlan?.routineWeeklyTargetMeters.toKilometreInput(),
             routineWeeklyGoalMinutes = activePlan?.routineWeeklyTargetDurationSeconds.toMinuteInput(),
+            routineWeeklyChangeKm = activePlan?.routineWeeklyChangeMeters.toKilometreInput(),
+            routineWeeklyChangeMinutes = activePlan?.routineWeeklyChangeDurationSeconds.toMinuteInput(),
         )
     }
     return NativeOnboardingPayload(

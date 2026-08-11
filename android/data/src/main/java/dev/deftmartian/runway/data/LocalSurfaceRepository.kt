@@ -231,6 +231,14 @@ data class LocalRoutineWeekGoalReadModel(
     val targetDistanceMeters: Int?,
     val targetDurationSeconds: Int?,
     val scheduledRuns: Int,
+    val runs: List<LocalRoutineRunTargetReadModel> = emptyList(),
+)
+
+data class LocalRoutineRunTargetReadModel(
+    val workoutId: String,
+    val scheduledEpochDay: Long,
+    val targetDistanceMeters: Int?,
+    val targetDurationSeconds: Int?,
 )
 
 data class LocalInboxReadModel(
@@ -507,6 +515,8 @@ data class LocalActivePlanReadModel(
     val sessionsPerWeek: Int? = null,
     val routineWeeklyTargetMeters: Int? = null,
     val routineWeeklyTargetDurationSeconds: Int? = null,
+    val routineWeeklyChangeMeters: Int? = null,
+    val routineWeeklyChangeDurationSeconds: Int? = null,
 )
 
 /** A health-blocked goal remains a visible local decision even before it has a plan graph. */
@@ -847,6 +857,21 @@ object LocalSurfaceMappers {
                 workout.currentWorkoutType != "rest" &&
                 workout.tombstonedAtEpochMillis == null
         },
+        runs = plan.workouts
+            .filter { workout ->
+                workout.weekId == week.weekId &&
+                    workout.currentWorkoutType != "rest" &&
+                    workout.tombstonedAtEpochMillis == null
+            }
+            .sortedWith(compareBy(WorkoutEntity::currentScheduledEpochDay, WorkoutEntity::position))
+            .map { workout ->
+                LocalRoutineRunTargetReadModel(
+                    workoutId = workout.workoutId,
+                    scheduledEpochDay = workout.currentScheduledEpochDay,
+                    targetDistanceMeters = workout.currentDistanceMeters,
+                    targetDurationSeconds = workout.currentDurationSeconds,
+                )
+            },
     )
 
     fun inbox(slice: LocalInboxLedgerSlice): LocalInboxReadModel = LocalInboxReadModel(
@@ -1582,9 +1607,13 @@ object LocalSurfaceMappers {
                 riskAssessment = it.plan.riskAssessment,
                 latestLifecycleEvent = it.lifecycle.maxByOrNull(PlanLifecycleEventEntity::occurredAtEpochMillis)?.let(::lifecycle),
                 sessionsPerWeek = it.plan.summarySessionsPerWeek,
-                routineWeeklyTargetMeters = it.plan.summaryBaselineMeters
+                routineWeeklyTargetMeters = it.plan.routineTargetDistanceMeters
                     .takeIf { _ -> it.plan.phaseType == "routine" },
-                routineWeeklyTargetDurationSeconds = it.plan.summarySessionDurationSeconds
+                routineWeeklyTargetDurationSeconds = it.plan.routineTargetDurationSeconds
+                    .takeIf { _ -> it.plan.phaseType == "routine" },
+                routineWeeklyChangeMeters = it.plan.routineWeeklyChangeDistanceMeters
+                    .takeIf { _ -> it.plan.phaseType == "routine" },
+                routineWeeklyChangeDurationSeconds = it.plan.routineWeeklyChangeDurationSeconds
                     .takeIf { _ -> it.plan.phaseType == "routine" },
             )
         }

@@ -232,7 +232,18 @@ fi
 
 screenshot_directory="$RUNNER_TEMP/runway-native-screenshots"
 mkdir -p "$screenshot_directory"
-for screenshot in calendar-dark calendar-large-text calendar-expanded-light inbox-light history-light stats-light settings-dark settings-about-dark; do
+for screenshot in \
+  calendar-dark \
+  calendar-large-text \
+  calendar-expanded-light \
+  inbox-light \
+  history-light \
+  stats-light \
+  settings-dark \
+  settings-about-dark \
+  routine-progression-large-text \
+  routine-week-balance-dark
+do
   output="$screenshot_directory/$screenshot.png"
   screenshot_status=1
   for attempt in 1 2; do

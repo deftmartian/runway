@@ -22,6 +22,9 @@ import dev.deftmartian.runway.data.LocalRaceBaselineConfirmationRequest
 import dev.deftmartian.runway.data.LocalRestoreResult
 import dev.deftmartian.runway.data.LocalRoutineWeekGoalRequest
 import dev.deftmartian.runway.data.LocalRoutineWeekGoalResult
+import dev.deftmartian.runway.data.LocalRoutineRunAllocation
+import dev.deftmartian.runway.data.LocalRoutineWeekDistributionRequest
+import dev.deftmartian.runway.data.LocalRoutineWeekDistributionResult
 import dev.deftmartian.runway.data.LocalTrainingMutationResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackDeletionResult
 import dev.deftmartian.runway.data.LocalWorkoutFeedbackCommand
@@ -984,6 +987,7 @@ internal class RunwayViewModel(
         is DeleteActivityCommand -> services.activityReview.delete(command.activityId).message()
         is DeleteFeedbackCommand -> deleteWorkoutFeedback(command)
         is UpdateRoutineWeekGoalCommand -> updateRoutineWeekGoal(command)
+        is UpdateRoutineWeekDistributionCommand -> updateRoutineWeekDistribution(command)
         is ResolveHealthConnectRecordCommand -> resolveHealthConnectRecord(command)
         is ResolveHealthConnectDuplicateCommand -> resolveHealthConnectDuplicate(command)
         is PreviewPlanDecisionCommand -> previewPlanDecision(command)
@@ -1027,20 +1031,61 @@ internal class RunwayViewModel(
         }
     }
 
+    private suspend fun updateRoutineWeekDistribution(
+        command: UpdateRoutineWeekDistributionCommand,
+    ): String {
+        val active = services.trainingContext.activePlan()
+            ?.takeIf { it.phaseType == "routine" }
+            ?: throw IllegalStateException("There is no active weekly routine.")
+        val result = services.routines.updateWeekDistribution(
+            LocalRoutineWeekDistributionRequest(
+                planId = active.planId,
+                weekId = command.weekId,
+                allocations = command.allocations.map { allocation ->
+                    LocalRoutineRunAllocation(
+                        workoutId = allocation.workoutId,
+                        targetDistanceMeters = allocation.targetDistanceMeters,
+                        targetDurationSeconds = allocation.targetDurationSeconds,
+                    )
+                },
+                todayEpochDay = localToday().toEpochDay(),
+                operationId = command.operationId,
+                occurredAtEpochMillis = command.occurredAtEpochMillis,
+            ),
+        )
+        return when (result) {
+            LocalRoutineWeekDistributionResult.Updated ->
+                "That week's running goal is balanced across its scheduled runs."
+            LocalRoutineWeekDistributionResult.Unchanged,
+            LocalRoutineWeekDistributionResult.AlreadyApplied,
+            -> "That week's run balance is unchanged."
+            LocalRoutineWeekDistributionResult.Rejected ->
+                throw IllegalStateException("That routine week is no longer available to balance.")
+        }
+    }
+
     private fun routineWeekTarget(command: UpdateRoutineWeekGoalCommand): Pair<Int?, Int?> {
         val value = command.targetValue.trim().toDoubleOrNull()
             ?.takeIf(Double::isFinite)
         return when {
-            command.targetMetric == "distance" && value != null && value in 1.0..250.0 ->
+            command.targetMetric == "distance" && value != null && value in 0.5..250.0 &&
+                value.isHalfKilometreStep() ->
                 kotlin.math.floor(value * 1_000 + 0.5).toInt() to null
-            command.targetMetric == "time" && value != null && value in 10.0..4_200.0 ->
+            command.targetMetric == "time" && value != null && value in 10.0..4_200.0 &&
+                value.isFiveMinuteStep() ->
                 null to kotlin.math.floor(value * 60 + 0.5).toInt()
             command.targetMetric == "time" ->
-                throw IllegalArgumentException("Enter a weekly running time from 10 to 4,200 minutes.")
+                throw IllegalArgumentException("Enter 10 to 4,200 minutes in 5-minute steps.")
             else ->
-                throw IllegalArgumentException("Enter a weekly distance goal from 1 to 250 km.")
+                throw IllegalArgumentException("Enter 0.5 to 250 km in 0.5 km steps.")
         }
     }
+
+    private fun Double.isHalfKilometreStep() =
+        kotlin.math.abs(this * 2 - kotlin.math.round(this * 2)) < 0.000_001
+
+    private fun Double.isFiveMinuteStep() =
+        kotlin.math.abs(this / 5 - kotlin.math.round(this / 5)) < 0.000_001
 
     private fun routineTargetLabel(distanceMeters: Int?, durationSeconds: Int?): String =
         distanceMeters?.let { formatDistance(it.toDouble()) }
@@ -1580,6 +1625,8 @@ internal class RunwayViewModel(
             "The plan could not be created. Check the setup details and try again."
         is UpdateRoutineWeekGoalCommand ->
             "That weekly goal could not be saved. Review the current routine and try again."
+        is UpdateRoutineWeekDistributionCommand ->
+            "That weekly run balance could not be saved. Review the current routine and try again."
         is PreviewWorkoutEditCommand,
         is PreviewWorkoutAddCommand,
         is PreviewWorkoutRemovalCommand,

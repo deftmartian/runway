@@ -51,6 +51,20 @@ class NativeRunValidationTest {
     }
 
     @Test
+    fun `planned distances use half kilometre steps`() {
+        assertNull(plannedDistanceInputError("0.5"))
+        assertNull(plannedDistanceInputError("12.5"))
+        assertEquals(
+            "Use 0.5 km steps for planned distance.",
+            plannedDistanceInputError("12.3"),
+        )
+        assertEquals(
+            "Use a value from 0.5 to 100 km.",
+            plannedDistanceInputError("0.1"),
+        )
+    }
+
+    @Test
     fun `future plan guidance follows the routine phase rather than its editable prescription`() {
         assertEquals(
             "An unusually hard effort is saved with this result. Use Calendar to reduce or postpone the next prescribed run, or change a future week's goal.",

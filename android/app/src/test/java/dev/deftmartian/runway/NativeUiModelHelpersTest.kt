@@ -18,6 +18,46 @@ class NativeUiModelHelpersTest {
     }
 
     @Test
+    fun `routine balance moves one unit between days and keeps the weekly total`() {
+        val original = listOf(10, 8, 6)
+
+        val movedToLast = transferRoutineAllocationUnit(
+            original,
+            index = 2,
+            increase = true,
+            minimumUnits = 1,
+            maximumUnits = 200,
+        )
+        val movedFromMiddle = transferRoutineAllocationUnit(
+            original,
+            index = 1,
+            increase = false,
+            minimumUnits = 1,
+            maximumUnits = 200,
+        )
+
+        assertEquals(listOf(9, 8, 7), movedToLast)
+        assertEquals(listOf(10, 7, 7), movedFromMiddle)
+        assertEquals(original.sum(), movedToLast.sum())
+        assertEquals(original.sum(), movedFromMiddle.sum())
+    }
+
+    @Test
+    fun `routine balance uses current valid allocations and can restore an even split`() {
+        val runs = listOf(
+            NativeRoutineRunTarget("one", "2026-08-03", 5_000, null),
+            NativeRoutineRunTarget("two", "2026-08-05", 4_000, null),
+            NativeRoutineRunTarget("three", "2026-08-08", 3_000, null),
+        )
+        val currentGoal = NativeRoutineWeekGoal("week", "2026-08-03", 12_000.0, runs = runs)
+        val changedGoal = currentGoal.copy(targetDistanceMeters = 13_000.0)
+
+        assertEquals(listOf(10, 8, 6), routineCurrentAllocationUnits(currentGoal))
+        assertEquals(emptyList<Int>(), routineCurrentAllocationUnits(changedGoal))
+        assertEquals(listOf(9, 9, 8), routineEvenAllocationUnits(changedGoal))
+    }
+
+    @Test
     fun `planned timed headlines use durable five minute estimates`() {
         assertEquals("About 30 min", formatPlannedDurationEstimate(1_710.0))
         assertEquals("About 30 min", formatPlannedDurationEstimate(1_740.0))

@@ -104,6 +104,44 @@ class LocalOnboardingPresenterTest {
         assertEquals("marathon", payload.initialValues?.raceDistance)
     }
 
+    @Test
+    fun `routine adjustment restores its start endpoint and weekly change`() {
+        val payload = LocalSettingsReadModel(
+            profile = profile().copy(
+                availabilityDays = listOf(1, 3, 6),
+                baselineDistanceMeters = 12_000,
+                currentRunsPerWeek = 3,
+            ),
+            activePlan = LocalActivePlanReadModel(
+                planId = "routine-plan",
+                goalId = "routine-goal",
+                goalTitle = "Weekly distance routine",
+                goalKind = "routine",
+                startMode = "routine",
+                raceDistanceMeters = null,
+                goalTargetEpochDay = null,
+                goalPriority = "consistency",
+                phase = LocalPlanPhase.ROUTINE,
+                state = LocalPlanState.ACTIVE,
+                startEpochDay = LocalDate.parse("2026-07-27").toEpochDay(),
+                endEpochDay = null,
+                riskAssessment = null,
+                latestLifecycleEvent = null,
+                sessionsPerWeek = 3,
+                routineWeeklyTargetMeters = 15_000,
+                routineWeeklyChangeMeters = 1_000,
+            ),
+            about = LocalAboutReadModel(versionName = null, buildRevision = null),
+        ).toNativeOnboardingPayload(Instant.parse("2026-08-11T12:00:00Z"))
+
+        val initial = requireNotNull(payload.initialValues)
+        assertEquals("routine", initial.goalKind)
+        assertEquals("12", initial.currentWeeklyDistanceKm)
+        assertEquals("15", initial.routineWeeklyGoalKm)
+        assertEquals("1", initial.routineWeeklyChangeKm)
+        assertEquals(listOf(1, 3, 6), initial.availability)
+    }
+
     private fun profile() = LocalProfileReadModel(
         timeZone = "America/Halifax",
         routeDataMode = "discard",

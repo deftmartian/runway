@@ -1,5 +1,6 @@
 package dev.deftmartian.runway.data
 
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -108,6 +109,37 @@ class RunwayLedgerDatabaseInstrumentedTest {
             if (cursor.moveToFirst()) cursor.getString(0) else null
         }
         assertEquals(RunwayLedgerDatabase.SCHEMA_IDENTITY_HASH, identity)
+    }
+
+    @Test
+    fun hardCutoverRecreatesAnOlderDatabaseWithoutRunningAMigration() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "runway-hard-cutover-test.db"
+        context.deleteDatabase(name)
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name), null).use { sqlite ->
+            sqlite.execSQL("CREATE TABLE legacy_marker (value TEXT NOT NULL)")
+            sqlite.execSQL("INSERT INTO legacy_marker (value) VALUES ('old')")
+            sqlite.version = RunwayLedgerDatabase.SCHEMA_VERSION - 1
+        }
+
+        val reopened = Room.databaseBuilder(context, RunwayLedgerDatabase::class.java, name)
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val sqlite = reopened.openHelper.writableDatabase
+            assertEquals(RunwayLedgerDatabase.SCHEMA_VERSION, sqlite.version)
+            val legacyTableCount = sqlite.query(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'legacy_marker'",
+            ).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getInt(0)
+            }
+            assertEquals(0, legacyTableCount)
+        } finally {
+            reopened.close()
+            context.deleteDatabase(name)
+        }
     }
 
     @Test

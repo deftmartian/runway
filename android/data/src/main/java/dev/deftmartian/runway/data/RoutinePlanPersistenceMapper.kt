@@ -15,6 +15,10 @@ data class RoutinePlanMetadata(
     val selectedDays: List<Int>,
     val weeklyTargetDistanceMeters: Int? = null,
     val weeklyTargetDurationSeconds: Int? = null,
+    val startingWeeklyDistanceMeters: Int? = weeklyTargetDistanceMeters,
+    val startingWeeklyDurationSeconds: Int? = weeklyTargetDurationSeconds,
+    val weeklyChangeDistanceMeters: Int? = if (weeklyTargetDistanceMeters != null) 0 else null,
+    val weeklyChangeDurationSeconds: Int? = if (weeklyTargetDurationSeconds != null) 0 else null,
     val priority: String,
     val createdAtEpochMillis: Long,
 )
@@ -43,6 +47,10 @@ object RoutinePlanPersistenceMapper {
             selectedDays = metadata.selectedDays,
             weeklyTargetDistanceMeters = metadata.weeklyTargetDistanceMeters,
             weeklyTargetDurationSeconds = metadata.weeklyTargetDurationSeconds,
+            startingWeeklyDistanceMeters = metadata.startingWeeklyDistanceMeters,
+            startingWeeklyDurationSeconds = metadata.startingWeeklyDurationSeconds,
+            weeklyChangeDistanceMeters = metadata.weeklyChangeDistanceMeters,
+            weeklyChangeDurationSeconds = metadata.weeklyChangeDurationSeconds,
             createdAtEpochMillis = metadata.createdAtEpochMillis,
         )
     }
@@ -56,20 +64,32 @@ object RoutinePlanPersistenceMapper {
         selectedDays: List<Int>,
         weeklyTargetDistanceMeters: Int? = null,
         weeklyTargetDurationSeconds: Int? = null,
+        startingWeeklyDistanceMeters: Int? = weeklyTargetDistanceMeters,
+        startingWeeklyDurationSeconds: Int? = weeklyTargetDurationSeconds,
+        weeklyChangeDistanceMeters: Int? = if (weeklyTargetDistanceMeters != null) 0 else null,
+        weeklyChangeDurationSeconds: Int? = if (weeklyTargetDurationSeconds != null) 0 else null,
         createdAtEpochMillis: Long,
     ): RoutinePlanPersistenceGraph {
         require(goalId.isNotBlank() && planId.isNotBlank())
         require(title.trim().length in 2..120)
         require(createdAtEpochMillis >= 0)
         require(priority in setOf("finish_healthy", "consistency"))
-        val target = RoutineWeeklyTarget(
+        val goalTarget = RoutineWeeklyTarget(
             distanceMeters = weeklyTargetDistanceMeters,
             durationSeconds = weeklyTargetDurationSeconds,
+        )
+        val ramp = RoutineRamp(
+            start = RoutineWeeklyTarget(startingWeeklyDistanceMeters, startingWeeklyDurationSeconds),
+            goal = goalTarget,
+            weeklyChangeDistanceMeters = weeklyChangeDistanceMeters,
+            weeklyChangeDurationSeconds = weeklyChangeDurationSeconds,
         )
         val days = normalizedDays(selectedDays)
         val start = LocalDate.ofEpochDay(startEpochDay)
         require(start.dayOfWeek == DayOfWeek.MONDAY) { "A routine must start on a Monday." }
-        require(target.supportsRunCount(days.size)) { "The weekly target cannot be divided into valid runs." }
+        require(ramp.start.supportsRunCount(days.size) && ramp.goal.supportsRunCount(days.size)) {
+            "The routine ramp cannot be divided into valid runs."
+        }
         val goal = GoalEntity(
             goalId = goalId,
             title = title.trim(),
@@ -92,9 +112,13 @@ object RoutinePlanPersistenceMapper {
             createdAtEpochMillis = createdAtEpochMillis,
             updatedAtEpochMillis = createdAtEpochMillis,
             riskAssessment = null,
-            summaryBaselineMeters = target.distanceMeters,
+            summaryBaselineMeters = ramp.start.distanceMeters,
             summarySessionsPerWeek = days.size,
-            summarySessionDurationSeconds = target.durationSeconds,
+            summarySessionDurationSeconds = ramp.start.durationSeconds,
+            routineTargetDistanceMeters = ramp.goal.distanceMeters,
+            routineTargetDurationSeconds = ramp.goal.durationSeconds,
+            routineWeeklyChangeDistanceMeters = ramp.weeklyChangeDistanceMeters,
+            routineWeeklyChangeDurationSeconds = ramp.weeklyChangeDurationSeconds,
         )
         val weeks = (0 until INITIAL_HORIZON_WEEKS).map { offset ->
             week(plan, start.plusWeeks(offset.toLong()), offset + 1)
@@ -121,8 +145,8 @@ object RoutinePlanPersistenceMapper {
             planId = plan.planId,
             ordinal = ordinal,
             startEpochDay = start.toEpochDay(),
-            generatedLoadMeters = plan.summaryBaselineMeters,
-            generatedLoadDurationSeconds = plan.summarySessionDurationSeconds,
+            generatedLoadMeters = routineTargetForWeek(plan, ordinal).distanceMeters,
+            generatedLoadDurationSeconds = routineTargetForWeek(plan, ordinal).durationSeconds,
             riskAssessment = null,
             isDownWeek = false,
             isTaperWeek = false,
@@ -208,6 +232,22 @@ object RoutinePlanPersistenceMapper {
 
     private fun weekdayOffset(day: Int): Int = if (day == 0) 6 else day - 1
 
+    internal fun routineTargetForWeek(plan: PlanEntity, ordinal: Int): RoutineWeeklyTarget {
+        require(ordinal >= 1)
+        val start = RoutineWeeklyTarget(plan.summaryBaselineMeters, plan.summarySessionDurationSeconds)
+        val goal = RoutineWeeklyTarget(
+            plan.routineTargetDistanceMeters,
+            plan.routineTargetDurationSeconds,
+        )
+        val ramp = RoutineRamp(
+            start = start,
+            goal = goal,
+            weeklyChangeDistanceMeters = plan.routineWeeklyChangeDistanceMeters,
+            weeklyChangeDurationSeconds = plan.routineWeeklyChangeDurationSeconds,
+        )
+        return ramp.targetForWeek(ordinal)
+    }
+
     internal fun stableId(prefix: String, vararg parts: String): String {
         val payload = parts.joinToString("\u0000")
         val digest = MessageDigest.getInstance("SHA-256")
@@ -223,15 +263,18 @@ data class RoutineWeeklyTarget(
 ) {
     init {
         require(
-            (distanceMeters != null && distanceMeters in 1_000..250_000 && durationSeconds == null) ||
+            (distanceMeters != null && distanceMeters in 500..250_000 && durationSeconds == null) ||
                 (durationSeconds != null && durationSeconds in 600..252_000 && distanceMeters == null),
-        ) { "A routine target must be either 1-250 km or 10-4,200 minutes." }
+        ) { "A routine target must be either 0.5-250 km or 10-4,200 minutes." }
     }
 
     fun share(count: Int, index: Int): RoutineWorkoutPrescription {
         require(count in 1..7 && index in 0 until count)
         val total = distanceMeters ?: requireNotNull(durationSeconds)
-        val amount = total / count + if (index < total % count) 1 else 0
+        val unit = if (distanceMeters != null) DISTANCE_UNIT_METERS else DURATION_UNIT_SECONDS
+        require(total % unit == 0) { "Routine prescriptions use readable increments." }
+        val totalUnits = total / unit
+        val amount = (totalUnits / count + if (index < totalUnits % count) 1 else 0) * unit
         return if (distanceMeters != null) {
             RoutineWorkoutPrescription(amount, null, "distance", "Routine run", "Scheduled from this week's distance goal.")
         } else {
@@ -241,13 +284,73 @@ data class RoutineWeeklyTarget(
 
     fun supportsRunCount(count: Int): Boolean = count in 1..7 && (0 until count).all { index ->
         val share = share(count, index)
-        (share.distanceMeters?.let { it in 100..100_000 } ?: true) &&
+        (share.distanceMeters?.let { it in 500..100_000 } ?: true) &&
             (share.durationSeconds?.let { it in 600..21_600 } ?: true)
     }
 
+    fun usesReadableUnits(): Boolean =
+        distanceMeters?.rem(DISTANCE_UNIT_METERS) == 0 ||
+            durationSeconds?.rem(DURATION_UNIT_SECONDS) == 0
+
     companion object {
+        const val DISTANCE_UNIT_METERS = 500
+        const val DURATION_UNIT_SECONDS = 300
+
         fun optional(distanceMeters: Int?, durationSeconds: Int?): RoutineWeeklyTarget? =
             if (distanceMeters == null && durationSeconds == null) null else RoutineWeeklyTarget(distanceMeters, durationSeconds)
+    }
+}
+
+data class RoutineRamp(
+    val start: RoutineWeeklyTarget,
+    val goal: RoutineWeeklyTarget,
+    val weeklyChangeDistanceMeters: Int?,
+    val weeklyChangeDurationSeconds: Int?,
+) {
+    init {
+        val distanceRamp = start.distanceMeters != null && goal.distanceMeters != null &&
+            start.durationSeconds == null && goal.durationSeconds == null &&
+            weeklyChangeDistanceMeters != null && weeklyChangeDurationSeconds == null
+        val durationRamp = start.durationSeconds != null && goal.durationSeconds != null &&
+            start.distanceMeters == null && goal.distanceMeters == null &&
+            weeklyChangeDurationSeconds != null && weeklyChangeDistanceMeters == null
+        require(distanceRamp || durationRamp) { "A routine ramp must use one metric." }
+        val change = weeklyChangeDistanceMeters ?: requireNotNull(weeklyChangeDurationSeconds)
+        val startAmount = start.distanceMeters ?: requireNotNull(start.durationSeconds)
+        val goalAmount = goal.distanceMeters ?: requireNotNull(goal.durationSeconds)
+        require(change >= 0 && (change > 0 || startAmount == goalAmount)) {
+            "A changing routine needs a positive weekly step."
+        }
+        val unit = if (distanceRamp) {
+            RoutineWeeklyTarget.DISTANCE_UNIT_METERS
+        } else {
+            RoutineWeeklyTarget.DURATION_UNIT_SECONDS
+        }
+        require(startAmount % unit == 0 && goalAmount % unit == 0 && change % unit == 0) {
+            "Routine targets and changes must use readable increments."
+        }
+    }
+
+    fun targetForWeek(ordinal: Int): RoutineWeeklyTarget {
+        require(ordinal >= 1)
+        val startAmount = start.distanceMeters ?: requireNotNull(start.durationSeconds)
+        val goalAmount = goal.distanceMeters ?: requireNotNull(goal.durationSeconds)
+        val change = weeklyChangeDistanceMeters ?: requireNotNull(weeklyChangeDurationSeconds)
+        val direction = goalAmount.compareTo(startAmount)
+        val moved = if (direction == 0) {
+            0
+        } else {
+            minOf(
+                kotlin.math.abs(goalAmount - startAmount).toLong(),
+                change.toLong() * (ordinal - 1),
+            ).toInt()
+        }
+        val amount = startAmount + direction * moved
+        return if (start.distanceMeters != null) {
+            RoutineWeeklyTarget(amount, null)
+        } else {
+            RoutineWeeklyTarget(null, amount)
+        }
     }
 }
 

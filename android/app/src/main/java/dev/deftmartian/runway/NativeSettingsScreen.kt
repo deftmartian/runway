@@ -68,6 +68,10 @@ internal sealed interface NativeTrainingSettings {
         val startedOn: String,
         val targetDate: String?,
         val runsPerWeek: Int?,
+        val routineGoalDistanceMeters: Int? = null,
+        val routineGoalDurationSeconds: Int? = null,
+        val routineWeeklyChangeDistanceMeters: Int? = null,
+        val routineWeeklyChangeDurationSeconds: Int? = null,
     ) : NativeTrainingSettings
 
     data class Pending(
@@ -102,12 +106,22 @@ internal fun nativeTrainingSettingsRow(training: NativeTrainingSettings): Native
             NativeTrainingSettingsRow(
                 label = "Weekly routine",
                 summary = listOfNotNull(
+                    training.routineGoalDistanceMeters?.let {
+                        "Goal ${formatDistance(it.toDouble())}"
+                    } ?: training.routineGoalDurationSeconds?.let {
+                        "Goal ${formatPlannedDurationEstimate(it.toDouble())}"
+                    },
+                    training.routineWeeklyChangeDistanceMeters?.let {
+                        "${formatDistance(it.toDouble())} each week"
+                    } ?: training.routineWeeklyChangeDurationSeconds?.let {
+                        "${formatPlannedDurationEstimate(it.toDouble())} each week"
+                    },
                     training.runsPerWeek?.let {
                         "Default $it ${if (it == 1) "run" else "runs"} each week"
                     },
                     "Since ${ledgerDate(training.startedOn)}",
                 ).joinToString(" · "),
-                action = "Replace",
+                action = "Adjust",
             )
         } else {
             NativeTrainingSettingsRow(

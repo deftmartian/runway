@@ -73,6 +73,14 @@ internal fun LocalCalendarReadModel.toNativeCalendar(): NativeCalendarPayload {
                     targetDistanceMeters = it.targetDistanceMeters?.toDouble(),
                     targetDurationSeconds = it.targetDurationSeconds?.toDouble(),
                     scheduledRuns = it.scheduledRuns,
+                    runs = it.runs.map { run ->
+                        NativeRoutineRunTarget(
+                            workoutId = run.workoutId,
+                            scheduledDate = LocalDate.ofEpochDay(run.scheduledEpochDay).toString(),
+                            targetDistanceMeters = run.targetDistanceMeters,
+                            targetDurationSeconds = run.targetDurationSeconds,
+                        )
+                    },
                 )
             },
         ),
@@ -469,6 +477,10 @@ internal fun LocalSettingsReadModel.toNativeSettingsState() = NativeSettingsStat
                 startedOn = LocalDate.ofEpochDay(it.startEpochDay).toString(),
                 targetDate = it.goalTargetEpochDay?.let(LocalDate::ofEpochDay)?.toString(),
                 runsPerWeek = it.sessionsPerWeek,
+                routineGoalDistanceMeters = it.routineWeeklyTargetMeters,
+                routineGoalDurationSeconds = it.routineWeeklyTargetDurationSeconds,
+                routineWeeklyChangeDistanceMeters = it.routineWeeklyChangeMeters,
+                routineWeeklyChangeDurationSeconds = it.routineWeeklyChangeDurationSeconds,
             )
         }
         ?: pendingGoal?.let {

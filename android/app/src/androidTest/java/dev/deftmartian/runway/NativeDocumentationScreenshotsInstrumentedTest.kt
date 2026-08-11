@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -16,9 +17,12 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -109,6 +113,72 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             compose.onNodeWithText("Build revision").assertIsDisplayed()
         }
 
+    @Test
+    fun capturesRoutineProgressionAtLargeFontScale() =
+        captureContent(
+            name = "routine-progression-large-text",
+            darkTheme = false,
+            fontScale = 1.3f,
+            content = {
+                SetupScreen(
+                    payload = NativeOnboardingPayload(
+                        initialValues = null,
+                        minimumTargetDate = null,
+                        minimumCalibrationTargetDate = null,
+                        maximumTargetDate = null,
+                        currentGoal = null,
+                    ),
+                    actionPending = false,
+                    onAction = {},
+                    onRestoreBackup = {},
+                    nowProvider = { java.time.Instant.parse("2026-08-11T12:00:00Z") },
+                )
+            },
+        ) {
+            compose.onNodeWithText("Run consistently each week").performClick()
+            compose.onNodeWithText("Weekly distance goal (km)").performTextReplacement("15")
+            compose.onNodeWithText("Continue").performClick()
+            compose.onNodeWithText("Repeatable weekly distance (km)").performTextReplacement("12")
+            compose.onNodeWithText("Current runs per week").performTextReplacement("3")
+            compose.onNodeWithText("Change each week (km)").performTextReplacement("1")
+            compose.onNodeWithText("Continue").performClick()
+            compose.onNodeWithText("Continue").performClick()
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText("Final goal"))
+            compose.onNodeWithText("Weekly progression").assertIsDisplayed()
+            compose.onNodeWithText("Final goal").assertIsDisplayed()
+        }
+
+    @Test
+    fun capturesRoutineWeekBalanceInDarkTheme() =
+        captureContent(
+            name = "routine-week-balance-dark",
+            darkTheme = true,
+            captureTag = "routine-week-balance-dialog",
+            content = {
+                RoutineWeekBalanceDialog(
+                    goal = NativeRoutineWeekGoal(
+                        weekId = "routine-week",
+                        startDate = "2026-08-17",
+                        targetDistanceMeters = 15_000.0,
+                        scheduledRuns = 3,
+                        runs = listOf(
+                            NativeRoutineRunTarget("monday", "2026-08-17", 5_000, null),
+                            NativeRoutineRunTarget("wednesday", "2026-08-19", 5_000, null),
+                            NativeRoutineRunTarget("saturday", "2026-08-22", 5_000, null),
+                        ),
+                    ),
+                    actionPending = false,
+                    errorMessage = null,
+                    onDismiss = {},
+                    onSubmit = {},
+                )
+            },
+        ) {
+            compose.onAllNodesWithText("+ 0.5 km")[0].performClick()
+            compose.onNodeWithText("5.5 km").assertIsDisplayed()
+            compose.onNodeWithText("4.5 km").assertIsDisplayed()
+        }
+
     private fun capture(
         name: String,
         darkTheme: Boolean,
@@ -116,6 +186,54 @@ class NativeDocumentationScreenshotsInstrumentedTest {
         fontScale: Float = 1f,
         densityScale: Float = 1f,
         viewportHeightDp: Float? = null,
+        prepareCapture: (() -> Unit)? = null,
+    ) = captureContent(
+        name = name,
+        darkTheme = darkTheme,
+        fontScale = fontScale,
+        densityScale = densityScale,
+        viewportHeightDp = viewportHeightDp,
+        content = {
+            RunwayNativeApp(
+                state = state,
+                onDestinationSelected = {},
+                onCalendarMonthSelected = {},
+                onLoadMoreHistory = {},
+                onLoadMoreInbox = {},
+                onLoadActivityTrace = {},
+                onOpenHistoryDetail = {},
+                onRetryOpen = {},
+                onAction = {},
+                onApplyWorkoutPreview = {},
+                onDismissWorkoutPreview = {},
+                onApplyPlanDecisionPreview = {},
+                onDismissPlanDecisionPreview = {},
+                onOpenFolder = {},
+                onImportGpx = {},
+                onOpenHealthConnect = {},
+                onCreateBackup = {},
+                onRestoreBackup = {},
+                onExportData = {},
+                onTimeZoneChanged = {},
+                onRoutePrivacyChanged = {},
+                onHeartRatePrivacyChanged = {},
+                onHeartRateChanged = {},
+                onEraseImportedActivityData = {},
+                onEraseAllData = {},
+                onAcknowledgeRetentionRepair = {},
+            )
+        },
+        prepareCapture = prepareCapture,
+    )
+
+    private fun captureContent(
+        name: String,
+        darkTheme: Boolean,
+        fontScale: Float = 1f,
+        densityScale: Float = 1f,
+        viewportHeightDp: Float? = null,
+        captureTag: String? = null,
+        content: @Composable () -> Unit,
         prepareCapture: (() -> Unit)? = null,
     ) {
         compose.setContent {
@@ -130,34 +248,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
                 }
                 Box(captureModifier.testTag(SCREENSHOT_ROOT_TAG)) {
                     RunwayTheme(darkTheme = darkTheme, dynamicColor = false) {
-                        RunwayNativeApp(
-                            state = state,
-                            onDestinationSelected = {},
-                            onCalendarMonthSelected = {},
-                            onLoadMoreHistory = {},
-                            onLoadMoreInbox = {},
-                            onLoadActivityTrace = {},
-                            onOpenHistoryDetail = {},
-                            onRetryOpen = {},
-                            onAction = {},
-                            onApplyWorkoutPreview = {},
-                            onDismissWorkoutPreview = {},
-                            onApplyPlanDecisionPreview = {},
-                            onDismissPlanDecisionPreview = {},
-                            onOpenFolder = {},
-                            onImportGpx = {},
-                            onOpenHealthConnect = {},
-                            onCreateBackup = {},
-                            onRestoreBackup = {},
-                            onExportData = {},
-                            onTimeZoneChanged = {},
-                            onRoutePrivacyChanged = {},
-                            onHeartRatePrivacyChanged = {},
-                            onHeartRateChanged = {},
-                            onEraseImportedActivityData = {},
-                            onEraseAllData = {},
-                            onAcknowledgeRetentionRepair = {},
-                        )
+                        content()
                     }
                 }
             }
@@ -171,7 +262,7 @@ class NativeDocumentationScreenshotsInstrumentedTest {
             SCREENSHOT_DIRECTORY,
         ).apply { mkdirs() }
         val output = File(directory, "$name.png")
-        val bitmap = captureScreenshotBitmap(name)
+        val bitmap = captureScreenshotBitmap(name, captureTag)
         FileOutputStream(output).use { stream ->
             assertTrue(
                 "Could not write $output",
@@ -185,12 +276,12 @@ class NativeDocumentationScreenshotsInstrumentedTest {
         assertTrue("Screenshot is empty: $output", output.length() > 0)
     }
 
-    private fun captureScreenshotBitmap(name: String): Bitmap {
+    private fun captureScreenshotBitmap(name: String, captureTag: String? = null): Bitmap {
         var lastPixelCopyFailure: AssertionError? = null
         repeat(3) { attempt ->
             compose.waitForIdle()
             try {
-                return compose.onNodeWithTag(SCREENSHOT_ROOT_TAG)
+                return compose.onNodeWithTag(captureTag ?: SCREENSHOT_ROOT_TAG)
                     .captureToImage()
                     .asAndroidBitmap()
             } catch (failure: AssertionError) {

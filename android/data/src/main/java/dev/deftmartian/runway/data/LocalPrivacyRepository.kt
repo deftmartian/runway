@@ -93,18 +93,23 @@ class LocalPrivacyRepository(
 
     suspend fun pendingRetentionRepairNotice(): RetentionRepairNotice? {
         val metadata = database.appMetadataDao()
-        val route = metadata.value(RunwayLedgerMigrations.ROUTE_RETENTION_REPAIR_KEY) != null
+        val route = metadata.value(ROUTE_RETENTION_REPAIR_KEY) != null
         val heartRate =
-            metadata.value(RunwayLedgerMigrations.HEART_RATE_RETENTION_REPAIR_KEY) != null
+            metadata.value(HEART_RATE_RETENTION_REPAIR_KEY) != null
         return if (route || heartRate) RetentionRepairNotice(route, heartRate) else null
     }
 
     suspend fun acknowledgeRetentionRepairNotice() {
         database.withTransaction {
-            database.appMetadataDao().delete(RunwayLedgerMigrations.ROUTE_RETENTION_REPAIR_KEY)
+            database.appMetadataDao().delete(ROUTE_RETENTION_REPAIR_KEY)
             database.appMetadataDao().delete(
-                RunwayLedgerMigrations.HEART_RATE_RETENTION_REPAIR_KEY,
+                HEART_RATE_RETENTION_REPAIR_KEY,
             )
         }
+    }
+
+    private companion object {
+        const val ROUTE_RETENTION_REPAIR_KEY = "privacy_retention_repair_v3_route"
+        const val HEART_RATE_RETENTION_REPAIR_KEY = "privacy_retention_repair_v3_heart_rate"
     }
 }
