@@ -398,10 +398,12 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         compose.onNode(hasScrollAction())
             .performScrollToNode(hasTestTag("calendar-ledger-day-2026-08-19"))
-        compose.onNodeWithTag("calendar-ledger-day-2026-08-19").performClick()
+        compose.onNode(
+            hasTestTag("calendar-ledger-day-2026-08-19") and
+                hasContentDescription("Routine run · 5 km", substring = true),
+        ).assertIsDisplayed().performClick()
         compose.onNodeWithText("Weekly running goal · 15 km").assertIsDisplayed()
-        compose.onNodeWithText("5 km").assertIsDisplayed()
-        compose.onNodeWithText("Change this week's goal").performClick()
+        compose.onNodeWithText("Change this week's goal").assertIsDisplayed().performClick()
         compose.onNodeWithText("Change weekly running goal").assertIsDisplayed()
         compose.onNodeWithText("Time").performClick()
         compose.onNodeWithText("Weekly running time (minutes)").performTextReplacement("120")
