@@ -68,9 +68,15 @@ object RunwayNotificationManager {
             val notification = NotificationCompat.Builder(context, IMPORT_REVIEW_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(
-                    if (pending.size == 1) "Run ready to review" else "Runs ready to review",
+                    context.getString(
+                        if (pending.size == 1) {
+                            R.string.notification_import_review_title_singular
+                        } else {
+                            R.string.notification_import_review_title_plural
+                        },
+                    ),
                 )
-                .setContentText("Open Inbox to review the new folder import.")
+                .setContentText(context.getString(R.string.notification_import_review_text))
                 .setContentIntent(
                     destinationIntent(
                         context,
@@ -110,8 +116,8 @@ object RunwayNotificationManager {
             if (pending.isEmpty()) return false
             val notification = NotificationCompat.Builder(context, RUN_REMINDER_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("Run planned today")
-                .setContentText("Open Runway to review the plan when you’re ready.")
+                .setContentTitle(context.getString(R.string.notification_run_reminder_title))
+                .setContentText(context.getString(R.string.notification_run_reminder_text))
                 .setContentIntent(
                     destinationIntent(
                         context,

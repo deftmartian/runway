@@ -98,13 +98,7 @@ class NativeFolderSettingsActivity : ComponentActivity() {
                 ) {
                     NativeImportSetupScreen(
                         state = uiState.value,
-                        initialSection = when (intent.action) {
-                            MainActivity.ACTION_OPEN_HEALTH_CONNECT_SETTINGS ->
-                                NativeImportSection.HealthConnect
-                            MainActivity.ACTION_OPEN_FOLDER_SETTINGS ->
-                                NativeImportSection.Folder
-                            else -> NativeImportSection.Overview
-                        },
+                        initialSection = nativeImportSectionForAction(intent.action),
                         onPickOneOffGpx = {
                             chooseOneOffGpx.launch(
                                 arrayOf(
@@ -426,6 +420,17 @@ class NativeFolderSettingsActivity : ComponentActivity() {
     companion object {
         private const val PENDING_ROUTE_RECORD_KEY = "pending_route_record_id"
     }
+}
+
+/**
+ * Cold-launch surface mapping for an exported activity. It depends only on the intent action,
+ * never on extras, so an arbitrary external launch can only select which settings section is
+ * shown first; no extra value reaches state, storage, or imports.
+ */
+internal fun nativeImportSectionForAction(action: String?): NativeImportSection = when (action) {
+    MainActivity.ACTION_OPEN_HEALTH_CONNECT_SETTINGS -> NativeImportSection.HealthConnect
+    MainActivity.ACTION_OPEN_FOLDER_SETTINGS -> NativeImportSection.Folder
+    else -> NativeImportSection.Overview
 }
 
 private val FOLDER_STATUS_MESSAGES = mapOf(
