@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -71,7 +72,7 @@ internal fun ActivityDetailSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Run detail",
+                stringResource(R.string.activity_detail_title),
                 modifier = Modifier.semantics { heading() },
                 style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
@@ -97,16 +98,14 @@ internal fun ActivityDetailSheet(
             TextButton(
                 onClick = { confirmDelete = true },
                 enabled = !actionPending && activity.id != null,
-            ) { Text("Delete this run") }
+            ) { Text(stringResource(R.string.activity_detail_delete)) }
         }
     }
     if (confirmDelete) {
         DestructiveConfirmationDialog(
-            title = "Delete this run?",
-            message =
-                "This deletes the run and any saved route or heart-rate data. If it was imported, " +
-                    "runway will not import the same source record again. This cannot be undone.",
-            confirmLabel = "Delete run",
+            title = stringResource(R.string.activity_detail_delete_confirm_title),
+            message = stringResource(R.string.activity_detail_delete_confirm_message),
+            confirmLabel = stringResource(R.string.activity_detail_delete_confirm_action),
             actionPending = actionPending,
             onDismiss = { confirmDelete = false },
             onConfirm = {
@@ -144,15 +143,15 @@ private fun ActivityReviewControls(
     actionPending: Boolean,
     onAction: (MobileCommand) -> Unit,
 ) {
-    Text("How did this run feel?", fontWeight = FontWeight.SemiBold)
-    CheckRow("This run felt harder than expected", feltHard, onFeltHardChange)
-    Text("Where does this run belong?", fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.activity_feedback_question), fontWeight = FontWeight.SemiBold)
+    CheckRow(stringResource(R.string.activity_felt_harder), feltHard, onFeltHardChange)
+    Text(stringResource(R.string.activity_role_question), fontWeight = FontWeight.SemiBold)
     Text(
-        "Link counts this as the result for one planned workout. Extra counts it in actual totals without changing a planned workout. Neither changes future workouts unless you choose a separate plan decision.",
+        stringResource(R.string.activity_role_explanation),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     if (linkCandidates.isEmpty()) {
-        Text("No planned workout within three days is available for this run.")
+        Text(stringResource(R.string.activity_no_link_candidates))
     } else {
         linkCandidates.forEach { workout ->
             OutlinedButton(
@@ -161,7 +160,15 @@ private fun ActivityReviewControls(
                 },
                 enabled = !actionPending && activity.id != null && workout.id != null,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Link: ${workout.scheduledDate.orDash()} · ${workout.purpose.orDash()}") }
+            ) {
+                Text(
+                    stringResource(
+                        R.string.activity_link_candidate,
+                        workout.scheduledDate.orDash(),
+                        workout.purpose.orDash(),
+                    ),
+                )
+            }
         }
     }
     Button(
@@ -170,7 +177,7 @@ private fun ActivityReviewControls(
         },
         enabled = !actionPending && activity.id != null,
         modifier = Modifier.fillMaxWidth(),
-    ) { Text("Count as an extra run") }
+    ) { Text(stringResource(R.string.activity_count_as_extra)) }
 }
 
 @Composable
@@ -183,8 +190,8 @@ private fun ActivityUnlinkControl(
         onClick = { onAction(UnlinkActivityCommand(activity.id.orEmpty())) },
         enabled = !actionPending && activity.id != null,
         modifier = Modifier.fillMaxWidth(),
-    ) { Text("Unlink from planned run") }
-    Text("Unlinking returns this run to Inbox review. It stops counting until you accept a new role.")
+    ) { Text(stringResource(R.string.activity_unlink)) }
+    Text(stringResource(R.string.activity_unlink_explanation))
 }
 
 @Composable
@@ -197,10 +204,9 @@ private fun ActivityReturnToReviewControl(
         onClick = { onAction(ReturnExtraActivityToReviewCommand(activity.id.orEmpty())) },
         enabled = !actionPending && activity.id != null,
         modifier = Modifier.fillMaxWidth(),
-    ) { Text("Return extra run to review") }
+    ) { Text(stringResource(R.string.activity_return_to_review)) }
     Text(
-        "This keeps the recorded run and feedback, but stops counting it in actual " +
-            "totals and removes its unapplied plan options until you choose its role again.",
+        stringResource(R.string.activity_return_to_review_explanation),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
@@ -214,20 +220,19 @@ private fun ActivityFeedbackCorrection(
     onAction: (MobileCommand) -> Unit,
 ) {
     if (activity.reviewState == "review") return
-    Text("Correct recorded feedback", fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.activity_correct_feedback), fontWeight = FontWeight.SemiBold)
     if (activity.consequence?.appliedDecision != null) {
         Text(
-            "This updates the run record. It does not undo or recalculate the plan " +
-                "choice already applied from the earlier feedback.",
+            stringResource(R.string.activity_correction_explanation),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    CheckRow("This run felt harder than expected", feltHard, onFeltHardChange)
+    CheckRow(stringResource(R.string.activity_felt_harder), feltHard, onFeltHardChange)
     OutlinedButton(
         onClick = { onAction(UpdateActivityFeedbackCommand(activity.id.orEmpty(), feltHard)) },
         enabled = !actionPending && activity.id != null,
         modifier = Modifier.fillMaxWidth(),
-    ) { Text("Save feedback correction") }
+    ) { Text(stringResource(R.string.activity_save_correction)) }
 }
 
 /**
@@ -259,33 +264,54 @@ internal fun activityLinkCandidates(
 
 @Composable
 private fun ActivitySummary(activity: NativeActivity) {
-    SettingCard("Exact summary") {
-        SettingRow("Date", activity.occurredDate.orDash(), monospace = true)
+    SettingCard(stringResource(R.string.activity_summary_title)) {
         SettingRow(
-            "Distance",
+            stringResource(R.string.activity_date_label),
+            activity.occurredDate.orDash(),
+            monospace = true,
+        )
+        SettingRow(
+            stringResource(R.string.activity_distance_label),
             activity.distanceMeters?.takeIf { it > 0 }?.let(::formatDistance).orDash(),
         )
         SettingRow(
-            "Duration",
+            stringResource(R.string.activity_duration_label),
             activity.durationSeconds?.let(::formatDuration).orDash(),
             monospace = true,
         )
         activity.averagePaceSecondsPerKm?.let {
-            SettingRow("Average pace", formatPace(it), monospace = true)
+            SettingRow(
+                stringResource(R.string.activity_average_pace_label),
+                formatPace(it),
+                monospace = true,
+            )
         }
     }
 }
 
 @Composable
 private fun ActivityProvenance(activity: NativeActivity) {
-    SettingCard("Source and plan state") {
-        SettingRow("Source", activitySourceLabel(activity))
-        SettingRow("Review", activityReviewLabel(activity))
+    SettingCard(stringResource(R.string.activity_provenance_title)) {
+        SettingRow(stringResource(R.string.activity_source_label), activitySourceLabel(activity))
+        SettingRow(stringResource(R.string.activity_review_label), activityReviewLabel(activity))
         when {
             !activity.matchedWorkoutPurpose.isNullOrBlank() ->
-                SettingRow("Matched run", "${activity.matchedWorkoutDate.orDash()} · ${activity.matchedWorkoutPurpose}")
-            activity.extraPlanImpactConfirmed == true -> SettingRow("Plan state", "Counted as extra training")
-            else -> SettingRow("Plan state", "Not matched to a planned run")
+                SettingRow(
+                    stringResource(R.string.activity_matched_run_label),
+                    stringResource(
+                        R.string.activity_matched_run_value,
+                        activity.matchedWorkoutDate.orDash(),
+                        activity.matchedWorkoutPurpose.orEmpty(),
+                    ),
+                )
+            activity.extraPlanImpactConfirmed == true -> SettingRow(
+                stringResource(R.string.plan_state_label),
+                stringResource(R.string.activity_plan_state_extra),
+            )
+            else -> SettingRow(
+                stringResource(R.string.plan_state_label),
+                stringResource(R.string.activity_plan_state_unmatched),
+            )
         }
     }
 }
@@ -302,20 +328,44 @@ private fun ActivityHeartRate(activity: NativeActivity, evidence: NativeActivity
     ) {
         return
     }
-    SettingCard("Recorded metrics") {
-        activity.averageHeartRate?.let { SettingRow("Average", "$it bpm", monospace = true) }
-        activity.maxHeartRate?.let { SettingRow("Maximum", "$it bpm", monospace = true) }
+    SettingCard(stringResource(R.string.activity_metrics_title)) {
+        activity.averageHeartRate?.let {
+            SettingRow(
+                stringResource(R.string.activity_hr_average_label),
+                stringResource(R.string.activity_hr_bpm_value, it),
+                monospace = true,
+            )
+        }
+        activity.maxHeartRate?.let {
+            SettingRow(
+                stringResource(R.string.activity_hr_maximum_label),
+                stringResource(R.string.activity_hr_bpm_value, it),
+                monospace = true,
+            )
+        }
         summary?.let {
             it.highSeconds?.let { seconds ->
-                SettingRow("High-zone time", formatDuration(seconds.toDouble()), monospace = true)
+                SettingRow(
+                    stringResource(R.string.activity_high_zone_time_label),
+                    formatDuration(seconds.toDouble()),
+                    monospace = true,
+                )
             }
             it.highShare?.let { share ->
-                SettingRow("High-zone share", "${(share * 100).roundToInt()}%", monospace = true)
+                SettingRow(
+                    stringResource(R.string.activity_high_zone_share_label),
+                    stringResource(R.string.activity_high_zone_share_value, (share * 100).roundToInt()),
+                    monospace = true,
+                )
             }
-            Text("Zone time is descriptive; it does not change the plan automatically.")
+            Text(stringResource(R.string.activity_zone_time_note))
         }
         evidence?.averageCadence?.let {
-            SettingRow("Average cadence", "$it rpm", monospace = true)
+            SettingRow(
+                stringResource(R.string.activity_cadence_label),
+                stringResource(R.string.activity_cadence_value, it),
+                monospace = true,
+            )
         }
         evidence?.heartRateSeries?.let { HeartRateTrace(it) }
     }
@@ -332,7 +382,7 @@ private fun ActivityRouteDisclosure(
     val route = activity.routeSummary
     val disclosure = evidence?.disclosure
     if (route == null && disclosure == null && evidence?.routeTrace == null) return
-    SettingCard("Private activity detail") {
+    SettingCard(stringResource(R.string.activity_private_detail_title)) {
         ActivityRouteTrace(route, disclosure, evidence, loading, failed, onRetry)
         ActivityRouteMetadata(route, disclosure)
         ActivityHeartRateRetention(disclosure)
@@ -352,19 +402,24 @@ private fun ActivityRouteTrace(
     if (route != null || disclosure?.routeTraceRetained != null || evidence?.routeTrace != null) {
         Text(
             if (retained) {
-                "This private route trace is drawn on this phone. Runway does not contact a map or tile service."
-            } else "No route trace is retained for this activity.",
+                stringResource(R.string.route_trace_retained)
+            } else {
+                stringResource(R.string.route_trace_not_retained)
+            },
         )
     }
     when {
         evidence?.routeTrace != null -> PrivateRouteTrace(requireNotNull(evidence.routeTrace))
         loading -> {
             CircularProgressIndicator()
-            Text("Loading the private route trace…")
+            Text(stringResource(R.string.route_trace_loading))
         }
         failed && retained -> {
-            Text("The private route trace could not be loaded.")
-            OutlinedButton(onClick = onRetry, shape = MaterialTheme.shapes.small) { Text("Try again") }
+            Text(stringResource(R.string.route_trace_failed))
+            OutlinedButton(
+                onClick = onRetry,
+                shape = MaterialTheme.shapes.small,
+            ) { Text(stringResource(R.string.route_trace_retry)) }
         }
     }
 }
@@ -372,13 +427,17 @@ private fun ActivityRouteTrace(
 @Composable
 private fun ActivityRouteMetadata(route: NativeRouteSummary?, disclosure: NativeActivityDisclosure?) {
     (disclosure?.routePointCount ?: route?.pointCount)?.let {
-        SettingRow("Imported route points", it.toString(), monospace = true)
+        SettingRow(
+            stringResource(R.string.route_points_label),
+            it.toString(),
+            monospace = true,
+        )
     }
     if (disclosure?.hasElevation == true || route?.hasElevation == true) {
-        SettingRow("Elevation", "Present in import")
+        SettingRow(stringResource(R.string.elevation_label), stringResource(R.string.elevation_present))
     }
     if (disclosure?.startEndRedacted == true || route?.startEndRedacted == true) {
-        Text("Start and end details are redacted.")
+        Text(stringResource(R.string.start_end_redacted))
     }
 }
 
@@ -386,8 +445,12 @@ private fun ActivityRouteMetadata(route: NativeRouteSummary?, disclosure: Native
 private fun ActivityHeartRateRetention(disclosure: NativeActivityDisclosure?) {
     disclosure?.heartRateSeriesRetained?.let {
         SettingRow(
-            "Heart-rate samples",
-            if (it) "${disclosure.heartRateSampleCount ?: 0} retained" else "Not retained",
+            stringResource(R.string.hr_samples_label),
+            if (it) {
+                stringResource(R.string.hr_retained_value, disclosure.heartRateSampleCount ?: 0)
+            } else {
+                stringResource(R.string.hr_not_retained)
+            },
             monospace = it,
         )
     }
@@ -403,22 +466,31 @@ private fun HeartRateTrace(series: NativeHeartRateSeries) {
     val traceColor = androidx.compose.material3.MaterialTheme.colorScheme.tertiary
     val sourceCount = series.sourceSampleCount ?: points.size
     val countLabel = if (sourceCount > points.size) {
-        "${points.size} shown of $sourceCount retained"
+        stringResource(R.string.hr_shown_of_retained, points.size, sourceCount)
     } else {
-        "$sourceCount retained"
+        stringResource(R.string.hr_retained_value, sourceCount)
     }
-    SettingRow("Heart-rate samples", "$countLabel · $low–$high bpm", monospace = true)
+    val rangeValue = stringResource(R.string.hr_trace_range_value, countLabel, low, high)
+    val traceDescription = stringResource(
+        R.string.heart_rate_trace_description,
+        countLabel,
+        low,
+        high,
+        requireNotNull(latest.bpm),
+        formatDuration(latest.elapsedSeconds?.toDouble() ?: 0.0),
+    )
+    val traceCaption = stringResource(
+        R.string.heart_rate_trace_caption,
+        requireNotNull(latest.bpm),
+        formatDuration(latest.elapsedSeconds?.toDouble() ?: 0.0),
+    )
+    SettingRow(stringResource(R.string.hr_samples_label), rangeValue, monospace = true)
     Canvas(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
             .height(120.dp)
-            .semantics {
-                contentDescription =
-                    "Heart-rate trace. $countLabel, ranging from $low to $high beats per minute. " +
-                        "Latest ${latest.bpm} beats per minute at " +
-                        formatDuration(latest.elapsedSeconds?.toDouble() ?: 0.0) + "."
-            },
+            .semantics { contentDescription = traceDescription },
     ) {
         val maxElapsed = points.maxOf { requireNotNull(it.elapsedSeconds) }.coerceAtLeast(1)
         val range = (high - low).coerceAtLeast(10)
@@ -435,7 +507,7 @@ private fun HeartRateTrace(series: NativeHeartRateSeries) {
         }
     }
     Text(
-        "Recorded heart rate over elapsed time. Latest ${latest.bpm} bpm at ${formatDuration(latest.elapsedSeconds?.toDouble() ?: 0.0)}.",
+        traceCaption,
         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -459,21 +531,18 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
     val routeColor = androidx.compose.material3.MaterialTheme.colorScheme.primary
     val sourceCount = trace.sourcePointCount ?: points.size
     val countLabel = if (sourceCount > points.size) {
-        "${points.size} shown of $sourceCount retained"
+        stringResource(R.string.hr_shown_of_retained, points.size, sourceCount)
     } else {
-        "$sourceCount retained points"
+        stringResource(R.string.private_route_retained_points, sourceCount)
     }
-    SettingRow("Private route", countLabel)
+    val routeDescription = stringResource(R.string.private_route_trace_description, countLabel)
+    SettingRow(stringResource(R.string.private_route_label), countLabel)
     Canvas(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
             .height(160.dp)
-            .semantics {
-                contentDescription =
-                    "Private route trace. $countLabel. Start and finish markers are shown; " +
-                        "location details are not announced."
-            },
+            .semantics { contentDescription = routeDescription },
     ) {
         val inset = 10.dp.toPx()
         val availableWidth = (size.width - inset * 2).coerceAtLeast(1f)
@@ -527,21 +596,23 @@ private fun PrivateRouteTrace(trace: NativeRouteTrace) {
         )
     }
     Text(
-        "○ Start · ■ Finish",
+        stringResource(R.string.route_markers_caption),
         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
+@Composable
 private fun activitySourceLabel(activity: NativeActivity): String = when (activity.source) {
-    "gpx" -> "GPX import"
-    "health_connect" -> "Health Connect"
+    "gpx" -> stringResource(R.string.source_gpx_import)
+    "health_connect" -> stringResource(R.string.source_health_connect)
     else -> activity.source.orDash()
 }
 
+@Composable
 private fun activityReviewLabel(activity: NativeActivity): String = when (activity.reviewState) {
-    "review" -> "Review — excluded from training totals"
-    "accepted" -> "Accepted"
+    "review" -> stringResource(R.string.review_state_review)
+    "accepted" -> stringResource(R.string.review_state_accepted)
     else -> activity.reviewState.orDash()
 }
 
