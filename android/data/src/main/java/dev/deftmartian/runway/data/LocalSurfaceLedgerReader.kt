@@ -29,4 +29,3 @@ interface LocalSurfaceLedgerReader {
         limits: LocalSurfaceReadLimits,
     ): LocalActivityLedgerSlice?
 }
-

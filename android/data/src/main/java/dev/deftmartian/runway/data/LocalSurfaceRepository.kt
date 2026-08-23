@@ -31,4 +31,3 @@ class LocalSurfaceRepository(
         return ledger.activityEvidence(activityId, limits)?.let(LocalSurfaceMappers::activityEvidence)
     }
 }
-
