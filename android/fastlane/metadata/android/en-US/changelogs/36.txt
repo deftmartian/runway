@@ -1,0 +1,5 @@
+No user-facing feature changes.
+
+- Internal code-health update: the largest data and view-model files are split into focused modules.
+- Activity detail and notification text now use string resources.
+- Added tests pinning external launch behavior of the settings screen.
