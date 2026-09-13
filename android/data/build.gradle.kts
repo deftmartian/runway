@@ -34,7 +34,7 @@ kotlin {
 }
 
 dependencies {
-    val roomVersion = "2.8.4"
+    val roomVersion = "2.8.5"
 
     api(project(":domain"))
     implementation("androidx.core:core-ktx:1.18.0")
