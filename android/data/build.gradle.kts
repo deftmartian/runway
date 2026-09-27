@@ -34,14 +34,14 @@ kotlin {
 }
 
 dependencies {
-    val roomVersion = "2.8.4"
+    val roomVersion = "2.8.5"
 
     api(project(":domain"))
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.room:room-ktx:$roomVersion")
     implementation("androidx.room:room-runtime:$roomVersion")
-    implementation("androidx.work:work-runtime:2.11.2")
+    implementation("androidx.work:work-runtime:2.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     ksp("androidx.room:room-compiler:$roomVersion")
 
