@@ -213,6 +213,12 @@ jobs:
         run: |
           id; ls -l /dev/kvm || echo "no /dev/kvm in this container"
           test -r /dev/kvm && test -w /dev/kvm
+      # GitHub's runners have Java preinstalled; the act image doesn't, and sdkmanager needs it.
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
@@ -440,6 +446,12 @@ jobs:
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
+      # GitHub's runners have Java preinstalled; the act image doesn't, and sdkmanager needs it.
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
