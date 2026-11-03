@@ -213,7 +213,9 @@ jobs:
           python3 android/ci/discover-instrumentation-tests.py data >/dev/null
       - name: Check KVM is available
         if: env.RUN_JOB == '1'
-        run: test -r /dev/kvm && test -w /dev/kvm
+        run: |
+          id; ls -l /dev/kvm || echo "no /dev/kvm in this container"
+          test -r /dev/kvm && test -w /dev/kvm
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
@@ -390,7 +392,9 @@ jobs:
           java-version: '17'
       - name: Check KVM is available
         if: env.RUN_JOB == '1'
-        run: test -r /dev/kvm && test -w /dev/kvm
+        run: |
+          id; ls -l /dev/kvm || echo "no /dev/kvm in this container"
+          test -r /dev/kvm && test -w /dev/kvm
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
