@@ -1,3 +1,16 @@
+# Forgejo is primary; GitHub is a push mirror with Actions off. Ported from the
+# GitHub workflow on 2026-11-03 with the same jobs and gates, and these changes:
+#   - Forgejo skips a job-level `if` on a job with `needs` even when it is true,
+#     so each such job's condition is its first step ("gate") and every later
+#     step requires RUN_JOB=1.
+#   - The emulator jobs get /dev/kvm passed into their container (the runner VM
+#     has nested KVM); the udev step only checks the device.
+#   - Artifacts use Forgejo's upload/download-artifact; other actions are
+#     fetched from GitHub by full URL, pinned to the same commits.
+#   - Signing secrets and the GitHub release token come from OpenBao (role
+#     publish-runway: a v* tag pushed by andrew in this repository only), not
+#     from Forgejo or GitHub secrets; the pinned certificate is written here.
+#   - The release is published to the GitHub mirror once the mirror has the tag.
 name: Android
 
 on:
@@ -10,8 +23,7 @@ concurrency:
   group: runway-android-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+enable-openid-connect: true
 
 env:
   GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g
@@ -24,7 +36,7 @@ jobs:
     outputs:
       android: ${{ steps.scope.outputs.android }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -42,7 +54,7 @@ jobs:
           then
             git diff --check "$BASE_SHA" "$GITHUB_SHA"
             if git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
-              .github/workflows/android.yml \
+              .forgejo/workflows/android.yml \
               android/app android/data android/domain android/ci android/fdroid android/gradle \
               android/gradlew android/gradlew.bat android/build.gradle.kts \
               android/settings.gradle.kts android/gradle.properties android/lint.xml
@@ -58,28 +70,37 @@ jobs:
   unit:
     name: unit
     needs: changes
-    if: github.ref_type != 'tag' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.ref_type != 'tag' && needs.changes.outputs.android == 'true' }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
       - name: Verify bounded instrumentation discovery
+        if: env.RUN_JOB == '1'
         run: |
           python3 android/ci/test_discover_instrumentation_tests.py
           python3 android/ci/discover-instrumentation-tests.py app >/dev/null
           python3 android/ci/discover-instrumentation-tests.py data >/dev/null
-      - uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: platforms;android-36 build-tools;36.0.0
       - name: Run pure and unit tests
+        if: env.RUN_JOB == '1'
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict
@@ -88,23 +109,31 @@ jobs:
   lint:
     name: lint
     needs: changes
-    if: github.ref_type != 'tag' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.ref_type != 'tag' && needs.changes.outputs.android == 'true' }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
-      - uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: platforms;android-36 build-tools;36.0.0
       - name: Run Android lint
+        if: env.RUN_JOB == '1'
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict lint
@@ -112,35 +141,45 @@ jobs:
   package:
     name: package and androidTest compile
     needs: changes
-    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ needs.changes.outputs.android == 'true' }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
       - name: Enforce McCabe complexity ceiling
+        if: env.RUN_JOB == '1'
         run: |
           python3 -m venv "$RUNNER_TEMP/runway-complexity"
           "$RUNNER_TEMP/runway-complexity/bin/pip" install --require-hashes -r android/ci/requirements-complexity.txt
           RUNWAY_COMPLEXITY_PYTHON="$RUNNER_TEMP/runway-complexity/bin/python" \
             bash android/ci/check-complexity.sh
-      - uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: platforms;android-36 build-tools;36.0.0
       - name: Package debug APK and compile instrumentation tests
+        if: env.RUN_JOB == '1'
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict
           :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
       - name: Upload instrumentation APKs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.RUN_JOB == '1'
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: instrumentation-apks
           path: |
@@ -153,39 +192,48 @@ jobs:
   instrumentation:
     name: instrumentation
     needs: [changes, package]
-    if: needs.changes.outputs.android == 'true' && needs.package.result == 'success'
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/catthehacker/ubuntu:act-24.04
+      options: --device /dev/kvm
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ needs.changes.outputs.android == 'true' && needs.package.result == 'success' }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
       - name: Verify bounded instrumentation discovery
+        if: env.RUN_JOB == '1'
         run: |
           python3 android/ci/test_discover_instrumentation_tests.py
           python3 android/ci/discover-instrumentation-tests.py app >/dev/null
           python3 android/ci/discover-instrumentation-tests.py data >/dev/null
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - name: Check KVM is available
+        if: env.RUN_JOB == '1'
+        run: test -r /dev/kvm && test -w /dev/kvm
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: >-
             platforms;android-36 build-tools;36.0.0 platform-tools emulator
             system-images;android-35;default;x86_64
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        if: env.RUN_JOB == '1'
         with:
           name: instrumentation-apks
           path: android
       - name: Verify downloaded instrumentation APKs
+        if: env.RUN_JOB == '1'
         run: |
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           test -s android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           test -s android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
       - name: Run instrumentation tests on a serial emulator
-        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: env.RUN_JOB == '1'
+        uses: https://github.com/ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           target: default
@@ -202,16 +250,16 @@ jobs:
             -camera-back none
           script: bash android/ci/run-instrumentation.sh
       - name: Upload native documentation screenshots
-        if: success()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.RUN_JOB == '1' && (success())
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: native-ui-screenshots
           path: ${{ runner.temp }}/runway-native-screenshots/*.png
           if-no-files-found: error
           retention-days: 14
       - name: Upload instrumentation diagnostics
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.RUN_JOB == '1' && (failure())
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: android-instrumentation-diagnostics
           path: |
@@ -232,24 +280,32 @@ jobs:
   release-build:
     name: unsigned release candidate
     needs: changes
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: platforms;android-36 build-tools;36.0.0
       - name: Gate tag version and ancestry
+        if: env.RUN_JOB == '1'
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
@@ -296,12 +352,14 @@ jobs:
             fi
           fi
       - name: Build and test the unsigned release candidate once
+        if: env.RUN_JOB == '1'
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict -PrunwayFdroidSourceBuild=true
           lint test assembleRelease
       - name: Upload unsigned release candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.RUN_JOB == '1'
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: unsigned-android-release
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
@@ -312,33 +370,41 @@ jobs:
   release-device-smoke:
     name: release candidate device smoke
     needs: release-build
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/catthehacker/ubuntu:act-24.04
+      options: --device /dev/kvm
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
         with:
           distribution: temurin
           java-version: '17'
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - name: Check KVM is available
+        if: env.RUN_JOB == '1'
+        run: test -r /dev/kvm && test -w /dev/kvm
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: >-
             platforms;android-36 build-tools;36.0.0 platform-tools emulator
             system-images;android-35;default;x86_64
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        if: env.RUN_JOB == '1'
         with:
           name: unsigned-android-release
           path: unsigned
       - name: Install and launch an ephemeral-signed copy
-        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: env.RUN_JOB == '1'
+        uses: https://github.com/ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           target: default
@@ -355,8 +421,8 @@ jobs:
             -camera-back none
           script: bash android/ci/run-release-device-smoke.sh unsigned/app-release-unsigned.apk
       - name: Upload release-smoke diagnostics
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.RUN_JOB == '1' && (failure())
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: android-release-smoke-diagnostics
           path: ${{ runner.temp }}/release-smoke-*.txt
@@ -365,35 +431,56 @@ jobs:
 
   android-release:
     name: protected signing
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [release-build, instrumentation, release-device-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: android-release
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
         with:
           packages: build-tools;36.0.0
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        if: env.RUN_JOB == '1'
         with:
           name: unsigned-android-release
           path: unsigned
-      - name: Sign the protected candidate
-        shell: bash
+      - name: Signing key from OpenBao (role publish-runway)
+        if: env.RUN_JOB == '1'
         env:
-          RUNWAY_ANDROID_KEYSTORE_BASE64: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_BASE64 }}
-          RUNWAY_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEYSTORE_PASSWORD }}
-          RUNWAY_ANDROID_KEY_ALIAS: ${{ secrets.RUNWAY_ANDROID_KEY_ALIAS }}
-          RUNWAY_ANDROID_KEY_PASSWORD: ${{ secrets.RUNWAY_ANDROID_KEY_PASSWORD }}
+          BAO_ADDR: https://bao.bargen.ca
+        run: |
+          set -euo pipefail
+          jwt=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://bao.bargen.ca" \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          token=$(python3 -c 'import json,sys; print(json.dumps({"role": "publish-runway", "jwt": sys.argv[1]}))' "$jwt" \
+                  | curl -sS -X POST --data @- "${BAO_ADDR}/v1/auth/forgejo/login" \
+                  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["auth"]["client_token"]) if d.get("auth") else sys.exit("OpenBao refused the login: " + "; ".join(d.get("errors", [])))')
+          echo "::add-mask::${token}"
+          get() { curl -fsS -H "X-Vault-Token: ${token}" "${BAO_ADDR}/v1/secret/data/$1" \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["data"][sys.argv[1]])' "$2"; }
+          for pair in RUNWAY_ANDROID_KEYSTORE_BASE64=runway/android-signing:keystore_base64 RUNWAY_ANDROID_KEYSTORE_PASSWORD=runway/android-signing:keystore_password RUNWAY_ANDROID_KEY_ALIAS=runway/android-signing:key_alias RUNWAY_ANDROID_KEY_PASSWORD=runway/android-signing:key_password; do
+            name=${pair%%=*}; ref=${pair#*=}
+            value=$(get "${ref%%:*}" "${ref#*:}")
+            echo "::add-mask::${value}"
+            { echo "${name}<<RUNWAY_EOF"; printf '%s\n' "$value"; echo RUNWAY_EOF; } >> "$GITHUB_ENV"
+          done
+      - name: Sign the protected candidate
+        if: env.RUN_JOB == '1'
+        shell: bash
         run: |
           set -euo pipefail
           keystore="${RUNNER_TEMP}/runway-release.p12"
           trap 'rm -f "$keystore"' EXIT
           for name in RUNWAY_ANDROID_KEYSTORE_BASE64 RUNWAY_ANDROID_KEYSTORE_PASSWORD RUNWAY_ANDROID_KEY_ALIAS RUNWAY_ANDROID_KEY_PASSWORD; do
-            test -n "${!name}" || { echo "::error::The android-release environment is missing ${name}."; exit 1; }
+            test -n "${!name}" || { echo "::error::OpenBao did not provide ${name}."; exit 1; }
           done
           printf '%s' "$RUNWAY_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
           chmod 600 "$keystore"
@@ -404,9 +491,10 @@ jobs:
             --key-pass env:RUNWAY_ANDROID_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true \
             --v3-signing-enabled true --out "release-assets/runway-${GITHUB_REF_NAME}.apk" unsigned/app-release-unsigned.apk
       - name: Verify APK identity and exact signing certificate
+        if: env.RUN_JOB == '1'
         shell: bash
         env:
-          RUNWAY_ANDROID_CERT_SHA256: ${{ vars.RUNWAY_ANDROID_CERT_SHA256 }}
+          RUNWAY_ANDROID_CERT_SHA256: "07:40:A9:86:92:5C:D4:2C:1C:E6:ED:46:0B:AB:D4:F2:38:C9:A0:03:9B:84:2B:0F:82:CC:FB:F2:EB:A2:8A:DC"
         run: |
           set -euo pipefail
           apk="release-assets/runway-${GITHUB_REF_NAME}.apk"
@@ -437,7 +525,8 @@ jobs:
           [ "$actual" = "$expected" ] || { echo '::error::The APK signer does not match the pinned Android release certificate.'; exit 1; }
           (cd release-assets && sha256sum "$(basename "$apk")" > "$(basename "$apk").sha256")
           printf 'SHA-256: %s\n' "$actual" > "${apk}.signer.txt"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        if: env.RUN_JOB == '1'
         with:
           name: signed-android-release
           path: release-assets/
@@ -446,24 +535,57 @@ jobs:
 
   publish-release:
     name: publish GitHub release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: android-release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        if: env.RUN_JOB == '1'
         with:
           name: signed-android-release
           path: release-assets
-      - name: Publish signed APK assets
+      - name: GitHub release token from OpenBao (role publish-runway)
+        if: env.RUN_JOB == '1'
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          BAO_ADDR: https://bao.bargen.ca
+        run: |
+          set -euo pipefail
+          jwt=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://bao.bargen.ca" \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          token=$(python3 -c 'import json,sys; print(json.dumps({"role": "publish-runway", "jwt": sys.argv[1]}))' "$jwt" \
+                  | curl -sS -X POST --data @- "${BAO_ADDR}/v1/auth/forgejo/login" \
+                  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["auth"]["client_token"]) if d.get("auth") else sys.exit("OpenBao refused the login: " + "; ".join(d.get("errors", [])))')
+          echo "::add-mask::${token}"
+          get() { curl -fsS -H "X-Vault-Token: ${token}" "${BAO_ADDR}/v1/secret/data/$1" \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["data"][sys.argv[1]])' "$2"; }
+          for pair in GH_TOKEN=github/runway-release-token:token; do
+            name=${pair%%=*}; ref=${pair#*=}
+            value=$(get "${ref%%:*}" "${ref#*:}")
+            echo "::add-mask::${value}"
+            { echo "${name}<<RUNWAY_EOF"; printf '%s\n' "$value"; echo RUNWAY_EOF; } >> "$GITHUB_ENV"
+          done
+      - name: Wait for the GitHub mirror to carry the tag
+        if: env.RUN_JOB == '1'
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/deftmartian/runway/git/ref/tags/${GITHUB_REF_NAME}" && exit 0
+            sleep 10
+          done
+          echo "::error::The GitHub mirror never received ${GITHUB_REF_NAME}."; exit 1
+      - name: Publish signed APK assets
+        if: env.RUN_JOB == '1'
+        env:
+          GH_REPO: deftmartian/runway
         run: |
           set -euo pipefail
           notes_file="android/release-notes/${GITHUB_REF_NAME}.md"
