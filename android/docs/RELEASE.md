@@ -33,7 +33,7 @@ Before creating a tag:
 - Commit the version change to the default branch.
 - Tag that commit as `v<versionName>`; the tag must be reachable from the default branch.
 
-CI rejects a tag that fails any of those conditions. It builds the unsigned release candidate once, then runs a bounded package, ephemeral-signature, install, and cold-launch smoke on an emulator before sending the unchanged candidate to the protected Android release environment. The temporary smoke certificate is never a distribution identity. This smoke is not user-flow acceptance: the instrumentation suite and the manual evidence below provide that coverage. If the canonical signing environment is unavailable, publication fails rather than creating an unsigned normal release.
+CI rejects a tag that fails any of those conditions. It builds the unsigned release candidate once, then runs a bounded package, ephemeral-signature, install, and cold-launch smoke on an emulator before sending the unchanged candidate to the signing job. That job reads the signing key from OpenBao (role `publish-runway`, granted only to a `v*` tag pushed by the maintainer) and the publish job creates the GitHub release once the mirror carries the tag. The temporary smoke certificate is never a distribution identity. This smoke is not user-flow acceptance: the instrumentation suite and the manual evidence below provide that coverage. If the canonical signing environment is unavailable, publication fails rather than creating an unsigned normal release.
 
 Download the APK, matching `.sha256`, and `.signer.txt` assets into one directory, then verify both content and identity before distributing it:
 

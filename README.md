@@ -1,6 +1,5 @@
 # runway
 
-[![Android CI](https://github.com/deftmartian/runway/actions/workflows/android.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/android.yml)
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1f758f.svg)](LICENSE)
 
