@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["local>deftmartian/renovate"],
+  "packageRules": [
+    {
+      "description": "Workflow actions: no major updates by bot (as with Dependabot)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Application and library modules must move AGP major versions together: do it by hand",
+      "matchPackageNames": ["com.android.application", "com.android.library"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Wrapper updates rewrite launchers and a binary JAR: run the wrapper task deliberately instead",
+      "matchManagers": ["gradle-wrapper"],
+      "enabled": false
+    },
+    {
+      "description": "core-ktx 1.19+ needs compileSdk 37; keep 1.18.x patches until the AGP 9 / Gradle 9 / SDK 37 migration",
+      "matchPackageNames": ["androidx.core:core-ktx"],
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
+    {
+      "description": "Lifecycle 2.11+ needs AGP 9.2 and compileSdk 37; keep 2.10.x patches until that migration",
+      "matchPackageNames": ["androidx.lifecycle:**"],
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    }
+  ]
+}
