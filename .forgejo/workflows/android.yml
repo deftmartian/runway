@@ -251,6 +251,10 @@ jobs:
         with:
           api-level: 35
           target: default
+          # Stable emulator 37.2.13 hangs at boot under nested AMD KVM on the Forgejo runner (vCPU threads stop
+          # responding before the guest kernel prints); 37.3.6 boots in about 70 s. Tested on the runner 2026-11-04.
+          # Move to a stable build once one past 37.3.6 is out.
+          emulator-build: 16696583  # emulator 37.3.6
           arch: x86_64
           profile: pixel_2
           cores: 2
@@ -430,6 +434,10 @@ jobs:
         with:
           api-level: 35
           target: default
+          # Stable emulator 37.2.13 hangs at boot under nested AMD KVM on the Forgejo runner (vCPU threads stop
+          # responding before the guest kernel prints); 37.3.6 boots in about 70 s. Tested on the runner 2026-11-04.
+          # Move to a stable build once one past 37.3.6 is out.
+          emulator-build: 16696583  # emulator 37.3.6
           arch: x86_64
           profile: pixel_2
           cores: 2
