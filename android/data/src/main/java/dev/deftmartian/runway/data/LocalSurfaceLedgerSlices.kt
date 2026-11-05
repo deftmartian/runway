@@ -88,6 +88,8 @@ data class LocalStatsLedgerSlice(
     val weekActualAggregates: List<LocalWeekActualAggregateLedgerRow> = emptyList(),
     /** False when [activities] is deliberately bounded and exact aggregates are required. */
     val activitiesContainCompleteWeekContext: Boolean = true,
+    /** Accepted runs in the recent trend window, bounded by [RECORDED_TREND_ACTIVITY_LIMIT]. */
+    val recentAccepted: List<ActivityEntity> = emptyList(),
 )
 
 data class LocalHistoryLedgerSlice(
