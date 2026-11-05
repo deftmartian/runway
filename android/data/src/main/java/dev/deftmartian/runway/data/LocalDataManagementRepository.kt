@@ -230,7 +230,7 @@ class LocalDataManagementRepository(
         var hadInstalled = false
         return try {
             copyFile(candidate, staged)
-            check(LocalRestoreCandidate.currentSchemaError(staged) == null) {
+            check(LocalRestoreCandidate.compatibilityError(staged) == null) {
                 "The staged restore database did not validate."
             }
             database.close()
