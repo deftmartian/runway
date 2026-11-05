@@ -424,7 +424,7 @@ internal fun SetupScreen(
                     }
                 } else if (!isRoutineGoal) {
                     item {
-                        Notice("Without a starting amount, the first week uses your final weekly goal. Enter a recent repeatable week if you want a week-by-week ramp.")
+                        Notice(CALIBRATION_START_NOTICE)
                     }
                 }
             }
@@ -1129,3 +1129,9 @@ private fun startModeLabel(value: String) = when (value) {
     "calibration" -> "Two weeks of open runs"
     else -> value
 }
+
+/** Explains the two-week open-run start. The baseline reads linked runs only, so say so before setup. */
+internal const val CALIBRATION_START_NOTICE =
+    "For two weeks, runway adds an open run on each chosen day, with no distance or time set. " +
+        "Link each run you record to its open run day. Afterwards, runway proposes a starting point " +
+        "from linked runs only; runs counted as extra are left out."
