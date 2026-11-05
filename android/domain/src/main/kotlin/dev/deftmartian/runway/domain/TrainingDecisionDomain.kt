@@ -283,6 +283,44 @@ object Consequences {
         return DecisionEffect(metric, previous, next - previous, next)
     }
 
+    /**
+     * Spreads one result's reduction across the remaining runs of a week.
+     *
+     * Distance moves in whole 0.5 km units, one unit per run in schedule order, so a small reduction
+     * changes fewer runs instead of being split into shares that round back to no change. A null entry
+     * means that run stays as it is. Timed runs keep the proportional split.
+     */
+    fun rebalanceEffects(consequence: Consequence, targets: List<DecisionTarget>): List<DecisionEffect?> {
+        val values = targets.map { it.metricAndValue() }
+        if (values.isEmpty() || values.any { (metric, value) -> metric != LoadMetric.DISTANCE || value <= 0 }) {
+            return targets.map { decisionEffect(consequence, PlanDecision.REBALANCE_WEEK, it, targets.size) }
+        }
+        val unit = DISTANCE_UNIT_METERS
+        val matching = consequence.nextRunAdjustment?.takeIf { it.metric == LoadMetric.DISTANCE }?.value?.let(::abs) ?: 0
+        val total = matching.takeIf { it > 0 } ?: defaultReduction(LoadMetric.DISTANCE, values.first().second)
+        var remainingUnits = max(1, roundTrainingValueToIncrement(total.toDouble(), unit) / unit)
+        val cuts = IntArray(targets.size)
+        fun nextTarget(index: Int, cut: Int) =
+            max(minimumTarget(LoadMetric.DISTANCE), roundTrainingValueToIncrement((values[index].second - cut * unit).toDouble(), unit))
+        while (remainingUnits > 0) {
+            var progressed = false
+            for (index in targets.indices) {
+                if (remainingUnits == 0) break
+                if (nextTarget(index, cuts[index] + 1) < nextTarget(index, cuts[index])) {
+                    cuts[index] += 1
+                    remainingUnits -= 1
+                    progressed = true
+                }
+            }
+            if (!progressed) break
+        }
+        return targets.indices.map { index ->
+            val previous = values[index].second
+            val next = nextTarget(index, cuts[index])
+            if (cuts[index] == 0 || next == previous) null else DecisionEffect(LoadMetric.DISTANCE, previous, next - previous, next)
+        }
+    }
+
     private fun DecisionTarget.metricAndValue(): Pair<LoadMetric, Int> =
         if ((targetDurationSeconds ?: 0) > 0) {
             LoadMetric.DURATION to (targetDurationSeconds ?: 0)
@@ -292,6 +330,8 @@ object Consequences {
 
     private fun defaultReduction(metric: LoadMetric, previous: Int): Int =
         if (metric == LoadMetric.DURATION) max(300, roundTrainingValueToInt(previous * .15)) else 500
+
+    private const val DISTANCE_UNIT_METERS = 500
 
     private fun minimumTarget(metric: LoadMetric): Int =
         if (metric == LoadMetric.DURATION) 600 else 500

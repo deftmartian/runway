@@ -21,7 +21,7 @@ runway works with your existing recorder instead of replacing it. It runs locall
 - Review the starting week, peak, longest run, and ramp before creating a race plan.
 - See planned runs, completed work, and waiting decisions by date without filling the calendar with recovery entries.
 - Move, edit, add, or remove a future run when life changes.
-- Compare what was planned with what happened, then keep the schedule, ease back, rest, repeat, or rebalance.
+- Compare what was planned with what happened, then keep the schedule, ease back, rest, or repeat.
 - Look back at the original plan, every deliberate change, and the work you completed.
 
 Weekly routines record whether you ran without changing future days on their own. Race plans can offer a schedule change, but runway never applies one until you approve it.
