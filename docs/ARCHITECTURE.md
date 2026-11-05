@@ -36,7 +36,7 @@ A folder import creates its review-alert outbox row in the same Room transaction
 
 Route and imported-heart-rate retention are separate local profile choices. Discarding either removes its retained summaries/samples and pending import evidence in the same local operation. Heart-rate profile values are optional display context and never change a plan by themselves.
 
-Auto Backup is disabled. Backup/export is an explicit user action. The app warns that its local artifacts are plaintext and sensitive; it does not claim encryption it does not provide. Restore validates a bounded candidate before replacing the current ledger, disconnects import sources before installation, and leaves the old ledger untouched on failed validation.
+Auto Backup is disabled. Backup/export is an explicit user action. The app warns that its local artifacts are plaintext and sensitive; it does not claim encryption it does not provide. Restore checks the chosen file first; a file that is not a restorable backup changes nothing, including import sources and reminders. Only then does it disconnect import sources, validate its own bounded copy again, and replace the ledger, leaving the old ledger untouched on failed validation.
 
 ## Native delivery
 

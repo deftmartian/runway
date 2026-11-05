@@ -646,8 +646,15 @@ internal class RunwayViewModel(
         if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
+            var sourcesDisconnected = false
             val result = localResult {
                 withContext(Dispatchers.IO) {
+                    // Check the file first: a wrong or old file must not cost the folder grant,
+                    // Health Connect access, or reminders.
+                    services.dataManagement.restoreProblem(context, uri)?.let { problem ->
+                        return@withContext LocalRestoreResult.Rejected("$problem Nothing was changed.")
+                    }
+                    sourcesDisconnected = true
                     RunReminderScheduler.cancelAndWait(getApplication())
                     RunwayNotificationManager.cancelAll(getApplication())
                     val outcome = services.importSources.disconnectBeforeRestore {
@@ -666,8 +673,12 @@ internal class RunwayViewModel(
                         Triple("Backup restored. Restarting runway…", false, outcome.restartRequired)
                     is LocalRestoreResult.Rejected ->
                         Triple(
-                            outcome.reason +
-                                " Import sources were disconnected before restore; reconnect them in Settings.",
+                            if (sourcesDisconnected) {
+                                outcome.reason +
+                                    " Import sources were disconnected before restore; reconnect them in Settings."
+                            } else {
+                                outcome.reason
+                            },
                             true,
                             outcome.restartRequired,
                         )
