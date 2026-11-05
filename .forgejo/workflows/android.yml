@@ -163,14 +163,8 @@ jobs:
   instrumentation:
     name: instrumentation
     needs: [changes, package]
+    # Emulator job: see the note on release-device-smoke about running one emulator at a time.
     runs-on: ubuntu-latest
-    # One emulator at a time across every PR and tag: two 4 GiB emulators plus Gradle jobs exhausted the
-    # 16 GiB runner on 2026-11-04 (Docker stopped responding; two jobs hit the 95-minute timeout). A
-    # shared group without cancel-in-progress makes later emulator jobs wait rather than run alongside.
-    # A job that will skip (docs-only change; smoke outside a tag) gets its own group so it never queues.
-    concurrency:
-      group: ${{ needs.changes.outputs.android == 'true' && needs.package.result == 'success' && 'runway-android-emulator' || format('runway-instrumentation-skip-{0}', forgejo.run_id) }}
-      cancel-in-progress: false
     timeout-minutes: 90
     steps:
       - name: Gate (Forgejo skips a job-level if on jobs with needs)
@@ -367,12 +361,9 @@ jobs:
     name: release candidate device smoke
     needs: release-build
     runs-on: ubuntu-latest
-    # One emulator at a time across every PR and tag: two 4 GiB emulators plus Gradle jobs exhausted the
-    # 16 GiB runner on 2026-11-04 (Docker stopped responding; two jobs hit the 95-minute timeout). A
-    # shared group without cancel-in-progress makes later emulator jobs wait rather than run alongside.
-    concurrency:
-      group: ${{ startsWith(forgejo.ref, 'refs/tags/v') && 'runway-android-emulator' || format('runway-smoke-skip-{0}', forgejo.run_id) }}
-      cancel-in-progress: false
+    # Run one emulator at a time: two 4 GiB emulators plus Gradle jobs exhausted the 16 GiB runner
+    # on 2026-11-04. Forgejo 17.0.1 ignores job-level `concurrency` (checked on the runner: two jobs in
+    # one group ran together), so this needs a runner label with capacity 1; see docs/ANDROID.md.
     timeout-minutes: 30
     steps:
       - name: Gate (Forgejo skips a job-level if on jobs with needs)
