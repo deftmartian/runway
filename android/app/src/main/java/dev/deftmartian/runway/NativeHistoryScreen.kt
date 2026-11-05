@@ -269,7 +269,7 @@ private fun NoActivePlanCard(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
         ) {
-            Text("Set up running")
+            Text("Start a plan or routine")
         }
     }
 }

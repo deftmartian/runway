@@ -126,8 +126,11 @@ internal fun SetupScreen(
         listState.scrollToItem(0)
     }
 
+    // Logging only is offered on a fresh install; afterwards Calendar works without a plan anyway.
+    val canStartWithoutPlan = payload?.profileExists == false && payload.currentGoal == null
+    val isLogOnly = canStartWithoutPlan && goalKind == "log"
     val isRoutineGoal = goalKind == "routine"
-    val isRaceGoal = !isRoutineGoal
+    val isRaceGoal = !isRoutineGoal && !isLogOnly
     val effectiveStartMode = if (isRoutineGoal) "routine" else startMode
     val usesEnteredBaseline = isRoutineGoal || startMode == "established"
     val liveTargetBounds = setupTargetDateBounds(timeZone, effectiveStartMode, setupInstant)
@@ -230,13 +233,15 @@ internal fun SetupScreen(
         else -> null
     }
     val currentIssue = when (step) {
-        goalStep -> goalIssue
+        goalStep -> goalIssue.takeUnless { isLogOnly }
         startingPointStep -> startingPointIssue
         scheduleStep -> scheduleIssue
         else -> reviewIssue
     }
     val continueSetup = {
-        if (step < reviewStep) {
+        if (isLogOnly) {
+            onAction(StartWithoutPlanCommand(timeZone))
+        } else if (step < reviewStep) {
             step += 1
         } else {
             val submissionInstant = nowProvider()
@@ -261,7 +266,7 @@ internal fun SetupScreen(
                 loading = actionPending,
                 state = listState,
             ) {
-        item { SetupProgress(step) }
+        if (!isLogOnly) item { SetupProgress(step) }
         if (dateChangedDuringSetup) {
             item {
                 Notice("The date changed while Setup was open. Review the updated dates before creating the plan.")
@@ -285,7 +290,13 @@ internal fun SetupScreen(
                     SetupSection("Goal", "Choose what this setup should create.") {
                         ChoiceRow("Train for a distance", isRaceGoal) { goalKind = "race" }
                         ChoiceRow("Run consistently each week", isRoutineGoal) { goalKind = "routine" }
+                        if (canStartWithoutPlan) {
+                            ChoiceRow("Log runs without a plan", isLogOnly) { goalKind = "log" }
+                        }
                     }
+                }
+                if (isLogOnly) {
+                    item { LogOnlySetupSection(timeZone) { choosingTimeZone = true } }
                 }
                 if (isRaceGoal) {
                     item {
@@ -597,7 +608,9 @@ internal fun SetupScreen(
                 ) {
                     Text(
                         if (actionPending) {
-                            "Creating plan…"
+                            if (isLogOnly) "Starting…" else "Creating plan…"
+                        } else if (isLogOnly) {
+                            "Start logging"
                         } else if (step == reviewStep) {
                             when {
                                 isRoutineGoal -> "Start routine"
@@ -1071,6 +1084,28 @@ private fun startModeLabel(value: String) = when (value) {
     "established" -> "Repeatable current week"
     "calibration" -> "Two weeks of open runs"
     else -> value
+}
+
+@Composable
+private fun LogOnlySetupSection(timeZone: String, onChooseTimeZone: () -> Unit) {
+    SetupSection(
+        "Log runs",
+        "runway keeps the runs you record or import and shows them in Calendar, History, and Stats. " +
+            "Nothing is planned for you. You can start a race plan or weekly routine later in Settings.",
+    ) {
+        OutlinedButton(
+            onClick = onChooseTimeZone,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+        ) {
+            Text("Training time zone · ${timeZone.ifBlank { "Not set" }}")
+        }
+        Text(
+            "This controls which calendar day a run belongs to.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /** Explains the two-week open-run start. The baseline reads linked runs only, so say so before setup. */
