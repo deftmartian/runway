@@ -1,0 +1,7 @@
+- Log runs without a plan: runs go straight to History, and Stats shows 12-week trends.
+- Setup advises instead of refusing steep or short plans, and takes 2 to 7 runs a week.
+- Adjust today's run, or add one today.
+- "Keep the plan" applies in one tap; "Rebalance this week" now changes the week.
+- GPX import accepts much longer runs.
+- Restore checks the file before changing anything.
+- Updates from 0.11.0 or later keep local data.
