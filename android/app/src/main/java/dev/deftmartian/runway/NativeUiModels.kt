@@ -10,6 +10,8 @@ internal data class NativeOnboardingPayload(
     val minimumCalibrationTargetDate: String?,
     val maximumTargetDate: String?,
     val currentGoal: NativeGoalSummary?,
+    /** False only on a fresh install, when runway can start without a plan. */
+    val profileExists: Boolean = true,
 )
 
 internal data class NativeCalendarPayload(

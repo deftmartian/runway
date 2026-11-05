@@ -2,17 +2,17 @@
 
 ## Purpose
 
-runway helps runners who coach themselves make a conservative plan, record what actually happened, and decide what—if anything—should change next. It can guide someone toward a race or help them keep a regular weekly running habit.
+runway helps runners who coach themselves make a conservative plan, record what actually happened, and decide what—if anything—should change next. It can guide someone toward a race, help them keep a regular weekly running habit, or simply keep a reviewed history of runs with no plan at all.
 
 ## Product boundary
 
-runway is not live GPS tracking, route discovery, a wearable replacement, a generic activity log, a social fitness product, or a medical coach. A watch, phone, or another app can record a run; runway helps fit that run back into a training plan or weekly routine. Plans, runs, imports, and notes stay on one Android device unless the runner explicitly creates a backup or export.
+runway is not live GPS tracking, route discovery, a wearable replacement, a generic multi-sport activity log, a social fitness product, or a medical coach. A watch, phone, or another app can record a run; runway helps fit that run back into a training plan or weekly routine. Plans, runs, imports, and notes stay on one Android device unless the runner explicitly creates a backup or export.
 
 The product must not silently change future training because a runner missed, shortened, extended, moved, or imported an activity. It may offer conservative next steps, but it applies one only after the runner confirms it.
 
 ## Planning model
 
-Setup has two goal paths:
+Setup has two goal paths, and on a fresh install a third choice, **Log runs without a plan**, which creates only the local profile (time zone and privacy defaults). Calendar, Inbox, History, and Stats then work as they do after a plan ends: runs are recorded or imported, reviewed, and counted as facts with nothing planned. A plan or routine can be started later from Settings.
 
 | Goal | Starting point |
 | --- | --- |

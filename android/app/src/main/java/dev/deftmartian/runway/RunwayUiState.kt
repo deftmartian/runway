@@ -7,7 +7,7 @@ internal sealed interface RunwayUiState {
         val loading: Boolean,
         val actionPending: Boolean = false,
         val notice: NativeNotice? = null,
-        val completedAction: String? = null,
+        val completedAction: NativeCompletedAction? = null,
         val activityEvidence: Map<String, NativeActivityEvidence> = emptyMap(),
         val activityEvidenceLoading: Set<String> = emptySet(),
         val activityEvidenceFailures: Set<String> = emptySet(),
@@ -20,6 +20,12 @@ internal sealed interface RunwayUiState {
 
     data class Failed(val message: String) : RunwayUiState
 }
+
+/**
+ * The last action that finished. The serial makes each completion distinct, so a sheet keyed on it
+ * closes even when the same action completes twice in a row.
+ */
+internal data class NativeCompletedAction(val action: String, val serial: Long)
 
 internal fun RunwayUiState.Ready.withoutActiveEvidenceRequests(): RunwayUiState.Ready =
     if (activityEvidenceLoading.isEmpty()) {

@@ -78,6 +78,7 @@ internal fun LocalSettingsReadModel.toNativeOnboardingPayload(
         minimumCalibrationTargetDate = calibration.minimum,
         maximumTargetDate = established.maximum,
         currentGoal = currentGoal,
+        profileExists = profile != null,
     )
 }
 

@@ -1,6 +1,11 @@
 package dev.deftmartian.runway
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -64,8 +69,48 @@ class ActivityReviewFlowInstrumentedTest {
         }
     }
 
-    private fun reviewActivity() = NativeActivity(
-        id = "review-activity",
+    @Test
+    fun reviewSheetClosesWhenTheSameActionCompletesTwiceInARow() {
+        var payload by mutableStateOf(NativeReviewPayload(emptyList(), listOf(reviewActivity("first"))))
+        var completed by mutableStateOf<NativeCompletedAction?>(null)
+        var emitted: MobileCommand? = null
+        compose.setContent {
+            RunwayTheme {
+                InboxScreen(
+                    payload = payload,
+                    loading = false,
+                    actionPending = false,
+                    actionNotice = null,
+                    completedAction = completed,
+                    onAction = { emitted = it },
+                    activityEvidence = emptyMap(),
+                    activityEvidenceLoading = emptySet(),
+                    activityEvidenceFailures = emptySet(),
+                    onLoadActivityTrace = {},
+                    onLoadMore = {},
+                    onImportGpx = {},
+                    onOpenImportSettings = {},
+                )
+            }
+        }
+
+        listOf("first", "second").forEachIndexed { index, id ->
+            compose.onNodeWithText("Review").performClick()
+            compose.onNodeWithText("Count as an extra run").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(id, (emitted as ConfirmActivityExtraCommand).activityId)
+                payload = NativeReviewPayload(
+                    emptyList(),
+                    if (id == "first") listOf(reviewActivity("second")) else emptyList(),
+                )
+                completed = NativeCompletedAction(requireNotNull(emitted).action, serial = index + 1L)
+            }
+            compose.onAllNodesWithText("Where does this run belong?").assertCountEquals(0)
+        }
+    }
+
+    private fun reviewActivity(id: String = "review-activity") = NativeActivity(
+        id = id,
         workoutId = null,
         source = "gpx",
         reviewState = "review",
