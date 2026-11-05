@@ -64,7 +64,7 @@ Personal F-Droid repository operators should follow the [Android release guide](
 
 ## Build from source
 
-Use JDK 17, Android SDK Platform 36 with matching build tools, and the checked-in Gradle wrapper:
+Use JDK 17, Android SDK Platform 37 (`platforms;android-37.0`) with build tools 36.0.0, and the checked-in Gradle wrapper:
 
 ```sh
 android/gradlew -p android --no-daemon --max-workers=1 lint test assembleDebug

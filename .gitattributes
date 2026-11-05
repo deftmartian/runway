@@ -1,0 +1,2 @@
+# Windows launcher: Gradle generates it with CRLF line endings, which are not trailing whitespace.
+android/gradlew.bat whitespace=cr-at-eol

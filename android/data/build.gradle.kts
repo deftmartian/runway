@@ -3,12 +3,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     id("com.android.library")
     id("com.google.devtools.ksp")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "dev.deftmartian.runway.data"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
@@ -19,7 +18,11 @@ android {
         buildConfig = false
     }
 
-    sourceSets.getByName("androidTest").assets.srcDir("schemas")
+    sourceSets {
+        getByName("androidTest") {
+            assets.directories.add("schemas")
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -37,7 +40,7 @@ dependencies {
     val roomVersion = "2.8.5"
 
     api(project(":domain"))
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.room:room-ktx:$roomVersion")
     implementation("androidx.room:room-runtime:$roomVersion")
