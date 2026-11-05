@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 
 @Database(
     entities = [
@@ -69,10 +70,40 @@ abstract class RunwayLedgerDatabase : RoomDatabase() {
         /** Room's schema identity for [SCHEMA_VERSION], also recorded in the exported schema JSON. */
         const val SCHEMA_IDENTITY_HASH = "c3cc35c4d3eb9343c527ae41e8976927"
 
-        fun create(context: Context): RunwayLedgerDatabase = Room.databaseBuilder(
-            context.applicationContext,
-            RunwayLedgerDatabase::class.java,
-            DATABASE_NAME,
-        ).fallbackToDestructiveMigration(dropAllTables = true).build()
+        /**
+         * Schema 7 shipped in v0.11.0 and is the first schema whose local data runway preserves.
+         * Older schemas (v0.10.x and earlier) are still recreated, as v0.11.0 announced.
+         */
+        const val FIRST_PRESERVED_SCHEMA_VERSION = 7
+
+        /**
+         * Identity of every released schema from [FIRST_PRESERVED_SCHEMA_VERSION] to [SCHEMA_VERSION].
+         * Restore accepts these and [MIGRATIONS] bring them up to date when the database opens.
+         * A released entry never changes; a schema change adds a version, an entry, and a migration.
+         */
+        val RELEASED_SCHEMA_IDENTITY_HASHES: Map<Int, String> = mapOf(
+            7 to "c3cc35c4d3eb9343c527ae41e8976927",
+        )
+
+        /** Explicit upgrade path from each released schema. Without one, opening fails instead of erasing data. */
+        val MIGRATIONS: Array<Migration> = emptyArray()
+
+        fun create(context: Context): RunwayLedgerDatabase = builder(context, DATABASE_NAME).build()
+
+        /**
+         * The production open policy. Released schemas migrate; pre-release schemas are recreated.
+         * There is no destructive fallback for a missing upgrade or for a downgrade.
+         */
+        fun builder(context: Context, name: String): RoomDatabase.Builder<RunwayLedgerDatabase> =
+            Room.databaseBuilder(
+                context.applicationContext,
+                RunwayLedgerDatabase::class.java,
+                name,
+            )
+                .addMigrations(*MIGRATIONS)
+                .fallbackToDestructiveMigrationFrom(
+                    true,
+                    *(1 until FIRST_PRESERVED_SCHEMA_VERSION).toList().toIntArray(),
+                )
     }
 }
