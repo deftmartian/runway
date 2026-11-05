@@ -64,6 +64,10 @@ internal class RunwayViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
 ) : AndroidViewModel(application) {
+    private var completionSerial = 0L
+
+    private fun completed(action: String) = NativeCompletedAction(action, ++completionSerial)
+
     private val services = application.runwayServices
     private val surfaceLoader = NativeSurfaceLoader(application, services)
     private val mutableState = MutableStateFlow<RunwayUiState>(RunwayUiState.Loading)
@@ -239,7 +243,7 @@ internal class RunwayViewModel(
             val result = localResult { withContext(Dispatchers.IO) { execute(command) } }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
             result.onSuccess { message ->
-                mutableState.value = current.copy(actionPending = false, completedAction = command.action, notice = NativeNotice(message))
+                mutableState.value = current.copy(actionPending = false, completedAction = completed(command.action), notice = NativeNotice(message))
                 reconcileRunReminders()
                 if (command is CreatePlanCommand) {
                     calendarMonthWasSelected = false
@@ -304,7 +308,7 @@ internal class RunwayViewModel(
             }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
             result.onSuccess {
-                mutableState.value = current.copy(actionPending = false, workoutPreview = null, completedAction = "apply_workout_change", notice = NativeNotice("Workout change applied to your local plan."))
+                mutableState.value = current.copy(actionPending = false, workoutPreview = null, completedAction = completed("apply_workout_change"), notice = NativeNotice("Workout change applied to your local plan."))
                 refresh()
             }.onFailure {
                 mutableState.value = current.copy(
@@ -349,7 +353,7 @@ internal class RunwayViewModel(
                         mutableState.value = current.copy(
                             actionPending = false,
                             planDecisionPreview = null,
-                            completedAction = "apply_plan_decision",
+                            completedAction = completed("apply_plan_decision"),
                             notice = NativeNotice("Your choice was applied to the future plan."),
                         )
                         refresh()

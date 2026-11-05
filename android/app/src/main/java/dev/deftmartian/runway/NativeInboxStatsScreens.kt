@@ -27,7 +27,7 @@ internal fun InboxScreen(
     loading: Boolean,
     actionPending: Boolean,
     actionNotice: NativeNotice?,
-    completedAction: String?,
+    completedAction: NativeCompletedAction?,
     onAction: (MobileCommand) -> Unit,
     activityEvidence: Map<String, NativeActivityEvidence>,
     activityEvidenceLoading: Set<String>,
@@ -47,8 +47,9 @@ internal fun InboxScreen(
     var pendingDecision by remember { mutableStateOf<PendingPlanDecision?>(null) }
     var submittedDialogAction by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(completedAction) {
-        if (completedAction == submittedDialogAction) {
-            if (completedAction == "preview_plan_decision" || completedAction == "apply_plan_decision") {
+        val completed = completedAction?.action
+        if (completed != null && completed == submittedDialogAction) {
+            if (completed == "preview_plan_decision" || completed == "apply_plan_decision") {
                 pendingDecision = null
             } else {
                 selectedActivity = null
