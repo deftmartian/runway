@@ -308,26 +308,7 @@ internal fun SetupScreen(
                     }
                 }
                 if (isLogOnly) {
-                    item {
-                        SetupSection(
-                            "Log runs",
-                            "runway keeps the runs you record or import and shows them in Calendar, History, and Stats. " +
-                                "Nothing is planned for you. You can start a race plan or weekly routine later in Settings.",
-                        ) {
-                            OutlinedButton(
-                                onClick = { choosingTimeZone = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.small,
-                            ) {
-                                Text("Training time zone · ${timeZone.ifBlank { "Not set" }}")
-                            }
-                            Text(
-                                "This controls which calendar day a run belongs to.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    item { LogOnlySetupSection(timeZone) { choosingTimeZone = true } }
                 }
                 if (isRaceGoal) {
                     item {
@@ -1160,4 +1141,26 @@ private fun startModeLabel(value: String) = when (value) {
     "established" -> "Repeatable current week"
     "calibration" -> "Two weeks of open runs"
     else -> value
+}
+
+@Composable
+private fun LogOnlySetupSection(timeZone: String, onChooseTimeZone: () -> Unit) {
+    SetupSection(
+        "Log runs",
+        "runway keeps the runs you record or import and shows them in Calendar, History, and Stats. " +
+            "Nothing is planned for you. You can start a race plan or weekly routine later in Settings.",
+    ) {
+        OutlinedButton(
+            onClick = onChooseTimeZone,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+        ) {
+            Text("Training time zone · ${timeZone.ifBlank { "Not set" }}")
+        }
+        Text(
+            "This controls which calendar day a run belongs to.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
