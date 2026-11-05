@@ -6,7 +6,7 @@ Related: [Architecture](ARCHITECTURE.md) Â· [Contributing](../CONTRIBUTING.md) Â
 
 ## Prerequisites
 
-Use JDK 17, Android SDK Platform 36, matching build tools, and the checked-in Gradle wrapper. Keep the local SDK path in ignored `android/local.properties` or the standard Android SDK environment variables.
+Use JDK 17, Android SDK Platform 37 (`platforms;android-37.0`), build tools 36.0.0, and the checked-in Gradle wrapper. Keep the local SDK path in ignored `android/local.properties` or the standard Android SDK environment variables.
 
 ## Build and test
 

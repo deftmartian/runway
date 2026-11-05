@@ -6,7 +6,7 @@ Read [Product](docs/PRODUCT.md), [Design system](docs/DESIGN_SYSTEM.md), [Archit
 
 ## Development
 
-Use JDK 17, Android SDK Platform 36, matching build tools, and the checked-in Gradle wrapper. Keep local SDK configuration in ignored `local.properties`.
+Use JDK 17, Android SDK Platform 37 (`platforms;android-37.0`), build tools 36.0.0, and the checked-in Gradle wrapper. Keep local SDK configuration in ignored `local.properties`.
 
 ```sh
 android/gradlew -p android --no-daemon --max-workers=1 lint test assembleDebug

@@ -108,7 +108,7 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         if: env.RUN_JOB == '1'
         with:
-          packages: platforms;android-36 build-tools;35.0.0
+          packages: platforms;android-37.0 build-tools;36.0.0
       - name: Run pure and unit tests, then lint
         if: env.RUN_JOB == '1'
         run: >-
@@ -141,7 +141,7 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         if: env.RUN_JOB == '1'
         with:
-          packages: platforms;android-36 build-tools;35.0.0
+          packages: platforms;android-37.0 build-tools;36.0.0
       - name: Package debug APK and compile instrumentation tests
         if: env.RUN_JOB == '1'
         run: >-
@@ -303,7 +303,7 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         if: env.RUN_JOB == '1'
         with:
-          packages: platforms;android-36 build-tools;35.0.0
+          packages: platforms;android-37.0 build-tools;36.0.0
       - name: Gate tag version and ancestry
         if: env.RUN_JOB == '1'
         env:

@@ -11,7 +11,6 @@ data class RunwaySigningIdentity(
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -80,7 +79,7 @@ val releaseSigningIdentity = when {
 
 android {
     namespace = "dev.deftmartian.runway"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "dev.deftmartian.runway"
         // Health Connect's Jetpack client supports Android 8.0.
@@ -147,15 +146,15 @@ kotlin {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
 
     implementation(project(":data"))
     implementation(project(":domain"))
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.core:core-ktx:1.18.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.work:work-runtime:2.12.0")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
@@ -174,7 +173,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
-val verifyReleaseSigning by tasks.registering {
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
     group = "verification"
     description = "Fails unless an external, complete Android release signing identity is present."
     doLast {
@@ -191,7 +190,7 @@ val verifyReleaseSigning by tasks.registering {
     }
 }
 
-val verifyReleasePackaging by tasks.registering {
+val verifyReleasePackaging = tasks.register("verifyReleasePackaging") {
     group = "verification"
     description = "Requires direct signing or the explicit unsigned F-Droid source-build path."
     if (fdroidSourceBuild) {
