@@ -299,6 +299,7 @@ internal fun ManualRunDialog(
     errorMessage: String?,
     onDismiss: () -> Unit,
     onSubmit: (RecordManualRunCommand) -> Unit,
+    hasActivePlan: Boolean = true,
 ) {
     var date by rememberSaveable { mutableStateOf(defaultDate) }
     var distance by rememberSaveable { mutableStateOf("") }
@@ -367,7 +368,11 @@ internal fun ManualRunDialog(
                 }
                 item {
                     Text(
-                        "After saving, link this run to planned work or count it as extra in Inbox. It does not affect totals or future workouts until you choose.",
+                        if (hasActivePlan) {
+                            "After saving, link this run to planned work or count it as extra in Inbox. It does not affect totals or future workouts until you choose."
+                        } else {
+                            "With no plan active, the run counts in your history as soon as it is saved."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

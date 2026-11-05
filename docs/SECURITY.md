@@ -20,7 +20,7 @@ Health Connect access is optional and read-only. Permissions are scoped to the r
 
 ## Data controls
 
-- Imported activities begin in Review; no import automatically changes a plan.
+- Imported activities begin in Review; no import automatically changes a plan. With no plan or routine, waiting activities are accepted as recorded runs.
 - Content markers and tombstones prevent a deleted activity from being recreated by a later folder or Health Connect pass.
 - Route discard clears retained and pending route samples together.
 - Imported-heart-rate discard clears retained summaries, counts, detailed samples, and pending correction evidence together. Heart-rate profile zones are separate and remain.

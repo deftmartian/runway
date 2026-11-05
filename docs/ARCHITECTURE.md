@@ -18,7 +18,7 @@ The application service wiring is intentionally small and explicit. UI code cons
 
 Room persists the profile, plans, generated/current workouts, actual activity ledger, feedback, decisions, adjustment/undo records, imports, privacy choices, notification choices and delivery receipts, and metadata. The database is the local source of truth.
 
-Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
+Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. With no current goal, plan, or routine there is nothing to link it to or change, so runway accepts waiting activities as recorded runs (`LocalActivityReviewRepository.acceptPendingWithoutPlan`) after an import and before each screen load. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
 
 The current Room schema is a deliberate hard cutover: opening an older installed schema recreates the local ledger, and restore accepts only the exact current identity. No compatibility migration or old-schema asset is carried in this line. If a future release promises preservation, add an explicit versioned migration and upgrade/restore evidence before release; never infer schema state or invent timestamp-based lineage.
 

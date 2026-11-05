@@ -569,9 +569,16 @@ internal class RunwayViewModel(
         if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { OneOffGpxImport.importUri(context, uri) }
+            val (result, counted) = withContext(Dispatchers.IO) {
+                val outcome = OneOffGpxImport.importUri(context, uri)
+                outcome to (
+                    outcome == OneOffGpxImportOutcome.Imported &&
+                        services.activityReview.acceptPendingWithoutPlan() > 0
+                    )
+            }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
-            mutableState.value = current.copy(actionPending = false, notice = NativeNotice(result.message()))
+            val message = if (counted) "Run saved to your history." else result.message()
+            mutableState.value = current.copy(actionPending = false, notice = NativeNotice(message))
             refresh()
         }
     }
@@ -858,7 +865,11 @@ internal class RunwayViewModel(
                 durationSeconds = command.durationMinutes?.let { (it * 60).toInt() },
                 feltHard = command.feltHard,
             ),
-        ).message()
+        ).let { recorded ->
+            val counted = recorded is LocalTrainingMutationResult.ManualRunRecorded &&
+                services.activityReview.acceptPendingWithoutPlan() > 0
+            if (counted) "Run saved to your history." else recorded.message()
+        }
         is LinkActivityCommand -> services.activityReview.link(
             activityId = command.activityId,
             workoutId = command.workoutId,
@@ -1434,6 +1445,8 @@ internal class RunwayViewModel(
         surfaceLoadJob?.cancel()
         surfaceLoadJob = viewModelScope.launch {
             val result = localResult {
+                // Folder, Health Connect, and background imports land in review; with no plan they count now.
+                withContext(Dispatchers.IO) { services.activityReview.acceptPendingWithoutPlan() }
                 val loaded = surfaceLoader.load(
                     SurfaceLoadRequest(
                         destination = destination,
