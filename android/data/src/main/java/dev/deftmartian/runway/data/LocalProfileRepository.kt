@@ -31,6 +31,12 @@ sealed interface LocalProfileUpdateResult {
     data class Invalid(val issue: LocalProfileIssue) : LocalProfileUpdateResult
 }
 
+sealed interface LocalProfileStartResult {
+    data object Started : LocalProfileStartResult
+    data object AlreadyStarted : LocalProfileStartResult
+    data class Invalid(val issue: LocalProfileIssue) : LocalProfileStartResult
+}
+
 enum class LocalProfileIssue {
     INVALID_TIME_ZONE,
     AGE_OUT_OF_RANGE,
@@ -49,6 +55,37 @@ class LocalProfileRepository(
     private val database: RunwayLedgerDatabase,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
+    /**
+     * Starts runway for a runner who only logs runs: creates the local profile with no goal or plan.
+     * Imports, review, History, and Stats need only this profile. An existing profile is left as it is.
+     */
+    suspend fun startWithoutPlan(timeZone: String): LocalProfileStartResult {
+        val normalized = timeZone.trim()
+        if (normalized.length > 100 || runCatching { ZoneId.of(normalized) }.isFailure) {
+            return LocalProfileStartResult.Invalid(LocalProfileIssue.INVALID_TIME_ZONE)
+        }
+        return database.withTransaction {
+            val profiles = database.profileSettingsDao()
+            if (profiles.get() != null) return@withTransaction LocalProfileStartResult.AlreadyStarted
+            profiles.replaceOnboardingInputs(
+                ProfileSettingsEntity(
+                    timeZone = normalized,
+                    routeDataMode = "discard",
+                    heartRateDataMode = "discard",
+                    heartRateSettingsSource = "none",
+                    maxHeartRateBpm = null,
+                    zone2FloorBpm = null,
+                    zone3FloorBpm = null,
+                    zone4FloorBpm = null,
+                    zone5FloorBpm = null,
+                    updatedAtEpochMillis = nowEpochMillis(),
+                ),
+                availabilityDays = emptyList(),
+            )
+            LocalProfileStartResult.Started
+        }
+    }
+
     suspend fun updateTimeZone(timeZone: String): LocalProfileUpdateResult {
         val normalized = timeZone.trim()
         if (normalized.length > 100 || runCatching { ZoneId.of(normalized) }.isFailure) {
