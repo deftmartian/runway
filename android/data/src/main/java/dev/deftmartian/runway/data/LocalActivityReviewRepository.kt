@@ -109,6 +109,26 @@ class LocalActivityReviewRepository(
             LocalActivityReviewResult.Linked(activity.activityId, workout.workoutId, consequence)
         }
 
+    /**
+     * With no current goal, plan, or routine there is nothing to link a run to or change, so runs
+     * waiting in review count at once as recorded runs. Returns how many were accepted.
+     */
+    suspend fun acceptPendingWithoutPlan(limit: Int = AUTO_ACCEPT_BATCH): Int {
+        if (hasCurrentGoal()) return 0
+        val pending = database.activityLedgerDao().activitiesByReviewState(REVIEW_STATE, limit)
+        var accepted = 0
+        for (activity in pending) {
+            if (hasCurrentGoal()) break
+            if (confirmAsExtra(activity.activityId) is LocalActivityReviewResult.AcceptedExtra) accepted += 1
+        }
+        return accepted
+    }
+
+    private suspend fun hasCurrentGoal(): Boolean {
+        val plans = database.goalPlanDao()
+        return plans.currentGoalIds(1).isNotEmpty() || plans.activePlanIds(1).isNotEmpty()
+    }
+
     suspend fun confirmAsExtra(
         activityId: String,
         feltHard: Boolean? = null,
@@ -443,6 +463,8 @@ class LocalActivityReviewRepository(
 
     private companion object {
         const val REVIEW_STATE = "review"
+        /** Bounded per call; a later load accepts any remainder. */
+        const val AUTO_ACCEPT_BATCH = 50
         const val ACTIVE_STATE = "active"
         const val PLANNED_STATE = "planned"
         const val REST_TYPE = "rest"

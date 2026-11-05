@@ -216,7 +216,7 @@ internal fun CalendarScreen(
                     if (!payload.hasActivePlan) {
                         item {
                             EmptyCard(
-                                "No plan is active. Runs you record or import appear on their dates after review.",
+                                "No plan is active. Runs you record or import count right away and appear on their dates.",
                             )
                         }
                         item {
@@ -334,6 +334,7 @@ internal fun CalendarScreen(
             actionPending = actionPending,
             defaultDate = today.ifBlank { LocalDate.now().toString() },
             errorMessage = actionNotice?.takeIf { it.isError }?.message,
+            hasActivePlan = payload?.hasActivePlan != false,
             onDismiss = { showManualRun = false },
             onSubmit = {
                 submittedDialogAction = "record_manual_run"

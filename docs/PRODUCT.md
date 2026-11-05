@@ -51,7 +51,7 @@ Onboarding is a focused setup flow, not a sixth destination.
 
 ## Bring in runs
 
-Manual results, shared GPX files, approved GPX folders, and optional Health Connect readings all arrive in Inbox first. For a race plan, the runner links a candidate to a planned workout within three calendar days or counts it as extra work, records feedback, and then chooses whether the result should affect the plan. An accepted extra run can return to Inbox while its proposed plan change remains unapplied; an applied plan change must be undone first. For a weekly routine, accepted work counts toward that week without changing future run days.
+Manual results, shared GPX files, approved GPX folders, and optional Health Connect readings arrive in Inbox first while a plan or routine is active. With no plan, they count straight away as recorded runs, because there is nothing to link them to or change. For a race plan, the runner links a candidate to a planned workout within three calendar days or counts it as extra work, records feedback, and then chooses whether the result should affect the plan. An accepted extra run can return to Inbox while its proposed plan change remains unapplied; an applied plan change must be undone first. For a weekly routine, accepted work counts toward that week without changing future run days.
 
 Gadgetbridge's automatic GPX export is the primary folder workflow. OpenTracks and other recorders can share GPX files or write them to a user-chosen directory; FitoTrack uses the directory path. This is a local file handoff, not a direct integration or continuous sync.
 

@@ -54,6 +54,42 @@ class LocalProfileStartInstrumentedTest {
     }
 
     @Test
+    fun runsCountAtOnceWithoutAPlanAndWaitForReviewWhenAGoalExists() = runBlocking {
+        LocalProfileRepository(database) { now }.startWithoutPlan("America/Halifax")
+        var ids = 0
+        val mutations = LocalTrainingMutationRepository(database, nowEpochMillis = { now }, newId = { "run-${++ids}" })
+        val review = LocalActivityReviewRepository(database, nowEpochMillis = { now })
+        fun record() = runBlocking {
+            mutations.recordManualRun(LocalManualRunCommand(LocalDate.of(2026, 11, 2), distanceMeters = 5_000, durationSeconds = 1_700))
+        }
+
+        record()
+        record()
+        assertEquals(2, review.acceptPendingWithoutPlan())
+        assertEquals("accepted", database.activityLedgerDao().activity("run-1")?.reviewState)
+        assertEquals("accepted", database.activityLedgerDao().activity("run-2")?.reviewState)
+        assertEquals(0, review.acceptPendingWithoutPlan())
+
+        database.goalPlanDao().saveGoal(
+            GoalEntity(
+                goalId = "goal",
+                title = "Half marathon plan",
+                targetDateEpochDay = LocalDate.of(2027, 3, 14).toEpochDay(),
+                state = "active",
+                createdAtEpochMillis = now,
+                updatedAtEpochMillis = now,
+                kind = "race",
+                startMode = "established",
+                raceDistanceMeters = 21_097,
+                priority = "finish_healthy",
+            ),
+        )
+        record()
+        assertEquals(0, review.acceptPendingWithoutPlan())
+        assertEquals("review", database.activityLedgerDao().activity("run-3")?.reviewState)
+    }
+
+    @Test
     fun startingWithoutAPlanLeavesAnExistingProfileAndRejectsAnUnknownZone() = runBlocking {
         val profiles = LocalProfileRepository(database) { now }
 
