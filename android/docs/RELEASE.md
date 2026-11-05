@@ -4,7 +4,7 @@
 
 The application id is `dev.deftmartian.runway`. Android updates require the same application id and APK signing certificate. Keep the release key outside this repository, encrypted and access-controlled, with a tested independent backup. Losing it prevents in-place updates.
 
-The personal F-Droid repository index key is separate from the APK signing key. Keep and test both independently. There is exactly one canonical APK signing certificate for `dev.deftmartian.runway`: GitHub releases and every APK in the personal F-Droid repository must use it. A differently signed APK with this same application id is a separate, non-upgradeable installation path.
+The personal F-Droid repository index key is separate from the APK signing key. Keep and test both independently. There is exactly one canonical APK signing certificate for `dev.deftmartian.runway`: the Forgejo and GitHub releases and every APK in the personal F-Droid repository must use it. A differently signed APK with this same application id is a separate, non-upgradeable installation path.
 
 ## Build a candidate
 
@@ -25,7 +25,7 @@ android/gradlew -p android --no-daemon --max-workers=1 assembleRelease
 
 Do not put a keystore, password, or `signing.properties` in Git, CI logs, shell history, or an artifact. Record the source commit, version name/code, APK SHA-256, application id, and signer certificate fingerprint with the release.
 
-## GitHub release
+## Forgejo and GitHub releases
 
 Before creating a tag:
 
@@ -33,7 +33,7 @@ Before creating a tag:
 - Commit the version change to the default branch.
 - Tag that commit as `v<versionName>`; the tag must be reachable from the default branch.
 
-CI rejects a tag that fails any of those conditions. It builds the unsigned release candidate once, then runs a bounded package, ephemeral-signature, install, and cold-launch smoke on an emulator before sending the unchanged candidate to the signing job. That job reads the signing key from OpenBao (role `publish-runway`, granted only to a `v*` tag pushed by the maintainer) and the publish job creates the GitHub release once the mirror carries the tag. The temporary smoke certificate is never a distribution identity. This smoke is not user-flow acceptance: the instrumentation suite and the manual evidence below provide that coverage. If the canonical signing environment is unavailable, publication fails rather than creating an unsigned normal release.
+CI rejects a tag that fails any of those conditions. It builds the unsigned release candidate once, then runs a bounded package, ephemeral-signature, install, and cold-launch smoke on an emulator before sending the unchanged candidate to the signing job. That job reads the signing key from OpenBao (role `publish-runway`, granted only to a `v*` tag pushed by the maintainer) Two publish jobs then attach the same signed APK, `.sha256` and `.signer.txt` to a release named after the tag, with `android/release-notes/<tag>.md` as its notes: one on Forgejo, using the run's own token, and one on GitHub once the mirror carries the tag. They run independently, so a failure on one forge doesn't block the other, and rerunning either replaces its assets. The temporary smoke certificate is never a distribution identity. This smoke is not user-flow acceptance: the instrumentation suite and the manual evidence below provide that coverage. If the canonical signing environment is unavailable, publication fails rather than creating an unsigned normal release.
 
 Download the APK, matching `.sha256`, and `.signer.txt` assets into one directory, then verify both content and identity before distributing it:
 

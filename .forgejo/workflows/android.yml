@@ -632,3 +632,50 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" release-assets/* --title "$GITHUB_REF_NAME" --generate-notes
           fi
+
+  publish-forgejo-release:
+    name: publish Forgejo release
+    needs: android-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
+        with:
+          persist-credentials: false
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        if: env.RUN_JOB == '1'
+        with:
+          name: signed-android-release
+          path: release-assets
+      # The same signed assets and notes as the GitHub release, on the primary forge. This job is
+      # separate from publish-release, so a failure on one forge does not block the other.
+      - name: Publish signed APK assets
+        if: env.RUN_JOB == '1'
+        env:
+          FORGEJO_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: token ${FORGEJO_TOKEN}")
+          notes_file="android/release-notes/${GITHUB_REF_NAME}.md"
+          body="$(python3 -c 'import json,os,sys; p=sys.argv[2]; n=open(p).read() if os.path.isfile(p) and os.path.getsize(p) else ""; print(json.dumps({"tag_name": sys.argv[1], "name": sys.argv[1], "body": n}))' "$GITHUB_REF_NAME" "$notes_file")"
+          status=$(curl -sS -o release.json -w '%{http_code}' "${auth[@]}" "${api}/releases/tags/${GITHUB_REF_NAME}")
+          case "$status" in
+            200) id=$(python3 -c 'import json; print(json.load(open("release.json"))["id"])')
+                 curl -fsS -o release.json -X PATCH "${auth[@]}" -H 'Content-Type: application/json' --data "$body" "${api}/releases/${id}" ;;
+            404) curl -fsS -o release.json -X POST "${auth[@]}" -H 'Content-Type: application/json' --data "$body" "${api}/releases" ;;
+            *) echo "::error::Looking up the Forgejo release returned HTTP ${status}."; exit 1 ;;
+          esac
+          id=$(python3 -c 'import json; print(json.load(open("release.json"))["id"])')
+          for file in release-assets/*; do
+            name=$(basename "$file")
+            old=$(python3 -c 'import json,sys; print(" ".join(str(a["id"]) for a in json.load(open("release.json")).get("assets") or [] if a["name"] == sys.argv[1]))' "$name")
+            for asset in $old; do curl -fsS -o /dev/null -X DELETE "${auth[@]}" "${api}/releases/${id}/assets/${asset}"; done
+            curl -fsS -o /dev/null "${auth[@]}" -F "attachment=@${file}" "${api}/releases/${id}/assets?name=${name}"
+            echo "Uploaded ${name}"
+          done
+          echo "Forgejo release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
