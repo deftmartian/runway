@@ -164,7 +164,7 @@ jobs:
     name: instrumentation
     needs: [changes, package]
     # Emulator job: see the note on release-device-smoke about running one emulator at a time.
-    runs-on: ubuntu-latest
+    runs-on: android-emulator
     timeout-minutes: 90
     steps:
       - name: Gate (Forgejo skips a job-level if on jobs with needs)
@@ -218,8 +218,8 @@ jobs:
           test -s android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           test -s android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
       # Job containers share the runner's host network, so a fixed emulator port (5554) and adb
-      # server port (5037) collide with a concurrent emulator job or one a cancelled job left behind,
-      # and adb then reports "device offline" until the job times out. Give each run its own pair,
+      # server port (5037) collide with any other emulator on the host, such as one a cancelled job
+      # left behind, and adb then reports "device offline" until the job times out. Give each run its own pair,
       # inside adb's emulator discovery range (5555-5585) and away from the defaults.
       - name: Choose this run's emulator and adb ports
         if: env.RUN_JOB == '1'
@@ -370,10 +370,11 @@ jobs:
   release-device-smoke:
     name: release candidate device smoke
     needs: release-build
-    runs-on: ubuntu-latest
+    runs-on: android-emulator
     # Run one emulator at a time: two 4 GiB emulators plus Gradle jobs exhausted the 16 GiB runner
-    # on 2026-11-04. Forgejo 17.0.1 ignores job-level `concurrency` (checked on the runner: two jobs in
-    # one group ran together), so this needs a runner label with capacity 1; see docs/ANDROID.md.
+    # on 2026-11-04, and three froze it on 2026-11-05. Forgejo 17.0.1 ignores job-level `concurrency`,
+    # so emulator jobs use the `android-emulator` label, served by a dedicated capacity-1 runner daemon
+    # (same image as ubuntu-latest, 6 GiB memory cap per job); see docs/ANDROID.md.
     timeout-minutes: 30
     steps:
       - name: Gate (Forgejo skips a job-level if on jobs with needs)
@@ -414,8 +415,8 @@ jobs:
           name: unsigned-android-release
           path: unsigned
       # Job containers share the runner's host network, so a fixed emulator port (5554) and adb
-      # server port (5037) collide with a concurrent emulator job or one a cancelled job left behind,
-      # and adb then reports "device offline" until the job times out. Give each run its own pair,
+      # server port (5037) collide with any other emulator on the host, such as one a cancelled job
+      # left behind, and adb then reports "device offline" until the job times out. Give each run its own pair,
       # inside adb's emulator discovery range (5555-5585) and away from the defaults.
       - name: Choose this run's emulator and adb ports
         if: env.RUN_JOB == '1'
