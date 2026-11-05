@@ -100,7 +100,7 @@ internal fun CalendarScreen(
     loading: Boolean,
     actionPending: Boolean,
     actionNotice: NativeNotice?,
-    completedAction: String?,
+    completedAction: NativeCompletedAction?,
     workoutPreview: LocalWorkoutChangePreview?,
     onCalendarMonthSelected: (String) -> Unit,
     activityEvidence: Map<String, NativeActivityEvidence>,
@@ -150,8 +150,9 @@ internal fun CalendarScreen(
         }
     }
     LaunchedEffect(completedAction) {
-        if (completedAction != submittedDialogAction) return@LaunchedEffect
-        when (completedAction) {
+        val completed = completedAction?.action
+        if (completed != submittedDialogAction) return@LaunchedEffect
+        when (completed) {
             "record_feedback" -> feedbackWorkout = null
             "preview_workout_edit", "preview_workout_removal" -> editWorkout = null
             "preview_workout_add" -> addWorkoutDate = null
