@@ -28,8 +28,8 @@ class LocalOnboardingPresenterTest {
 
         assertNull(payload.initialValues)
         assertNull(payload.currentGoal)
-        assertEquals("2026-09-24", payload.minimumTargetDate)
-        assertEquals("2026-10-08", payload.minimumCalibrationTargetDate)
+        assertEquals("2026-08-27", payload.minimumTargetDate)
+        assertEquals("2026-09-10", payload.minimumCalibrationTargetDate)
         assertEquals("2027-07-28", payload.maximumTargetDate)
     }
 

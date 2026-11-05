@@ -9,7 +9,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
@@ -275,21 +274,14 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         repeat(3) { compose.onNodeWithText("Continue").performClick() }
 
-        listOf("Training outline", "20 km", "Needs confirmation").forEach { text ->
+        listOf("Training outline", "20 km", "Steeper than usual").forEach { text ->
             compose.onNode(hasScrollAction()).performScrollToNode(hasText(text))
             compose.onNodeWithText(text).assertIsDisplayed()
         }
-        compose.onNodeWithText("Create plan").assertIsNotEnabled()
-
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Use this schedule as shown"))
-        compose.onNodeWithText("Use this schedule as shown").performClick()
-        compose.onNodeWithText("Use this schedule as shown").assertIsOn()
-        compose.onAllNodesWithText(
-            "Confirm the schedule after reviewing its warnings, or change the plan inputs.",
-        ).assertCountEquals(0)
+        // Advise, don't block: a steep plan has no confirmation checkbox and can be created at once.
+        compose.onAllNodesWithText("Use this schedule as shown").assertCountEquals(0)
         compose.onNodeWithText("Create plan").assertIsEnabled().performClick()
         compose.runOnIdle {
-            assertTrue(submitted?.confirmedPlanKey?.isNotBlank() == true)
             assertTrue(submitted?.raceDistance == "half")
             assertTrue(submitted?.longestRecentRunKm == "10")
         }
