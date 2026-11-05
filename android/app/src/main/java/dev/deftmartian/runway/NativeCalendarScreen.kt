@@ -17,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -99,7 +100,7 @@ internal fun CalendarScreen(
     loading: Boolean,
     actionPending: Boolean,
     actionNotice: NativeNotice?,
-    completedAction: String?,
+    completedAction: NativeCompletedAction?,
     workoutPreview: LocalWorkoutChangePreview?,
     onCalendarMonthSelected: (String) -> Unit,
     activityEvidence: Map<String, NativeActivityEvidence>,
@@ -149,8 +150,9 @@ internal fun CalendarScreen(
         }
     }
     LaunchedEffect(completedAction) {
-        if (completedAction != submittedDialogAction) return@LaunchedEffect
-        when (completedAction) {
+        val completed = completedAction?.action
+        if (completed != submittedDialogAction) return@LaunchedEffect
+        when (completed) {
             "record_feedback" -> feedbackWorkout = null
             "preview_workout_edit", "preview_workout_removal" -> editWorkout = null
             "preview_workout_add" -> addWorkoutDate = null
@@ -214,16 +216,16 @@ internal fun CalendarScreen(
                     if (!payload.hasActivePlan) {
                         item {
                             EmptyCard(
-                                "No schedule is active. Recorded runs will still appear here.",
+                                "No plan is active. Runs you record or import appear on their dates after review.",
                             )
                         }
                         item {
-                            Button(
+                            OutlinedButton(
                                 onClick = { onDestinationSelected(NativeDestination.Setup) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = MaterialTheme.shapes.small,
                             ) {
-                                Text("Set up running")
+                                Text("Start a plan or routine")
                             }
                         }
                     }
