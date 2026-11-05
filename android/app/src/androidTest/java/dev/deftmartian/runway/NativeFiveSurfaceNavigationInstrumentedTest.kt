@@ -298,6 +298,59 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     @Test
+    fun freshInstallCanStartLoggingRunsWithoutAPlan() {
+        var submitted: MobileCommand? = null
+        compose.setContent {
+            RunwayTheme {
+                SetupScreen(
+                    payload = NativeOnboardingPayload(
+                        initialValues = null,
+                        minimumTargetDate = null,
+                        minimumCalibrationTargetDate = null,
+                        maximumTargetDate = null,
+                        currentGoal = null,
+                        profileExists = false,
+                    ),
+                    actionPending = false,
+                    onAction = { submitted = it },
+                    onRestoreBackup = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Log runs without a plan").performClick()
+        compose.onNodeWithText("Step 1 of 4 · Goal").assertDoesNotExist()
+        compose.onAllNodesWithText("Race target").assertCountEquals(0)
+        compose.onNodeWithText("Start logging").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertTrue((submitted as? StartWithoutPlanCommand)?.timeZone?.isNotBlank() == true)
+        }
+    }
+
+    @Test
+    fun setupWithAnExistingProfileDoesNotOfferLoggingOnly() {
+        compose.setContent {
+            RunwayTheme {
+                SetupScreen(
+                    payload = NativeOnboardingPayload(
+                        initialValues = null,
+                        minimumTargetDate = null,
+                        minimumCalibrationTargetDate = null,
+                        maximumTargetDate = null,
+                        currentGoal = null,
+                        profileExists = true,
+                    ),
+                    actionPending = false,
+                    onAction = {},
+                    onRestoreBackup = {},
+                )
+            }
+        }
+
+        compose.onAllNodesWithText("Log runs without a plan").assertCountEquals(0)
+    }
+
+    @Test
     fun consistencySetupShowsTheRampFromCurrentWeekToFinalGoal() {
         compose.setContent {
             RunwayTheme {
@@ -650,11 +703,11 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        compose.onNodeWithText("Set up running").assertIsDisplayed()
+        compose.onNodeWithText("Start a plan or routine").assertIsDisplayed()
         compose.onAllNodesWithText("Continue setup").assertCountEquals(0)
 
         selectSurface("Stats")
-        compose.onNodeWithText("Set up running").assertIsDisplayed()
+        compose.onNodeWithText("Start a plan or routine").assertIsDisplayed()
         compose.onAllNodesWithText("Continue setup").assertCountEquals(0)
     }
 

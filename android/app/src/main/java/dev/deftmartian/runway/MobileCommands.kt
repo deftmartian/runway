@@ -215,6 +215,11 @@ internal data object ContinueBeginnerPhaseCommand : MobileCommand {
     override val action = "continue_beginner_phase"
 }
 
+/** Starts runway for logging runs only: a local profile with no goal, plan, or routine. */
+internal data class StartWithoutPlanCommand(val timeZone: String) : MobileCommand {
+    override val action = "start_without_plan"
+}
+
 internal data object ArchivePlanCommand : MobileCommand {
     override val action = "archive_plan"
 }
