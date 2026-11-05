@@ -241,25 +241,7 @@ internal class RunwayViewModel(
             result.onSuccess { message ->
                 mutableState.value = current.copy(actionPending = false, completedAction = command.action, notice = NativeNotice(message))
                 reconcileRunReminders()
-                if (command is CreatePlanCommand) {
-                    calendarMonthWasSelected = false
-                    savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
-                    savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
-                    val redirected = requireNotNull(mutableState.value as? RunwayUiState.Ready)
-                    mutableState.value = redirected.copy(
-                        surface = NativeSurface.empty(NativeDestination.Calendar),
-                        loading = true,
-                    )
-                    load(NativeDestination.Calendar)
-                } else if (
-                    command !is PreviewWorkoutEditCommand &&
-                    command !is PreviewWorkoutAddCommand &&
-                    command !is PreviewWorkoutRemovalCommand &&
-                    command !is ResetWorkoutCommand &&
-                    command !is PreviewPlanDecisionCommand
-                ) {
-                    refresh()
-                }
+                afterActionSucceeded(command)
             }.onFailure {
                 mutableState.value = current.copy(
                     actionPending = false,
@@ -318,6 +300,35 @@ internal class RunwayViewModel(
         }
     }
 
+    /** Moves to the next screen state once [command] has succeeded. */
+    private fun afterActionSucceeded(command: MobileCommand) {
+        if (command is CreatePlanCommand) {
+            calendarMonthWasSelected = false
+            savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
+            savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
+            val redirected = requireNotNull(mutableState.value as? RunwayUiState.Ready)
+            mutableState.value = redirected.copy(
+                surface = NativeSurface.empty(NativeDestination.Calendar),
+                loading = true,
+            )
+            load(NativeDestination.Calendar)
+        } else if (
+            command !is PreviewWorkoutEditCommand &&
+            command !is PreviewWorkoutAddCommand &&
+            command !is PreviewWorkoutRemovalCommand &&
+            command !is ResetWorkoutCommand &&
+            command !is PreviewPlanDecisionCommand
+        ) {
+            refresh()
+        } else if (
+            command is PreviewPlanDecisionCommand &&
+            (mutableState.value as? RunwayUiState.Ready)?.planDecisionPreview?.changes?.isEmpty() == true
+        ) {
+            // Nothing to review: keeping the plan (or any no-change choice) applies in one tap.
+            applyPlanDecisionPreview()
+        }
+    }
+
     fun applyPlanDecisionPreview() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         if (ready.actionPending) return
@@ -350,7 +361,13 @@ internal class RunwayViewModel(
                             actionPending = false,
                             planDecisionPreview = null,
                             completedAction = "apply_plan_decision",
-                            notice = NativeNotice("Your choice was applied to the future plan."),
+                            notice = NativeNotice(
+                                if (pending.changes.isEmpty()) {
+                                    "The plan stays as it is."
+                                } else {
+                                    "Your choice was applied to the future plan."
+                                },
+                            ),
                         )
                         refresh()
                     }

@@ -190,17 +190,12 @@ internal fun InboxScreen(
             },
         )
     }
-    pendingDecision?.let { decision ->
-        PlanDecisionDialog(
-            pending = decision,
-            actionPending = actionPending,
-            errorMessage = actionNotice?.takeIf { it.isError }?.message,
-            onDismiss = { pendingDecision = null },
-            onConfirm = {
-                submittedDialogAction = "preview_plan_decision"
-                onAction(planDecisionCommand(decision))
-            },
-        )
+    // A plan choice goes straight to its exact preview; a choice that changes nothing applies at once.
+    LaunchedEffect(pendingDecision) {
+        val decision = pendingDecision ?: return@LaunchedEffect
+        submittedDialogAction = "preview_plan_decision"
+        onAction(planDecisionCommand(decision))
+        pendingDecision = null
     }
 }
 
