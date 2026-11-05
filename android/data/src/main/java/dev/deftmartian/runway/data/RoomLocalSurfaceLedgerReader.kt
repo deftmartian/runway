@@ -306,6 +306,11 @@ class RoomLocalSurfaceLedgerReader(
                 recordedAggregates = exactRecordedAggregates(),
                 weekActualAggregates = exactWeekActualAggregates(plans, zone),
                 activitiesContainCompleteWeekContext = false,
+                recentAccepted = database.activityLedgerDao().acceptedActivitiesInRange(
+                    fromInclusive = recordedTrendStart(todayEpochDay).atStartOfDay(zone).toInstant().toEpochMilli(),
+                    toExclusive = LocalDate.ofEpochDay(todayEpochDay + 1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                    limit = RECORDED_TREND_ACTIVITY_LIMIT,
+                ),
             )
         }
 

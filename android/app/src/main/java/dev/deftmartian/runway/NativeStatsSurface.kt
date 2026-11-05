@@ -51,6 +51,8 @@ internal data class NativeNoActiveStatsSummary(
     val statusMessage: String,
     val recordedHistory: NativeRecordedHistorySummary?,
     val acceptedHeartRate: NativeHeartRateSample?,
+    /** Recent weeks, oldest first; empty when none of them has a run. */
+    val recentWeeks: List<NativeRecordedWeek> = emptyList(),
 )
 
 /**
@@ -70,13 +72,12 @@ internal fun noActiveStatsSummary(
     val acceptedHeartRate = history?.heartRateSample?.takeIf {
         (it.sampleCount ?: 0) > 0
     }
+    val recentWeeks = trimLeadingEmptyWeeks(history?.recentWeeks.orEmpty())
     val status = when {
-        recorded != null || acceptedHeartRate != null ->
-            "There is no active schedule or recommendation. Recorded work remains available below."
-        else ->
-            "There is no active schedule or recommendation. Add and review a run, or set up running, to see comparisons here."
+        recorded != null || acceptedHeartRate != null -> "No plan is active. These are your recorded runs."
+        else -> "No plan is active. Record or import a run to see it here."
     }
-    return NativeNoActiveStatsSummary(status, recorded, acceptedHeartRate)
+    return NativeNoActiveStatsSummary(status, recorded, acceptedHeartRate, recentWeeks)
 }
 
 /** Plans become comparable only after recorded work exists. */
@@ -499,6 +500,7 @@ private fun NativeAcceptedContext(summaries: List<NativeWeekSummary>) {
 internal fun NativeNoActiveStats(summary: NativeNoActiveStatsSummary) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         EmptyCard(summary.statusMessage)
+        if (summary.recentWeeks.isNotEmpty()) NativeRecordedTrends(summary.recentWeeks)
         summary.recordedHistory?.let { recorded ->
             NativeRecordedHistory(recorded)
         }
@@ -527,12 +529,7 @@ internal fun NativeNoActiveStats(summary: NativeNoActiveStatsSummary) {
 
 @Composable
 private fun NativeRecordedHistory(recorded: NativeRecordedHistorySummary) {
-    SettingCard("Recorded history") {
-        Text(
-            "Completed and accepted work kept by runway. With no active plan, these are facts rather than a plan comparison.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    SettingCard("All recorded runs") {
         SettingRow("Recorded runs", (recorded.totalRuns ?: 0).toString())
         SettingRow("Recorded distance", formatDistance(recorded.totalDistanceMeters ?: 0.0))
         NativeRecordedLoadRows(recorded)
@@ -555,13 +552,99 @@ private fun NativeRecordedProvenanceRows(recorded: NativeRecordedHistorySummary)
     if ((recorded.archivedPlanRuns ?: 0) > 0) {
         SettingRow(
             "Archived-plan work",
-            "${recorded.archivedPlanRuns ?: 0} runs · ${formatDistance(recorded.archivedPlanDistanceMeters ?: 0.0)}",
+            "${runCount(recorded.archivedPlanRuns ?: 0)} · ${formatDistance(recorded.archivedPlanDistanceMeters ?: 0.0)}",
         )
     }
-    if ((recorded.unlinkedRuns ?: 0) > 0) {
+    // When every run is outside a plan this row would only repeat the totals above.
+    if ((recorded.unlinkedRuns ?: 0) > 0 && recorded.unlinkedRuns != recorded.totalRuns) {
         SettingRow(
-            "Unmatched records",
-            "${recorded.unlinkedRuns ?: 0} runs · ${formatDistance(recorded.unlinkedDistanceMeters ?: 0.0)}",
+            "Runs outside a plan",
+            "${runCount(recorded.unlinkedRuns ?: 0)} · ${formatDistance(recorded.unlinkedDistanceMeters ?: 0.0)}",
         )
     }
+}
+
+/** Recent trends for runs without a plan: facts per week, no targets and no verdicts. */
+@Composable
+private fun NativeRecordedTrends(weeks: List<NativeRecordedWeek>) {
+    NativeWeeklyTraceChart(
+        title = "Weekly distance",
+        points = weeks.map { NativeWeeklyTrace(recordedWeekLabel(it.startDate), null, null, it.distanceMeters, null) },
+        format = ::formatDistance,
+        actualOnly = true,
+    )
+    if (weeks.any { it.durationSeconds > 0.0 }) {
+        NativeWeeklyTraceChart(
+            title = "Weekly running time",
+            points = weeks.map { NativeWeeklyTrace(recordedWeekLabel(it.startDate), null, null, it.durationSeconds, null) },
+            format = ::formatDuration,
+            actualOnly = true,
+        )
+    }
+    val recent = recentWeeksSummary(weeks)
+    SettingCard("Last 4 weeks") {
+        SettingRow("Runs per week", recent.runsPerWeek)
+        SettingRow("Distance per week", recent.distancePerWeek)
+        recent.pace?.let { SettingRow("Average pace", it) }
+        recent.heartRate?.let { SettingRow("Average heart rate", it) }
+        recent.longestRun?.let { SettingRow("Longest run · ${weeks.size} weeks", it) }
+    }
+    SettingCard("Week by week") {
+        weeks.asReversed().forEach { week -> NativeTraceValueRow(recordedWeekLabel(week.startDate), recordedWeekDetail(week)) }
+    }
+}
+
+internal data class NativeRecentWeeksSummary(
+    val runsPerWeek: String,
+    val distancePerWeek: String,
+    val pace: String?,
+    val heartRate: String?,
+    val longestRun: String?,
+)
+
+/** Averages over the latest four weeks (this week included); the longest run spans every week shown. */
+internal fun recentWeeksSummary(weeks: List<NativeRecordedWeek>): NativeRecentWeeksSummary {
+    val lastFour = weeks.takeLast(4)
+    val count = lastFour.size.coerceAtLeast(1)
+    val pacedDistance = lastFour.filter { it.paceSecondsPerKm != null }.sumOf { it.distanceMeters }
+    val paceSeconds = lastFour.sumOf { (it.paceSecondsPerKm ?: 0.0) * it.distanceMeters }
+    val heartRates = lastFour.mapNotNull { week -> week.averageHeartRate?.let { it to week.durationSeconds } }
+    val heartRateSeconds = heartRates.sumOf { it.second }
+    return NativeRecentWeeksSummary(
+        runsPerWeek = formatDecimal(lastFour.sumOf { it.runs }.toDouble() / count),
+        distancePerWeek = formatDistance(lastFour.sumOf { it.distanceMeters } / count),
+        pace = paceSeconds.takeIf { pacedDistance > 0.0 }?.let { formatPace(it / pacedDistance) },
+        heartRate = heartRates.takeIf { heartRateSeconds > 0.0 }
+            ?.let { "${Math.round(it.sumOf { (bpm, seconds) -> bpm * seconds } / heartRateSeconds)} bpm" },
+        longestRun = weeks.mapNotNull { it.longestRunMeters }.maxOrNull()?.let(::formatDistance),
+    )
+}
+
+internal fun recordedWeekLabel(startDate: String): String =
+    runCatching {
+        java.time.LocalDate.parse(startDate)
+            .format(java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.getDefault()))
+    }.getOrDefault(startDate)
+
+internal fun recordedWeekDetail(week: NativeRecordedWeek): String =
+    if (week.runs == 0) {
+        "No runs"
+    } else {
+        listOfNotNull(
+            runCount(week.runs),
+            formatDistance(week.distanceMeters).takeIf { week.distanceMeters > 0.0 },
+            formatDuration(week.durationSeconds).takeIf { week.durationSeconds > 0.0 },
+            week.paceSecondsPerKm?.let(::formatPace),
+            week.longestRunMeters?.takeIf { week.runs > 1 }?.let { "longest ${formatDistance(it)}" },
+            week.averageHeartRate?.let { "$it bpm" },
+        ).joinToString(" · ")
+    }
+
+internal fun runCount(runs: Int): String = if (runs == 1) "1 run" else "$runs runs"
+
+/** Starts the trend at the first week with a run, keeping at least the latest four weeks. */
+internal fun trimLeadingEmptyWeeks(weeks: List<NativeRecordedWeek>): List<NativeRecordedWeek> {
+    val first = weeks.indexOfFirst { it.runs > 0 }
+    if (first < 0) return emptyList()
+    return weeks.drop(minOf(first, (weeks.size - 4).coerceAtLeast(0)))
 }

@@ -377,6 +377,8 @@ data class LocalStatsReadModel(
     val todayEpochDay: Long = 0,
     val phaseReview: LocalPhaseReviewReadModel? = null,
     val activeSessionsPerWeek: Int? = null,
+    /** The last [RECORDED_TREND_WEEKS] weeks of accepted runs, oldest first. */
+    val recentWeeks: List<LocalRecordedWeekReadModel> = emptyList(),
 )
 
 data class LocalLifecycleReadModel(

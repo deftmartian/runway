@@ -186,6 +186,17 @@ internal fun LocalStatsReadModel.toNativeStats(): NativeStatsPayload {
             },
         ),
         history = NativeTrainingHistory(
+            recentWeeks = recentWeeks.map {
+                NativeRecordedWeek(
+                    startDate = LocalDate.ofEpochDay(it.startEpochDay).toString(),
+                    runs = it.runs,
+                    distanceMeters = it.distanceMeters.toDouble(),
+                    durationSeconds = it.durationSeconds.toDouble(),
+                    longestRunMeters = it.longestRunMeters?.toDouble(),
+                    paceSecondsPerKm = it.paceSecondsPerKilometre,
+                    averageHeartRate = it.averageHeartRateBpm,
+                )
+            },
             weeklySummaries = activeWeeks.map {
                 NativeWeekSummary(
                     weekNumber = it.weekOrdinal,

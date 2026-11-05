@@ -43,7 +43,7 @@ This distinction must remain visible in Calendar, Inbox, Stats, and History. Res
 
 1. **Calendar** — the month schedule, completed runs, day detail, edits, feedback, and a floating action for recording a run.
 2. **Inbox** — activity review, links, extra work, corrections, and unresolved plan decisions.
-3. **Stats** — generated/current/actual traces for prescriptions, or weekly distance-or-time goal/actual traces plus scheduled/recorded/skipped counts for a routine, with plain-language context.
+3. **Stats** — generated/current/actual traces for prescriptions, or weekly distance-or-time goal/actual traces plus scheduled/recorded/skipped counts for a routine, with plain-language context. With no plan, the last twelve weeks of recorded runs: weekly distance and time, runs per week, pace, longest run, and heart rate where imported heart rate is kept. These are facts, not targets.
 4. **History** — plan or routine lifecycle, archived records, and auditable decisions.
 5. **Settings** — training setup, optional notifications, imports, saved-data tools, and local build information.
 
