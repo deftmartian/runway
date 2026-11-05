@@ -120,6 +120,27 @@ class LocalDataManagementRepository(
     }
 
     /**
+     * Checks a chosen backup without touching the installed ledger or any import source. Returns
+     * the reason it cannot be restored, or null when [restoreFromDocument] may proceed. Restore
+     * validates its own copy again, so this is a fast early answer, not the safety boundary.
+     */
+    suspend fun restoreProblem(context: Context, source: Uri): String? = withContext(Dispatchers.IO) {
+        val candidate = temporaryFile(context, "restore-precheck")
+        try {
+            copyDocumentBounded(context.contentResolver, source, candidate)
+            LocalRestoreCandidate.prepare(candidate)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: IllegalArgumentException) {
+            "The backup is not valid or is outside the supported size limit."
+        } catch (_: Exception) {
+            "The selected backup could not be read or validated. Choose a Runway backup and try again."
+        } finally {
+            candidate.delete()
+        }
+    }
+
+    /**
      * Validates the complete SAF document before changing the installed ledger, then replaces the
      * database with a private staged file. On a successful return the current process is unusable
      * by design: the caller must restart it before accessing Room again.
