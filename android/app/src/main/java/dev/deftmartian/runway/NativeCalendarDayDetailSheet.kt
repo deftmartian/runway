@@ -109,7 +109,7 @@ internal fun CalendarDayDetailSheet(
                     }
                 }
             }
-            if (date > today && canAddWorkout) {
+            if (date >= today && canAddWorkout) {
                 OutlinedButton(
                     onClick = onAddWorkout,
                     enabled = !actionPending,
@@ -118,12 +118,6 @@ internal fun CalendarDayDetailSheet(
                 ) {
                     Text(if (workouts.any { it.type != "rest" }) "Add another run" else "Add a run here")
                 }
-            } else if (date > today) {
-                Text(
-                    "Set up a plan or routine before scheduling future runs.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             workouts.forEach { workout ->
                 val canRecord =
@@ -133,7 +127,7 @@ internal fun CalendarDayDetailSheet(
                 val canEdit =
                     workout.type != "race" &&
                         workout.status == "planned" &&
-                        workout.scheduledDate.orEmpty() > today &&
+                        workout.scheduledDate.orEmpty() >= today &&
                         workout.isRemoved != true
                 WorkoutCard(
                     workout = workout,
