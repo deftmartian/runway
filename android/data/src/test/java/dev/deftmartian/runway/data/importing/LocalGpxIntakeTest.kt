@@ -62,6 +62,19 @@ class LocalGpxIntakeTest {
         )
     }
 
+    @Test
+    fun `a long run recorded every second imports`() {
+        // 30,000 one-second points: 8 h 20 min and about 112 km, both over the old limits.
+        val start = java.time.Instant.parse("2026-05-14T06:00:00Z")
+        val points = (0 until 30_000).joinToString("") { index ->
+            "<trkpt lat=\"${45.0 + index * 0.0000337}\" lon=\"-63\"><time>${start.plusSeconds(index.toLong())}</time></trkpt>"
+        }
+        val parsed = LocalGpxIntake.parse(ByteArrayInputStream("<gpx><trk><trkseg>$points</trkseg></trk></gpx>".toByteArray()))
+        assertEquals(30_000, parsed.pointCount)
+        assertTrue(parsed.distanceMeters > 100_000)
+        assertEquals(600, parsed.route.size)
+    }
+
     private fun assertFailure(xml: String, expected: String) {
         val error = runCatching { LocalGpxIntake.parse(ByteArrayInputStream(xml.toByteArray())) }.exceptionOrNull()
         assertTrue(error is LocalGpxImportException)
