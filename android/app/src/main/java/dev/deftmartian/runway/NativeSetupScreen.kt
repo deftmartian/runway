@@ -1128,4 +1128,3 @@ private fun PlanNotes(notes: List<String>) {
         }
     }
 }
-
