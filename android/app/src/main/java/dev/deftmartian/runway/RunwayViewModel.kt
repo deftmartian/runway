@@ -17,6 +17,7 @@ import dev.deftmartian.runway.data.LocalDecisionIssue
 import dev.deftmartian.runway.data.LocalDecisionSourceKind
 import dev.deftmartian.runway.data.LocalManualRunCommand
 import dev.deftmartian.runway.data.LocalPlanSetupResult
+import dev.deftmartian.runway.data.LocalProfileStartResult
 import dev.deftmartian.runway.data.LocalProfileUpdateResult
 import dev.deftmartian.runway.data.LocalRaceBaselineConfirmationRequest
 import dev.deftmartian.runway.data.LocalRestoreResult
@@ -306,7 +307,7 @@ internal class RunwayViewModel(
 
     /** Moves to the next screen state once [command] has succeeded. */
     private fun afterActionSucceeded(command: MobileCommand) {
-        if (command is CreatePlanCommand) {
+        if (command is CreatePlanCommand || command is StartWithoutPlanCommand) {
             calendarMonthWasSelected = false
             savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
             savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
@@ -908,7 +909,17 @@ internal class RunwayViewModel(
         ContinueBeginnerPhaseCommand -> continueBeginnerPhase()
         CompletePlanCommand -> endActivePlan(completed = true)
         ArchivePlanCommand -> endActivePlan(completed = false)
+        is StartWithoutPlanCommand -> startWithoutPlan(command)
     }
+
+    private suspend fun startWithoutPlan(command: StartWithoutPlanCommand): String =
+        when (services.profile.startWithoutPlan(command.timeZone)) {
+            LocalProfileStartResult.Started,
+            LocalProfileStartResult.AlreadyStarted,
+            -> "runway is set up to log runs. No plan was created."
+            is LocalProfileStartResult.Invalid ->
+                throw IllegalStateException("Choose a valid time zone, then try again.")
+        }
 
     private suspend fun updateRoutineWeekGoal(
         command: UpdateRoutineWeekGoalCommand,
@@ -1531,6 +1542,8 @@ internal class RunwayViewModel(
     private fun actionFailureMessage(command: MobileCommand): String = when (command) {
         is CreatePlanCommand ->
             "The plan could not be created. Check the setup details and try again."
+        is StartWithoutPlanCommand ->
+            "runway could not start. Check the time zone and try again."
         is UpdateRoutineWeekGoalCommand ->
             "That weekly goal could not be saved. Review the current routine and try again."
         is UpdateRoutineWeekDistributionCommand ->
