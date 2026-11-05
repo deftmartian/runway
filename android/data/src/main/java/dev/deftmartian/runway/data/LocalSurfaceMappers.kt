@@ -369,6 +369,7 @@ object LocalSurfaceMappers {
         val exactHeartRateBeats =
             slice.recordedAggregates.sumOf(LocalRecordedAggregateLedgerRow::heartRateBeatsSeconds)
         return LocalStatsReadModel(
+            recentWeeks = recordedWeeks(slice.recentAccepted, ZoneId.of(slice.timeZone), slice.todayEpochDay),
             weeks = weeks.sortedWith(compareBy(LocalWeekStatsReadModel::startEpochDay, LocalWeekStatsReadModel::weekOrdinal)),
             profileExists = slice.profileExists,
             recordedTotals = totals,

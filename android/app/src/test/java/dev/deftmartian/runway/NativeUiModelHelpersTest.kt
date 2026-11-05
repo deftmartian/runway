@@ -255,7 +255,7 @@ class NativeUiModelHelpersTest {
         val summary = noActiveStatsSummary(history)
 
         assertEquals(
-            "There is no active schedule or recommendation. Recorded work remains available below.",
+            "No plan is active. These are your recorded runs.",
             summary.statusMessage,
         )
         assertEquals(recorded, summary.recordedHistory)
@@ -267,7 +267,7 @@ class NativeUiModelHelpersTest {
         val summary = noActiveStatsSummary(history = null)
 
         assertEquals(
-            "There is no active schedule or recommendation. Add and review a run, or set up running, to see comparisons here.",
+            "No plan is active. Record or import a run to see it here.",
             summary.statusMessage,
         )
         assertEquals(null, summary.recordedHistory)

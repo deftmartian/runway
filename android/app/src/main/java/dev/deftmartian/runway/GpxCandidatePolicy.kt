@@ -1,9 +1,10 @@
 package dev.deftmartian.runway
 
+import dev.deftmartian.runway.data.importing.LocalGpxIntake
 import java.util.Locale
 
 object GpxCandidatePolicy {
-    const val MAX_FILE_BYTES: Long = 10L * 1024L * 1024L
+    const val MAX_FILE_BYTES: Long = LocalGpxIntake.MAX_INPUT_BYTES.toLong()
 
     private val compatibleMimeTypes = setOf(
         "application/gpx+xml",

@@ -246,25 +246,7 @@ internal class RunwayViewModel(
             result.onSuccess { message ->
                 mutableState.value = current.copy(actionPending = false, completedAction = completed(command.action), notice = NativeNotice(message))
                 reconcileRunReminders()
-                if (command is CreatePlanCommand || command is StartWithoutPlanCommand) {
-                    calendarMonthWasSelected = false
-                    savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
-                    savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
-                    val redirected = requireNotNull(mutableState.value as? RunwayUiState.Ready)
-                    mutableState.value = redirected.copy(
-                        surface = NativeSurface.empty(NativeDestination.Calendar),
-                        loading = true,
-                    )
-                    load(NativeDestination.Calendar)
-                } else if (
-                    command !is PreviewWorkoutEditCommand &&
-                    command !is PreviewWorkoutAddCommand &&
-                    command !is PreviewWorkoutRemovalCommand &&
-                    command !is ResetWorkoutCommand &&
-                    command !is PreviewPlanDecisionCommand
-                ) {
-                    refresh()
-                }
+                afterActionSucceeded(command)
             }.onFailure {
                 mutableState.value = current.copy(
                     actionPending = false,
@@ -323,6 +305,35 @@ internal class RunwayViewModel(
         }
     }
 
+    /** Moves to the next screen state once [command] has succeeded. */
+    private fun afterActionSucceeded(command: MobileCommand) {
+        if (command is CreatePlanCommand || command is StartWithoutPlanCommand) {
+            calendarMonthWasSelected = false
+            savedStateHandle[SAVED_DESTINATION] = NativeDestination.Calendar.name
+            savedStateHandle.remove<String>(SAVED_HISTORY_PLAN_ID)
+            val redirected = requireNotNull(mutableState.value as? RunwayUiState.Ready)
+            mutableState.value = redirected.copy(
+                surface = NativeSurface.empty(NativeDestination.Calendar),
+                loading = true,
+            )
+            load(NativeDestination.Calendar)
+        } else if (
+            command !is PreviewWorkoutEditCommand &&
+            command !is PreviewWorkoutAddCommand &&
+            command !is PreviewWorkoutRemovalCommand &&
+            command !is ResetWorkoutCommand &&
+            command !is PreviewPlanDecisionCommand
+        ) {
+            refresh()
+        } else if (
+            command is PreviewPlanDecisionCommand &&
+            (mutableState.value as? RunwayUiState.Ready)?.planDecisionPreview?.changes?.isEmpty() == true
+        ) {
+            // Nothing to review: keeping the plan (or any no-change choice) applies in one tap.
+            applyPlanDecisionPreview()
+        }
+    }
+
     fun applyPlanDecisionPreview() {
         val ready = mutableState.value as? RunwayUiState.Ready ?: return
         if (ready.actionPending) return
@@ -355,7 +366,13 @@ internal class RunwayViewModel(
                             actionPending = false,
                             planDecisionPreview = null,
                             completedAction = completed("apply_plan_decision"),
-                            notice = NativeNotice("Your choice was applied to the future plan."),
+                            notice = NativeNotice(
+                                if (pending.changes.isEmpty()) {
+                                    "The plan stays as it is."
+                                } else {
+                                    "Your choice was applied to the future plan."
+                                },
+                            ),
                         )
                         refresh()
                     }
@@ -573,9 +590,16 @@ internal class RunwayViewModel(
         if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true)
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { OneOffGpxImport.importUri(context, uri) }
+            val (result, counted) = withContext(Dispatchers.IO) {
+                val outcome = OneOffGpxImport.importUri(context, uri)
+                outcome to (
+                    outcome == OneOffGpxImportOutcome.Imported &&
+                        services.activityReview.acceptPendingWithoutPlan() > 0
+                    )
+            }
             val current = mutableState.value as? RunwayUiState.Ready ?: return@launch
-            mutableState.value = current.copy(actionPending = false, notice = NativeNotice(result.message()))
+            val message = if (counted) "Run saved to your history." else result.message()
+            mutableState.value = current.copy(actionPending = false, notice = NativeNotice(message))
             refresh()
         }
     }
@@ -622,8 +646,15 @@ internal class RunwayViewModel(
         if (ready.actionPending) return
         mutableState.value = ready.copy(actionPending = true, notice = null)
         viewModelScope.launch {
+            var sourcesDisconnected = false
             val result = localResult {
                 withContext(Dispatchers.IO) {
+                    // Check the file first: a wrong or old file must not cost the folder grant,
+                    // Health Connect access, or reminders.
+                    services.dataManagement.restoreProblem(context, uri)?.let { problem ->
+                        return@withContext LocalRestoreResult.Rejected("$problem Nothing was changed.")
+                    }
+                    sourcesDisconnected = true
                     RunReminderScheduler.cancelAndWait(getApplication())
                     RunwayNotificationManager.cancelAll(getApplication())
                     val outcome = services.importSources.disconnectBeforeRestore {
@@ -642,8 +673,12 @@ internal class RunwayViewModel(
                         Triple("Backup restored. Restarting runway…", false, outcome.restartRequired)
                     is LocalRestoreResult.Rejected ->
                         Triple(
-                            outcome.reason +
-                                " Import sources were disconnected before restore; reconnect them in Settings.",
+                            if (sourcesDisconnected) {
+                                outcome.reason +
+                                    " Import sources were disconnected before restore; reconnect them in Settings."
+                            } else {
+                                outcome.reason
+                            },
                             true,
                             outcome.restartRequired,
                         )
@@ -862,7 +897,11 @@ internal class RunwayViewModel(
                 durationSeconds = command.durationMinutes?.let { (it * 60).toInt() },
                 feltHard = command.feltHard,
             ),
-        ).message()
+        ).let { recorded ->
+            val counted = recorded is LocalTrainingMutationResult.ManualRunRecorded &&
+                services.activityReview.acceptPendingWithoutPlan() > 0
+            if (counted) "Run saved to your history." else recorded.message()
+        }
         is LinkActivityCommand -> services.activityReview.link(
             activityId = command.activityId,
             workoutId = command.workoutId,
@@ -1438,6 +1477,8 @@ internal class RunwayViewModel(
         surfaceLoadJob?.cancel()
         surfaceLoadJob = viewModelScope.launch {
             val result = localResult {
+                // Folder, Health Connect, and background imports land in review; with no plan they count now.
+                withContext(Dispatchers.IO) { services.activityReview.acceptPendingWithoutPlan() }
                 val loaded = surfaceLoader.load(
                     SurfaceLoadRequest(
                         destination = destination,

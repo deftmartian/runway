@@ -18,7 +18,7 @@ The application service wiring is intentionally small and explicit. UI code cons
 
 Room persists the profile, plans, generated/current workouts, actual activity ledger, feedback, decisions, adjustment/undo records, imports, privacy choices, notification choices and delivery receipts, and metadata. The database is the local source of truth.
 
-Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
+Generated, current, and actual remain distinct. An imported activity starts in review and cannot affect actual traces, statistics, or training decisions until the runner resolves it. With no current goal, plan, or routine there is nothing to link it to or change, so runway accepts waiting activities as recorded runs (`LocalActivityReviewRepository.acceptPendingWithoutPlan`) after an import and before each screen load. Operations that change several related records use a Room transaction. Deletion and route-discard paths must also clear pending imported-route state so it cannot reappear later.
 
 Local data is preserved across updates from schema 7 (v0.11.0) onward. Each released schema keeps its exported JSON and its Room identity in `RunwayLedgerDatabase.RELEASED_SCHEMA_IDENTITY_HASHES`; neither changes after release. A schema change adds a new version, its exported schema, its identity, and an explicit `Migration` from the previous version, with an upgrade test that opens the older schema through the production builder. There is no destructive fallback for a released schema: a missing migration or a downgrade fails to open and leaves the file in place. Schemas from before v0.11.0 are still recreated, as v0.11.0 announced. Restore accepts a backup from any released schema up to the current one, identified by its exact identity, and the migrations upgrade it when runway next opens it. Never infer schema state or invent timestamp-based lineage.
 
@@ -36,7 +36,7 @@ A folder import creates its review-alert outbox row in the same Room transaction
 
 Route and imported-heart-rate retention are separate local profile choices. Discarding either removes its retained summaries/samples and pending import evidence in the same local operation. Heart-rate profile values are optional display context and never change a plan by themselves.
 
-Auto Backup is disabled. Backup/export is an explicit user action. The app warns that its local artifacts are plaintext and sensitive; it does not claim encryption it does not provide. Restore validates a bounded candidate before replacing the current ledger, disconnects import sources before installation, and leaves the old ledger untouched on failed validation.
+Auto Backup is disabled. Backup/export is an explicit user action. The app warns that its local artifacts are plaintext and sensitive; it does not claim encryption it does not provide. Restore checks the chosen file first; a file that is not a restorable backup changes nothing, including import sources and reminders. Only then does it disconnect import sources, validate its own bounded copy again, and replace the ledger, leaving the old ledger untouched on failed validation.
 
 ## Native delivery
 

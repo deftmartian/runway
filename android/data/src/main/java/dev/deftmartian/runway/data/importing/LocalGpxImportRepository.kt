@@ -84,9 +84,11 @@ class LocalGpxImportRepository(
                 LocalGpxIntake.MAX_RETAINED_POINTS,
             )
         }
+        // With no current goal the run counts as soon as runway opens, so there is nothing to review.
         if (
             origin == LocalGpxImportOrigin.Folder &&
-            database.notificationDao().preferences()?.folderImportAlertsEnabled == true
+            database.notificationDao().preferences()?.folderImportAlertsEnabled == true &&
+            database.goalPlanDao().currentGoalIds(1).isNotEmpty()
         ) {
             database.notificationDao().enqueue(
                 NotificationDeliveryEntity(

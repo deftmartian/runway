@@ -359,6 +359,17 @@ internal data class NativeTrainingHistory(
     val heartRateSample: NativeHeartRateSample?,
     /** Kept as a count because Stats only needs evidence that feedback exists. */
     val recentFeedbackCount: Int? = null,
+    /** Recent Monday-to-Sunday weeks of accepted runs, oldest first. */
+    val recentWeeks: List<NativeRecordedWeek> = emptyList(),
+)
+internal data class NativeRecordedWeek(
+    val startDate: String,
+    val runs: Int,
+    val distanceMeters: Double,
+    val durationSeconds: Double,
+    val longestRunMeters: Double?,
+    val paceSecondsPerKm: Double?,
+    val averageHeartRate: Int?,
 )
 internal data class NativeCurrentSignal(
     val risk: String?, val reasons: List<String>, val source: String?,

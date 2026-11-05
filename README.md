@@ -7,7 +7,7 @@
 
 runway is an Android app for runners who plan their own training, or who simply want a private record of their runs. Build toward a race, choose regular running days, or skip the plan; then keep the plan, completed runs, recovery, and deliberate changes in one place.
 
-Keep recording with the app or watch you already use. Share one GPX file with runway or approve an export folder, and each new activity waits in Inbox until you review it. Optional read-only Health Connect import is available too.
+Keep recording with the app or watch you already use. Share one GPX file with runway or approve an export folder, and each new activity waits in Inbox until you review it, or counts straight away if you log runs without a plan. Optional read-only Health Connect import is available too.
 
 runway works with your existing recorder instead of replacing it. It runs locally on Android 8.0 and newer with no account, server, subscription, or cloud sync.
 
@@ -20,7 +20,7 @@ runway works with your existing recorder instead of replacing it. It runs locall
 - Build toward a race, choose a few regular running days each week, or just log your runs with no plan.
 - Review the starting week, peak, longest run, and ramp before creating a race plan.
 - See planned runs, completed work, and waiting decisions by date without filling the calendar with recovery entries.
-- Move, edit, add, or remove a future run when life changes.
+- Move, edit, add, or remove today's run or a later one when life changes.
 - Compare what was planned with what happened, then keep the schedule, ease back, rest, or repeat.
 - Look back at the original plan, every deliberate change, and the work you completed.
 
@@ -35,7 +35,7 @@ runway reads local GPX files; it does not record your route. You can share one f
 - **[FitoTrack](https://codeberg.org/jannis/FitoTrack):** Set GPX export to a directory, then approve that directory in runway.
 - **Another GPX recorder:** Use the same flow if it can share a `.gpx` activity or write GPX files to a folder you choose.
 
-runway checks the approved folder when the app returns to the foreground. Optional background checks are best-effort rather than a continuous folder watch. Every imported activity goes to Inbox for review before it counts toward training or offers a schedule change.
+runway checks the approved folder when the app returns to the foreground. Optional background checks are best-effort rather than a continuous folder watch. While a plan or routine is active, every imported activity goes to Inbox for review before it counts toward training or offers a schedule change.
 
 Under **Settings → Notifications**, you can turn on reminders for planned run days and alerts when a folder import is ready in Inbox. Android may deliver background work and notifications later than requested.
 

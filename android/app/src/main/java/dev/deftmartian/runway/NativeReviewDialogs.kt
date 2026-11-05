@@ -239,40 +239,6 @@ internal fun ConsequenceChoices(
 }
 
 @Composable
-internal fun PlanDecisionDialog(
-    pending: PendingPlanDecision,
-    actionPending: Boolean,
-    errorMessage: String?,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val assessment = nativeConsequenceAssessment(
-        pending.consequence.kind,
-        pending.consequence.risk,
-        pending.consequence.comparisonStatus,
-    )
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(planDecisionLabel(pending.decision)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                errorMessage?.let { Notice(it, isError = true) }
-                Text(planDecisionExplanation(pending.decision))
-                SettingRow("Current status", assessment.label)
-                Text(
-                    "Only future planned work changes. This recorded result remains unchanged.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = onConfirm, enabled = !actionPending) { Text("Apply choice") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Go back") } },
-    )
-}
-
-@Composable
 internal fun PlanDecisionPreviewDialog(
     preview: LocalPlanDecisionPreview,
     actionPending: Boolean,

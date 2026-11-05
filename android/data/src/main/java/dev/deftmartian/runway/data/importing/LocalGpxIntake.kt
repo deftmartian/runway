@@ -19,11 +19,13 @@ import org.xml.sax.helpers.DefaultHandler
 
 /** Bounded, raw-byte-free local GPX intake. The caller owns persistence and review decisions. */
 object LocalGpxIntake {
-    const val MAX_INPUT_BYTES = 10 * 1024 * 1024
-    const val MAX_TRACK_POINTS = 20_000
+    // Bounds keep parsing finite without rejecting real runs: 1-second recording of a slow marathon
+    // or an ultra fits. Retained route and heart-rate detail stays capped at MAX_RETAINED_POINTS.
+    const val MAX_INPUT_BYTES = 32 * 1024 * 1024
+    const val MAX_TRACK_POINTS = 100_000
     const val MAX_RETAINED_POINTS = 600
-    private const val MAX_DURATION_SECONDS = 24 * 60 * 60
-    private const val MAX_DISTANCE_METERS = 100_000.0
+    private const val MAX_DURATION_SECONDS = 48 * 60 * 60
+    private const val MAX_DISTANCE_METERS = 300_000.0
 
     fun parse(input: InputStream): LocalGpxActivity {
         val digest = MessageDigest.getInstance("SHA-256")

@@ -109,6 +109,49 @@ class ActivityReviewFlowInstrumentedTest {
         }
     }
 
+    @Test
+    fun choosingKeepThePlanSendsItWithoutAConfirmationDialog() {
+        var emitted: MobileCommand? = null
+        val accepted = reviewActivity().copy(
+            reviewState = "accepted",
+            consequence = NativeConsequence(
+                kind = "unplanned",
+                appliedDecision = null,
+                recommendedDecision = "keep_plan",
+                deviation = "unplanned",
+                risk = null,
+                planChangeAvailable = true,
+                options = listOf("keep_plan", "reduce_next"),
+                comparisonStatus = null,
+            ),
+        )
+        compose.setContent {
+            RunwayTheme {
+                InboxScreen(
+                    payload = NativeReviewPayload(emptyList(), listOf(accepted)),
+                    loading = false,
+                    actionPending = false,
+                    actionNotice = null,
+                    completedAction = null,
+                    onAction = { emitted = it },
+                    activityEvidence = emptyMap(),
+                    activityEvidenceLoading = emptySet(),
+                    activityEvidenceFailures = emptySet(),
+                    onLoadActivityTrace = {},
+                    onLoadMore = {},
+                    onImportGpx = {},
+                    onOpenImportSettings = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Keep the plan · Recommended").performScrollTo().performClick()
+        compose.onAllNodesWithText("Apply choice").assertCountEquals(0)
+        compose.runOnIdle {
+            assertEquals(PreviewPlanDecisionCommand("activity", "review-activity", "keep_plan"), emitted)
+        }
+    }
+
     private fun reviewActivity(id: String = "review-activity") = NativeActivity(
         id = id,
         workoutId = null,

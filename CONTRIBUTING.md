@@ -24,7 +24,7 @@ Use one Gradle build at a time on constrained hosts. A green compile or unit sui
 
 - Keep future workout changes previewed and explicit. Never silently mutate a plan after feedback or import.
 - Treat rest and recovery as first-class planned work.
-- Keep imported activities in Review until the runner accepts, links, changes, or deletes them.
+- While a plan or routine is active, keep imported activities in Review until the runner accepts, links, changes, or deletes them. With no plan, they count as recorded runs.
 - Keep Room schema changes explicit. A new unreleased schema may be corrected; released schemas need an upgrade path and an idempotence test.
 - Keep repository boundaries typed and bounded. Do not route new UI behavior through JSON payloads or network-shaped models.
 - Name each instrumentation source and its matching top-level class `*Test.kt`. CI passes an explicit class list to the runner and rejects Java, helper-only, or differently named instrumentation sources instead of silently skipping them.

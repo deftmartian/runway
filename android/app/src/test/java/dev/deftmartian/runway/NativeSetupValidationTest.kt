@@ -8,27 +8,17 @@ import java.time.Instant
 
 class NativeSetupValidationTest {
     @Test
-    fun `setup blocks unsupported plans and requires confirmation for high increase`() {
-        assertEquals(
-            "Choose a later race date, a shorter goal, or a different starting point.",
-            planAssessmentIssue(RiskRating.UNSAFE, confirmedHighIncrease = true),
-        )
-        assertEquals(
-            "Confirm the schedule after reviewing its warnings, or change the plan inputs.",
-            planAssessmentIssue(RiskRating.AGGRESSIVE, confirmedHighIncrease = false),
-        )
-        assertNull(planAssessmentIssue(RiskRating.AGGRESSIVE, confirmedHighIncrease = true))
-        assertNull(planAssessmentIssue(RiskRating.MODERATE, confirmedHighIncrease = false))
+    fun `setup labels the plan assessment without gating it`() {
         assertEquals("Within default", planAssessmentLabel(RiskRating.CONSERVATIVE))
         assertEquals("Above default", planAssessmentLabel(RiskRating.MODERATE))
-        assertEquals("Needs confirmation", planAssessmentLabel(RiskRating.AGGRESSIVE))
-        assertEquals("Not supported", planAssessmentLabel(RiskRating.UNSAFE))
+        assertEquals("Steeper than usual", planAssessmentLabel(RiskRating.AGGRESSIVE))
+        assertEquals("Much steeper than usual", planAssessmentLabel(RiskRating.UNSAFE))
     }
 
     @Test
     fun `starting point validates an entered week and leaves learning open`() {
         assertEquals(
-            "Enter a whole number from 2 to 5 current runs.",
+            "Enter a whole number from 2 to 7 current runs.",
             startingPointValidation("established", "12", "2.5", "8"),
         )
         assertEquals(
@@ -133,23 +123,15 @@ class NativeSetupValidationTest {
     }
 
     @Test
-    fun `long distance goals require concentrated schedule acceptance`() {
-        assertEquals(
-            true,
-            requiresConcentratedScheduleAcceptance("established", "2", "marathon"),
-        )
-    }
-
-    @Test
     fun `setup exposes mode specific bounds in the entered training time zone`() {
         val now = Instant.parse("2026-07-30T12:00:00Z")
 
         assertEquals(
-            "2026-09-24",
+            "2026-08-27",
             setupTargetDateBounds("America/Halifax", "established", now)?.minimum,
         )
         assertEquals(
-            "2026-10-08",
+            "2026-09-10",
             setupTargetDateBounds("America/Halifax", "calibration", now)?.minimum,
         )
         assertEquals(

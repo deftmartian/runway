@@ -16,7 +16,6 @@ enum class OnboardingIssue {
     INVALID_ESTABLISHED_BASELINE,
     INVALID_LONG_RUN_DAY,
     INSUFFICIENT_RECOVERY_SPACING,
-    CONCENTRATED_SCHEDULE_NOT_CONFIRMED,
 }
 
 data class OnboardingSelection(
@@ -52,20 +51,26 @@ fun canLeaveRecoveryDayAfterLongRun(
     preferredLongRunDay: Int,
     raceDistance: RaceDistance?,
 ): Boolean {
-    if (preferredLongRunDay !in availability || currentRunsPerWeek !in 2..5) return false
-    val plannedRuns = minOf(
-        currentRunsPerWeek,
-        if (raceDistance == RaceDistance.HALF) 4 else 5,
-    )
+    if (preferredLongRunDay !in availability || currentRunsPerWeek !in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS) return false
+    val plannedRuns = plannedRunDays(currentRunsPerWeek, raceDistance)
     val recoveryDay = (preferredLongRunDay + 1) % 7
     return availability.distinct().count { it != recoveryDay } >= plannedRuns
 }
 
+/** A reported week may have 2 to 7 runs; the plan schedules at most [plannedRunDays] of them. */
+const val MIN_BASELINE_RUNS = 2
+const val MAX_BASELINE_RUNS = 7
+
+/** Run days a generated race plan uses: the reported count, capped at 4 for a half and 5 otherwise. */
+fun plannedRunDays(currentRunsPerWeek: Int, raceDistance: RaceDistance?): Int =
+    minOf(currentRunsPerWeek, if (raceDistance == RaceDistance.HALF) 4 else 5)
+
 object OnboardingValidation {
     fun targetDateBounds(today: LocalDate, mode: StartMode): TargetDateBounds {
         val weeks = when (mode) {
-            StartMode.ESTABLISHED -> 8
-            StartMode.CALIBRATION -> 10
+            // Shorter lead times are allowed; the plan assessment says when the ramp is steep.
+            StartMode.ESTABLISHED -> 4
+            StartMode.CALIBRATION -> 6
             StartMode.ROUTINE -> 0
         }
         require(weeks > 0) { "Only race plans have a target-date bound." }
@@ -151,16 +156,15 @@ object OnboardingValidation {
         if (hasInsufficientRecoverySpacing(selection)) {
             issues += OnboardingIssue.INSUFFICIENT_RECOVERY_SPACING
         }
-        if (requiresConcentratedScheduleConfirmation(selection)) {
-            issues += OnboardingIssue.CONCENTRATED_SCHEDULE_NOT_CONFIRMED
-        }
     }
 
     private fun hasInvalidLongRunDay(selection: OnboardingSelection): Boolean =
         selection.preferredLongRunDay == null || selection.preferredLongRunDay !in selection.availability
 
     private fun hasTooFewAvailableDays(selection: OnboardingSelection): Boolean =
-        selection.currentRunsPerWeek?.let { selection.availability.size < it } == true
+        selection.currentRunsPerWeek?.let {
+            selection.availability.size < plannedRunDays(it, selection.raceDistance)
+        } == true
 
     private fun hasInsufficientRecoverySpacing(selection: OnboardingSelection): Boolean {
         val runsPerWeek = selection.currentRunsPerWeek ?: return false
@@ -173,11 +177,6 @@ object OnboardingValidation {
         )
     }
 
-    private fun requiresConcentratedScheduleConfirmation(selection: OnboardingSelection): Boolean =
-        selection.raceDistance in setOf(RaceDistance.HALF, RaceDistance.MARATHON) &&
-            selection.currentRunsPerWeek == 2 &&
-            !selection.confirmConcentratedSchedule
-
     private fun hasInvalidEstablishedBaseline(selection: OnboardingSelection): Boolean {
         val weeklyDistance = selection.currentWeeklyDistanceKm
         val runsPerWeek = selection.currentRunsPerWeek
@@ -185,7 +184,7 @@ object OnboardingValidation {
         return weeklyDistance == null ||
             weeklyDistance !in 3.0..250.0 ||
             runsPerWeek == null ||
-            runsPerWeek !in 2..5 ||
+            runsPerWeek !in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS ||
             longestRun == null ||
             longestRun <= 0 ||
             longestRun > 80 ||

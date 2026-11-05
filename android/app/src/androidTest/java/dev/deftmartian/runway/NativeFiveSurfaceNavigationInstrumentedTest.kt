@@ -9,7 +9,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
@@ -21,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
@@ -29,6 +29,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.deftmartian.runway.data.RetentionRepairNotice
 import java.time.Instant
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -275,21 +276,14 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
 
         repeat(3) { compose.onNodeWithText("Continue").performClick() }
 
-        listOf("Training outline", "20 km", "Needs confirmation").forEach { text ->
+        listOf("Training outline", "20 km", "Steeper than usual").forEach { text ->
             compose.onNode(hasScrollAction()).performScrollToNode(hasText(text))
             compose.onNodeWithText(text).assertIsDisplayed()
         }
-        compose.onNodeWithText("Create plan").assertIsNotEnabled()
-
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Use this schedule as shown"))
-        compose.onNodeWithText("Use this schedule as shown").performClick()
-        compose.onNodeWithText("Use this schedule as shown").assertIsOn()
-        compose.onAllNodesWithText(
-            "Confirm the schedule after reviewing its warnings, or change the plan inputs.",
-        ).assertCountEquals(0)
+        // Advise, don't block: a steep plan has no confirmation checkbox and can be created at once.
+        compose.onAllNodesWithText("Use this schedule as shown").assertCountEquals(0)
         compose.onNodeWithText("Create plan").assertIsEnabled().performClick()
         compose.runOnIdle {
-            assertTrue(submitted?.confirmedPlanKey?.isNotBlank() == true)
             assertTrue(submitted?.raceDistance == "half")
             assertTrue(submitted?.longestRecentRunKm == "10")
         }
@@ -710,6 +704,47 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
     }
 
     @Test
+    fun todaysPlannedRunCanBeRecordedAdjustedOrJoinedByAnotherRun() {
+        var edited: NativeWorkout? = null
+        var added = false
+        val today = calendarWorkout("today-run", "2026-07-31", "Easy run", distanceMeters = 6_000.0)
+        compose.setContent {
+            RunwayTheme {
+                CalendarDayDetailSheet(
+                    date = "2026-07-31",
+                    today = "2026-07-31",
+                    workouts = listOf(today),
+                    activities = emptyList(),
+                    feedbackByWorkout = emptyMap(),
+                    actionPending = false,
+                    onDismiss = {},
+                    onRecordFeedback = {},
+                    onEditWorkout = { edited = it },
+                    onResetWorkout = {},
+                    onUndoWorkout = {},
+                    onDeleteFeedback = {},
+                    onOpenActivity = {},
+                    onPlanDecision = {},
+                    canAddWorkout = true,
+                    routine = false,
+                    routineWeekGoal = null,
+                    onChangeRoutineWeekGoal = {},
+                    onBalanceRoutineWeek = {},
+                    onAddWorkout = { added = true },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Record result").assertIsDisplayed()
+        compose.onNodeWithText("Adjust").performScrollTo().performClick()
+        compose.onNodeWithText("Add another run").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals("today-run", edited?.id)
+            assertTrue(added)
+        }
+    }
+
+    @Test
     fun futureDayWithoutAnActivePlanDoesNotOfferAnImpossibleWorkout() {
         compose.setContent {
             RunwayTheme {
@@ -738,8 +773,7 @@ class NativeFiveSurfaceNavigationInstrumentedTest {
             }
         }
 
-        compose.onNodeWithText("Set up a plan or routine before scheduling future runs.")
-            .assertIsDisplayed()
+        compose.onAllNodesWithText("Set up a plan or routine before scheduling future runs.").assertCountEquals(0)
         compose.onAllNodesWithText("Add a run here").assertCountEquals(0)
     }
 

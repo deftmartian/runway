@@ -315,7 +315,7 @@ private fun NativeProductShell(
                         is NativeSurface.HistoryDetail ->
                             HistoryDetailScreen(surface.payload, state.loading)
                     }
-                    state.planDecisionPreview?.let { preview ->
+                    state.planDecisionPreview?.takeIf { it.changes.isNotEmpty() }?.let { preview ->
                         PlanDecisionPreviewDialog(
                             preview = preview,
                             actionPending = state.actionPending,

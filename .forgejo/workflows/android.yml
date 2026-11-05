@@ -217,6 +217,16 @@ jobs:
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           test -s android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           test -s android/data/build/outputs/apk/androidTest/debug/data-debug-androidTest.apk
+      # Job containers share the runner's host network, so a fixed emulator port (5554) and adb
+      # server port (5037) collide with any other emulator on the host, such as one a cancelled job
+      # left behind, and adb then reports "device offline" until the job times out. Give each run its own pair,
+      # inside adb's emulator discovery range (5555-5585) and away from the defaults.
+      - name: Choose this run's emulator and adb ports
+        if: env.RUN_JOB == '1'
+        run: |
+          slot=$(( (${GITHUB_RUN_NUMBER:-0} + 0) % 14 ))
+          echo "EMULATOR_PORT=$(( 5556 + 2 * slot ))" >> "$GITHUB_ENV"
+          echo "ANDROID_ADB_SERVER_PORT=$(( 5040 + slot ))" >> "$GITHUB_ENV"
       - name: Run instrumentation tests on a serial emulator
         if: env.RUN_JOB == '1'
         uses: https://github.com/ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -231,12 +241,12 @@ jobs:
           profile: pixel_2
           cores: 2
           ram-size: 4096M
-          emulator-port: 5554
+          emulator-port: ${{ env.EMULATOR_PORT }}
           emulator-boot-timeout: 600
           force-avd-creation: true
           disable-animations: true
           emulator-options: >-
-            -no-window -gpu swiftshader_indirect -accel on -no-snapshot -noaudio -no-boot-anim
+            -no-window -gpu swiftshader -accel on -no-snapshot -noaudio -no-boot-anim
             -camera-back none
           script: bash android/ci/run-instrumentation.sh
       - name: Upload native documentation screenshots
@@ -404,6 +414,16 @@ jobs:
         with:
           name: unsigned-android-release
           path: unsigned
+      # Job containers share the runner's host network, so a fixed emulator port (5554) and adb
+      # server port (5037) collide with any other emulator on the host, such as one a cancelled job
+      # left behind, and adb then reports "device offline" until the job times out. Give each run its own pair,
+      # inside adb's emulator discovery range (5555-5585) and away from the defaults.
+      - name: Choose this run's emulator and adb ports
+        if: env.RUN_JOB == '1'
+        run: |
+          slot=$(( (${GITHUB_RUN_NUMBER:-0} + 7) % 14 ))
+          echo "EMULATOR_PORT=$(( 5556 + 2 * slot ))" >> "$GITHUB_ENV"
+          echo "ANDROID_ADB_SERVER_PORT=$(( 5040 + slot ))" >> "$GITHUB_ENV"
       - name: Install and launch an ephemeral-signed copy
         if: env.RUN_JOB == '1'
         uses: https://github.com/ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -418,12 +438,12 @@ jobs:
           profile: pixel_2
           cores: 2
           ram-size: 4096M
-          emulator-port: 5554
+          emulator-port: ${{ env.EMULATOR_PORT }}
           emulator-boot-timeout: 600
           force-avd-creation: true
           disable-animations: true
           emulator-options: >-
-            -no-window -gpu swiftshader_indirect -accel on -no-snapshot -noaudio -no-boot-anim
+            -no-window -gpu swiftshader -accel on -no-snapshot -noaudio -no-boot-anim
             -camera-back none
           script: bash android/ci/run-release-device-smoke.sh unsigned/app-release-unsigned.apk
       - name: Upload release-smoke diagnostics

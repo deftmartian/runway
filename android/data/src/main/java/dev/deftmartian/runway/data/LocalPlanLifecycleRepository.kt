@@ -707,7 +707,7 @@ object LocalPlanLifecyclePreparation {
                 ),
             )
         }.getOrNull() as? GeneratedDistancePlan ?: return null
-        if (generated.risk == RiskRating.UNSAFE || generated.weeks.size > MAX_RACE_PLAN_WEEKS) {
+        if (generated.weeks.size > MAX_RACE_PLAN_WEEKS) {
             return null
         }
         val token = stableId(
