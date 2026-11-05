@@ -2,6 +2,7 @@ package dev.deftmartian.runway.data
 
 import dev.deftmartian.runway.domain.Consequence
 import dev.deftmartian.runway.domain.Consequences
+import dev.deftmartian.runway.domain.DecisionEffect
 import dev.deftmartian.runway.domain.DecisionTarget
 import dev.deftmartian.runway.domain.LoadMetric
 import dev.deftmartian.runway.domain.PlanDecision
@@ -68,7 +69,14 @@ object LocalConsequenceDecisionEngine {
         if (affected.isEmpty()) {
             throw LocalDecisionProjectionException(LocalDecisionIssue.NO_COMPATIBLE_WORKOUT)
         }
-        return affected.map { reduce(it, input.consequence, affected.size) }
+        if (affected.size == 1) return listOf(reduce(affected.single(), input.consequence, 1))
+        val effects = Consequences.rebalanceEffects(
+            input.consequence,
+            affected.map { DecisionTarget(it.currentDistanceMeters ?: 0, it.currentDurationSeconds) },
+        )
+        return affected.zip(effects)
+            .mapNotNull { (workout, effect) -> effect?.let { reduced(workout, it, rebalanced = true) } }
+            .ifEmpty { throw LocalDecisionProjectionException(LocalDecisionIssue.NO_REDUCIBLE_AMOUNT) }
     }
 
     fun apply(
@@ -97,6 +105,10 @@ object LocalConsequenceDecisionEngine {
             DecisionTarget(workout.currentDistanceMeters ?: 0, workout.currentDurationSeconds),
             shareCount,
         ) ?: throw LocalDecisionProjectionException(LocalDecisionIssue.NO_REDUCIBLE_AMOUNT)
+        return reduced(workout, effect, rebalanced = shareCount > 1)
+    }
+
+    private fun reduced(workout: WorkoutEntity, effect: DecisionEffect, rebalanced: Boolean): LocalWorkoutDecisionChange {
         val after = if (effect.metric == LoadMetric.DURATION) {
             workout.copy(
                 currentDurationSeconds = effect.newTarget,
@@ -105,7 +117,7 @@ object LocalConsequenceDecisionEngine {
         } else {
             workout.copy(
                 currentDistanceMeters = effect.newTarget,
-                currentReason = if (shareCount > 1) {
+                currentReason = if (rebalanced) {
                     "The runner explicitly rebalanced the remaining week."
                 } else {
                     "The runner explicitly reduced this workout after reviewing a result."

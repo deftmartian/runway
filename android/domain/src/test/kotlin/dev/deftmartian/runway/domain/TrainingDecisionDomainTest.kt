@@ -188,6 +188,25 @@ class TrainingDecisionDomainTest {
         )
     }
 
+    @Test fun `distance rebalance moves whole half kilometres instead of rounding back to no change`() {
+        val shortfall = Consequences.calculate(feedback()).copy(nextRunAdjustment = null)
+        val small = Consequences.rebalanceEffects(shortfall, listOf(DecisionTarget(6_000), DecisionTarget(8_000)))
+        assertEquals(5_500, small[0]?.newTarget)
+        assertNull(small[1])
+
+        val larger = shortfall.copy(nextRunAdjustment = LoadDelta(LoadMetric.DISTANCE, -1_500))
+        val spread = Consequences.rebalanceEffects(larger, listOf(DecisionTarget(6_000), DecisionTarget(8_000)))
+        assertEquals(listOf(5_000, 7_500), spread.map { it?.newTarget })
+        assertEquals(-1_500, spread.sumOf { it?.adjustment ?: 0 })
+    }
+
+    @Test fun `distance rebalance never cuts a run below the minimum or invents a change`() {
+        val shortfall = Consequences.calculate(feedback()).copy(nextRunAdjustment = LoadDelta(LoadMetric.DISTANCE, -1_500))
+        val effects = Consequences.rebalanceEffects(shortfall, listOf(DecisionTarget(500), DecisionTarget(1_000)))
+        assertNull(effects[0])
+        assertEquals(500, effects[1]?.newTarget)
+    }
+
     private fun feedback(
         status: FeedbackStatus = FeedbackStatus.DONE,
         targetDuration: Int? = null,

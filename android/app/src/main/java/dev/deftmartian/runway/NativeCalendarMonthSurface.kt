@@ -324,7 +324,7 @@ internal fun calendarLedgerDayPresentation(
     workouts: List<NativeWorkout>,
     activities: List<NativeActivity>,
     feedbackByWorkout: Map<String, NativeWorkoutFeedback>,
-    routineDateIsPast: Boolean = false,
+    dateIsPast: Boolean = false,
 ): CalendarLedgerDayPresentation {
     val activeWorkouts = workouts.filter { it.isRemoved != true }
     val runWorkouts = activeWorkouts.filter { it.type != "rest" }
@@ -333,7 +333,7 @@ internal fun calendarLedgerDayPresentation(
         workouts = workouts,
         activities = activities,
         feedbackByWorkout = feedbackByWorkout,
-        routineDateIsPast = routineDateIsPast,
+        dateIsPast = dateIsPast,
     )
     val primaryWorkout = runWorkouts.firstOrNull()
     val workoutTitle = primaryWorkout?.purpose.orEmpty().ifBlank {
@@ -422,12 +422,12 @@ internal fun calendarLedgerDayPresentation(
             stateDescription = "recorded",
             emphasis = base.emphasis,
         )
-        routineDateIsPast && runWorkouts.any { it.planPhase == "routine" } ->
+        dateIsPast && runWorkouts.isNotEmpty() ->
             CalendarLedgerDayPresentation(
                 title = if (runWorkouts.size == 1) {
                     calendarWorkoutPlanSummary(runWorkouts.single())
                 } else {
-                    "${runWorkouts.size} routine runs"
+                    "${runWorkouts.size} planned runs"
                 },
                 detail = "Not recorded",
                 stateDescription = "not recorded",
@@ -470,7 +470,7 @@ private fun CalendarLedgerDayRow(
         workouts = workouts,
         activities = activities,
         feedbackByWorkout = feedbackByWorkout,
-        routineDateIsPast = isPast,
+        dateIsPast = isPast,
     )
     val description = buildString {
         append(friendlyDate(date.toString()))
@@ -571,7 +571,7 @@ private fun CalendarDayCell(
         workouts,
         activities,
         feedbackByWorkout,
-        routineDateIsPast = isPast,
+        dateIsPast = isPast,
     )
     val description = buildString {
         append(friendlyDate(date.toString()))
@@ -653,7 +653,7 @@ internal fun calendarDayPresentation(
     workouts: List<NativeWorkout>,
     activities: List<NativeActivity>,
     feedbackByWorkout: Map<String, NativeWorkoutFeedback>,
-    routineDateIsPast: Boolean = false,
+    dateIsPast: Boolean = false,
 ): CalendarDayPresentation {
     val activeWorkouts = workouts.filter { it.isRemoved != true }
     val runWorkouts = activeWorkouts.filter { it.type != "rest" }
@@ -663,7 +663,8 @@ internal fun calendarDayPresentation(
     }
     feedbackPresentation(feedback)?.let { return it }
     activityPresentation(activities)?.let { return it }
-    if (routineDateIsPast && runWorkouts.any { it.planPhase == "routine" }) {
+    // A passed run with no result is a fact for any plan, not a debt and not still "planned".
+    if (dateIsPast && runWorkouts.isNotEmpty()) {
         return CalendarDayPresentation("— Not recorded", "not recorded", CalendarCellEmphasis.Neutral)
     }
     if (runWorkouts.any { it.isEdited == true }) {
