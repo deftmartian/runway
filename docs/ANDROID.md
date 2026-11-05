@@ -17,7 +17,9 @@ android/gradlew -p android --no-daemon --max-workers=1 connectedDebugAndroidTest
 
 The second command needs an emulator or connected device. Run only one Gradle or emulator-heavy workload at a time on constrained development hosts.
 
-Pull requests and main-branch pushes that change Android source, build tooling, packaging metadata, or the Android workflow run the full hosted verification matrix. The Linux package job builds the debug app and test APKs once; the macOS emulator job installs those exact artifacts for device tests and current native screenshots. Documentation-only changes keep a lightweight classification check; release tags always run the complete build, device-test, signing, and publication path.
+CI runs on the Forgejo repository (`.forgejo/workflows/android.yml`); the GitHub repository is a push mirror with Actions off. Pull requests and main-branch pushes that change Android source, build tooling, packaging metadata, or the Android workflow run the full verification: one job runs unit tests, lint, and the complexity ceiling; the package job builds the debug app and test APKs once; the instrumentation job installs those exact artifacts on an x86_64 emulator for device tests and current native screenshots. Documentation-only changes keep a lightweight classification check; release tags always run the complete build, device-test, signing, and publication path.
+
+The runner has 16 GiB and runs three jobs at once. Each emulator job needs about 4 GiB plus its Gradle tooling, so only one emulator job may run at a time. Forgejo 17 ignores job-level `concurrency`, so that limit belongs to the runner: register the emulator jobs' label on a runner instance with capacity 1, then point `instrumentation` and `release-device-smoke` at that label. Until then, push pull requests one at a time.
 
 Review the `native-ui-screenshots` artifact from that same run before merging presentation changes. A source preview or screenshots from another commit are not device evidence for the change under review.
 

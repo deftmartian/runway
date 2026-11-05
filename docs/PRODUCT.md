@@ -16,7 +16,7 @@ Setup has two goal paths, and on a fresh install a third choice, **Log runs with
 
 | Goal | Starting point |
 | --- | --- |
-| Train for a distance | Choose 5K, 10K, half marathon, or marathon. Enter one repeatable recent week, or let runway observe two weeks of open runs before confirming a baseline. |
+| Train for a distance | Choose 5K, 10K, half marathon, or marathon. Enter one repeatable recent week, or let runway observe two weeks of open runs before confirming a baseline; only runs linked to those open run days count toward it. |
 | Run consistently each week | Enter one repeatable recent week, choose the final weekly distance or running-time goal, choose the amount to add or remove each week, and select the intended run days. Setup shows the resulting weekly progression before creating the routine. |
 
 The evidence behind these conservative rules, and the limits of what each source supports, are recorded in [Training sources](TRAINING_SOURCES.md).

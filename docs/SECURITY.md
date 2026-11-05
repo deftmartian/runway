@@ -31,7 +31,7 @@ Health Connect access is optional and read-only. Permissions are scoped to the r
 ## Secure engineering
 
 - Bound parser size, track points, values, and work per import. Reject document type declarations and entities; do not log raw activity content.
-- Validate the exact current restore identity before replacement. In this hard-cutover line, older installed schemas are recreated and older backups are rejected rather than rewritten or presented as compatible. A future release that promises data preservation must restore explicit migrations and upgrade tests before shipping.
+- Validate a restore candidate's exact released schema identity before replacement. Backups from schema 7 (v0.11.0) onward are accepted and upgraded by explicit migrations; pre-v0.11 backups and newer or unknown schemas are rejected. A released schema never loses local data on update: it migrates or fails to open, and is never silently recreated.
 - Keep Room queries bounded. Do not introduce unbounded history, route, or Health Connect reads into a primary surface.
 - Do not hand-roll cryptography. Signing material stays outside the repository. CI receives it only through the protected release environment; local operator signing uses external, ignored configuration.
 - Do not commit real activity files, backups, coordinates, signing keys, passwords, or `local.properties`.
@@ -42,4 +42,4 @@ Use the repository's [private vulnerability-reporting form](https://github.com/d
 
 ## Release checks
 
-Before a public APK, verify the current build on an emulator and at least one practical device: first launch/onboarding, all five destinations, notification permission and per-channel blocking, notification navigation, background GPX review alerts, data erase/backup warning, GPX share and folder grant/revocation, Health Connect permission/revocation, route discard, the declared schema cutover behavior, large text, and TalkBack. Keep private activity samples out of the repository and release record.
+Before a public APK, verify the current build on an emulator and at least one practical device: first launch/onboarding, all five destinations, notification permission and per-channel blocking, notification navigation, background GPX review alerts, data erase/backup warning, GPX share and folder grant/revocation, Health Connect permission/revocation, route discard, upgrade from the previous release with its data intact, restore of a backup from the previous release, large text, and TalkBack. Keep private activity samples out of the repository and release record.

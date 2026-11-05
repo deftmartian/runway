@@ -26,6 +26,7 @@ An established race-plan Review step must show the generated ramp evidence befor
 - Prefer cards only when they separate decisions; avoid a wall of rounded containers.
 - On compact and medium widths, Calendar uses chronological day rows so the full run purpose and state can wrap. Calendar may use a wider centered canvas than other destinations. Use the seven-column month grid only at expanded widths where every cell remains readable. Day actions belong in the selected-day sheet.
 - Keep the record-run action fixed at the lower right of Calendar and hide it while scrolling down; reveal it at the top or when scrolling back up. General goal replacement belongs in Settings, not Calendar or History.
+- A planned run whose date has passed without a result reads “Not recorded” in Calendar, for a race plan or a routine. It is a fact, not a debt; the runner can still record, skip, or move it from the day sheet.
 - Do not render recovery-only dates as Calendar entries. Keep planned rest in the underlying plan and history so this remains a presentation choice rather than a training change.
 - Forms use clear labels, units, sensible defaults, inline validation, and a visible save/cancel boundary. Invalid fields explain what must change; a disabled action alone is not validation.
 - Destructive actions say what local data will be removed and require confirmation.

@@ -2,8 +2,10 @@ package dev.deftmartian.runway.data
 
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -112,35 +114,91 @@ class RunwayLedgerDatabaseInstrumentedTest {
     }
 
     @Test
-    fun hardCutoverRecreatesAnOlderDatabaseWithoutRunningAMigration() {
+    fun preV011SchemaIsRecreatedByTheProductionBuilder() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val name = "runway-hard-cutover-test.db"
         context.deleteDatabase(name)
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name), null).use { sqlite ->
             sqlite.execSQL("CREATE TABLE legacy_marker (value TEXT NOT NULL)")
             sqlite.execSQL("INSERT INTO legacy_marker (value) VALUES ('old')")
-            sqlite.version = RunwayLedgerDatabase.SCHEMA_VERSION - 1
+            sqlite.version = RunwayLedgerDatabase.FIRST_PRESERVED_SCHEMA_VERSION - 1
         }
 
-        val reopened = Room.databaseBuilder(context, RunwayLedgerDatabase::class.java, name)
-            .fallbackToDestructiveMigration(dropAllTables = true)
-            .allowMainThreadQueries()
-            .build()
+        val reopened = RunwayLedgerDatabase.builder(context, name).allowMainThreadQueries().build()
         try {
             val sqlite = reopened.openHelper.writableDatabase
             assertEquals(RunwayLedgerDatabase.SCHEMA_VERSION, sqlite.version)
-            val legacyTableCount = sqlite.query(
-                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'legacy_marker'",
-            ).use { cursor ->
-                cursor.moveToFirst()
-                cursor.getInt(0)
-            }
-            assertEquals(0, legacyTableCount)
+            assertEquals(0, tableCount(sqlite, "legacy_marker"))
         } finally {
             reopened.close()
             context.deleteDatabase(name)
         }
     }
+
+    @Test
+    fun releasedSchemaDataSurvivesOpeningWithTheProductionBuilder() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val helper = MigrationTestHelper(instrumentation, RunwayLedgerDatabase::class.java)
+        RunwayLedgerDatabase.RELEASED_SCHEMA_IDENTITY_HASHES.keys.sorted().forEach { version ->
+            val name = "runway-released-schema-$version-test.db"
+            context.deleteDatabase(name)
+            helper.createDatabase(name, version).use { sqlite ->
+                sqlite.execSQL(
+                    "INSERT INTO app_metadata (`key`, `value`, updatedAtEpochMillis) VALUES ('upgrade_marker', 'v$version', 1)",
+                )
+            }
+            val reopened = RunwayLedgerDatabase.builder(context, name).allowMainThreadQueries().build()
+            try {
+                val sqlite = reopened.openHelper.writableDatabase
+                assertEquals(RunwayLedgerDatabase.SCHEMA_VERSION, sqlite.version)
+                val marker = sqlite.query("SELECT value FROM app_metadata WHERE `key` = 'upgrade_marker'").use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+                assertEquals("v$version", marker)
+            } finally {
+                reopened.close()
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    @Test
+    fun newerDatabaseFailsToOpenWithoutErasingIt() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "runway-downgrade-test.db"
+        context.deleteDatabase(name)
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name), null).use { sqlite ->
+            sqlite.execSQL("CREATE TABLE future_marker (value TEXT NOT NULL)")
+            sqlite.execSQL("INSERT INTO future_marker (value) VALUES ('newer')")
+            sqlite.version = RunwayLedgerDatabase.SCHEMA_VERSION + 1
+        }
+
+        val reopened = RunwayLedgerDatabase.builder(context, name).allowMainThreadQueries().build()
+        try {
+            val failure = runCatching { reopened.openHelper.writableDatabase }.exceptionOrNull()
+            assertTrue("Opening a newer schema must fail instead of erasing it", failure != null)
+        } finally {
+            reopened.close()
+        }
+        SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READONLY).use { sqlite ->
+            assertEquals(RunwayLedgerDatabase.SCHEMA_VERSION + 1, sqlite.version)
+            assertEquals(1, tableCount(sqlite, "future_marker"))
+        }
+        context.deleteDatabase(name)
+    }
+
+    private fun tableCount(sqlite: androidx.sqlite.db.SupportSQLiteDatabase, table: String): Int =
+        sqlite.query("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'").use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0)
+        }
+
+    private fun tableCount(sqlite: SQLiteDatabase, table: String): Int =
+        sqlite.rawQuery("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf(table)).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0)
+        }
 
     @Test
     fun graphImportAndBoundedSamplesAreTransactionalAndClearAllRemovesLedger() = runBlocking {
