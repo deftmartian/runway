@@ -3,6 +3,7 @@ package dev.deftmartian.runway.data.importing
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.deftmartian.runway.data.GoalEntity
 import dev.deftmartian.runway.data.ProfileSettingsEntity
 import dev.deftmartian.runway.data.LocalNotificationRepository
 import dev.deftmartian.runway.data.RunwayLedgerDatabase
@@ -73,6 +74,8 @@ class LocalGpxImportRepositoryInstrumentedTest {
     @Test
     fun folderImportCommitsOneRetryableReviewAlertOnlyWhenOptedIn() = runBlocking {
         database.profileSettingsDao().save(profile(routeMode = "discard", heartRateMode = "discard"))
+        // The alert is for runs that wait for review, which needs a current goal.
+        saveActiveGoal()
         val notifications = LocalNotificationRepository(database) { NOW_EPOCH_MILLIS }
         notifications.updateFolderImportAlerts(true)
         val repository = LocalGpxImportRepository(database) { NOW_EPOCH_MILLIS }
@@ -100,6 +103,34 @@ class LocalGpxImportRepositoryInstrumentedTest {
         notifications.markDelivered(pending)
         assertTrue(notifications.pendingFolderImportAlerts().isEmpty())
     }
+
+    @Test
+    fun folderImportWithoutAPlanQueuesNoReviewAlert() = runBlocking {
+        database.profileSettingsDao().save(profile(routeMode = "discard", heartRateMode = "discard"))
+        val notifications = LocalNotificationRepository(database) { NOW_EPOCH_MILLIS }
+        notifications.updateFolderImportAlerts(true)
+
+        val imported = LocalGpxImportRepository(database) { NOW_EPOCH_MILLIS }
+            .import(ByteArrayInputStream(gpx("45.005").toByteArray()), LocalGpxImportOrigin.Folder)
+
+        assertTrue(imported is LocalGpxImportOutcome.Imported)
+        assertTrue(notifications.pendingFolderImportAlerts().isEmpty())
+    }
+
+    private suspend fun saveActiveGoal() = database.goalPlanDao().saveGoal(
+        GoalEntity(
+            goalId = "goal",
+            title = "Half marathon plan",
+            targetDateEpochDay = null,
+            state = "active",
+            createdAtEpochMillis = NOW_EPOCH_MILLIS,
+            updatedAtEpochMillis = NOW_EPOCH_MILLIS,
+            kind = "race",
+            startMode = "established",
+            raceDistanceMeters = 21_097,
+            priority = "finish_healthy",
+        ),
+    )
 
     private fun profile(routeMode: String, heartRateMode: String) = ProfileSettingsEntity(
         timeZone = "America/Halifax",
