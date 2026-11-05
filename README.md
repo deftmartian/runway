@@ -1,6 +1,5 @@
 # runway
 
-[![Android CI](https://github.com/deftmartian/runway/actions/workflows/android.yml/badge.svg)](https://github.com/deftmartian/runway/actions/workflows/android.yml)
 [![Latest release](https://img.shields.io/github/v/release/deftmartian/runway?display_name=tag&sort=semver&color=1f758f)](https://github.com/deftmartian/runway/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1f758f.svg)](LICENSE)
 
@@ -22,7 +21,7 @@ runway works with your existing recorder instead of replacing it. It runs locall
 - Review the starting week, peak, longest run, and ramp before creating a race plan.
 - See planned runs, completed work, and waiting decisions by date without filling the calendar with recovery entries.
 - Move, edit, add, or remove a future run when life changes.
-- Compare what was planned with what happened, then keep the schedule, ease back, rest, repeat, or rebalance.
+- Compare what was planned with what happened, then keep the schedule, ease back, rest, or repeat.
 - Look back at the original plan, every deliberate change, and the work you completed.
 
 Weekly routines record whether you ran without changing future days on their own. Race plans can offer a schedule change, but runway never applies one until you approve it.

@@ -144,10 +144,39 @@ class NativeCalendarDecisionTest {
             workouts = listOf(open),
             activities = emptyList(),
             feedbackByWorkout = emptyMap(),
-            routineDateIsPast = true,
+            dateIsPast = true,
         )
         assertEquals("— Not recorded", presentation.label)
         assertEquals(CalendarCellEmphasis.Neutral, presentation.emphasis)
+    }
+
+    @Test
+    fun `passed race plan run without a result reads as not recorded`() {
+        val planned = workout("race-plan", "2026-07-28", "easy")
+        val past = calendarDayPresentation(
+            workouts = listOf(planned),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+            dateIsPast = true,
+        )
+        assertEquals("— Not recorded", past.label)
+        assertEquals(CalendarCellEmphasis.Neutral, past.emphasis)
+
+        val row = calendarLedgerDayPresentation(
+            workouts = listOf(planned),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+            dateIsPast = true,
+        )
+        assertEquals("Not recorded", row.detail)
+
+        val upcoming = calendarLedgerDayPresentation(
+            workouts = listOf(planned),
+            activities = emptyList(),
+            feedbackByWorkout = emptyMap(),
+            dateIsPast = false,
+        )
+        assertEquals("Planned", upcoming.detail)
     }
 
     @Test

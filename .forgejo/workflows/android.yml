@@ -67,11 +67,14 @@ jobs:
           echo "Android verification required: $android"
           echo "android=$android" >> "$GITHUB_OUTPUT"
 
-  unit:
-    name: unit
+  # Unit tests, lint, and the complexity ceiling share one job: one JDK/SDK/Gradle setup and one
+  # compile instead of two, and each PR holds two of the runner's three slots instead of three,
+  # so another PR's instrumentation is not left queueing behind it.
+  unit-lint:
+    name: unit and lint
     needs: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Gate (Forgejo skips a job-level if on jobs with needs)
         if: ${{ github.ref_type != 'tag' && needs.changes.outputs.android == 'true' }}
@@ -86,71 +89,6 @@ jobs:
           python3 android/ci/test_discover_instrumentation_tests.py
           python3 android/ci/discover-instrumentation-tests.py app >/dev/null
           python3 android/ci/discover-instrumentation-tests.py data >/dev/null
-      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-        if: env.RUN_JOB == '1'
-      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-        if: env.RUN_JOB == '1'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
-        if: env.RUN_JOB == '1'
-      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
-        if: env.RUN_JOB == '1'
-        with:
-          packages: platforms;android-36 build-tools;36.0.0
-      - name: Run pure and unit tests
-        if: env.RUN_JOB == '1'
-        run: >-
-          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
-          --dependency-verification strict
-          :domain:test :data:testDebugUnitTest :app:testDebugUnitTest
-
-  lint:
-    name: lint
-    needs: changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
-        if: ${{ github.ref_type != 'tag' && needs.changes.outputs.android == 'true' }}
-        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-        if: env.RUN_JOB == '1'
-        with:
-          persist-credentials: false
-      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
-        if: env.RUN_JOB == '1'
-      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-        if: env.RUN_JOB == '1'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
-        if: env.RUN_JOB == '1'
-      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
-        if: env.RUN_JOB == '1'
-        with:
-          packages: platforms;android-36 build-tools;36.0.0
-      - name: Run Android lint
-        if: env.RUN_JOB == '1'
-        run: >-
-          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
-          --dependency-verification strict lint
-
-  package:
-    name: package and androidTest compile
-    needs: changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
-        if: ${{ needs.changes.outputs.android == 'true' }}
-        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-        if: env.RUN_JOB == '1'
-        with:
-          persist-credentials: false
       - name: Enforce McCabe complexity ceiling
         if: env.RUN_JOB == '1'
         run: |
@@ -170,7 +108,40 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
-          packages: platforms;android-36 build-tools;36.0.0
+          packages: platforms;android-36 build-tools;35.0.0
+      - name: Run pure and unit tests, then lint
+        if: env.RUN_JOB == '1'
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
+          --dependency-verification strict --continue
+          :domain:test :data:testDebugUnitTest :app:testDebugUnitTest lint
+
+  package:
+    name: package and androidTest compile
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+        if: ${{ needs.changes.outputs.android == 'true' }}
+        run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.RUN_JOB == '1'
+        with:
+          persist-credentials: false
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.0
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: env.RUN_JOB == '1'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        if: env.RUN_JOB == '1'
+      - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        if: env.RUN_JOB == '1'
+        with:
+          packages: platforms;android-36 build-tools;35.0.0
       - name: Package debug APK and compile instrumentation tests
         if: env.RUN_JOB == '1'
         run: >-
@@ -192,6 +163,7 @@ jobs:
   instrumentation:
     name: instrumentation
     needs: [changes, package]
+    # Emulator job: see the note on release-device-smoke about running one emulator at a time.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -231,9 +203,9 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
-          packages: >-
-            platforms;android-36 build-tools;36.0.0 platform-tools emulator
-            system-images;android-35;default;x86_64
+          # android-emulator-runner installs the platform, emulator build, and system image it needs;
+          # installing them here as well downloaded the emulator twice.
+          packages: platform-tools
       - uses: https://code.forgejo.org/forgejo/download-artifact@v4
         if: env.RUN_JOB == '1'
         with:
@@ -321,7 +293,7 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
-          packages: platforms;android-36 build-tools;36.0.0
+          packages: platforms;android-36 build-tools;35.0.0
       - name: Gate tag version and ancestry
         if: env.RUN_JOB == '1'
         env:
@@ -389,6 +361,9 @@ jobs:
     name: release candidate device smoke
     needs: release-build
     runs-on: ubuntu-latest
+    # Run one emulator at a time: two 4 GiB emulators plus Gradle jobs exhausted the 16 GiB runner
+    # on 2026-11-04. Forgejo 17.0.1 ignores job-level `concurrency` (checked on the runner: two jobs in
+    # one group ran together), so this needs a runner label with capacity 1; see docs/ANDROID.md.
     timeout-minutes: 30
     steps:
       - name: Gate (Forgejo skips a job-level if on jobs with needs)
@@ -420,9 +395,9 @@ jobs:
       - uses: https://github.com/android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         if: env.RUN_JOB == '1'
         with:
-          packages: >-
-            platforms;android-36 build-tools;36.0.0 platform-tools emulator
-            system-images;android-35;default;x86_64
+          # android-emulator-runner installs the platform, emulator build, and system image it needs;
+          # installing them here as well downloaded the emulator twice.
+          packages: platform-tools
       - uses: https://code.forgejo.org/forgejo/download-artifact@v4
         if: env.RUN_JOB == '1'
         with:
