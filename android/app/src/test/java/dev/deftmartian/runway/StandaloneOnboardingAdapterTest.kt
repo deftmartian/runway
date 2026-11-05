@@ -20,11 +20,11 @@ class StandaloneOnboardingAdapterTest {
         assertTrue(result.intake is dev.deftmartian.runway.domain.EstablishedTrainingIntake)
         assertTrue(result.plan is GeneratedDistancePlan)
         assertEquals("2026-01-05", result.plan.startDate)
-        assertEquals("2026-02-26", result.metadata.targetBounds?.minimum)
+        assertEquals("2026-01-29", result.metadata.targetBounds?.minimum)
     }
 
-    @Test fun `high increase plan is previewed and requires explicit confirmation`() {
-        val command = command(
+    @Test fun `steep and unsupported-rated plans are previewed and created without confirmation`() {
+        val steep = command(
             startMode = "established",
             raceDistance = "half",
             targetDate = "2026-03-29",
@@ -32,62 +32,15 @@ class StandaloneOnboardingAdapterTest {
             currentRunsPerWeek = "3",
             longestRecentRunKm = "10",
         )
+        val preview = StandaloneOnboardingAdapter.preview(steep, utcNow) as StandaloneOnboardingOutcome.Planned
+        assertEquals(RiskRating.AGGRESSIVE, preview.plan.risk)
+        val created = StandaloneOnboardingAdapter.adapt(steep, utcNow) as StandaloneOnboardingOutcome.Planned
+        assertEquals(preview.plan, created.plan)
 
-        val preview = StandaloneOnboardingAdapter.preview(command, utcNow)
-            as StandaloneOnboardingOutcome.Planned
-        val previewPlan = preview.plan as GeneratedDistancePlan
-        assertEquals(RiskRating.AGGRESSIVE, previewPlan.risk)
-
-        val unconfirmed = StandaloneOnboardingAdapter.adapt(command, utcNow)
-            as StandaloneOnboardingOutcome.Invalid
-        assertTrue(
-            OnboardingFieldError.HIGH_INCREASE_CONFIRMATION in
-                unconfirmed.fieldErrors.getValue(OnboardingField.PLAN_ASSESSMENT),
-        )
-
-        val confirmed = StandaloneOnboardingAdapter.adapt(
-            command.copy(
-                confirmedPlanKey = generatedPlanConfirmationKey(
-                    previewPlan,
-                ),
-            ),
-            utcNow,
-        ) as StandaloneOnboardingOutcome.Planned
-        assertEquals(preview.plan, confirmed.plan)
-
-        val movedSchedule = StandaloneOnboardingAdapter.adapt(
-            command.copy(
-                availability = listOf(1, 4, 6),
-                confirmedPlanKey = generatedPlanConfirmationKey(previewPlan),
-            ),
-            utcNow,
-        ) as StandaloneOnboardingOutcome.Invalid
-        assertTrue(
-            OnboardingFieldError.HIGH_INCREASE_CONFIRMATION in
-                movedSchedule.fieldErrors.getValue(OnboardingField.PLAN_ASSESSMENT),
-        )
-    }
-
-    @Test fun `unsupported plan can be previewed but cannot be created`() {
-        val command = command(
-            startMode = "established",
-            raceDistance = "half",
-            targetDate = "2026-02-26",
-            currentWeeklyDistanceKm = "15",
-            currentRunsPerWeek = "3",
-            longestRecentRunKm = "10",
-        )
-
-        val preview = StandaloneOnboardingAdapter.preview(command, utcNow)
-            as StandaloneOnboardingOutcome.Planned
-        assertEquals(RiskRating.UNSAFE, preview.plan.risk)
-
-        val rejected = StandaloneOnboardingAdapter.adapt(command, utcNow)
-            as StandaloneOnboardingOutcome.Invalid
-        assertTrue(
-            OnboardingFieldError.UNSUPPORTED_PLAN in
-                rejected.fieldErrors.getValue(OnboardingField.PLAN_ASSESSMENT),
-        )
+        val steeper = steep.copy(targetDate = "2026-02-26", currentWeeklyDistanceKm = "15")
+        val rated = StandaloneOnboardingAdapter.adapt(steeper, utcNow) as StandaloneOnboardingOutcome.Planned
+        assertEquals(RiskRating.UNSAFE, rated.plan.risk)
+        assertTrue((rated.plan as GeneratedDistancePlan).weeks.isNotEmpty())
     }
 
     @Test fun `weekly routine starts a full week with a distance goal`() {
@@ -121,14 +74,14 @@ class StandaloneOnboardingAdapterTest {
         val result = StandaloneOnboardingAdapter.adapt(command(startMode = "calibration", targetDate = "2026-03-15", availability = listOf(2, 6)), utcNow) as StandaloneOnboardingOutcome.Planned
         assertTrue(result.plan is GeneratedCalibrationPlan)
         assertNull((result.plan as GeneratedCalibrationPlan).summary.sessionDurationSeconds)
-        assertEquals("2026-03-12", result.metadata.targetBounds?.minimum)
+        assertEquals("2026-02-12", result.metadata.targetBounds?.minimum)
     }
 
-    @Test fun `duplicate and unconfirmed concentrated schedules return typed errors`() {
+    @Test fun `duplicate days are an error but a two-day half marathon is not`() {
         val duplicate = StandaloneOnboardingAdapter.adapt(command(startMode = "established", targetDate = "2026-04-01", availability = listOf(1, 1, 6)), utcNow) as StandaloneOnboardingOutcome.Invalid
         assertTrue(OnboardingFieldError.DUPLICATE_DAY in duplicate.fieldErrors.getValue(OnboardingField.AVAILABILITY))
-        val concentrated = StandaloneOnboardingAdapter.adapt(command(startMode = "established", raceDistance = "half", targetDate = "2026-04-01", availability = listOf(2, 6), currentRunsPerWeek = "2"), utcNow) as StandaloneOnboardingOutcome.Invalid
-        assertTrue(OnboardingFieldError.CONCENTRATED_SCHEDULE_CONFIRMATION in concentrated.fieldErrors.getValue(OnboardingField.CONCENTRATED_SCHEDULE))
+        val twoDays = StandaloneOnboardingAdapter.adapt(command(startMode = "established", raceDistance = "half", targetDate = "2026-04-01", availability = listOf(2, 6), currentRunsPerWeek = "2"), utcNow)
+        assertTrue(twoDays is StandaloneOnboardingOutcome.Planned)
     }
 
     @Test fun `established schedule preserves a recovery day after the long run`() {
@@ -149,7 +102,7 @@ class StandaloneOnboardingAdapterTest {
 
     @Test fun `time zone determines date bounds and next monday start`() {
         val result = StandaloneOnboardingAdapter.adapt(command(startMode = "established", targetDate = "2026-03-01", timeZone = "America/Halifax"), Instant.parse("2026-01-01T00:30:00Z")) as StandaloneOnboardingOutcome.Planned
-        assertEquals("2026-02-25", result.metadata.targetBounds?.minimum)
+        assertEquals("2026-01-28", result.metadata.targetBounds?.minimum)
         assertEquals("2026-01-05", result.plan.startDate)
     }
 

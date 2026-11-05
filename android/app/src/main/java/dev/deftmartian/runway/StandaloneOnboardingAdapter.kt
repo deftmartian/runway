@@ -22,6 +22,8 @@ import dev.deftmartian.runway.domain.RiskRating
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TargetDateBounds
 import dev.deftmartian.runway.domain.TrainingPlanner
+import dev.deftmartian.runway.domain.MAX_BASELINE_RUNS
+import dev.deftmartian.runway.domain.MIN_BASELINE_RUNS
 import dev.deftmartian.runway.domain.canLeaveRecoveryDayAfterLongRun
 import dev.deftmartian.runway.domain.isRepeatableWeekCoherent
 import java.time.Instant
@@ -81,21 +83,17 @@ internal sealed interface StandaloneOnboardingOutcome {
 /** Pure app-to-domain boundary. It neither writes state nor depends on UI controls. */
 internal object StandaloneOnboardingAdapter {
     fun adapt(command: CreatePlanCommand, now: Instant = Instant.now()): StandaloneOnboardingOutcome {
-        return evaluate(command, now, enforceConfirmations = true)
+        return evaluate(command, now)
     }
 
-    /**
-     * Produces the exact candidate shown on Setup's Review step without accepting its risk.
-     * Confirmation checks are intentionally deferred so the UI can explain the candidate first.
-     */
+    /** Produces the exact candidate shown on Setup's Review step; creating it uses the same evaluation. */
     fun preview(command: CreatePlanCommand, now: Instant = Instant.now()): StandaloneOnboardingOutcome {
-        return evaluate(command, now, enforceConfirmations = false)
+        return evaluate(command, now)
     }
 
     private fun evaluate(
         command: CreatePlanCommand,
         now: Instant,
-        enforceConfirmations: Boolean,
     ): StandaloneOnboardingOutcome {
         val errors = linkedMapOf<OnboardingField, MutableSet<OnboardingFieldError>>()
         fun error(field: OnboardingField, value: OnboardingFieldError) {
@@ -207,7 +205,7 @@ internal object StandaloneOnboardingAdapter {
         val selection = OnboardingSelection(
             goalKind, startMode, raceDistance, targetDate, command.availability, timeZone,
             weeklyKm, runs, longestKm, longRunDay,
-            command.confirmConcentratedSchedule || !enforceConfirmations,
+            true,
         )
         OnboardingValidation.validate(selection, today).forEach { issue -> mapIssue(issue, ::error) }
         if (established) {
@@ -280,25 +278,8 @@ internal object StandaloneOnboardingAdapter {
             StartMode.CALIBRATION -> CalibrationIntake(goalKind, raceDistance, command.availability, startDate)
             StartMode.ROUTINE -> error("Routine setup does not use the training planner")
         }
+        // The assessment and warnings travel with the plan; none of them stops the runner creating it.
         val plan = TrainingPlanner.generatePlan(intake, today)
-        if (enforceConfirmations && plan is GeneratedDistancePlan) {
-            when {
-                plan.risk == RiskRating.UNSAFE ->
-                    error(OnboardingField.PLAN_ASSESSMENT, OnboardingFieldError.UNSUPPORTED_PLAN)
-                plan.risk == RiskRating.AGGRESSIVE &&
-                    command.confirmedPlanKey != generatedPlanConfirmationKey(plan) ->
-                    error(
-                        OnboardingField.PLAN_ASSESSMENT,
-                        OnboardingFieldError.HIGH_INCREASE_CONFIRMATION,
-                    )
-            }
-            if (errors.isNotEmpty()) {
-                return StandaloneOnboardingOutcome.Invalid(
-                    errors.mapValues { it.value.toSet() },
-                    bounds,
-                )
-            }
-        }
         return StandaloneOnboardingOutcome.Planned(metadata, intake, plan)
     }
 
@@ -314,7 +295,6 @@ internal object StandaloneOnboardingAdapter {
         OnboardingIssue.INVALID_LONG_RUN_DAY -> error(OnboardingField.LONG_RUN_DAY, OnboardingFieldError.INVALID_VALUE)
         OnboardingIssue.INSUFFICIENT_RECOVERY_SPACING ->
             error(OnboardingField.AVAILABILITY, OnboardingFieldError.RECOVERY_SPACING)
-        OnboardingIssue.CONCENTRATED_SCHEDULE_NOT_CONFIRMED -> error(OnboardingField.CONCENTRATED_SCHEDULE, OnboardingFieldError.CONCENTRATED_SCHEDULE_CONFIRMATION)
     }
 
     private fun strictDecimal(raw: String, field: OnboardingField, error: (OnboardingField, OnboardingFieldError) -> Unit): Double? {
@@ -509,7 +489,7 @@ internal object StandaloneOnboardingAdapter {
         error: (OnboardingField, OnboardingFieldError) -> Unit,
     ) = when {
         value == null && raw.isBlank() -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.REQUIRED)
-        value != null && value !in 2..5 -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.OUT_OF_RANGE)
+        value != null && value !in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS -> error(OnboardingField.RUNS_PER_WEEK, OnboardingFieldError.OUT_OF_RANGE)
         else -> Unit
     }
 
@@ -532,7 +512,7 @@ internal object StandaloneOnboardingAdapter {
 
     private fun baselineIsInconsistent(weeklyKm: Double?, runs: Int?, longestKm: Double?): Boolean {
         val complete = weeklyKm != null && weeklyKm in 3.0..250.0 &&
-            runs != null && runs in 2..5 && longestKm != null && longestKm > 0.0 && longestKm <= 80.0
+            runs != null && runs in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS && longestKm != null && longestKm > 0.0 && longestKm <= 80.0
         return complete && !isRepeatableWeekCoherent(requireNotNull(weeklyKm), requireNotNull(runs), requireNotNull(longestKm))
     }
 
@@ -543,7 +523,7 @@ internal object StandaloneOnboardingAdapter {
         raceDistance: RaceDistance?,
         required: Boolean,
     ): Boolean {
-        if (!required || runs == null || runs !in 2..5 || longRunDay == null) return false
+        if (!required || runs == null || runs !in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS || longRunDay == null) return false
         return !canLeaveRecoveryDayAfterLongRun(command.availability, runs, longRunDay, raceDistance)
     }
     private fun nextPlanStartDate(today: LocalDate): String = today.plusDays(((8 - today.dayOfWeek.value) % 7).toLong()).toString()

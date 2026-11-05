@@ -39,11 +39,43 @@ class DomainBoundaryTest {
 
     @Test fun `onboarding bounds and validation use start-mode-specific dates`() {
         val today = LocalDate.parse("2026-01-01")
-        assertEquals(TargetDateBounds("2026-02-26", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.ESTABLISHED))
-        assertEquals(TargetDateBounds("2026-03-12", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.CALIBRATION))
-        val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-03-11", listOf(2, 6), "America/Halifax")
+        assertEquals(TargetDateBounds("2026-01-29", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.ESTABLISHED))
+        assertEquals(TargetDateBounds("2026-02-12", "2026-12-30"), OnboardingValidation.targetDateBounds(today, StartMode.CALIBRATION))
+        val selection = OnboardingSelection(GoalKind.RACE, StartMode.CALIBRATION, RaceDistance.FIVE_K, "2026-02-11", listOf(2, 6), "America/Halifax")
         assertTrue(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection, today))
-        assertFalse(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection.copy(targetDate = "2026-03-12"), today))
+        assertFalse(OnboardingIssue.TARGET_DATE_OUT_OF_BOUNDS in OnboardingValidation.validate(selection.copy(targetDate = "2026-02-12"), today))
+    }
+
+    @Test fun `setup advises rather than blocks frequent runners, two-day schedules, and steep plans`() {
+        val today = LocalDate.parse("2026-01-01")
+        val sevenDays = OnboardingSelection(
+            goalKind = GoalKind.RACE,
+            startMode = StartMode.ESTABLISHED,
+            raceDistance = RaceDistance.HALF,
+            targetDate = "2026-04-26",
+            availability = listOf(0, 1, 2, 3, 5, 6),
+            timeZone = "America/Halifax",
+            currentWeeklyDistanceKm = 42.0,
+            currentRunsPerWeek = 7,
+            longestRecentRunKm = 12.0,
+            preferredLongRunDay = 6,
+        )
+        // Seven reported runs need only as many available days as the plan schedules (four for a half).
+        assertEquals(4, plannedRunDays(7, RaceDistance.HALF))
+        assertTrue(OnboardingValidation.validate(sevenDays, today).isEmpty())
+
+        val twoDayHalf = sevenDays.copy(availability = listOf(2, 6), currentWeeklyDistanceKm = 20.0, currentRunsPerWeek = 2, longestRecentRunKm = 10.0)
+        assertTrue(OnboardingValidation.validate(twoDayHalf, today).isEmpty())
+
+        val steep = TrainingPlanner.generatePlan(
+            EstablishedTrainingIntake(
+                GoalPriority.FINISH_HEALTHY, listOf(1, 3, 6), RaceDistance.MARATHON, "2026-02-15",
+                15_000, 3, 6_000, 6, "2026-01-05",
+            ),
+            today,
+        ) as GeneratedDistancePlan
+        assertEquals(RiskRating.UNSAFE, steep.risk)
+        assertTrue(steep.weeks.isNotEmpty())
     }
 
     @Test fun `established baseline must describe one repeatable week`() {

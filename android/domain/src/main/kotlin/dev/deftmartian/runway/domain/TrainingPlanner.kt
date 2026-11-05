@@ -621,7 +621,7 @@ object TrainingPlanner {
     }
 
     private fun plannedRuns(intake: EstablishedTrainingIntake) =
-        min(intake.currentRunsPerWeek, if (intake.raceDistance == RaceDistance.HALF) 4 else 5)
+        plannedRunDays(intake.currentRunsPerWeek, intake.raceDistance)
 
     private fun pickRunDays(intake: EstablishedTrainingIntake): List<Int> {
         val unavailableDayAfterLongRun = (intake.preferredLongRunDay + 1) % 7
@@ -677,8 +677,8 @@ object TrainingPlanner {
         require(intake.currentWeeklyDistanceMeters >= 3000) {
             "The planner requires a current weekly baseline of at least 3 km."
         }
-        require(intake.currentRunsPerWeek in 2..5) {
-            "The planner requires a current baseline of 2 to 5 runs per week."
+        require(intake.currentRunsPerWeek in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS) {
+            "The planner requires a current baseline of 2 to 7 runs per week."
         }
         require(intake.longestRecentRunMeters > 0) {
             "The planner requires a positive recent long-run distance."

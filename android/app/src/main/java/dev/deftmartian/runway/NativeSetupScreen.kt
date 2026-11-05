@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import dev.deftmartian.runway.domain.GeneratedDistancePlan
 import dev.deftmartian.runway.domain.OnboardingValidation
 import dev.deftmartian.runway.domain.RaceDistance
+import dev.deftmartian.runway.domain.MAX_BASELINE_RUNS
+import dev.deftmartian.runway.domain.MIN_BASELINE_RUNS
 import dev.deftmartian.runway.domain.RiskRating
 import dev.deftmartian.runway.domain.StartMode
 import dev.deftmartian.runway.domain.TargetDateBounds
@@ -109,8 +111,6 @@ internal fun SetupScreen(
         mutableStateOf(initial?.availability.orEmpty().distinct().ifEmpty { listOf(1, 3, 6) })
     }
     var confirmReplace by rememberSaveable { mutableStateOf(false) }
-    var confirmConcentrated by rememberSaveable { mutableStateOf(false) }
-    var confirmedHighIncreaseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var dateChangedDuringSetup by rememberSaveable { mutableStateOf(false) }
     var confirmingRestore by rememberSaveable { mutableStateOf(false) }
     var choosingTargetDate by rememberSaveable { mutableStateOf(false) }
@@ -179,11 +179,6 @@ internal fun SetupScreen(
         raceDistance = raceDistance,
     ) ?: goalIssue.takeIf { isRoutineGoal }
         ?: startingPointIssue.takeIf { isRoutineGoal }
-    val concentratedSchedule = requiresConcentratedScheduleAcceptance(
-        startMode = effectiveStartMode,
-        runsPerWeek = runsPerWeek,
-        raceDistance = raceDistance,
-    )
     val candidateCommand = CreatePlanCommand(
         goalKind = if (isRoutineGoal) "routine" else "race",
         startMode = effectiveStartMode,
@@ -196,7 +191,7 @@ internal fun SetupScreen(
         availability = availability.sorted(),
         preferredLongRunDay = preferredDay,
         timeZone = timeZone,
-        confirmConcentratedSchedule = confirmConcentrated,
+        confirmConcentratedSchedule = false,
         confirmedPlanKey = null,
         confirmReplace = confirmReplace,
         operationId = setupOperationId,
@@ -227,20 +222,14 @@ internal fun SetupScreen(
                 as? StandaloneOnboardingOutcome.Routine
         }
     }
-    val highIncreaseKey = planPreview?.let(::generatedPlanConfirmationKey)
-    val highIncreaseConfirmed =
-        highIncreaseKey != null && confirmedHighIncreaseKey == highIncreaseKey
     val currentGoalLabel = currentGoalStateLabel(payload?.currentGoal?.state)
     val adjustingRoutine = initial?.goalKind == "routine" && isRoutineGoal
-    val assessmentIssue = planAssessmentIssue(planPreview?.risk, highIncreaseConfirmed)
     val reviewIssue = when {
-        assessmentIssue != null -> assessmentIssue
         payload?.currentGoal != null && !confirmReplace -> if (adjustingRoutine) {
             "Confirm that the current routine will move to History before the adjustment is applied."
         } else {
             "Confirm that the $currentGoalLabel will be archived."
         }
-        concentratedSchedule && !confirmConcentrated -> "Confirm the two-day schedule before creating this plan."
         else -> null
     }
     val currentIssue = when (step) {
@@ -258,13 +247,12 @@ internal fun SetupScreen(
             val submissionInstant = nowProvider()
             if (setupDateChanged(setupInstant, submissionInstant, timeZone)) {
                 setupOccurredAtEpochMillis = submissionInstant.toEpochMilli()
-                confirmedHighIncreaseKey = null
                 dateChangedDuringSetup = true
                 step = goalStep
             } else {
                 onAction(
                     candidateCommand.copy(
-                        confirmedPlanKey = highIncreaseKey.takeIf { highIncreaseConfirmed },
+                        confirmedPlanKey = null,
                         occurredAtEpochMillis = submissionInstant.toEpochMilli(),
                     ),
                 )
@@ -567,24 +555,7 @@ internal fun SetupScreen(
                                     preview.summary.defaultWeeklyIncreasePercent,
                                 ),
                             )
-                            preview.summary.warnings.forEach { warning -> Notice(warning) }
-                        }
-                    }
-                    if (preview.risk == RiskRating.AGGRESSIVE) {
-                        item {
-                            Notice(
-                                "At least one part of this plan is outside runway's usual recommendation. Review the ramp and warnings, move the race later if needed, or confirm the schedule as shown.",
-                            )
-                            CheckRow("Use this schedule as shown", highIncreaseConfirmed) { checked ->
-                                confirmedHighIncreaseKey = if (checked) highIncreaseKey else null
-                            }
-                        }
-                    }
-                    if (preview.risk == RiskRating.UNSAFE) {
-                        item {
-                            Notice(
-                                "This schedule is outside Runway's plan-generation limit. Move the race later, choose a shorter goal, or change the starting point.",
-                            )
+                            PlanNotes(preview.summary.warnings)
                         }
                     }
                 }
@@ -598,12 +569,6 @@ internal fun SetupScreen(
                             },
                             confirmReplace,
                         ) { confirmReplace = it }
-                    }
-                }
-                if (concentratedSchedule) {
-                    item {
-                        Notice("A half-marathon or marathon plan on two days concentrates the weekly distance into larger sessions. Add a day, choose another goal, or continue with this schedule.")
-                        CheckRow("I understand this concentrates training into two days", confirmConcentrated) { confirmConcentrated = it }
                     }
                 }
                 reviewIssue?.let { item { ValidationText(it) } }
@@ -1036,8 +1001,8 @@ internal fun startingPointValidation(
         when {
             weekly?.takeIf { it in 3.0..250.0 } == null ->
                 "Enter a repeatable week from 3 to 250 km."
-            runs?.takeIf { it in 2..5 } == null ->
-                "Enter a whole number from 2 to 5 current runs."
+            runs?.takeIf { it in MIN_BASELINE_RUNS..MAX_BASELINE_RUNS } == null ->
+                "Enter a whole number from 2 to 7 current runs."
             longest?.takeIf { it > 0.0 && it <= 80.0 } == null ->
                 "Enter a positive longest run in that week up to 80 km."
             !isRepeatableWeekCoherent(weekly, runs, longest) ->
@@ -1048,25 +1013,11 @@ internal fun startingPointValidation(
     else -> null
 }
 
-internal fun planAssessmentIssue(
-    risk: RiskRating?,
-    confirmedHighIncrease: Boolean,
-): String? = when (risk) {
-    RiskRating.UNSAFE ->
-        "Choose a later race date, a shorter goal, or a different starting point."
-    RiskRating.AGGRESSIVE -> if (confirmedHighIncrease) {
-        null
-    } else {
-        "Confirm the schedule after reviewing its warnings, or change the plan inputs."
-    }
-    else -> null
-}
-
 internal fun planAssessmentLabel(risk: RiskRating): String = when (risk) {
     RiskRating.CONSERVATIVE -> "Within default"
     RiskRating.MODERATE -> "Above default"
-    RiskRating.AGGRESSIVE -> "Needs confirmation"
-    RiskRating.UNSAFE -> "Not supported"
+    RiskRating.AGGRESSIVE -> "Steeper than usual"
+    RiskRating.UNSAFE -> "Much steeper than usual"
 }
 
 internal fun setupDateChanged(
@@ -1120,14 +1071,6 @@ internal fun scheduleValidation(
     }
 }
 
-internal fun requiresConcentratedScheduleAcceptance(
-    startMode: String,
-    runsPerWeek: String,
-    raceDistance: String,
-): Boolean = startMode == "established" &&
-    runsPerWeek == "2" &&
-    raceDistance in setOf("half", "marathon")
-
 private fun raceDistanceLabel(value: String) = when (value) {
     "5k" -> "5K"
     "10k" -> "10K"
@@ -1170,3 +1113,18 @@ internal const val CALIBRATION_START_NOTICE =
     "For two weeks, runway adds an open run on each chosen day, with no distance or time set. " +
         "Link each run you record to its open run day. Afterwards, runway proposes a starting point " +
         "from linked runs only; runs counted as extra are left out."
+
+/** Quiet notes rather than stacked alert boxes: they advise and never gate. Two show; the rest expand. */
+@Composable
+private fun PlanNotes(notes: List<String>) {
+    var expanded by rememberSaveable(notes) { mutableStateOf(false) }
+    val shown = if (expanded) notes else notes.take(2)
+    shown.forEach { note ->
+        Text("· $note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (notes.size > 2) {
+        TextButton(onClick = { expanded = !expanded }) {
+            Text(if (expanded) "Fewer notes" else "${notes.size - 2} more notes")
+        }
+    }
+}
