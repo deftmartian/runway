@@ -9,8 +9,8 @@
       "enabled": false
     },
     {
-      "description": "Application and library modules must move AGP major versions together: do it by hand",
-      "matchPackageNames": ["com.android.application", "com.android.library"],
+      "description": "Application and library modules must move AGP major versions together: do it by hand. Gradle plugins carry the marker artifact as packageName, so match the plugin id by depName",
+      "matchDepNames": ["com.android.application", "com.android.library"],
       "matchUpdateTypes": ["major"],
       "enabled": false
     },
@@ -30,6 +30,21 @@
       "matchPackageNames": ["androidx.lifecycle:**"],
       "matchUpdateTypes": ["minor", "major"],
       "enabled": false
+    },
+    {
+      "description": "Compose BOM 2026.08+ brings Compose 1.12, which needs compileSdk 37; stay on 1.11.x BOMs until the AGP 9 / Gradle 9 / SDK 37 migration",
+      "matchPackageNames": ["androidx.compose:compose-bom"],
+      "allowedVersions": "<2026.08.00"
+    },
+    {
+      "description": "lizard 1.24 parses Kotlin differently and finds ~550 functions 1.23 skipped, 15 over the CCN 10 gate; hold it until those are refactored or the gate is re-baselined",
+      "matchPackageNames": ["lizard"],
+      "allowedVersions": "<1.24.0"
+    },
+    {
+      "description": "Guava publishes -android and -jre flavours; this is an Android app, so stay on -android",
+      "matchPackageNames": ["com.google.guava:guava"],
+      "allowedVersions": "/-android$/"
     }
   ]
 }

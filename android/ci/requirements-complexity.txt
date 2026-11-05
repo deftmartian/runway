@@ -1,6 +1,5 @@
-lizard==1.24.2 \
-    --hash=sha256:84ac9c687bf38e9dd7a7fc179ab4113858bd0fa125cef328812f88be5cd13d30 \
-    --hash=sha256:dc89ae0a6048e89efbb77e1bf21c0d34c23cbc80116a8fe969baaeb6255c90d0
+lizard==1.23.0 \
+    --hash=sha256:e9111e35c8a5f2e00d55cab318fca3504622991417411ea16cf46874fb752f42
 pathspec==1.1.1 \
     --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
 Pygments==2.21.0 \
