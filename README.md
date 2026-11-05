@@ -5,7 +5,7 @@
 
 **Plan your running, bring in what you recorded, and decide what changes next.**
 
-runway is an Android app for runners who plan their own training. Build toward a race or choose regular running days, then keep the plan, completed runs, recovery, and deliberate changes in one place.
+runway is an Android app for runners who plan their own training, or who simply want a private record of their runs. Build toward a race, choose regular running days, or skip the plan; then keep the plan, completed runs, recovery, and deliberate changes in one place.
 
 Keep recording with the app or watch you already use. Share one GPX file with runway or approve an export folder, and each new activity waits in Inbox until you review it. Optional read-only Health Connect import is available too.
 
@@ -17,7 +17,7 @@ runway works with your existing recorder instead of replacing it. It runs locall
 
 ## A clear next step
 
-- Build toward a race or choose a few regular running days each week.
+- Build toward a race, choose a few regular running days each week, or just log your runs with no plan.
 - Review the starting week, peak, longest run, and ramp before creating a race plan.
 - See planned runs, completed work, and waiting decisions by date without filling the calendar with recovery entries.
 - Move, edit, add, or remove a future run when life changes.

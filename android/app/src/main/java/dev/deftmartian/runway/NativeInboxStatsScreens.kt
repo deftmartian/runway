@@ -427,7 +427,7 @@ internal fun StatsScreen(
                             onClick = { onDestinationSelected(NativeDestination.Setup) },
                             modifier = Modifier.weight(1f),
                             shape = MaterialTheme.shapes.small,
-                        ) { Text("Set up running") }
+                        ) { Text("Start a plan or routine") }
                     }
                 }
             }
