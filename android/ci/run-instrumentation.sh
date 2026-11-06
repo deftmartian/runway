@@ -66,6 +66,22 @@ compile_package() {
   done
 }
 
+# A package-manager restart can leave the app installed (pm path answers) before its launcher activity resolves
+# again; ActivityScenario then fails with "Unable to resolve activity" (main, 2026-11-05). Wait until it resolves.
+wait_for_launcher() {
+  local package_name="$1"
+  for _ in {1..30}; do
+    if run_bounded 10 adb -s "$serial" shell cmd package resolve-activity --brief \
+      -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$package_name" 2>/dev/null |
+      grep -Fq "$package_name/"; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "::error title=Launcher activity not found::$package_name has no resolvable launcher activity after 60 s."
+  return 1
+}
+
 report_instrumentation_failure() {
   local title="$1"
   local output_file="$2"
@@ -128,6 +144,7 @@ run_bounded 120 adb -s "$serial" install -r -t \
 # packages up front; the device tests still execute the production APK and fail on test errors.
 compile_package dev.deftmartian.runway.debug 600
 compile_package dev.deftmartian.runway.debug.test
+wait_for_launcher dev.deftmartian.runway.debug
 
 failure_pattern='FAILURES!!!|INSTRUMENTATION_(FAILED|ABORTED)|Process crashed|Unable to find instrumentation'
 app_output="$RUNNER_TEMP/app-instrumentation.txt"
