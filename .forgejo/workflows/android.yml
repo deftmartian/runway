@@ -1,8 +1,11 @@
 # Forgejo is primary; GitHub is a push mirror with Actions off. Ported from the
 # GitHub workflow on 2026-11-03 with the same jobs and gates, and these changes:
-#   - Forgejo skips a job-level `if` on a job with `needs` even when it is true,
-#     so each such job's condition is its first step ("gate") and every later
-#     step requires RUN_JOB=1.
+#   - Each conditional job with `needs` puts its condition in a first "gate" step
+#     and every later step requires RUN_JOB=1. A gated-off job then finishes as
+#     success instead of skipped, so jobs that need it (android-release needs
+#     instrumentation) still run. (An older note said Forgejo always skips a
+#     job-level `if` with `needs`; the real limit is narrower: github.actor
+#     doesn't match there.)
 #   - The runner gives every job container /dev/kvm (its own config; the runner
 #     VM has nested KVM); the emulator jobs' udev step only checks the device.
 #   - Artifacts use Forgejo's upload/download-artifact; other actions are
@@ -76,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.ref_type != 'tag' && needs.changes.outputs.android == 'true' }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -122,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ needs.changes.outputs.android == 'true' }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -167,7 +170,7 @@ jobs:
     runs-on: android-emulator
     timeout-minutes: 90
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ needs.changes.outputs.android == 'true' && needs.package.result == 'success' }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -283,7 +286,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -377,7 +380,7 @@ jobs:
     # (same image as ubuntu-latest, 6 GiB memory cap per job); see docs/ANDROID.md.
     timeout-minutes: 30
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -462,7 +465,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -572,7 +575,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -640,7 +643,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Gate (Forgejo skips a job-level if on jobs with needs)
+      - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
