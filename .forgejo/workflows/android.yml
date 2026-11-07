@@ -67,6 +67,17 @@ jobs:
           else
             git show --check --format= "$GITHUB_SHA"
           fi
+          # A merge to main whose tree is exactly its PR head's was already verified by that PR's run
+          # (main requires it), so the post-merge run would repeat 17-19 minutes of emulator time on
+          # the same files. A merge of a PR that was behind main has a new tree and runs in full, and a
+          # tag run always does.
+          if [ "$android" = true ] && [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ] &&
+            git rev-parse --verify --quiet "${GITHUB_SHA}^2" >/dev/null &&
+            [ "$(git rev-parse "${GITHUB_SHA}^{tree}")" = "$(git rev-parse "${GITHUB_SHA}^2^{tree}")" ]
+          then
+            echo "Same tree as the merged PR head ${GITHUB_SHA}^2, which its PR run verified."
+            android=false
+          fi
           echo "Android verification required: $android"
           echo "android=$android" >> "$GITHUB_OUTPUT"
 
