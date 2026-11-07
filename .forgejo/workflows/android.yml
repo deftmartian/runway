@@ -618,6 +618,17 @@ jobs:
             sleep 10
           done
           echo "::error::The GitHub mirror never received ${GITHUB_REF_NAME}."; exit 1
+      # The ubuntu-latest image (catthehacker act-24.04) has no gh, so the v0.12.1 publish failed with
+      # "gh: command not found". Ubuntu's own package (universe) has the release commands used below.
+      - name: Install the GitHub CLI
+        if: env.RUN_JOB == '1'
+        run: |
+          set -euo pipefail
+          command -v gh >/dev/null || {
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gh >/dev/null
+          }
+          gh --version | head -n1
       - name: Publish signed APK assets
         if: env.RUN_JOB == '1'
         env:
