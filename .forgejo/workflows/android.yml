@@ -365,12 +365,21 @@ jobs:
               exit 1
             fi
           fi
-      - name: Build and test the unsigned release candidate once
+      # Two Gradle invocations instead of one so the lint/test JVMs exit before R8 runs: together they exceeded the
+      # runner's 5 GiB job cap (OOM on 2026-11-07). The second call reuses the first's up-to-date outputs, so nothing
+      # is built twice.
+      - name: Lint and test the unsigned release candidate
         if: env.RUN_JOB == '1'
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict -PrunwayFdroidSourceBuild=true
-          lint test assembleRelease
+          lint test
+      - name: Assemble the unsigned release candidate
+        if: env.RUN_JOB == '1'
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
+          --dependency-verification strict -PrunwayFdroidSourceBuild=true
+          assembleRelease
       - name: Upload unsigned release candidate
         if: env.RUN_JOB == '1'
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
