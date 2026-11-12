@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.deftmartian.runway.data.LocalBackupDocumentContract
 import kotlin.system.exitProcess
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -226,7 +227,9 @@ class MainActivity : ComponentActivity() {
                 action = ACTION_OPEN_FOLDER_SETTINGS
             })
             .build()
-        runCatching { manager.setDynamicShortcuts(listOf(folder)) }
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { manager.setDynamicShortcuts(listOf(folder)) }
+        }
     }
 
     companion object {
