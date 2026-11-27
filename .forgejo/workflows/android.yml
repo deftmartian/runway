@@ -39,7 +39,7 @@ jobs:
     outputs:
       android: ${{ steps.scope.outputs.android }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -93,7 +93,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.ref_type != 'tag' && needs.changes.outputs.android == 'true' }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
@@ -139,7 +139,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ needs.changes.outputs.android == 'true' }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
@@ -184,7 +184,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ needs.changes.outputs.android == 'true' && needs.package.result == 'success' }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
@@ -300,7 +300,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           fetch-depth: 0
@@ -403,7 +403,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
@@ -488,7 +488,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
@@ -598,7 +598,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
@@ -677,7 +677,7 @@ jobs:
       - name: Gate (keeps the job successful when its condition is false)
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: echo "RUN_JOB=1" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.RUN_JOB == '1'
         with:
           persist-credentials: false
