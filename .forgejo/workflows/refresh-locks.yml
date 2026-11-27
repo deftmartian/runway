@@ -6,6 +6,7 @@
 # Run it from Actions > Refresh dependency locks, naming the branch. It pushes
 # nothing and needs no secrets: download the "dependency-locks" artifact, then
 #   git apply dependency-locks.patch && git commit -am "gradle: refresh locks" && git push
+# The patch is built before the strict proof run, so a failed proof still hands it back (with the failure).
 name: Refresh dependency locks
 
 on:
@@ -19,7 +20,7 @@ jobs:
   refresh:
     name: refresh locks and verification metadata
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,41 +36,52 @@ jobs:
         with:
           packages: platforms;android-37.0 build-tools;36.0.0
 
-      # `dependencies` resolves every configuration (lockAllConfigurations), including ones CI never builds,
-      # so stale pins like a forgotten kotlinCompilerPluginClasspathReleaseUnitTest get refreshed too.
-      # The CI tasks download the artifacts themselves, which is what the verification metadata hashes.
+      # Locks come from graph resolution and hashes from artifact downloads, so this needs both:
+      # :module:dependencies resolves every configuration of each module (lockAllConfigurations), including
+      # ones CI never builds, like the stale kotlinCompilerPluginClasspathReleaseUnitTest pin #39 had; the CI
+      # tasks download the artifacts the verification metadata hashes. --continue so a bump that breaks a
+      # test still yields its patch. Note: --write-verification-metadata appends; old hashes are not pruned.
       - name: Write locks and verification metadata
         run: >-
-          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
-          --write-locks --write-verification-metadata sha256 --dependency-verification lenient
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace --continue
+          --write-locks --write-verification-metadata sha256
           buildEnvironment :domain:dependencies :data:dependencies :app:dependencies
           :domain:test :data:testDebugUnitTest :app:testDebugUnitTest lint
           :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
 
-      # A warm cache hides missing verification entries; prove the result with an empty Gradle home and the
-      # same strict verification CI uses.
-      - name: Verify strictly from an empty Gradle home
+      # Make the patch before the proof run, so it exists even when verification fails. git add -A catches
+      # new files (a module's first gradle.lockfile).
+      - name: Make the patch
+        id: patch
+        if: always()
+        run: |
+          set -euo pipefail
+          git add -A -- android/
+          git diff --cached --binary -- android/ > "$RUNNER_TEMP/dependency-locks.patch"
+          {
+            echo "### Dependency locks for \`${{ inputs.ref }}\` at \`$(git rev-parse --short HEAD)\`"
+            if [ -s "$RUNNER_TEMP/dependency-locks.patch" ]; then
+              echo "Download the **dependency-locks** artifact, then \`git apply dependency-locks.patch\` on that commit."
+              echo '```'; git diff --cached --stat -- android/; echo '```'
+              grep -q 'also-trust' "$RUNNER_TEMP/dependency-locks.patch" && echo "**Check:** the patch adds \`also-trust\` entries (a changed checksum)."
+            else
+              echo "Already up to date: nothing to apply."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -s "$RUNNER_TEMP/dependency-locks.patch" ] && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        if: always() && steps.patch.outputs.changed == 'true'
+        with:
+          name: dependency-locks
+          path: ${{ runner.temp }}/dependency-locks.patch
+
+      # Proof: clean outputs and an empty Gradle home, so every artifact is downloaded again and checked with
+      # the same strict verification CI uses (a warm cache or up-to-date tasks would hide missing entries).
+      - name: Verify strictly from a clean build and an empty Gradle home
         env:
           GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home-fresh
         run: >-
           android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
           --dependency-verification strict
-          :domain:test :data:testDebugUnitTest :app:testDebugUnitTest
+          clean :domain:test :data:testDebugUnitTest :app:testDebugUnitTest lint
           :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
-
-      - name: Make the patch
-        run: |
-          set -euo pipefail
-          git diff --stat
-          git diff -- android/ > dependency-locks.patch
-          if [ -s dependency-locks.patch ]; then
-            echo "### Locks changed: download the dependency-locks artifact and git apply it" >> "$GITHUB_STEP_SUMMARY"
-            git diff --stat -- android/ >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "### Locks and verification metadata were already up to date" >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
-        with:
-          name: dependency-locks
-          path: dependency-locks.patch
-          if-no-files-found: ignore
