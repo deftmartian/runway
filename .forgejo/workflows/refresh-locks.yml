@@ -1,0 +1,75 @@
+# Regenerate Gradle dependency locks and verification metadata for a branch,
+# and hand back a patch to review and apply. Renovate bumps versions but not
+# gradle.lockfile or verification-metadata.xml (see the forgejo-ci notes), so
+# every Gradle bump otherwise needs this done by hand (runway #39, 2026-11-27).
+#
+# Run it from Actions > Refresh dependency locks, naming the branch. It pushes
+# nothing and needs no secrets: download the "dependency-locks" artifact, then
+#   git apply dependency-locks.patch && git commit -am "gradle: refresh locks" && git push
+name: Refresh dependency locks
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to refresh (for example renovate/non-major-dependencies)
+        required: true
+
+jobs:
+  refresh:
+    name: refresh locks and verification metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - uses: https://github.com/actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: https://github.com/gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+      - uses: https://github.com/android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platforms;android-37.0 build-tools;36.0.0
+
+      # `dependencies` resolves every configuration (lockAllConfigurations), including ones CI never builds,
+      # so stale pins like a forgotten kotlinCompilerPluginClasspathReleaseUnitTest get refreshed too.
+      # The CI tasks download the artifacts themselves, which is what the verification metadata hashes.
+      - name: Write locks and verification metadata
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
+          --write-locks --write-verification-metadata sha256 --dependency-verification lenient
+          buildEnvironment :domain:dependencies :data:dependencies :app:dependencies
+          :domain:test :data:testDebugUnitTest :app:testDebugUnitTest lint
+          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
+
+      # A warm cache hides missing verification entries; prove the result with an empty Gradle home and the
+      # same strict verification CI uses.
+      - name: Verify strictly from an empty Gradle home
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home-fresh
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
+          --dependency-verification strict
+          :domain:test :data:testDebugUnitTest :app:testDebugUnitTest
+          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
+
+      - name: Make the patch
+        run: |
+          set -euo pipefail
+          git diff --stat
+          git diff -- android/ > dependency-locks.patch
+          if [ -s dependency-locks.patch ]; then
+            echo "### Locks changed: download the dependency-locks artifact and git apply it" >> "$GITHUB_STEP_SUMMARY"
+            git diff --stat -- android/ >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Locks and verification metadata were already up to date" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: dependency-locks
+          path: dependency-locks.patch
+          if-no-files-found: ignore
