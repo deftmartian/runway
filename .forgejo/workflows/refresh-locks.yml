@@ -1,0 +1,89 @@
+# Regenerate Gradle dependency locks and verification metadata for a branch,
+# and hand back a patch to review and apply. Renovate bumps versions but not
+# gradle.lockfile or verification-metadata.xml (see the forgejo-ci notes), so
+# every Gradle bump otherwise needs this done by hand (runway #39, 2026-11-27).
+#
+# Run it from Actions > Refresh dependency locks, naming the branch. It pushes
+# nothing and needs no secrets: download the "dependency-locks" artifact, then
+#   git apply dependency-locks.patch && git commit -am "gradle: refresh locks" && git push
+# The patch is built before the strict proof run, so a failed proof still hands it back (with the failure).
+name: Refresh dependency locks
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to refresh (for example renovate/non-major-dependencies)
+        required: true
+
+jobs:
+  refresh:
+    name: refresh locks and verification metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: https://github.com/gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - uses: https://github.com/actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: https://github.com/gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - uses: https://github.com/android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platforms;android-37.0 build-tools;36.0.0
+
+      # Locks come from graph resolution and hashes from artifact downloads, so this needs both:
+      # :module:dependencies resolves every configuration of each module (lockAllConfigurations), including
+      # ones CI never builds, like the stale kotlinCompilerPluginClasspathReleaseUnitTest pin #39 had; the CI
+      # tasks download the artifacts the verification metadata hashes. --continue so a bump that breaks a
+      # test still yields its patch. Note: --write-verification-metadata appends; old hashes are not pruned.
+      - name: Write locks and verification metadata
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace --continue
+          --write-locks --write-verification-metadata sha256
+          buildEnvironment :domain:dependencies :data:dependencies :app:dependencies
+          :domain:test :data:testDebugUnitTest :app:testDebugUnitTest lint
+          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
+
+      # Make the patch before the proof run, so it exists even when verification fails. git add -A catches
+      # new files (a module's first gradle.lockfile).
+      - name: Make the patch
+        id: patch
+        if: always()
+        env:
+          REF: ${{ inputs.ref }}   # via env, never interpolated into the script
+        run: |
+          set -euo pipefail
+          git add -A -- android/
+          git diff --cached --binary -- android/ > "$RUNNER_TEMP/dependency-locks.patch"
+          {
+            echo "### Dependency locks for \`$REF\` at \`$(git rev-parse --short HEAD)\`"
+            if [ -s "$RUNNER_TEMP/dependency-locks.patch" ]; then
+              echo "Download the **dependency-locks** artifact, then \`git apply dependency-locks.patch\` on that commit."
+              echo '```'; git diff --cached --stat -- android/; echo '```'
+              grep -q 'also-trust' "$RUNNER_TEMP/dependency-locks.patch" && echo "**Check:** the patch adds \`also-trust\` entries (a changed checksum)."
+            else
+              echo "Already up to date: nothing to apply."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -s "$RUNNER_TEMP/dependency-locks.patch" ] && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        if: always() && steps.patch.outputs.changed == 'true'
+        with:
+          name: dependency-locks
+          path: ${{ runner.temp }}/dependency-locks.patch
+
+      # Proof: clean outputs and an empty Gradle home, so every artifact is downloaded again and checked with
+      # the same strict verification CI uses (a warm cache or up-to-date tasks would hide missing entries).
+      - name: Verify strictly from a clean build and an empty Gradle home
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home-fresh
+        run: >-
+          android/gradlew -p android --no-daemon --max-workers=2 --stacktrace
+          --dependency-verification strict
+          clean :domain:test :data:testDebugUnitTest :app:testDebugUnitTest lint
+          :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
