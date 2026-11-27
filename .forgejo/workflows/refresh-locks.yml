@@ -54,12 +54,14 @@ jobs:
       - name: Make the patch
         id: patch
         if: always()
+        env:
+          REF: ${{ inputs.ref }}   # via env, never interpolated into the script
         run: |
           set -euo pipefail
           git add -A -- android/
           git diff --cached --binary -- android/ > "$RUNNER_TEMP/dependency-locks.patch"
           {
-            echo "### Dependency locks for \`${{ inputs.ref }}\` at \`$(git rev-parse --short HEAD)\`"
+            echo "### Dependency locks for \`$REF\` at \`$(git rev-parse --short HEAD)\`"
             if [ -s "$RUNNER_TEMP/dependency-locks.patch" ]; then
               echo "Download the **dependency-locks** artifact, then \`git apply dependency-locks.patch\` on that commit."
               echo '```'; git diff --cached --stat -- android/; echo '```'
